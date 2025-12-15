@@ -68,7 +68,7 @@ func Build(ctxt *build.Context) (forward, reverse Graph, errors map[string]error
 		err  error
 	}
 
-	ch := make(chan interface{})
+	ch := make(chan any)
 
 	go func() {
 		sema := make(chan int, 20) // I/O concurrency limiting semaphore

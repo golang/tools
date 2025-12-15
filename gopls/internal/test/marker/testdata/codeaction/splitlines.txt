@@ -1,0 +1,223 @@
+This test exercises the refactoring of putting arguments, results, and composite literal elements
+into separate lines.
+
+-- go.mod --
+module unused.mod
+
+go 1.18
+
+-- func_arg/func_arg.go --
+package func_arg
+
+func A(a string, b, c int64, x int, y int) (r1 string, r2, r3 int64, r4 int, r5 int) { //@codeaction("x", "refactor.rewrite.splitLines", result=func_arg)
+	return a, b, c, x, y
+}
+
+-- @func_arg/func_arg/func_arg.go --
+package func_arg
+
+func A(
+	a string,
+	b, c int64,
+	x int,
+	y int,
+) (r1 string, r2, r3 int64, r4 int, r5 int) { //@codeaction("x", "refactor.rewrite.splitLines", result=func_arg)
+	return a, b, c, x, y
+}
+
+-- func_ret/func_ret.go --
+package func_ret
+
+func A(a string, b, c int64, x int, y int) (r1 string, r2, r3 int64, r4 int, r5 int) { //@codeaction("r1", "refactor.rewrite.splitLines", result=func_ret)
+	return a, b, c, x, y
+}
+
+-- @func_ret/func_ret/func_ret.go --
+package func_ret
+
+func A(a string, b, c int64, x int, y int) (
+	r1 string,
+	r2, r3 int64,
+	r4 int,
+	r5 int,
+) { //@codeaction("r1", "refactor.rewrite.splitLines", result=func_ret)
+	return a, b, c, x, y
+}
+
+-- functype_arg/functype_arg.go --
+package functype_arg
+
+type A func(a string, b, c int64, x int, y int) (r1 string, r2, r3 int64, r4 int, r5 int) //@codeaction("x", "refactor.rewrite.splitLines", result=functype_arg)
+
+-- @functype_arg/functype_arg/functype_arg.go --
+package functype_arg
+
+type A func(
+	a string,
+	b, c int64,
+	x int,
+	y int,
+) (r1 string, r2, r3 int64, r4 int, r5 int) //@codeaction("x", "refactor.rewrite.splitLines", result=functype_arg)
+
+-- functype_ret/functype_ret.go --
+package functype_ret
+
+type A func(a string, b, c int64, x int, y int) (r1 string, r2, r3 int64, r4 int, r5 int) //@codeaction("r1", "refactor.rewrite.splitLines", result=functype_ret)
+
+-- @functype_ret/functype_ret/functype_ret.go --
+package functype_ret
+
+type A func(a string, b, c int64, x int, y int) (
+	r1 string,
+	r2, r3 int64,
+	r4 int,
+	r5 int,
+) //@codeaction("r1", "refactor.rewrite.splitLines", result=functype_ret)
+
+-- func_call/func_call.go --
+package func_call
+
+import "fmt"
+
+func F() {
+	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "refactor.rewrite.splitLines", result=func_call)
+}
+
+-- @func_call/func_call/func_call.go --
+package func_call
+
+import "fmt"
+
+func F() {
+	fmt.Println(
+		1,
+		2,
+		3,
+		fmt.Sprintf("hello %d", 4),
+	) //@codeaction("1", "refactor.rewrite.splitLines", result=func_call)
+}
+
+-- indent/indent.go --
+package indent
+
+import "fmt"
+
+func F() {
+	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("hello", "refactor.rewrite.splitLines", result=indent)
+}
+
+-- @indent/indent/indent.go --
+package indent
+
+import "fmt"
+
+func F() {
+	fmt.Println(1, 2, 3, fmt.Sprintf(
+		"hello %d",
+		4,
+	)) //@codeaction("hello", "refactor.rewrite.splitLines", result=indent)
+}
+
+-- indent2/indent2.go --
+package indent2
+
+import "fmt"
+
+func F() {
+	fmt.
+		Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "refactor.rewrite.splitLines", result=indent2)
+}
+
+-- @indent2/indent2/indent2.go --
+package indent2
+
+import "fmt"
+
+func F() {
+	fmt.
+		Println(
+			1,
+			2,
+			3,
+			fmt.Sprintf("hello %d", 4),
+		) //@codeaction("1", "refactor.rewrite.splitLines", result=indent2)
+}
+
+-- structelts/structelts.go --
+package structelts
+
+type A struct{
+	a int
+	b int
+}
+
+func F() {
+	_ = A{a: 1, b: 2} //@codeaction("b", "refactor.rewrite.splitLines", result=structelts)
+}
+
+-- @structelts/structelts/structelts.go --
+package structelts
+
+type A struct{
+	a int
+	b int
+}
+
+func F() {
+	_ = A{
+		a: 1,
+		b: 2,
+	} //@codeaction("b", "refactor.rewrite.splitLines", result=structelts)
+}
+
+-- sliceelts/sliceelts.go --
+package sliceelts
+
+func F() {
+	_ = []int{1, 2} //@codeaction("1", "refactor.rewrite.splitLines", result=sliceelts)
+}
+
+-- @sliceelts/sliceelts/sliceelts.go --
+package sliceelts
+
+func F() {
+	_ = []int{
+		1,
+		2,
+	} //@codeaction("1", "refactor.rewrite.splitLines", result=sliceelts)
+}
+
+-- mapelts/mapelts.go --
+package mapelts
+
+func F() {
+	_ = map[string]int{"a": 1, "b": 2} //@codeaction("1", "refactor.rewrite.splitLines", result=mapelts)
+}
+
+-- @mapelts/mapelts/mapelts.go --
+package mapelts
+
+func F() {
+	_ = map[string]int{
+		"a": 1,
+		"b": 2,
+	} //@codeaction("1", "refactor.rewrite.splitLines", result=mapelts)
+}
+
+-- starcomment/starcomment.go --
+package starcomment
+
+func A(/*1*/ x /*2*/ string /*3*/, /*4*/ y /*5*/ int /*6*/) (string, int) { //@codeaction("x", "refactor.rewrite.splitLines", result=starcomment)
+	return x, y
+}
+
+-- @starcomment/starcomment/starcomment.go --
+package starcomment
+
+func A(
+	/*1*/ x /*2*/ string /*3*/,
+	/*4*/ y /*5*/ int /*6*/,
+) (string, int) { //@codeaction("x", "refactor.rewrite.splitLines", result=starcomment)
+	return x, y
+}
+

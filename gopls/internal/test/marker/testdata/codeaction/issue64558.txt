@@ -1,0 +1,14 @@
+Test of an inlining failure due to an ill-typed input program (#64558).
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+func _() {
+	f(1, 2) //@ diag("2", re"too many arguments"), codeaction("f", "refactor.inline.call", end=")", err=re`inlining failed \("too many arguments"\), likely because inputs were ill-typed`)
+}
+
+func f(int) {}

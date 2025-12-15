@@ -1,0 +1,18 @@
+updates import statements
+
+Usage:
+  gopls [flags] imports [imports-flags] <filename>
+
+Example: update imports statements in a file:
+
+	$ gopls imports -w internal/cmd/check.go
+
+imports-flags:
+  -d,-diff
+    	display diffs instead of edited file content
+  -l,-list
+    	display names of edited files
+  -preserve
+    	with -write, make copies of original files
+  -w,-write
+    	write edited content to source files

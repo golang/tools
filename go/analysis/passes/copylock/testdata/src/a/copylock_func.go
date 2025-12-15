@@ -5,20 +5,25 @@
 // This file contains tests for the copylock checker's
 // function declaration analysis.
 
+// There are two cases missing from this file which
+// are located in the "unfortunate" package in the
+// testdata directory. Once the go.mod >= 1.26 for this
+// repository, merge local_go124.go back into this file.
+
 package a
 
 import "sync"
 
 func OkFunc(*sync.Mutex) {}
 func BadFunc(sync.Mutex) {} // want "BadFunc passes lock by value: sync.Mutex"
-func BadFunc2(sync.Map)  {} // want "BadFunc2 passes lock by value: sync.Map contains sync.Mutex"
+func BadFunc2(sync.Map)  {} // want "BadFunc2 passes lock by value: sync.Map contains sync.(Mutex|noCopy)"
 func OkRet() *sync.Mutex {}
 func BadRet() sync.Mutex {} // Don't warn about results
 
 var (
 	OkClosure   = func(*sync.Mutex) {}
 	BadClosure  = func(sync.Mutex) {} // want "func passes lock by value: sync.Mutex"
-	BadClosure2 = func(sync.Map) {}   // want "func passes lock by value: sync.Map contains sync.Mutex"
+	BadClosure2 = func(sync.Map) {}   // want "func passes lock by value: sync.Map contains sync.(Mutex|noCopy)"
 )
 
 type EmbeddedRWMutex struct {
@@ -118,19 +123,3 @@ func AcceptedCases() {
 	x = BadRet()           // function call on RHS is OK (#16227)
 	x = *OKRet()           // indirection of function call on RHS is OK (#16227)
 }
-
-// TODO: Unfortunate cases
-
-// Non-ideal error message:
-// Since we're looking for Lock methods, sync.Once's underlying
-// sync.Mutex gets called out, but without any reference to the sync.Once.
-type LocalOnce sync.Once
-
-func (LocalOnce) Bad() {} // want `Bad passes lock by value: a.LocalOnce contains sync.\b.*`
-
-// False negative:
-// LocalMutex doesn't have a Lock method.
-// Nevertheless, it is probably a bad idea to pass it by value.
-type LocalMutex sync.Mutex
-
-func (LocalMutex) Bad() {} // WANTED: An error here :(

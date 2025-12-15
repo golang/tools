@@ -1,0 +1,37 @@
+This test verifies that the embedded field has a method with the same name.
+
+-- issue64114.go --
+package stub
+
+// Regression test for issue #64114: code action "implement" is not listed.
+
+var _ WriteTest = (*WriteStruct)(nil) //@quickfix("(", re"does not implement", issue64114)
+
+type WriterTwoStruct struct{}
+
+// Write implements [io.ReadWriter].
+func (t *WriterTwoStruct) RRRR(str string) error {
+	panic("unimplemented")
+}
+
+type WriteTest interface {
+	RRRR()
+	WWWW()
+}
+
+type WriteStruct struct {
+	WriterTwoStruct
+}
+-- @issue64114/issue64114.go --
+@@ -22 +22,11 @@
++
++// RRRR implements [WriteTest].
++// Subtle: this method shadows the method (WriterTwoStruct).RRRR of WriteStruct.WriterTwoStruct.
++func (w *WriteStruct) RRRR() {
++	panic("unimplemented")
++}
++
++// WWWW implements [WriteTest].
++func (w *WriteStruct) WWWW() {
++	panic("unimplemented")
++}

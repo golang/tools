@@ -1,0 +1,41 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+import (
+	"errors"
+	"fmt"
+)
+
+func before(s string) error { return fmt.Errorf("%s", s) }
+func after(s string) error {
+	n := fmt.Sprintf("error - %s", s)
+	return errors.New(n)
+}
+
+-- in/i1/i1.go --
+package i1
+
+import "fmt"
+
+func example() {
+	_ = fmt.Errorf("%s", "foo")
+}
+
+-- out/i1/i1.go --
+package i1
+
+import (
+	"errors"
+	"fmt"
+)
+
+func example() {
+
+	n := fmt.Sprintf("error - %s", "foo")
+	_ = errors.New(n)
+}

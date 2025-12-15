@@ -11,9 +11,11 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 //go:embed doc.go
@@ -21,20 +23,25 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "loopclosure",
-	Doc:      analysisutil.MustExtractDoc(doc, "loopclosure"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "loopclosure"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/loopclosure",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{
+		(*ast.File)(nil),
 		(*ast.RangeStmt)(nil),
 		(*ast.ForStmt)(nil),
 	}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
+	inspect.Nodes(nodeFilter, func(n ast.Node, push bool) bool {
+		if !push {
+			// inspect.Nodes is slightly suboptimal as we only use push=true.
+			return true
+		}
 		// Find the variables updated by the loop statement.
 		var vars []types.Object
 		addVar := func(expr ast.Expr) {
@@ -46,6 +53,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 		var body *ast.BlockStmt
 		switch n := n.(type) {
+		case *ast.File:
+			// Only traverse the file if its goversion is strictly before go1.22.
+			return !analyzerutil.FileUsesGoVersion(pass, n, versions.Go1_22)
+
 		case *ast.RangeStmt:
 			body = n.Body
 			addVar(n.Key)
@@ -64,7 +75,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 		}
 		if vars == nil {
-			return
+			return true
 		}
 
 		// Inspect statements to find function literals that may be run outside of
@@ -76,7 +87,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		//
 		// TODO: consider allowing the "last" go/defer/Go statement to be followed by
 		// N "trivial" statements, possibly under a recursive definition of "trivial"
-		// so that that checker could, for example, conclude that a go statement is
+		// so that checker could, for example, conclude that a go statement is
 		// followed by an if statement made of only trivial statements and trivial expressions,
 		// and hence the go statement could still be checked.
 		forEachLastStmt(body.List, func(last ast.Stmt) {
@@ -113,6 +124,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		}
+		return true
 	})
 	return nil, nil
 }
@@ -296,12 +308,11 @@ func parallelSubtest(info *types.Info, call *ast.CallExpr) []ast.Stmt {
 		if !ok {
 			continue
 		}
-		expr := exprStmt.X
-		if isMethodCall(info, expr, "testing", "T", "Parallel") {
-			call, _ := expr.(*ast.CallExpr)
-			if call == nil {
-				continue
-			}
+		call, ok := exprStmt.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if isMethodCall(info, call, "testing", "T", "Parallel") {
 			x, _ := call.Fun.(*ast.SelectorExpr)
 			if x == nil {
 				continue
@@ -335,44 +346,6 @@ func unlabel(stmt ast.Stmt) (ast.Stmt, bool) {
 	}
 }
 
-// isMethodCall reports whether expr is a method call of
-// <pkgPath>.<typeName>.<method>.
-func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method string) bool {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-
-	// Check that we are calling a method <method>
-	f := typeutil.StaticCallee(info, call)
-	if f == nil || f.Name() != method {
-		return false
-	}
-	recv := f.Type().(*types.Signature).Recv()
-	if recv == nil {
-		return false
-	}
-
-	// Check that the receiver is a <pkgPath>.<typeName> or
-	// *<pkgPath>.<typeName>.
-	rtype := recv.Type()
-	if ptr, ok := recv.Type().(*types.Pointer); ok {
-		rtype = ptr.Elem()
-	}
-	named, ok := rtype.(*types.Named)
-	if !ok {
-		return false
-	}
-	if named.Obj().Name() != typeName {
-		return false
-	}
-	pkg := f.Pkg()
-	if pkg == nil {
-		return false
-	}
-	if pkg.Path() != pkgPath {
-		return false
-	}
-
-	return true
+func isMethodCall(info *types.Info, call *ast.CallExpr, pkgPath, typeName, method string) bool {
+	return typesinternal.IsMethodNamed(typeutil.Callee(info, call), pkgPath, typeName, method)
 }

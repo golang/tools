@@ -1,0 +1,15 @@
+This test checks semanticTokens on ill-formed code.
+(Regression test for #68205.)
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- a.go --
+package p
+
+type _ <-<-chan int //@ token("<-", "operator", ""), token("chan", "keyword", "")

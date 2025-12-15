@@ -1,0 +1,44 @@
+This test checks that variadic elimination does not cause a semantic change due
+to creation of a non-nil empty slice instead of a nil slice due to missing
+variadic arguments.
+
+-- go.mod --
+module testdata
+go 1.12
+
+-- foo/foo.go --
+package foo
+import "fmt"
+
+func F(is ...int) {
+	if is == nil {
+		fmt.Println("is is nil")
+	} else {
+		fmt.Println("is is not nil")
+	}
+}
+
+func G(is ...int) { F(is...) }
+
+func main() {
+	G() //@ inline(re"G", G)
+}
+
+-- G --
+package foo
+
+import "fmt"
+
+func F(is ...int) {
+	if is == nil {
+		fmt.Println("is is nil")
+	} else {
+		fmt.Println("is is not nil")
+	}
+}
+
+func G(is ...int) { F(is...) }
+
+func main() {
+	F() //@ inline(re"G", G)
+}

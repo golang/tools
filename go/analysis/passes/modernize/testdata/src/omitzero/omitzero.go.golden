@@ -1,0 +1,63 @@
+-- Replace omitempty with omitzero (behavior change) --
+package omitzero
+
+type Foo struct {
+	EmptyStruct struct{} `json:",omitzero"` // want "Omitempty has no effect on nested struct fields"
+}
+
+type Bar struct {
+	NonEmptyStruct struct{ a int } `json:",omitzero"` // want "Omitempty has no effect on nested struct fields"
+}
+
+type C struct {
+	D string `json:",omitempty"`
+}
+
+type R struct {
+	M string `json:",omitempty"`
+}
+
+type A struct {
+	C C `json:"test,omitzero"` // want "Omitempty has no effect on nested struct fields"
+	R R `json:"test"`
+}
+
+type X struct {
+	NonEmptyStruct struct{ a int } `json:",omitzero" yaml:",omitempty"` // want "Omitempty has no effect on nested struct fields"
+}
+
+type Y struct {
+	NonEmptyStruct struct{ a int } `yaml:",omitempty" json:",omitzero"` // want "Omitempty has no effect on nested struct fields"
+}
+
+-- Remove redundant omitempty tag --
+package omitzero
+
+type Foo struct {
+	EmptyStruct struct{} // want "Omitempty has no effect on nested struct fields"
+}
+
+type Bar struct {
+	NonEmptyStruct struct{ a int } // want "Omitempty has no effect on nested struct fields"
+}
+
+type C struct {
+	D string `json:",omitempty"`
+}
+
+type R struct {
+	M string `json:",omitempty"`
+}
+
+type A struct {
+	C C `json:"test"` // want "Omitempty has no effect on nested struct fields"
+	R R `json:"test"`
+}
+
+type X struct {
+	NonEmptyStruct struct{ a int } `yaml:",omitempty"` // want "Omitempty has no effect on nested struct fields"
+}
+
+type Y struct {
+	NonEmptyStruct struct{ a int } `yaml:",omitempty"` // want "Omitempty has no effect on nested struct fields"
+}

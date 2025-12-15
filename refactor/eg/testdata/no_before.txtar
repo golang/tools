@@ -1,0 +1,12 @@
+
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+const shouldFail = "no 'before' func found in template"
+
+func Before() {}

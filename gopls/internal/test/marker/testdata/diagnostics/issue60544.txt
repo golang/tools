@@ -1,0 +1,9 @@
+This test exercises a crash due to treatment of "comparable" in methodset
+calculation (golang/go#60544).
+
+-- main.go --
+package main
+
+type X struct{}
+
+func (X) test(x comparable) {} //@diag("comparable", re"outside a type constraint")

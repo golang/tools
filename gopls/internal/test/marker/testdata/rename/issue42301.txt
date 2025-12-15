@@ -1,0 +1,63 @@
+This test verifies the fix for golang/go#42301: renaming an ident inside its doc
+comment should also rename the ident.
+
+-- go.mod --
+module example.com
+
+go 1.21
+-- a/a.go --
+package a
+
+// Foo doesn't do anything, Foo is just an empty function. //@rename("Foo", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
+func Foo() {}
+
+func _() {
+	Foo()
+}
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func _() {
+	a.Foo()
+}
+
+-- c/c.go --
+package c
+
+// A is an empty struct. //@rename("A", "B", aToB)
+type A struct {}
+
+-- d/d.go --
+package d
+
+// Bar doesn't do anything, Bar is just an empty function. //@loc(Bar, re`^.*?\bBar\b.*?\b(Bar)\b.*`), rename(Bar, "Foo", barToFoo)
+func Bar() {}
+
+-- @aToB/c/c.go --
+@@ -3,2 +3,2 @@
+-// A is an empty struct. //@rename("A", "B", aToB)
+-type A struct {}
++// B is an empty struct. //@rename("B", "B", aToB)
++type B struct {}
+-- @barToFoo/d/d.go --
+@@ -3,2 +3,2 @@
+-// Bar doesn't do anything, Bar is just an empty function. //@loc(Bar, re`^.*?\bBar\b.*?\b(Bar)\b.*`), rename(Bar, "Foo", barToFoo)
+-func Bar() {}
++// Foo doesn't do anything, Foo is just an empty function. //@loc(Foo, re`^.*?\bBar\b.*?\b(Foo)\b.*`), rename(Foo, "Foo", barToFoo)
++func Foo() {}
+-- @fooToBar/a/a.go --
+@@ -3,2 +3,2 @@
+-// Foo doesn't do anything, Foo is just an empty function. //@rename("Foo", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
+-func Foo() {}
++// Bar doesn't do anything, Bar is just an empty function. //@rename("Bar", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
++func Bar() {}
+@@ -7 +7 @@
+-	Foo()
++	Bar()
+-- @fooToBar/b/b.go --
+@@ -6 +6 @@
+-	a.Foo()
++	a.Bar()

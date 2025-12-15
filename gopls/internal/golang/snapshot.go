@@ -1,0 +1,106 @@
+// Copyright 2018 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package golang
+
+import (
+	"context"
+	"fmt"
+	"go/token"
+	"go/types"
+
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
+)
+
+// NarrowestPackageForFile is a convenience function that selects the narrowest
+// non-ITV package to which this file belongs, type-checks it in the requested
+// mode (full or workspace), and returns it, along with the parse tree of that
+// file.
+//
+// The "narrowest" package is the one with the fewest number of files that
+// includes the given file. This solves the problem of test variants, as the
+// test will have more files than the non-test package.
+//
+// An intermediate test variant (ITV) package has identical source to a regular
+// package but resolves imports differently. gopls should never need to
+// type-check them.
+//
+// Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
+// tree, or snapshot.MetadataForFile if you only need metadata.
+func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *parsego.File, error) {
+	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[0] })
+}
+
+// WidestPackageForFile is a convenience function that selects the widest
+// non-ITV package to which this file belongs, type-checks it in the requested
+// mode (full or workspace), and returns it, along with the parse tree of that
+// file.
+//
+// The "widest" package is the one with the most number of files that includes
+// the given file. Which is the test variant if one exists.
+//
+// An intermediate test variant (ITV) package has identical source to a regular
+// package but resolves imports differently. gopls should never need to
+// type-check them.
+//
+// Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
+// tree, or snapshot.MetadataForFile if you only need metadata.
+func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *parsego.File, error) {
+	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[len(metas)-1] })
+}
+
+// NarrowestDeclaringPackage facilitates cross-package analysis by "jumping"
+// from the current package context to the package that declares the given object.
+//
+// This is essential when the object of interest is defined in a different
+// package than the one currently being type-checked.
+//
+// This function performs the context switch: it locates the file declaring
+// the object, loads its narrowest package (see [NarrowestPackageForFile]),
+// and returns the type-checked result.
+//
+// It returns the new package, the file, and the object's position translated
+// to be valid within the new package's file set.
+func NarrowestDeclaringPackage(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, obj types.Object) (*cache.Package, *parsego.File, token.Pos, error) {
+	posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(posn.Filename))
+	if err != nil {
+		return nil, nil, token.NoPos, err
+	}
+	return pkg, pgf, pgf.Tok.Pos(posn.Offset), nil
+}
+
+func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *parsego.File, error) {
+	mps, err := snapshot.MetadataForFile(ctx, uri, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(mps) == 0 {
+		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
+	}
+	mp := selector(mps)
+	pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkg := pkgs[0]
+	pgf, err := pkg.File(uri)
+	if err != nil {
+		return nil, nil, err // "can't happen"
+	}
+	return pkg, pgf, err
+}
+
+type (
+	PackageID   = metadata.PackageID
+	PackagePath = metadata.PackagePath
+	PackageName = metadata.PackageName
+	ImportPath  = metadata.ImportPath
+)
+
+type unit = struct{}

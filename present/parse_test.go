@@ -6,8 +6,8 @@ package present
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,13 +27,12 @@ func TestTestdata(t *testing.T) {
 	}
 	files := append(filesP, filesMD...)
 	for _, file := range files {
-		file := file
 		name := filepath.Base(file)
 		if name == "README" {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
-			data, err := ioutil.ReadFile(file)
+			data, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatalf("%s: %v", file, err)
 			}
@@ -80,11 +79,13 @@ func diff(prefix string, name1 string, b1 []byte, name2 string, b2 []byte) ([]by
 		cmd = "/bin/ape/diff"
 	}
 
-	data, err := exec.Command(cmd, "-u", f1, f2).CombinedOutput()
+	data, err := exec.Command(cmd, "-u", f1, f2).Output()
 	if len(data) > 0 {
 		// diff exits with a non-zero status when the files don't match.
 		// Ignore that failure as long as we get output.
 		err = nil
+	} else if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+		err = fmt.Errorf("%w\nstderr:\n%s)", err, exit.Stderr)
 	}
 
 	data = bytes.Replace(data, []byte(f1), []byte(name1), -1)
@@ -94,7 +95,7 @@ func diff(prefix string, name1 string, b1 []byte, name2 string, b2 []byte) ([]by
 }
 
 func writeTempFile(prefix string, data []byte) (string, error) {
-	file, err := ioutil.TempFile("", prefix)
+	file, err := os.CreateTemp("", prefix)
 	if err != nil {
 		return "", err
 	}

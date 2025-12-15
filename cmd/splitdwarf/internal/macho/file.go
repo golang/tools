@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"unsafe"
 )
@@ -314,7 +315,7 @@ type FormatError struct {
 	msg string
 }
 
-func formatError(off int64, format string, data ...interface{}) *FormatError {
+func formatError(off int64, format string, data ...any) *FormatError {
 	return &FormatError{off, fmt.Sprintf(format, data...)}
 }
 
@@ -502,23 +503,24 @@ func (s *Section) PutUncompressedData(b []byte) {
 }
 
 func (b LoadBytes) String() string {
-	s := "["
+	var s strings.Builder
+	s.WriteString("[")
 	for i, a := range b {
 		if i > 0 {
-			s += " "
+			s.WriteString(" ")
 			if len(b) > 48 && i >= 16 {
-				s += fmt.Sprintf("... (%d bytes)", len(b))
+				fmt.Fprintf(&s, "... (%d bytes)", len(b))
 				break
 			}
 		}
-		s += fmt.Sprintf("%x", a)
+		fmt.Fprintf(&s, "%x", a)
 	}
-	s += "]"
-	return s
+	s.WriteString("]")
+	return s.String()
 }
 
 func (b LoadBytes) Raw() []byte                { return b }
-func (b LoadBytes) Copy() LoadBytes            { return LoadBytes(append([]byte{}, b...)) }
+func (b LoadBytes) Copy() LoadBytes            { return LoadBytes(slices.Clone(b)) }
 func (b LoadBytes) LoadSize(t *FileTOC) uint32 { return uint32(len(b)) }
 
 func (lc LoadCmd) Put(b []byte, o binary.ByteOrder) int {
@@ -648,7 +650,7 @@ func (s *Symtab) Put(b []byte, o binary.ByteOrder) int {
 
 func (s *Symtab) String() string { return fmt.Sprintf("Symtab %#v", s.SymtabCmd) }
 func (s *Symtab) Copy() *Symtab {
-	return &Symtab{SymtabCmd: s.SymtabCmd, Syms: append([]Symbol{}, s.Syms...)}
+	return &Symtab{SymtabCmd: s.SymtabCmd, Syms: slices.Clone(s.Syms)}
 }
 func (s *Symtab) LoadSize(t *FileTOC) uint32 {
 	return uint32(unsafe.Sizeof(SymtabCmd{}))
@@ -719,7 +721,7 @@ type Dysymtab struct {
 
 func (s *Dysymtab) String() string { return fmt.Sprintf("Dysymtab %#v", s.DysymtabCmd) }
 func (s *Dysymtab) Copy() *Dysymtab {
-	return &Dysymtab{DysymtabCmd: s.DysymtabCmd, IndirectSyms: append([]uint32{}, s.IndirectSyms...)}
+	return &Dysymtab{DysymtabCmd: s.DysymtabCmd, IndirectSyms: slices.Clone(s.IndirectSyms)}
 }
 func (s *Dysymtab) LoadSize(t *FileTOC) uint32 {
 	return uint32(unsafe.Sizeof(DysymtabCmd{}))
@@ -898,7 +900,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 			if _, err := r.ReadAt(symdat, int64(hdr.Symoff)); err != nil {
 				return nil, err
 			}
-			st, err := f.parseSymtab(symdat, strtab, cmddat, &hdr, offset)
+			st, err := f.parseSymtab(symdat, strtab, &hdr, offset)
 			st.SymtabCmd = hdr
 			if err != nil {
 				return nil, err
@@ -1060,7 +1062,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 	return f, nil
 }
 
-func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *SymtabCmd, offset int64) (*Symtab, error) {
+func (f *File) parseSymtab(symdat, strtab []byte, hdr *SymtabCmd, offset int64) (*Symtab, error) {
 	bo := f.ByteOrder
 	symtab := make([]Symbol, hdr.Nsyms)
 	b := bytes.NewReader(symdat)

@@ -1,0 +1,158 @@
+This test checks that completion works as expected in the presence of
+incomplete statements that may affect parser recovery.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/dangling
+
+go 1.18
+
+-- settings.json --
+{
+	"completeUnimported": false,
+	"deepCompletion": false
+}
+
+-- dangling_for.go --
+package danglingstmt
+
+func _() {
+	for bar //@rank(" //", danglingBar)
+}
+
+func bar() bool { //@item(danglingBar, "bar", "func() bool", "func")
+	return true
+}
+
+-- dangling_for_init.go --
+package danglingstmt
+
+func _() {
+	for i := bar //@rank(" //", danglingBar2)
+}
+
+func bar2() int { //@item(danglingBar2, "bar2", "func() int", "func")
+	return 0
+}
+
+-- dangling_for_init_cond.go --
+package danglingstmt
+
+func _() {
+	for i := bar3(); i > bar //@rank(" //", danglingBar3)
+}
+
+func bar3() int { //@item(danglingBar3, "bar3", "func() int", "func")
+	return 0
+}
+
+-- dangling_for_init_cond_post.go --
+package danglingstmt
+
+func _() {
+	for i := bar4(); i > bar4(); i += bar //@rank(" //", danglingBar4)
+}
+
+func bar4() int { //@item(danglingBar4, "bar4", "func() int", "func")
+	return 0
+}
+
+-- dangling_if.go --
+package danglingstmt
+
+func _() {
+	if foo //@rank(" //", danglingFoo)
+}
+
+func foo() bool { //@item(danglingFoo, "foo", "func() bool", "func")
+	return true
+}
+
+-- dangling_if_eof.go --
+package danglingstmt
+
+func bar5() bool { //@item(danglingBar5, "bar5", "func() bool", "func")
+	return true
+}
+
+func _() {
+	if b //@rank(" //", danglingBar5)
+
+-- dangling_if_init.go --
+package danglingstmt
+
+func _() {
+	if i := foo //@rank(" //", danglingFoo2)
+}
+
+func foo2() bool { //@item(danglingFoo2, "foo2", "func() bool", "func")
+	return true
+}
+
+-- dangling_if_init_cond.go --
+package danglingstmt
+
+func _() {
+	if i := 123; foo //@rank(" //", danglingFoo3)
+}
+
+func foo3() bool { //@item(danglingFoo3, "foo3", "func() bool", "func")
+	return true
+}
+
+-- dangling_multiline_if.go --
+package danglingstmt
+
+func walrus() bool { //@item(danglingWalrus, "walrus", "func() bool", "func")
+	return true
+}
+
+func _() {
+	if true &&
+		walrus //@complete(" //", danglingWalrus)
+}
+
+-- dangling_selector_1.go --
+package danglingstmt
+
+func _() {
+	x. //@rank(" //", danglingI)
+}
+
+var x struct { i int } //@item(danglingI, "i", "int", "field")
+
+-- dangling_selector_2.go --
+package danglingstmt
+
+// TODO: re-enable this test, which was broken when the foo package was removed.
+// (we can replicate the relevant definitions in the new marker test)
+// import "golang.org/lsptests/foo"
+
+func _() {
+	foo. // rank(" //", Foo)
+	var _ = []string{foo.} // rank("}", Foo)
+}
+
+-- dangling_switch_init.go --
+package danglingstmt
+
+func _() {
+	switch i := baz //@rank(" //", danglingBaz)
+}
+
+func baz() int { //@item(danglingBaz, "baz", "func() int", "func")
+	return 0
+}
+
+-- dangling_switch_init_tag.go --
+package danglingstmt
+
+func _() {
+	switch i := 0; baz //@rank(" //", danglingBaz2)
+}
+
+func baz2() int { //@item(danglingBaz2, "baz2", "func() int", "func")
+	return 0
+}

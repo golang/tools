@@ -1,0 +1,74 @@
+This test exercises renaming of method receivers (golang/go#41892).
+
+Notes:
+- x to print fails for A.J because it would shadow the built-in print;
+  that renaming is quietly skipped.
+- various combinations of named, aliases, and pointers are tested.
+- package b exercises generics.
+- renaming a receiver declaration causes the broader renaming;
+  renaming a receiver use (see vrefz) effects only a local renaming.
+
+-- a/a.go --
+package a
+
+type T int
+type A = T
+
+func (T) F()   {}
+func (t T) G() {} //@rename("t", "x", tx)
+func (U T) H() {} //@rename("U", "v", Uv)
+func (_ T) I() {}
+func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
+func (w *T) K() {}
+func (x *A) L() {} //@rename("x", "print", xprint)
+
+-- @tx/a/a.go --
+@@ -7,2 +7,2 @@
+-func (t T) G() {} //@rename("t", "x", tx)
+-func (U T) H() {} //@rename("U", "v", Uv)
++func (x T) G() {} //@rename("t", "x", tx)
++func (x T) H() {} //@rename("U", "v", Uv)
+@@ -10,2 +10,2 @@
+-func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
+-func (w *T) K() {}
++func (x A) J() { print(-x) } //@rename(re"-(v)", "z", vrefz)
++func (x *T) K() {}
+-- @Uv/a/a.go --
+@@ -7,2 +7,2 @@
+-func (t T) G() {} //@rename("t", "x", tx)
+-func (U T) H() {} //@rename("U", "v", Uv)
++func (v T) G() {} //@rename("t", "x", tx)
++func (v T) H() {} //@rename("U", "v", Uv)
+@@ -11,2 +11,2 @@
+-func (w *T) K() {}
+-func (x *A) L() {} //@rename("x", "print", xprint)
++func (v *T) K() {}
++func (v *A) L() {} //@rename("x", "print", xprint)
+-- @xprint/a/a.go --
+@@ -7,2 +7,2 @@
+-func (t T) G() {} //@rename("t", "x", tx)
+-func (U T) H() {} //@rename("U", "v", Uv)
++func (print T) G() {} //@rename("t", "x", tx)
++func (print T) H() {} //@rename("U", "v", Uv)
+@@ -11,2 +11,2 @@
+-func (w *T) K() {}
+-func (x *A) L() {} //@rename("x", "print", xprint)
++func (print *T) K() {}
++func (print *A) L() {} //@rename("x", "print", xprint)
+-- @vrefz/a/a.go --
+@@ -10 +10 @@
+-func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
++func (z A) J() { print(-z) } //@rename(re"-(v)", "z", vrefz)
+-- b/b.go --
+package b
+
+type C[T any] int
+func (r C[T]) F() {} //@rename("r", "c", rc)
+func (r C[T]) G() {}
+
+-- @rc/b/b.go --
+@@ -4,2 +4,2 @@
+-func (r C[T]) F() {} //@rename("r", "c", rc)
+-func (r C[T]) G() {}
++func (c C[T]) F() {} //@rename("r", "c", rc)
++func (c C[T]) G() {}

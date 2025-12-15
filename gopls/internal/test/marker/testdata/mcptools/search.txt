@@ -1,0 +1,66 @@
+This test exercises the "go_search" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+//@mcptool("go_search", `{"query": "foo"}`, output=foo)
+//@mcptool("go_search", `{"query": "bar"}`, output=bar)
+//@mcptool("go_search", `{"query": "baz"}`, output=baz)
+
+-- main.go --
+package main
+
+import (
+	"example.com/a"
+	"example.com/b"
+)
+
+func FOO() {}
+
+type baz int
+
+func main() {
+	println(a.Foo + b.Ar)
+}
+-- a/a.go --
+package a
+
+const (
+	Foo = 1
+	Bar = 2
+)
+
+type B struct {
+	ar string
+}
+
+-- b/b.go --
+package b
+
+const (
+	aZ = 1
+	Ar = 2
+)
+
+var fOo = 3
+
+-- @foo --
+Top symbol matches:
+	FOO (Function in `$WORKDIR/main.go`)
+	Foo (Constant in `$WORKDIR/a/a.go`)
+	fOo (Variable in `$WORKDIR/b/b.go`)
+-- @bar --
+Top symbol matches:
+	Bar (Constant in `$WORKDIR/a/a.go`)
+	b.Ar (Constant in `$WORKDIR/b/b.go`)
+	B.ar (Field in `$WORKDIR/a/a.go`)
+-- @baz --
+Top symbol matches:
+	baz (Type in `$WORKDIR/main.go`)
+	b.aZ (Constant in `$WORKDIR/b/b.go`)

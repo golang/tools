@@ -13,10 +13,9 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/expect"
 )
 
 // TestGenericBodies tests that bodies of generic functions and methods containing
@@ -30,12 +29,9 @@ import (
 //
 // where a, b and c are the types of the arguments to the print call
 // serialized using go/types.Type.String().
-// See x/tools/go/expect for details on the syntax.
+// See x/tools/internal/expect for details on the syntax.
 func TestGenericBodies(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericBodies requires type parameters")
-	}
-	for _, contents := range []string{
+	for _, content := range []string{
 		`
 		package p00
 
@@ -487,76 +483,65 @@ func TestGenericBodies(t *testing.T) {
 			}
 		}
 		`,
+		`
+		package issue64324
+
+		type bar[T any] interface {
+			Bar(int) T
+		}
+		type foo[T any] interface {
+			bar[[]T]
+			*T
+		}
+		func Foo[T any, F foo[T]](d int) {
+			m := new(T)
+			f := F(m)
+			print(f.Bar(d)) /*@ types("[]T")*/
+		}
+		`, `
+		package issue64324b
+
+		type bar[T any] interface {
+			Bar(int) T
+		}
+		type baz[T any] interface {
+			bar[*int]
+			*int
+		}
+
+		func Baz[I baz[string]](d int) {
+			m := new(int)
+			f := I(m)
+			print(f.Bar(d)) /*@ types("*int")*/
+		}
+		`,
 	} {
-		contents := contents
-		pkgname := packageName(t, contents)
+		pkgname := parsePackageClause(t, content)
 		t.Run(pkgname, func(t *testing.T) {
-			// Parse
-			conf := loader.Config{ParserMode: parser.ParseComments}
-			f, err := conf.ParseFile("file.go", contents)
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			conf.CreateFromFiles(pkgname, f)
-
-			// Load
-			lprog, err := conf.Load()
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-
-			// Create and build SSA
-			prog := ssa.NewProgram(lprog.Fset, ssa.SanityCheckFunctions)
-			for _, info := range lprog.AllPackages {
-				if info.TransitivelyErrorFree {
-					prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
-				}
-			}
-			p := prog.Package(lprog.Package(pkgname).Pkg)
-			p.Build()
-
-			// Collect calls to the builtin print function.
-			probes := make(map[*ssa.CallCommon]*ssa.Function)
-			for _, mem := range p.Members {
-				if fn, ok := mem.(*ssa.Function); ok {
-					for _, bb := range fn.Blocks {
-						for _, i := range bb.Instrs {
-							if i, ok := i.(ssa.CallInstruction); ok {
-								call := i.Common()
-								if b, ok := call.Value.(*ssa.Builtin); ok && b.Name() == "print" {
-									probes[i.Common()] = fn
-								}
-							}
-						}
-					}
-				}
-			}
+			t.Parallel()
+			ssapkg, ppkg := buildPackage(t, content, ssa.SanityCheckFunctions)
+			fset := ssapkg.Prog.Fset
+			file := ppkg.Syntax[0]
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".
-			notes, err := expect.ExtractGo(prog.Fset, f)
+			notes, err := expect.ExtractGo(fset.File(file.Pos()), file)
 			if err != nil {
 				t.Errorf("expect.ExtractGo: %v", err)
 			}
 
-			// Matches each probe with a note that has the same line.
-			sameLine := func(x, y token.Pos) bool {
-				xp := prog.Fset.Position(x)
-				yp := prog.Fset.Position(y)
-				return xp.Filename == yp.Filename && xp.Line == yp.Line
-			}
-			expectations := make(map[*ssa.CallCommon]*expect.Note)
-			for call := range probes {
-				var match *expect.Note
-				for _, note := range notes {
-					if note.Name == "types" && sameLine(call.Pos(), note.Pos) {
-						match = note // first match is good enough.
-						break
-					}
+			// Collect calls to the builtin print function.
+			fns := make(map[*ssa.Function]bool)
+			for _, mem := range ssapkg.Members {
+				if fn, ok := mem.(*ssa.Function); ok {
+					fns[fn] = true
 				}
-				if match != nil {
-					expectations[call] = match
-				} else {
-					t.Errorf("Unmatched probe: %v", call)
+			}
+			probes := callsTo(fns, "print")
+			expectations := matchNotes(fset, notes, probes)
+
+			for call := range probes {
+				if expectations[call] == nil {
+					t.Errorf("Unmatched call: %v", call)
 				}
 			}
 
@@ -575,11 +560,48 @@ func TestGenericBodies(t *testing.T) {
 	}
 }
 
+// callsTo finds all calls to an SSA value named fname,
+// and returns a map from each call site to its enclosing function.
+func callsTo(fns map[*ssa.Function]bool, fname string) map[*ssa.CallCommon]*ssa.Function {
+	callsites := make(map[*ssa.CallCommon]*ssa.Function)
+	for fn := range fns {
+		for _, bb := range fn.Blocks {
+			for _, i := range bb.Instrs {
+				if i, ok := i.(ssa.CallInstruction); ok {
+					call := i.Common()
+					if call.Value.Name() == fname {
+						callsites[call] = fn
+					}
+				}
+			}
+		}
+	}
+	return callsites
+}
+
+// matchNotes returns a mapping from call sites (found by callsTo)
+// to the first "//@ note" comment on the same line.
+func matchNotes(fset *token.FileSet, notes []*expect.Note, calls map[*ssa.CallCommon]*ssa.Function) map[*ssa.CallCommon]*expect.Note {
+	// Matches each probe with a note that has the same line.
+	sameLine := func(x, y token.Pos) bool {
+		xp := fset.Position(x)
+		yp := fset.Position(y)
+		return xp.Filename == yp.Filename && xp.Line == yp.Line
+	}
+	expectations := make(map[*ssa.CallCommon]*expect.Note)
+	for call := range calls {
+		for _, note := range notes {
+			if sameLine(call.Pos(), note.Pos) {
+				expectations[call] = note
+				break // first match is good enough.
+			}
+		}
+	}
+	return expectations
+}
+
 // TestInstructionString tests serializing instructions via Instruction.String().
 func TestInstructionString(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestInstructionString requires type parameters")
-	}
 	// Tests (ssa.Instruction).String(). Instructions are from a single go file.
 	// The Instructions tested are those that match a comment of the form:
 	//
@@ -690,6 +712,26 @@ func TestInstructionString(t *testing.T) {
 	func f13[A [3]int, PA *A](v PA) {
 		*v = A{7}
 	}
+
+	//@ instrs("f14", "*ssa.Call", "invoke t1.Set(0:int)")
+	func f14[T any, PT interface {
+		Set(int)
+		*T
+	}]() {
+		var t T
+		p := PT(&t)
+		p.Set(0)
+	}
+
+	//@ instrs("f15", "*ssa.MakeClosure", "make closure (interface{Set(int); *T}).Set$bound [t1]")
+	func f15[T any, PT interface {
+		Set(int)
+		*T
+	}]() func(int) {
+		var t T
+		p := PT(&t)
+		return p.Set
+	}
 	`
 
 	// Parse
@@ -718,14 +760,14 @@ func TestInstructionString(t *testing.T) {
 	p.Build()
 
 	// Collect all notes in f, i.e. comments starting with "//@ instr".
-	notes, err := expect.ExtractGo(prog.Fset, f)
+	notes, err := expect.ExtractGo(prog.Fset.File(f.Pos()), f)
 	if err != nil {
 		t.Errorf("expect.ExtractGo: %v", err)
 	}
 
 	// Expectation is a {function, type string} -> {want, matches}
 	// where matches is all Instructions.String() that match the key.
-	// Each expecation is that some permutation of matches is wants.
+	// Each expectation is that some permutation of matches is wants.
 	type expKey struct {
 		function string
 		kind     string
@@ -778,16 +820,6 @@ func TestInstructionString(t *testing.T) {
 			logFunction(t, fn)
 		}
 	}
-}
-
-// packageName is a test helper to extract the package name from a string
-// containing the content of a go file.
-func packageName(t testing.TB, content string) string {
-	f, err := parser.ParseFile(token.NewFileSet(), "", content, parser.PackageClauseOnly)
-	if err != nil {
-		t.Fatalf("parsing the file %q failed with error: %s", content, err)
-	}
-	return f.Name.Name
 }
 
 func logFunction(t testing.TB, fn *ssa.Function) {

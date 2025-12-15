@@ -1,0 +1,28 @@
+Execute a gopls custom LSP command
+
+Usage:
+  gopls [flags] execute [flags] command argument...
+
+The execute command sends an LSP ExecuteCommand request to gopls,
+with a set of optional JSON argument values.
+Some commands return a result, also JSON.
+
+Gopls' command set is defined by the command.Interface type; see
+https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol/command#Interface.
+It is not a stable interface: commands may change or disappear without notice.
+
+Examples:
+
+	$ gopls execute gopls.add_import '{"ImportPath": "fmt", "URI": "file:///hello.go"}'
+	$ gopls execute gopls.run_tests '{"URI": "file:///a_test.go", "Tests": ["Test"]}'
+	$ gopls execute gopls.list_known_packages '{"URI": "file:///hello.go"}'
+
+execute-flags:
+  -d,-diff
+    	display diffs instead of edited file content
+  -l,-list
+    	display names of edited files
+  -preserve
+    	with -write, make copies of original files
+  -w,-write
+    	write edited content to source files

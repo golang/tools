@@ -1,0 +1,80 @@
+Test of local Implementation queries using function signatures.
+
+Assertions:
+- Query on "func" of a function type returns the corresponding concrete functions.
+- Query on "func" of a concrete function returns corresponding function types.
+- Query on "(" of a dynamic function call returns corresponding function types.
+- Different signatures (Nullary vs Handler) don't correspond.
+
+The @loc markers use the suffixes Func, Type, Call for the three kinds.
+Each query maps between these two sets: {Func} <=> {Type,Call}.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+// R is short for Record.
+type R struct{}
+
+// H is short for Handler.
+type H func(*R) //@ loc(HType, "func"), implementation("func", aFunc, bFunc, cFunc)
+
+func aFunc(*R) {} //@ loc(aFunc, "func"), implementation("func", HType, hParamType, hCall)
+
+var bFunc = func(*R) {} //@ loc(bFunc, "func"), implementation("func", hParamType, hCall, HType)
+
+func nullary() { //@ loc(nullaryFunc, "func"), implementation("func", Nullary, fieldCall)
+	cFunc := func(*R) {} //@ loc(cFunc, "func"), implementation("func", hParamType, hCall, HType)
+	_ = cFunc
+}
+
+type Nullary func() //@ loc(Nullary, "func")
+
+func _(
+	h func(*R)) { //@ loc(hParamType, "func"), implementation("func", aFunc, bFunc, cFunc)
+
+	_ = aFunc    // pacify unusedfunc
+	_ = bFunc    // pacify unusedfunc
+	_ = nullary  // pacify unusedfunc
+	_ = h
+
+	h(nil) //@ loc(hCall, "("), implementation("(", aFunc, bFunc, cFunc)
+}
+
+// generics:
+
+func _[T any](complex128) {
+	f1 := func(T)      int { return 0 } //@ loc(f1Func, "func"), implementation("func", fParamType, fCall, f1Call, f2Call)
+	f2 := func(string) int { return 0 } //@ loc(f2Func, "func"), implementation("func", fParamType, fCall, f1Call, f2Call)
+	f3 := func(int)    int { return 0 } //@ loc(f3Func, "func"), implementation("func", f1Call)
+
+	f1(*new(T)) //@ loc(f1Call, "("), implementation("(", f1Func, f2Func, f3Func, f4Func)
+	f2("")      //@ loc(f2Call, "("), implementation("(", f1Func, f2Func, f4Func)
+	_ = f3      // not called
+}
+
+func f4[T any](T) int { return 0 } //@ loc(f4Func, "func"), implementation("func", fParamType, fCall, f1Call, f2Call)
+
+var _ = f4[string] // pacify unusedfunc
+
+func _(
+	f func(string) int, //@ loc(fParamType, "func"), implementation("func", f1Func, f2Func, f4Func)
+	err error) {
+
+	f("") //@ loc(fCall, "("), implementation("(", f1Func, f2Func, f4Func)
+
+	struct{x Nullary}{}.x() //@ loc(fieldCall, "("), implementation("(", nullaryFunc)
+
+	// Calls that are not dynamic function calls:
+	_ = len("")          //@ implementation("(", err="not a dynamic function call")
+	_ = int(0)           //@ implementation("(", err="not a dynamic function call")
+	_ = error.Error(nil) //@ implementation("(", err="not a dynamic function call")
+	_ = err.Error()      //@ implementation("(", err="not a dynamic function call")
+	_ = f4(0)            //@ implementation("(", err="not a dynamic function call"), loc(f4Call, "(")
+}
+
+
+

@@ -1,0 +1,18 @@
+
+This test exercises a references query on an exported method that
+conflicts with a field name. This ill-typed input violates the
+assumption that if type T has a method, then the method set of T is
+nonempty, which led to a crash.
+
+See https://github.com/golang/go/issues/67978.
+
+-- a.go --
+package p
+
+type E struct { X int } //@ diag(re"()X", re"field.*same name")
+
+func (E) X() {} //@ loc(a, "X"), refs("X", a, b), diag(re"()X", re"method.*same name")
+
+var _ = new(E).X //@ loc(b, "X")
+
+

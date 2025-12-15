@@ -1,5 +1,3 @@
-// +build ignore
-
 package main
 
 // Test of dynamic function calls; no interfaces.

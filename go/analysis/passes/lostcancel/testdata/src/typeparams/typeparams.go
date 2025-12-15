@@ -4,14 +4,17 @@
 
 // This file contains tests for the lostcancel checker.
 
-//go:build go1.18
-
 package typeparams
 
 import (
 	"context"
+	"io"
 	"time"
 )
+
+//
+// These comment lines are ballast to ensure
+// that this is L17. Add/remove as needed.
 
 var bg = context.Background()
 
@@ -20,7 +23,7 @@ func _[T any]() {
 	if false {
 		_ = cancel
 	}
-} // want "this return statement may be reached without using the cancel var defined on line 19"
+} // want "this return statement may be reached without using the cancel var defined on line 22"
 
 func _[T any]() {
 	_, cancel := context.WithCancel(bg)
@@ -57,3 +60,16 @@ func _() {
 	var x C[int]
 	x.f()
 }
+
+func withCancelCause(maybe bool) {
+	{
+		_, cancel := context.WithCancelCause(bg)
+		defer cancel(io.EOF) // ok
+	}
+	{
+		_, cancel := context.WithCancelCause(bg) // want "the cancel function is not used on all paths \\(possible context leak\\)"
+		if maybe {
+			cancel(io.EOF)
+		}
+	}
+} // want "this return statement may be reached without using the cancel var defined on line 70"

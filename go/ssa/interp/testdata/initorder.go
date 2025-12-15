@@ -33,6 +33,11 @@ func main() {
 	if abcdef != [6]int{0, 1, 2, 3, 4, 5} {
 		panic(abcdef)
 	}
+
+	// Initializers of even blank globals are evaluated.
+	if g != 1 {
+		panic(g)
+	}
 }
 
 var order = makeOrder()
@@ -40,6 +45,11 @@ var order = makeOrder()
 var a, b = next(), next()
 var c, d = next2()
 var e, f = next(), next()
+
+var (
+	g int
+	_ = func() int { g = 1; return 0 }()
+)
 
 // ------------------------------------------------------------------------
 

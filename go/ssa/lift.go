@@ -43,6 +43,9 @@ import (
 	"go/token"
 	"math/big"
 	"os"
+	"slices"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // If true, show diagnostic information at each step of lifting.
@@ -103,18 +106,7 @@ func buildDomFrontier(fn *Function) domFrontier {
 }
 
 func removeInstr(refs []Instruction, instr Instruction) []Instruction {
-	i := 0
-	for _, ref := range refs {
-		if ref == instr {
-			continue
-		}
-		refs[i] = ref
-		i++
-	}
-	for j := i; j != len(refs); j++ {
-		refs[j] = nil // aid GC
-	}
-	return refs[:i]
+	return slices.DeleteFunc(refs, func(i Instruction) bool { return i == instr })
 }
 
 // lift replaces local and new Allocs accessed only with
@@ -168,9 +160,16 @@ func lift(fn *Function) {
 	// for the block, reusing the original array if space permits.
 
 	// While we're here, we also eliminate 'rundefers'
-	// instructions in functions that contain no 'defer'
-	// instructions.
+	// instructions and ssa:deferstack() in functions that contain no
+	// 'defer' instructions. For now, we also eliminate
+	// 's = ssa:deferstack()' calls if s doesn't escape, replacing s
+	// with nil in Defer{DeferStack: s}. This has the same meaning,
+	// but allows eliminating the intrinsic function `ssa:deferstack()`
+	// (unless it is needed due to range-over-func instances). This gives
+	// ssa users more time to support range-over-func.
 	usesDefer := false
+	deferstackAlloc, deferstackCall := deferstackPreamble(fn)
+	eliminateDeferStack := deferstackAlloc != nil && !deferstackAlloc.Heap
 
 	// A counter used to generate ~unique ids for Phi nodes, as an
 	// aid to debugging.  We use large numbers to make them highly
@@ -194,6 +193,15 @@ func lift(fn *Function) {
 				instr.index = index
 			case *Defer:
 				usesDefer = true
+				if eliminateDeferStack {
+					// Clear DeferStack and remove references to loads
+					if instr.DeferStack != nil {
+						if refs := instr.DeferStack.Referrers(); refs != nil {
+							*refs = removeInstr(*refs, instr)
+						}
+						instr.DeferStack = nil
+					}
+				}
 			case *RunDefers:
 				b.rundefers++
 			}
@@ -212,6 +220,18 @@ func lift(fn *Function) {
 
 	// Eliminate dead φ-nodes.
 	removeDeadPhis(fn.Blocks, newPhis)
+
+	// Eliminate ssa:deferstack() call.
+	if eliminateDeferStack {
+		b := deferstackCall.block
+		for i, instr := range b.Instrs {
+			if instr == deferstackCall {
+				b.Instrs[i] = nil
+				b.gaps++
+				break
+			}
+		}
+	}
 
 	// Prepend remaining live φ-nodes to each block.
 	for _, b := range fn.Blocks {
@@ -354,7 +374,7 @@ func (s *blockSet) add(b *BasicBlock) bool {
 // returns its index, or returns -1 if empty.
 func (s *blockSet) take() int {
 	l := s.BitLen()
-	for i := 0; i < l; i++ {
+	for i := range l {
 		if s.Bit(i) == 1 {
 			s.SetBit(&s.Int, i, 0)
 			return i
@@ -380,13 +400,11 @@ type newPhiMap map[*BasicBlock][]newPhi
 //
 // fresh is a source of fresh ids for phi nodes.
 func liftAlloc(df domFrontier, alloc *Alloc, newPhis newPhiMap, fresh *int) bool {
-	// Don't lift named return values in functions that defer
+	// Don't lift result values in functions that defer
 	// calls that may recover from panic.
 	if fn := alloc.Parent(); fn.Recover != nil {
-		for _, nr := range fn.namedResults {
-			if nr == alloc {
-				return false
-			}
+		if slices.Contains(fn.results, alloc) {
+			return false
 		}
 	}
 
@@ -460,7 +478,7 @@ func liftAlloc(df domFrontier, alloc *Alloc, newPhis newPhiMap, fresh *int) bool
 				*fresh++
 
 				phi.pos = alloc.Pos()
-				phi.setType(mustDeref(alloc.Type()))
+				phi.setType(typeparams.MustDeref(alloc.Type()))
 				phi.block = v
 				if debugLifting {
 					fmt.Fprintf(os.Stderr, "\tplace %s = %s at block %s\n", phi.Name(), phi, v)
@@ -505,7 +523,7 @@ func replaceAll(x, y Value) {
 func renamed(renaming []Value, alloc *Alloc) Value {
 	v := renaming[alloc.index]
 	if v == nil {
-		v = zeroConst(mustDeref(alloc.Type()))
+		v = zeroConst(typeparams.MustDeref(alloc.Type()))
 		renaming[alloc.index] = v
 	}
 	return v
@@ -636,4 +654,18 @@ func rename(u *BasicBlock, renaming []Value, newPhis newPhiMap) {
 		rename(v, r, newPhis)
 	}
 
+}
+
+// deferstackPreamble returns the *Alloc and ssa:deferstack() call for fn.deferstack.
+func deferstackPreamble(fn *Function) (*Alloc, *Call) {
+	if alloc, _ := fn.vars[fn.deferstack].(*Alloc); alloc != nil {
+		for _, ref := range *alloc.Referrers() {
+			if ref, _ := ref.(*Store); ref != nil && ref.Addr == alloc {
+				if call, _ := ref.Val.(*Call); call != nil {
+					return alloc, call
+				}
+			}
+		}
+	}
+	return nil, nil
 }

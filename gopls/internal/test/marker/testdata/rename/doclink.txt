@@ -1,0 +1,180 @@
+This test checks that doc links are also handled correctly (golang/go#64495).
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- a/a.go --
+package a
+
+// Foo just for test [Foo]
+// reference others objects [A] [B] [C] [C.F] [C.PF]
+func Foo() {} //@rename("Foo", "Bar", FooToBar)
+
+const A = 1 //@rename("A", "AA", AToAA)
+
+var B = 1 //@rename("B", "BB", BToBB)
+
+type C int //@rename("C", "CC", CToCC)
+
+func (C) F() {} //@rename("F", "FF", FToFF)
+
+func (*C) PF() {} //@rename("PF", "PFF", PFToPFF)
+
+// D just for test [*D]
+type D int //@rename("D", "DD", DToDD)
+
+// E test generic type doc link [E] [E.Foo]
+type E[T any] struct { //@rename("E", "EE", EToEE)
+	Field T
+}
+
+func (E[T]) Foo() {} //@rename("Foo", "Bar", EFooToEBar)
+
+-- b/b.go --
+package b
+
+import aa "example.com/a" //@rename("aa", "a", pkgRename)
+
+// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
+// reference pointer type [*aa.D]
+// reference generic type links [aa.E] [aa.E.Foo]
+func FooBar() {
+	aa.Foo()
+	var e aa.E[int]
+	e.Foo()
+}
+
+
+-- @FooToBar/a/a.go --
+@@ -3 +3 @@
+-// Foo just for test [Foo]
++// Bar just for test [Bar]
+@@ -5 +5 @@
+-func Foo() {} //@rename("Foo", "Bar", FooToBar)
++func Bar() {} //@rename("Foo", "Bar", FooToBar)
+-- @FooToBar/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Bar] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
+@@ -9 +9 @@
+-	aa.Foo()
++	aa.Bar()
+-- @AToAA/a/a.go --
+@@ -4 +4 @@
+-// reference others objects [A] [B] [C] [C.F] [C.PF]
++// reference others objects [AA] [B] [C] [C.F] [C.PF]
+@@ -7 +7 @@
+-const A = 1 //@rename("A", "AA", AToAA)
++const AA = 1 //@rename("A", "AA", AToAA)
+-- @AToAA/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Foo] [aa.AA] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
+-- @BToBB/a/a.go --
+@@ -4 +4 @@
+-// reference others objects [A] [B] [C] [C.F] [C.PF]
++// reference others objects [A] [BB] [C] [C.F] [C.PF]
+@@ -9 +9 @@
+-var B = 1 //@rename("B", "BB", BToBB)
++var BB = 1 //@rename("B", "BB", BToBB)
+-- @BToBB/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Foo] [aa.A] [aa.BB] [aa.C] [aa.C.F] [aa.C.PF]
+-- @CToCC/a/a.go --
+@@ -4 +4 @@
+-// reference others objects [A] [B] [C] [C.F] [C.PF]
++// reference others objects [A] [B] [CC] [CC.F] [CC.PF]
+@@ -11 +11 @@
+-type C int //@rename("C", "CC", CToCC)
++type CC int //@rename("C", "CC", CToCC)
+@@ -13 +13 @@
+-func (C) F() {} //@rename("F", "FF", FToFF)
++func (CC) F() {} //@rename("F", "FF", FToFF)
+@@ -15 +15 @@
+-func (*C) PF() {} //@rename("PF", "PFF", PFToPFF)
++func (*CC) PF() {} //@rename("PF", "PFF", PFToPFF)
+-- @CToCC/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.CC] [aa.CC.F] [aa.CC.PF]
+-- @FToFF/a/a.go --
+@@ -4 +4 @@
+-// reference others objects [A] [B] [C] [C.F] [C.PF]
++// reference others objects [A] [B] [C] [C.FF] [C.PF]
+@@ -13 +13 @@
+-func (C) F() {} //@rename("F", "FF", FToFF)
++func (C) FF() {} //@rename("F", "FF", FToFF)
+-- @FToFF/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.FF] [aa.C.PF]
+-- @PFToPFF/a/a.go --
+@@ -4 +4 @@
+-// reference others objects [A] [B] [C] [C.F] [C.PF]
++// reference others objects [A] [B] [C] [C.F] [C.PFF]
+@@ -15 +15 @@
+-func (*C) PF() {} //@rename("PF", "PFF", PFToPFF)
++func (*C) PFF() {} //@rename("PF", "PFF", PFToPFF)
+-- @PFToPFF/b/b.go --
+@@ -5 +5 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
++// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PFF]
+-- @pkgRename/b/b.go --
+@@ -3 +3 @@
+-import aa "example.com/a" //@rename("aa", "a", pkgRename)
++import "example.com/a" //@rename("aa", "a", pkgRename)
+@@ -5,3 +5,3 @@
+-// FooBar just for test [aa.Foo] [aa.A] [aa.B] [aa.C] [aa.C.F] [aa.C.PF]
+-// reference pointer type [*aa.D]
+-// reference generic type links [aa.E] [aa.E.Foo]
++// FooBar just for test [a.Foo] [a.A] [a.B] [a.C] [a.C.F] [a.C.PF]
++// reference pointer type [*a.D]
++// reference generic type links [a.E] [a.E.Foo]
+@@ -9,2 +9,2 @@
+-	aa.Foo()
+-	var e aa.E[int]
++	a.Foo()
++	var e a.E[int]
+-- @DToDD/a/a.go --
+@@ -17,2 +17,2 @@
+-// D just for test [*D]
+-type D int //@rename("D", "DD", DToDD)
++// DD just for test [*DD]
++type DD int //@rename("D", "DD", DToDD)
+-- @DToDD/b/b.go --
+@@ -6 +6 @@
+-// reference pointer type [*aa.D]
++// reference pointer type [*aa.DD]
+-- @EToEE/a/a.go --
+@@ -20,2 +20,2 @@
+-// E test generic type doc link [E] [E.Foo]
+-type E[T any] struct { //@rename("E", "EE", EToEE)
++// EE test generic type doc link [EE] [EE.Foo]
++type EE[T any] struct { //@rename("E", "EE", EToEE)
+@@ -25 +25 @@
+-func (E[T]) Foo() {} //@rename("Foo", "Bar", EFooToEBar)
++func (EE[T]) Foo() {} //@rename("Foo", "Bar", EFooToEBar)
+-- @EToEE/b/b.go --
+@@ -7 +7 @@
+-// reference generic type links [aa.E] [aa.E.Foo]
++// reference generic type links [aa.EE] [aa.EE.Foo]
+@@ -10 +10 @@
+-	var e aa.E[int]
++	var e aa.EE[int]
+-- @EFooToEBar/a/a.go --
+@@ -20 +20 @@
+-// E test generic type doc link [E] [E.Foo]
++// E test generic type doc link [E] [E.Bar]
+@@ -25 +25 @@
+-func (E[T]) Foo() {} //@rename("Foo", "Bar", EFooToEBar)
++func (E[T]) Bar() {} //@rename("Foo", "Bar", EFooToEBar)
+-- @EFooToEBar/b/b.go --
+@@ -7 +7 @@
+-// reference generic type links [aa.E] [aa.E.Foo]
++// reference generic type links [aa.E] [aa.E.Bar]
+@@ -11 +11 @@
+-	e.Foo()
++	e.Bar()

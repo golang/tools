@@ -1,0 +1,74 @@
+This is the test case from golang/go#67335, where the inlining resulted in bad
+formatting.
+
+The __unused__ import results in removal after a subsequent "organize imports" step.
+
+-- go.mod --
+module example.com
+
+go 1.20
+
+-- define/my/typ/foo.go --
+package typ
+type T int
+
+-- some/other/pkg/foo.go --
+package pkg
+import "context"
+import "example.com/define/my/typ"
+func Foo(typ.T) context.Context{ return nil }
+
+-- one/more/pkg/foo.go --
+package pkg
+func Bar() {}
+
+-- to/be/inlined/foo.go --
+package inlined
+
+import "context"
+import "example.com/some/other/pkg"
+import "example.com/define/my/typ"
+
+func Baz(ctx context.Context) context.Context {
+	return pkg.Foo(typ.T(5))
+}
+
+-- b/c/foo.go --
+package c
+import (
+	"context"
+	"example.com/to/be/inlined"
+	"example.com/one/more/pkg"
+)
+
+const (
+	// This is a constant
+	SomeConst = 5
+)
+
+func _() {
+	inlined.Baz(context.TODO()) //@ codeaction("Baz", "refactor.inline.call", result=inline)
+	pkg.Bar()
+}
+
+-- @inline/b/c/foo.go --
+package c
+import (
+	"context"
+	
+	"example.com/one/more/pkg"
+	pkg0 "example.com/some/other/pkg"
+	"example.com/define/my/typ"
+)
+
+const (
+	// This is a constant
+	SomeConst = 5
+)
+
+func _() {
+	var _ context.Context = context.TODO()
+pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
+	pkg.Bar()
+}
+

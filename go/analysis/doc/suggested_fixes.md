@@ -79,7 +79,7 @@ These requirements guarantee that suggested fixes can be cleanly applied.
 Because a driver may only analyze, or be able to modify, the current package,
 we restrict edits to the current package. In general this restriction should
 not be a big problem for users because other packages might not belong to the
-same module and so will not be safe to modify in a singe change.
+same module and so will not be safe to modify in a single change.
 
 On the other hand, analyzers will not be required to produce gofmt-compliant
 code. Analysis drivers will be expected to apply gofmt to the results of

@@ -1,0 +1,72 @@
+This test checks various ranking of completion results related to type
+parameters.
+
+-- flags --
+-ignore_extra_diags
+
+-- type_params.go --
+package typeparams
+
+// Copied from the old builtins.go, which has been ported to the new marker tests.
+/* string */ //@item(string, "string", "", "type")
+/* float32 */ //@item(float32, "float32", "", "type")
+/* float64 */ //@item(float64, "float64", "", "type")
+/* int */ //@item(int, "int", "", "type")
+
+func one[a int | string]()            {}
+func two[a int | string, b float64 | int]() {}
+type three[a any] int
+
+func _() {
+	one[]() //@rank("]", string, float64)
+	two[]() //@rank("]", int, float64)
+	two[int, f]() //@rank("]", float64, float32)
+	int(three[]) //@rank("]") // must not crash (golang/go#70889)
+}
+
+func slices[a []int | []float64]() {} //@item(tpInts, "[]int", "[]int", "type"),item(tpFloats, "[]float64", "[]float64", "type")
+
+func _() {
+	slices[]() //@rank("]", tpInts),rank("]", tpFloats)
+}
+
+type s[a int | string] struct{}
+
+func _() {
+	s[]{} //@rank("]", int, float64)
+}
+
+func takesGeneric[a int | string](s[a]) {
+	"s[a]{}" //@item(tpInScopeLit, "s[a]{}", "", "var")
+	takesGeneric() //@rank(")", tpInScopeLit),snippet(")", tpInScopeLit, "s[a]{\\}")
+}
+
+func _() {
+	s[int]{} //@item(tpInstLit, "s[int]{}", "", "var")
+	takesGeneric[int]() //@rank(")", tpInstLit),snippet(")", tpInstLit, "s[int]{\\}")
+
+	"s[...]{}" //@item(tpUninstLit, "s[...]{}", "", "var")
+	takesGeneric() //@rank(")", tpUninstLit),snippet(")", tpUninstLit, "s[${1:}]{\\}")
+}
+
+func returnTP[A int | float64](a A) A { //@item(returnTP, "returnTP", "something", "func")
+	return a
+}
+
+func _() {
+	var _ int = returnTP //@snippet(" //", returnTP, "returnTP(${1:})")
+
+	var aa int //@item(tpInt, "aa", "int", "var")
+	var ab float64 //@item(tpFloat, "ab", "float64", "var")
+	returnTP[int](a) //@rank(")", tpInt, tpFloat)
+}
+
+func takesFunc[T any](func(T) T) {
+	var _ func(t T) T = f //@snippet(" //", tpLitFunc, "func(t T) T {$0\\}")
+}
+
+func _() {
+	_ = "func(...) {}" //@item(tpLitFunc, "func(...) {}", "", "var")
+	takesFunc() //@snippet(")", tpLitFunc, "func(${1:}) ${2:} {$0\\}")
+	takesFunc[int]() //@snippet(")", tpLitFunc, "func(i int) int {$0\\}")
+}

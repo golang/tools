@@ -1,7 +1,0 @@
--- addimport --
-package addimport //@addimport("", "bytes")
-
-import "bytes"
-
-func main() {}
-

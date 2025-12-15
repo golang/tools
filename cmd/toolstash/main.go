@@ -126,11 +126,10 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -226,7 +225,7 @@ func main() {
 		return
 	}
 
-	tool = cmd[0]
+	tool = exeName(cmd[0])
 	if i := strings.LastIndexAny(tool, `/\`); i >= 0 {
 		tool = tool[i+1:]
 	}
@@ -424,7 +423,7 @@ func sameObject(file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false
@@ -451,7 +450,7 @@ func skipVersion(b1, b2 *bufio.Reader, file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false
@@ -474,7 +473,7 @@ func skipVersion(b1, b2 *bufio.Reader, file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false
@@ -531,7 +530,7 @@ func runCmd(cmd []string, keepLog bool, logName string) (output []byte, err erro
 		}()
 	}
 
-	xcmd := exec.Command(cmd[0], cmd[1:]...)
+	xcmd := exec.Command(exeName(cmd[0]), cmd[1:]...)
 	if !keepLog {
 		return xcmd.CombinedOutput()
 	}
@@ -553,13 +552,17 @@ func save() {
 	}
 
 	toolDir := filepath.Join(goroot, fmt.Sprintf("pkg/tool/%s_%s", runtime.GOOS, runtime.GOARCH))
-	files, err := ioutil.ReadDir(toolDir)
+	files, err := os.ReadDir(toolDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, file := range files {
-		if shouldSave(file.Name()) && file.Mode().IsRegular() {
+		info, err := file.Info()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if shouldSave(file.Name()) && info.Mode().IsRegular() {
 			cp(filepath.Join(toolDir, file.Name()), filepath.Join(stashDir, file.Name()))
 		}
 	}
@@ -568,9 +571,10 @@ func save() {
 		if !shouldSave(name) {
 			continue
 		}
-		src := filepath.Join(binDir, name)
+		bin := exeName(name)
+		src := filepath.Join(binDir, bin)
 		if _, err := os.Stat(src); err == nil {
-			cp(src, filepath.Join(stashDir, name))
+			cp(src, filepath.Join(stashDir, bin))
 		}
 	}
 
@@ -578,13 +582,17 @@ func save() {
 }
 
 func restore() {
-	files, err := ioutil.ReadDir(stashDir)
+	files, err := os.ReadDir(stashDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, file := range files {
-		if shouldSave(file.Name()) && file.Mode().IsRegular() {
+		info, err := file.Info()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if shouldSave(file.Name()) && info.Mode().IsRegular() {
 			targ := toolDir
 			if isBinTool(file.Name()) {
 				targ = binDir
@@ -626,11 +634,18 @@ func cp(src, dst string) {
 	if *verbose {
 		fmt.Printf("cp %s %s\n", src, dst)
 	}
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ioutil.WriteFile(dst, data, 0777); err != nil {
+	if err := os.WriteFile(dst, data, 0777); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

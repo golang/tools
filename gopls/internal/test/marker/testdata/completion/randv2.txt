@@ -1,0 +1,24 @@
+Unimported completions has to find math/rand/v2
+-- flags --
+-min_go_command=go1.22
+
+-- settings.json --
+{
+	"importsSource": "gopls"
+}
+
+-- go.mod --
+module unimported.test
+
+go 1.22
+
+-- main.go --
+package main
+var _ = rand.Int64 //@complete(re"Int64", Int64, Int64N, x64, Uint64, Uint64N), diag("rand", re"undefined: rand")
+// ordering of these requires completion order be deterministic
+// for now, we do not know the types. Awaiting CL 665335
+//@item(Int64, "Int64", "func (from \"math/rand/v2\")", "func")
+//@item(Int64N, "Int64N", "func (from \"math/rand/v2\")", "func")
+//@item(x64, "Uint64", "func (from \"math/rand\")", "func")
+//@item(Uint64, "Uint64", "func (from \"math/rand/v2\")", "func")
+//@item(Uint64N, "Uint64N", "func (from \"math/rand/v2\")", "func")

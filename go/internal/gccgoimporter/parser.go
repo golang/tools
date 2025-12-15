@@ -20,6 +20,8 @@ import (
 	"strings"
 	"text/scanner"
 	"unicode/utf8"
+
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type parser struct {
@@ -84,7 +86,7 @@ func (e importError) Error() string {
 	return fmt.Sprintf("import error %s (byte offset = %d): %s", e.pos, e.pos.Offset, e.err)
 }
 
-func (p *parser) error(err interface{}) {
+func (p *parser) error(err any) {
 	if s, ok := err.(string); ok {
 		err = errors.New(s)
 	}
@@ -92,7 +94,7 @@ func (p *parser) error(err interface{}) {
 	panic(importError{p.scanner.Pos(), err.(error)})
 }
 
-func (p *parser) errorf(format string, args ...interface{}) {
+func (p *parser) errorf(format string, args ...any) {
 	p.error(fmt.Errorf(format, args...))
 }
 
@@ -240,13 +242,6 @@ func (p *parser) parseName() string {
 	return name
 }
 
-func deref(typ types.Type) types.Type {
-	if p, _ := typ.(*types.Pointer); p != nil {
-		typ = p.Elem()
-	}
-	return typ
-}
-
 // parseField parses a Field:
 //
 //	Field = Name Type [string] .
@@ -260,7 +255,7 @@ func (p *parser) parseField(pkg *types.Package) (field *types.Var, tag string) {
 		if aname, ok := p.aliases[n]; ok {
 			name = aname
 		} else {
-			switch typ := deref(typ).(type) {
+			switch typ := types.Unalias(typesinternal.Unpointer(typ)).(type) {
 			case *types.Basic:
 				name = typ.Name()
 			case *types.Named:
@@ -314,6 +309,7 @@ func (p *parser) parseParam(pkg *types.Package) (param *types.Var, isVariadic bo
 func (p *parser) parseVar(pkg *types.Package) *types.Var {
 	name := p.parseName()
 	v := types.NewVar(token.NoPos, pkg, name, p.parseType(pkg))
+	typesinternal.SetVarKind(v, typesinternal.PackageVar)
 	if name[0] == '.' || name[0] == '<' {
 		// This is an unexported variable,
 		// or a variable defined in a different package.
@@ -496,7 +492,7 @@ func (p *parser) reserve(n int) {
 // used to resolve named types, or it can be a *types.Pointer,
 // used to resolve pointers to named types in case they are referenced
 // by embedded fields.
-func (p *parser) update(t types.Type, nlist []interface{}) {
+func (p *parser) update(t types.Type, nlist []any) {
 	if t == reserved {
 		p.errorf("internal error: update(%v) invoked on reserved", nlist)
 	}
@@ -533,7 +529,7 @@ func (p *parser) update(t types.Type, nlist []interface{}) {
 //	NamedType = TypeName [ "=" ] Type { Method } .
 //	TypeName  = ExportedName .
 //	Method    = "func" "(" Param ")" Name ParamList ResultList [InlineBody] ";" .
-func (p *parser) parseNamedType(nlist []interface{}) types.Type {
+func (p *parser) parseNamedType(nlist []any) types.Type {
 	pkg, name := p.parseExportedName()
 	scope := pkg.Scope()
 	obj := scope.Lookup(name)
@@ -579,7 +575,7 @@ func (p *parser) parseNamedType(nlist []interface{}) types.Type {
 	t := obj.Type()
 	p.update(t, nlist)
 
-	nt, ok := t.(*types.Named)
+	nt, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		// This can happen for unsafe.Pointer, which is a TypeName holding a Basic type.
 		pt := p.parseType(pkg)
@@ -623,7 +619,7 @@ func (p *parser) parseNamedType(nlist []interface{}) types.Type {
 			p.skipInlineBody()
 			p.expectEOL()
 
-			sig := types.NewSignature(receiver, params, results, isVariadic)
+			sig := types.NewSignatureType(receiver, nil, nil, params, results, isVariadic)
 			nt.AddMethod(types.NewFunc(token.NoPos, pkg, name, sig))
 		}
 	}
@@ -652,7 +648,7 @@ func (p *parser) parseInt() int {
 // parseArrayOrSliceType parses an ArrayOrSliceType:
 //
 //	ArrayOrSliceType = "[" [ int ] "]" Type .
-func (p *parser) parseArrayOrSliceType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseArrayOrSliceType(pkg *types.Package, nlist []any) types.Type {
 	p.expect('[')
 	if p.tok == ']' {
 		p.next()
@@ -677,7 +673,7 @@ func (p *parser) parseArrayOrSliceType(pkg *types.Package, nlist []interface{}) 
 // parseMapType parses a MapType:
 //
 //	MapType = "map" "[" Type "]" Type .
-func (p *parser) parseMapType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseMapType(pkg *types.Package, nlist []any) types.Type {
 	p.expectKeyword("map")
 
 	t := new(types.Map)
@@ -695,7 +691,7 @@ func (p *parser) parseMapType(pkg *types.Package, nlist []interface{}) types.Typ
 // parseChanType parses a ChanType:
 //
 //	ChanType = "chan" ["<-" | "-<"] Type .
-func (p *parser) parseChanType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseChanType(pkg *types.Package, nlist []any) types.Type {
 	p.expectKeyword("chan")
 
 	t := new(types.Chan)
@@ -724,7 +720,7 @@ func (p *parser) parseChanType(pkg *types.Package, nlist []interface{}) types.Ty
 // parseStructType parses a StructType:
 //
 //	StructType = "struct" "{" { Field } "}" .
-func (p *parser) parseStructType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseStructType(pkg *types.Package, nlist []any) types.Type {
 	p.expectKeyword("struct")
 
 	t := new(types.Struct)
@@ -797,14 +793,14 @@ func (p *parser) parseResultList(pkg *types.Package) *types.Tuple {
 // parseFunctionType parses a FunctionType:
 //
 //	FunctionType = ParamList ResultList .
-func (p *parser) parseFunctionType(pkg *types.Package, nlist []interface{}) *types.Signature {
+func (p *parser) parseFunctionType(pkg *types.Package, nlist []any) *types.Signature {
 	t := new(types.Signature)
 	p.update(t, nlist)
 
 	params, isVariadic := p.parseParamList(pkg)
 	results := p.parseResultList(pkg)
 
-	*t = *types.NewSignature(nil, params, results, isVariadic)
+	*t = *types.NewSignatureType(nil, nil, nil, params, results, isVariadic)
 	return t
 }
 
@@ -841,7 +837,7 @@ func (p *parser) parseFunc(pkg *types.Package) *types.Func {
 // parseInterfaceType parses an InterfaceType:
 //
 //	InterfaceType = "interface" "{" { ("?" Type | Func) ";" } "}" .
-func (p *parser) parseInterfaceType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseInterfaceType(pkg *types.Package, nlist []any) types.Type {
 	p.expectKeyword("interface")
 
 	t := new(types.Interface)
@@ -872,7 +868,7 @@ func (p *parser) parseInterfaceType(pkg *types.Package, nlist []interface{}) typ
 // parsePointerType parses a PointerType:
 //
 //	PointerType = "*" ("any" | Type) .
-func (p *parser) parsePointerType(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parsePointerType(pkg *types.Package, nlist []any) types.Type {
 	p.expect('*')
 	if p.tok == scanner.Ident {
 		p.expectKeyword("any")
@@ -892,7 +888,7 @@ func (p *parser) parsePointerType(pkg *types.Package, nlist []interface{}) types
 // parseTypeSpec parses a TypeSpec:
 //
 //	TypeSpec = NamedType | MapType | ChanType | StructType | InterfaceType | PointerType | ArrayOrSliceType | FunctionType .
-func (p *parser) parseTypeSpec(pkg *types.Package, nlist []interface{}) types.Type {
+func (p *parser) parseTypeSpec(pkg *types.Package, nlist []any) types.Type {
 	switch p.tok {
 	case scanner.String:
 		return p.parseNamedType(nlist)
@@ -950,6 +946,7 @@ const (
 	gccgoBuiltinERROR      = 19
 	gccgoBuiltinBYTE       = 20
 	gccgoBuiltinRUNE       = 21
+	gccgoBuiltinANY        = 22
 )
 
 func lookupBuiltinType(typ int) types.Type {
@@ -974,6 +971,7 @@ func lookupBuiltinType(typ int) types.Type {
 		gccgoBuiltinERROR:      types.Universe.Lookup("error").Type(),
 		gccgoBuiltinBYTE:       types.Universe.Lookup("byte").Type(),
 		gccgoBuiltinRUNE:       types.Universe.Lookup("rune").Type(),
+		gccgoBuiltinANY:        types.Universe.Lookup("any").Type(),
 	}[typ]
 }
 
@@ -982,14 +980,14 @@ func lookupBuiltinType(typ int) types.Type {
 //	Type = "<" "type" ( "-" int | int [ TypeSpec ] ) ">" .
 //
 // parseType updates the type map to t for all type numbers n.
-func (p *parser) parseType(pkg *types.Package, n ...interface{}) types.Type {
+func (p *parser) parseType(pkg *types.Package, n ...any) types.Type {
 	p.expect('<')
 	t, _ := p.parseTypeAfterAngle(pkg, n...)
 	return t
 }
 
 // (*parser).Type after reading the "<".
-func (p *parser) parseTypeAfterAngle(pkg *types.Package, n ...interface{}) (t types.Type, n1 int) {
+func (p *parser) parseTypeAfterAngle(pkg *types.Package, n ...any) (t types.Type, n1 int) {
 	p.expectKeyword("type")
 
 	n1 = 0
@@ -1032,7 +1030,7 @@ func (p *parser) parseTypeAfterAngle(pkg *types.Package, n ...interface{}) (t ty
 // parseTypeExtended is identical to parseType, but if the type in
 // question is a saved type, returns the index as well as the type
 // pointer (index returned is zero if we parsed a builtin).
-func (p *parser) parseTypeExtended(pkg *types.Package, n ...interface{}) (t types.Type, n1 int) {
+func (p *parser) parseTypeExtended(pkg *types.Package, n ...any) (t types.Type, n1 int) {
 	p.expect('<')
 	t, n1 = p.parseTypeAfterAngle(pkg, n...)
 	return
@@ -1121,7 +1119,7 @@ func (p *parser) parseTypes(pkg *types.Package) {
 }
 
 // parseSavedType parses one saved type definition.
-func (p *parser) parseSavedType(pkg *types.Package, i int, nlist []interface{}) {
+func (p *parser) parseSavedType(pkg *types.Package, i int, nlist []any) {
 	defer func(s *scanner.Scanner, tok rune, lit string) {
 		p.scanner = s
 		p.tok = tok
@@ -1332,7 +1330,7 @@ func (p *parser) parsePackage() *types.Package {
 	}
 	p.fixups = nil
 	for _, typ := range p.typeList {
-		if it, ok := typ.(*types.Interface); ok {
+		if it, ok := types.Unalias(typ).(*types.Interface); ok {
 			it.Complete()
 		}
 	}

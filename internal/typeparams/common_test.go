@@ -11,7 +11,6 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
 	. "golang.org/x/tools/internal/typeparams"
 )
 
@@ -19,7 +18,7 @@ func TestGetIndexExprData(t *testing.T) {
 	x := &ast.Ident{}
 	i := &ast.Ident{}
 
-	want := &IndexListExpr{X: x, Lbrack: 1, Indices: []ast.Expr{i}, Rbrack: 2}
+	want := &ast.IndexListExpr{X: x, Lbrack: 1, Indices: []ast.Expr{i}, Rbrack: 2}
 	tests := map[ast.Node]bool{
 		&ast.IndexExpr{X: x, Lbrack: 1, Index: i, Rbrack: 2}: true,
 		want:         true,
@@ -40,8 +39,7 @@ func TestGetIndexExprData(t *testing.T) {
 	}
 }
 
-func TestOriginMethodRecursive(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
+func TestFuncOriginRecursive(t *testing.T) {
 	src := `package p
 
 type N[A any] int
@@ -106,14 +104,13 @@ func (r *N[C]) n() { }
 	}
 
 	for _, test := range tests {
-		if got := OriginMethod(test.input); got != test.want {
-			t.Errorf("OriginMethod(%q) = %v, want %v", test.name, test.input, test.want)
+		if got := test.input.Origin(); got != test.want {
+			t.Errorf("Origin(%q) = %v, want %v", test.name, test.input, test.want)
 		}
 	}
 }
 
-func TestOriginMethodUses(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
+func TestFuncOriginUses(t *testing.T) {
 
 	tests := []string{
 		`type T interface { m() }; func _(t T) { t.m() }`,
@@ -150,7 +147,7 @@ func TestOriginMethodUses(t *testing.T) {
 			if call, ok := n.(*ast.CallExpr); ok {
 				sel := call.Fun.(*ast.SelectorExpr)
 				use := info.Uses[sel.Sel].(*types.Func)
-				orig := OriginMethod(use)
+				orig := use.Origin()
 				if orig != m {
 					t.Errorf("%s:\nUses[%v] = %v, want %v", src, types.ExprString(sel), use, m)
 				}
@@ -163,8 +160,8 @@ func TestOriginMethodUses(t *testing.T) {
 // Issue #60628 was a crash in gopls caused by inconsistency (#60634) between
 // LookupFieldOrMethod and NewFileSet for methods with an illegal
 // *T receiver type, where T itself is a pointer.
-// This is a regression test for the workaround in OriginMethod.
-func TestOriginMethod60628(t *testing.T) {
+// This is a regression test for the workaround in the (now deleted) OriginMethod.
+func TestFuncOrigin60628(t *testing.T) {
 	const src = `package p; type T[P any] *int; func (r *T[A]) f() {}`
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
@@ -188,8 +185,7 @@ func TestOriginMethod60628(t *testing.T) {
 	if mset.Len() == 0 {
 		t.Errorf("NewMethodSet(*T) is empty")
 	}
-	for i := 0; i < mset.Len(); i++ {
-		sel := mset.At(i)
+	for sel := range mset.Methods() {
 		m := sel.Obj().(*types.Func)
 
 		// TODO(adonovan): check the consistency property required to fix #60634.
@@ -202,81 +198,8 @@ func TestOriginMethod60628(t *testing.T) {
 		}
 
 		// Check the workaround.
-		if OriginMethod(m) == nil {
-			t.Errorf("OriginMethod(%v) = nil", m)
-		}
-	}
-}
-
-func TestGenericAssignableTo(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
-	tests := []struct {
-		src  string
-		want bool
-	}{
-		// The inciting issue: golang/go#50887.
-		{`
-			type T[P any] interface {
-			        Accept(P)
-			}
-
-			type V[Q any] struct {
-			        Element Q
-			}
-
-			func (c V[Q]) Accept(q Q) { c.Element = q }
-			`, true},
-
-		// Various permutations on constraints and signatures.
-		{`type T[P ~int] interface{ A(P) }; type V[Q int] int; func (V[Q]) A(Q) {}`, true},
-		{`type T[P int] interface{ A(P) }; type V[Q ~int] int; func (V[Q]) A(Q) {}`, false},
-		{`type T[P int|string] interface{ A(P) }; type V[Q int] int; func (V[Q]) A(Q) {}`, true},
-		{`type T[P any] interface{ A(P) }; type V[Q any] int; func (V[Q]) A(Q, Q) {}`, false},
-		{`type T[P any] interface{ int; A(P) }; type V[Q any] int; func (V[Q]) A(Q) {}`, false},
-
-		// Various structural restrictions on T.
-		{`type T[P any] interface{ ~int; A(P) }; type V[Q any] int; func (V[Q]) A(Q) {}`, true},
-		{`type T[P any] interface{ ~int|string; A(P) }; type V[Q any] int; func (V[Q]) A(Q) {}`, true},
-		{`type T[P any] interface{ int; A(P) }; type V[Q int] int; func (V[Q]) A(Q) {}`, false},
-
-		// Various recursive constraints.
-		{`type T[P ~struct{ f *P }] interface{ A(P) }; type V[Q ~struct{ f *Q }] int; func (V[Q]) A(Q) {}`, true},
-		{`type T[P ~struct{ f *P }] interface{ A(P) }; type V[Q ~struct{ g *Q }] int; func (V[Q]) A(Q) {}`, false},
-		{`type T[P ~*X, X any] interface{ A(P) X }; type V[Q ~*Y, Y any] int; func (V[Q, Y]) A(Q) (y Y) { return }`, true},
-		{`type T[P ~*X, X any] interface{ A(P) X }; type V[Q ~**Y, Y any] int; func (V[Q, Y]) A(Q) (y Y) { return }`, false},
-		{`type T[P, X any] interface{ A(P) X }; type V[Q ~*Y, Y any] int; func (V[Q, Y]) A(Q) (y Y) { return }`, true},
-		{`type T[P ~*X, X any] interface{ A(P) X }; type V[Q, Y any] int; func (V[Q, Y]) A(Q) (y Y) { return }`, false},
-		{`type T[P, X any] interface{ A(P) X }; type V[Q, Y any] int; func (V[Q, Y]) A(Q) (y Y) { return }`, true},
-
-		// In this test case, we reverse the type parameters in the signature of V.A
-		{`type T[P, X any] interface{ A(P) X }; type V[Q, Y any] int; func (V[Q, Y]) A(Y) (y Q) { return }`, false},
-		// It would be nice to return true here: V can only be instantiated with
-		// [int, int], so the identity of the type parameters should not matter.
-		{`type T[P, X any] interface{ A(P) X }; type V[Q, Y int] int; func (V[Q, Y]) A(Y) (y Q) { return }`, false},
-	}
-
-	for _, test := range tests {
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, "p.go", "package p; "+test.src, 0)
-		if err != nil {
-			t.Fatalf("%s:\n%v", test.src, err)
-		}
-		var conf types.Config
-		pkg, err := conf.Check("p", fset, []*ast.File{f}, nil)
-		if err != nil {
-			t.Fatalf("%s:\n%v", test.src, err)
-		}
-
-		V := pkg.Scope().Lookup("V").Type()
-		T := pkg.Scope().Lookup("T").Type()
-
-		if types.AssignableTo(V, T) {
-			t.Fatal("AssignableTo")
-		}
-
-		if got := GenericAssignableTo(nil, V, T); got != test.want {
-			t.Fatalf("%s:\nGenericAssignableTo(%v, %v) = %v, want %v", test.src, V, T, got, test.want)
+		if m.Origin() == nil {
+			t.Errorf("Origin(%v) = nil", m)
 		}
 	}
 }

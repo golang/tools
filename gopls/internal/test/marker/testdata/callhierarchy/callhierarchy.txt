@@ -1,0 +1,94 @@
+This test checks call hierarchy queries.
+
+-ignore_extra_diags due to the initialization cycle.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/callhierarchy
+
+-- incoming/incoming.go --
+package incoming
+
+import "golang.org/lsptests/callhierarchy"
+
+// A is exported to test incoming calls across packages
+func A() { //@loc(incomingA, "A")
+	callhierarchy.D()
+}
+
+-- outgoing/outgoing.go --
+package outgoing
+
+// B is exported to test outgoing calls across packages
+func B() { //@loc(outgoingB, "B")
+}
+
+-- hierarchy.go --
+package callhierarchy //@loc(hPkg, "callhierarchy")
+
+import "golang.org/lsptests/callhierarchy/outgoing"
+
+func a() { //@loc(hA, "a")
+	D()
+}
+
+func b() { //@loc(hB, "b")
+	D()
+}
+
+// C is an exported function
+func C() { //@loc(hC, "C")
+	D()
+	D()
+}
+
+// To test hierarchy across function literals
+var x = func() { D() } //@loc(hX, "x"),loc(hXGlobal, "x")
+
+// D is exported to test incoming/outgoing calls across packages
+func D() { //@ loc(hD, "D"), incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA), outgoingcalls(hD, hE, hF, hG, hH, hI, Generic, outgoingB)
+	e()
+	x()
+	F()
+	outgoing.B()
+
+	func() {
+		g()
+	}()
+
+	var i Interface = impl{}
+	i.H()
+	i.I()
+
+	s := Struct{}
+	s.J()
+	s.K()
+
+	Generic[string]()
+}
+
+func e() {} //@loc(hE, "e")
+
+// F is an exported function
+func F() {} //@loc(hF, "F")
+
+func g() {} //@loc(hG, "g")
+
+type Interface interface {
+	H() //@loc(hH, "H")
+	I() //@loc(hI, "I")
+}
+
+type impl struct{}
+
+func (i impl) H() {}
+func (i impl) I() {}
+
+type Struct struct {
+	J func() //@loc(hJ, "J")
+	K func() //@loc(hK, "K")
+}
+
+func Generic[T any]() //@loc(Generic, "Generic")

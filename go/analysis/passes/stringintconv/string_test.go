@@ -9,14 +9,10 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/stringintconv"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	pkgs := []string{"a"}
-	if typeparams.Enabled {
-		pkgs = append(pkgs, "typeparams")
-	}
-	analysistest.RunWithSuggestedFixes(t, testdata, stringintconv.Analyzer, pkgs...)
+	analysistest.Run(t, testdata, stringintconv.Analyzer, "a", "typeparams")
+	analysistest.RunWithSuggestedFixes(t, testdata, stringintconv.Analyzer, "fix")
 }

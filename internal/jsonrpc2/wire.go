@@ -47,7 +47,7 @@ type wireRequest struct {
 	ID *ID `json:"id,omitempty"`
 }
 
-// WireResponse is a reply to a Request.
+// wireResponse is a reply to a Request.
 // It will always have the ID field set to tie it back to a request, and will
 // have either the Result or Error fields set depending on whether it is a
 // success or failure response.
@@ -57,7 +57,7 @@ type wireResponse struct {
 	// Result is the response value, and is required on success.
 	Result *json.RawMessage `json:"result,omitempty"`
 	// Error is a structured error response if the call fails.
-	Error *wireError `json:"error,omitempty"`
+	Error *WireError `json:"error,omitempty"`
 	// ID must be set and is the identifier of the Request this is a response to.
 	ID *ID `json:"id,omitempty"`
 }
@@ -70,11 +70,11 @@ type wireCombined struct {
 	Method     string           `json:"method"`
 	Params     *json.RawMessage `json:"params,omitempty"`
 	Result     *json.RawMessage `json:"result,omitempty"`
-	Error      *wireError       `json:"error,omitempty"`
+	Error      *WireError       `json:"error,omitempty"`
 }
 
-// wireError represents a structured error in a Response.
-type wireError struct {
+// WireError represents a structured error in a Response.
+type WireError struct {
 	// Code is an error code indicating the type of failure.
 	Code int64 `json:"code"`
 	// Message is a short description of the error.
@@ -96,13 +96,13 @@ type ID struct {
 }
 
 func NewError(code int64, message string) error {
-	return &wireError{
+	return &WireError{
 		Code:    code,
 		Message: message,
 	}
 }
 
-func (err *wireError) Error() string {
+func (err *WireError) Error() string {
 	return err.Message
 }
 

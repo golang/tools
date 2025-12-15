@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func TestStaticCallee(t *testing.T) {
@@ -67,9 +66,6 @@ func TestStaticCallee(t *testing.T) {
 }
 
 func TestTypeParamStaticCallee(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled")
-	}
 	testStaticCallee(t, []string{
 		`package q
 		func R[T any]() {}
@@ -125,10 +121,12 @@ func testStaticCallee(t *testing.T, contents []string) {
 	packages := make(map[string]*types.Package)
 	cfg := &types.Config{Importer: closure(packages)}
 	info := &types.Info{
-		Uses:       make(map[*ast.Ident]types.Object),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
 	}
-	typeparams.InitInstanceInfo(info)
 
 	var files []*ast.File
 	for i, content := range contents {

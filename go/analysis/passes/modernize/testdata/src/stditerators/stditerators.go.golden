@@ -1,0 +1,121 @@
+package stditerators
+
+import (
+	"go/types"
+	"reflect"
+)
+
+func _(tuple *types.Tuple) {
+	for v := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+		print(v)
+	}
+}
+
+func _(scope *types.Scope) {
+	for child := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+		print(child)
+	}
+	{
+		// tests of shadowing of preferred name at def
+		const child = 0
+		for child := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+			print(child)
+		}
+		for child0 := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+			print(child0, child)
+		}
+	}
+	{
+       		for i := 0; i < scope.NumChildren(); i++ {
+       			const child = 0 // nope: shadowing of fresh name at use
+       			print(scope.Child(i))
+       		}
+       	}
+	{
+		for elem := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+			elem := elem // => preferred name = "elem"
+			print(elem)
+		}
+	}
+	{
+		for child := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+			first := scope.Child(0) // the name heuristic should not be fooled by this
+			print(first, child)
+		}
+	}
+}
+
+func _(union, union2 *types.Union) {
+	for term := range union.Terms() { // want "Len/Term loop can simplified using Union.Terms iteration"
+		print(term)
+		print(term)
+	}
+	for i := union.Len() - 1; i >= 0; i-- { // nope: wrong loop form
+		print(union.Term(i))
+	}
+	for i := 0; i <= union.Len(); i++ { // nope: wrong loop form
+		print(union.Term(i))
+	}
+	for i := 0; i <= union.Len(); i++ { // nope: use of i not in x.At(i)
+		print(i, union.Term(i))
+	}
+	for i := 0; i <= union.Len(); i++ { // nope: x.At and x.Len have different receivers
+		print(i, union2.Term(i))
+	}
+}
+
+func _(tuple *types.Tuple) {
+	for foo := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+		if foo := foo; true { // => preferred name = "foo"
+			print(foo)
+		}
+		bar := foo
+		print(bar)
+	}
+	{
+		// The name v is already declared, but not
+		// used in the loop, so we can use it again.
+		v := 1
+		print(v)
+
+		for v := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+			print(v)
+		}
+	}
+	{
+		// The name v is used from the loop, so
+		// we must choose a fresh name.
+		v := 1
+		for v0 := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+			print(v0, v)
+		}
+	}
+}
+
+func _(t reflect.Type) {
+	for field := range t.Fields() { // want "NumField/Field loop can simplified using Type.Fields iteration"
+		print(field)
+	}
+	for method := range t.Methods() { // want "NumMethod/Method loop can simplified using Type.Methods iteration"
+		print(method)
+	}
+	for in := range t.Ins() { // want "NumIn/In loop can simplified using Type.Ins iteration"
+		print(in)
+	}
+	for out := range t.Outs() { // want "NumOut/Out loop can simplified using Type.Outs iteration"
+		print(out)
+	}
+}
+
+func _(v reflect.Value) {
+	for _, field := range v.Fields() { // want "NumField/Field loop can simplified using Value.Fields iteration"
+		print(field)
+	}
+	// Ideally we would use both parts of Value.Field's iter.Seq2 here.
+	for i := 0; i < v.NumField(); i++ {
+		print(v.Field(i), v.Type().Field(i)) // nope
+	}
+	for _, method := range v.Methods() { // want "NumMethod/Method loop can simplified using Value.Methods iteration"
+		print(method)
+	}
+}

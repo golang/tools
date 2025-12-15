@@ -1,0 +1,80 @@
+Regression test for #42134,
+"rename fails to update doc comment for local variable of function type"
+
+-- 1.go --
+package issue42134
+
+func _() {
+	// foo computes things.
+	foo := func() {}
+
+	foo() //@rename("foo", "bar", fooTobar)
+}
+-- @fooTobar/1.go --
+@@ -4,2 +4,2 @@
+-	// foo computes things.
+-	foo := func() {}
++	// bar computes things.
++	bar := func() {}
+@@ -7 +7 @@
+-	foo() //@rename("foo", "bar", fooTobar)
++	bar() //@rename("foo", "bar", fooTobar)
+-- 2.go --
+package issue42134
+
+import "fmt"
+
+func _() {
+	// minNumber is a min number.
+	// Second line.
+	minNumber := min(1, 2)
+	fmt.Println(minNumber) //@rename("minNumber", "res", minNumberTores)
+}
+
+func min(a, b int) int { return a + b }
+-- @minNumberTores/2.go --
+@@ -6 +6 @@
+-	// minNumber is a min number.
++	// res is a min number.
+@@ -8,2 +8,2 @@
+-	minNumber := min(1, 2)
+-	fmt.Println(minNumber) //@rename("minNumber", "res", minNumberTores)
++	res := min(1, 2)
++	fmt.Println(res) //@rename("minNumber", "res", minNumberTores)
+-- 3.go --
+package issue42134
+
+func _() {
+	/*
+	tests contains test cases
+	*/
+	tests := []struct { //@rename("tests", "testCases", testsTotestCases)
+		in, out string
+	}{}
+	_ = tests
+}
+-- @testsTotestCases/3.go --
+@@ -5 +5 @@
+-	tests contains test cases
++	testCases contains test cases
+@@ -7 +7 @@
+-	tests := []struct { //@rename("tests", "testCases", testsTotestCases)
++	testCases := []struct { //@rename("tests", "testCases", testsTotestCases)
+@@ -10 +10 @@
+-	_ = tests
++	_ = testCases
+-- 4.go --
+package issue42134
+
+func _() {
+	// a is equal to 5. Comment must stay the same
+
+	a := 5
+	_ = a //@rename("a", "b", aTob)
+}
+-- @aTob/4.go --
+@@ -6,2 +6,2 @@
+-	a := 5
+-	_ = a //@rename("a", "b", aTob)
++	b := 5
++	_ = b //@rename("a", "b", aTob)

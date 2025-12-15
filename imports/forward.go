@@ -7,8 +7,8 @@
 package imports // import "golang.org/x/tools/imports"
 
 import (
-	"io/ioutil"
 	"log"
+	"os"
 
 	"golang.org/x/tools/internal/gocommand"
 	intimp "golang.org/x/tools/internal/imports"
@@ -44,7 +44,7 @@ var LocalPrefix string
 func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 	var err error
 	if src == nil {
-		src, err = ioutil.ReadFile(filename)
+		src, err = os.ReadFile(filename)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +71,7 @@ func Process(filename string, src []byte, opt *Options) ([]byte, error) {
 }
 
 // VendorlessPath returns the devendorized version of the import path ipath.
-// For example, VendorlessPath("foo/bar/vendor/a/b") returns "a/b".
+// For example, VendorlessPath("foo/barbendor/a/b") return "a/b".
 func VendorlessPath(ipath string) string {
 	return intimp.VendorlessPath(ipath)
 }

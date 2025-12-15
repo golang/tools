@@ -1,0 +1,43 @@
+This test exercises the "go_file_context" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+-- a/main.go --
+package main
+
+import "example.com/a/other"
+
+func main() { //@mcptool("go_file_context", `{"file": "$WORKDIR/a/main.go"}`, output=content)
+	other.Foo()
+	_ = other.Bar
+}
+
+-- a/other/other.go --
+package other
+
+// Foo should have a doc comment.
+func Foo() {
+	// The body should be ignored
+}
+
+var Bar int // line comments get dropped
+
+var Baz string // Baz is not referenced
+
+-- @content --
+File `$WORKDIR/a/main.go` is in package "example.com/a".
+Below is a summary of the APIs it uses from other files.
+To read the full API of any package, use go_package_api.
+Referenced declarations from $WORKDIR/a/other/other.go (package "example.com/a/other"):
+```go
+// Foo should have a doc comment.
+func Foo()
+
+var Bar int
+```
+

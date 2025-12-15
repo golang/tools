@@ -11,10 +11,10 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -22,13 +22,13 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "unmarshal",
-	Doc:      analysisutil.MustExtractDoc(doc, "unmarshal"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "unmarshal"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unmarshal",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	switch pass.Pkg.Path() {
 	case "encoding/gob", "encoding/json", "encoding/xml", "encoding/asn1":
 		// These packages know how to use their own APIs.
@@ -39,7 +39,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// Note: (*"encoding/json".Decoder).Decode, (* "encoding/gob".Decoder).Decode
 	// and (* "encoding/xml".Decoder).Decode are methods and can be a typeutil.Callee
 	// without directly importing their packages. So we cannot just skip this package
-	// when !analysisutil.Imports(pass.Pkg, "encoding/...").
+	// when !analysis.Imports(pass.Pkg, "encoding/...").
 	// TODO(taking): Consider using a prepass to collect typeutil.Callees.
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -57,7 +57,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// Classify the callee (without allocating memory).
 		argidx := -1
 
-		recv := fn.Type().(*types.Signature).Recv()
+		recv := fn.Signature().Recv()
 		if fn.Name() == "Unmarshal" && recv == nil {
 			// "encoding/json".Unmarshal
 			// "encoding/xml".Unmarshal
@@ -70,12 +70,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			// (*"encoding/json".Decoder).Decode
 			// (* "encoding/gob".Decoder).Decode
 			// (* "encoding/xml".Decoder).Decode
-			t := recv.Type()
-			if ptr, ok := t.(*types.Pointer); ok {
-				t = ptr.Elem()
-			}
-			tname := t.(*types.Named).Obj()
-			if tname.Name() == "Decoder" {
+			_, named := typesinternal.ReceiverNamed(recv)
+			if tname := named.Obj(); tname.Name() == "Decoder" {
 				switch tname.Pkg().Path() {
 				case "encoding/json", "encoding/xml", "encoding/gob":
 					argidx = 0 // func(interface{})
@@ -92,7 +88,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		t := pass.TypesInfo.Types[call.Args[argidx]].Type
 		switch t.Underlying().(type) {
-		case *types.Pointer, *types.Interface, *typeparams.TypeParam:
+		case *types.Pointer, *types.Interface, *types.TypeParam:
 			return
 		}
 

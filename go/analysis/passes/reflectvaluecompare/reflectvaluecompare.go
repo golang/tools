@@ -8,13 +8,13 @@ import (
 	_ "embed"
 	"go/ast"
 	"go/token"
-	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -22,13 +22,13 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "reflectvaluecompare",
-	Doc:      analysisutil.MustExtractDoc(doc, "reflectvaluecompare"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "reflectvaluecompare"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/reflectvaluecompare",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{
@@ -49,11 +49,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 		case *ast.CallExpr:
-			fn, ok := typeutil.Callee(pass.TypesInfo, n).(*types.Func)
-			if !ok {
-				return
-			}
-			if fn.FullName() == "reflect.DeepEqual" && (isReflectValue(pass, n.Args[0]) || isReflectValue(pass, n.Args[1])) {
+			obj := typeutil.Callee(pass.TypesInfo, n)
+			if typesinternal.IsFunctionNamed(obj, "reflect", "DeepEqual") && (isReflectValue(pass, n.Args[0]) || isReflectValue(pass, n.Args[1])) {
 				pass.ReportRangef(n, "avoid using reflect.DeepEqual with reflect.Value")
 			}
 		}
@@ -68,11 +65,7 @@ func isReflectValue(pass *analysis.Pass, e ast.Expr) bool {
 		return false
 	}
 	// See if the type is reflect.Value
-	named, ok := tv.Type.(*types.Named)
-	if !ok {
-		return false
-	}
-	if obj := named.Obj(); obj == nil || obj.Pkg() == nil || obj.Pkg().Path() != "reflect" || obj.Name() != "Value" {
+	if !typesinternal.IsTypeNamed(tv.Type, "reflect", "Value") {
 		return false
 	}
 	if _, ok := e.(*ast.CompositeLit); ok {

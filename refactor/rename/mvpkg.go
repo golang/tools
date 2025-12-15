@@ -18,9 +18,9 @@ import (
 	"go/build"
 	"go/format"
 	"go/token"
-	exec "golang.org/x/sys/execabs"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -321,7 +321,7 @@ func (m *mover) move() error {
 			log.Printf("failed to pretty-print syntax tree: %v", err)
 			continue
 		}
-		tokenFile := m.iprog.Fset.File(f.Pos())
+		tokenFile := m.iprog.Fset.File(f.FileStart)
 		writeFile(tokenFile.Name(), buf.Bytes())
 	}
 

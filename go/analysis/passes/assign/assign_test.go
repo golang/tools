@@ -9,14 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/assign"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	tests := []string{"a"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.RunWithSuggestedFixes(t, testdata, assign.Analyzer, tests...)
+	analysistest.RunWithSuggestedFixes(t, testdata, assign.Analyzer, "a", "typeparams")
 }

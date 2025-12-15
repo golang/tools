@@ -15,6 +15,15 @@ import (
 // https://blog.jcoglan.com/2017/02/17/the-myers-diff-algorithm-part-3/
 // https://www.codeproject.com/Articles/42279/%2FArticles%2F42279%2FInvestigating-Myers-diff-algorithm-Part-1-of-2
 
+// ComputeEdits returns the diffs of two strings using a simple
+// line-based implementation, like [diff.Strings].
+//
+// Deprecated: this implementation is moribund. However, when diffs
+// appear in marker test expectations, they are the particular diffs
+// produced by this implementation. The marker test framework
+// asserts diff(orig, got)==wantDiff, but ideally it would compute
+// got==apply(orig, wantDiff) so that the notation of the diff
+// is immaterial.
 func ComputeEdits(before, after string) []diff.Edit {
 	beforeLines := splitLines(before)
 	ops := operations(beforeLines, splitLines(after))

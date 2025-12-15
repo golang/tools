@@ -1,0 +1,18 @@
+This test checks the quick fix for removing extra return values.
+
+Note: gopls should really discard unnecessary return statements.
+
+-- noresultvalues.go --
+package typeerrors
+
+func x() { return nil } //@quickfix("nil", re"too many return", x)
+
+func y() { return nil, "hello" } //@quickfix("nil", re"too many return", y)
+-- @x/noresultvalues.go --
+@@ -3 +3 @@
+-func x() { return nil } //@quickfix("nil", re"too many return", x)
++func x() { return } //@quickfix("nil", re"too many return", x)
+-- @y/noresultvalues.go --
+@@ -5 +5 @@
+-func y() { return nil, "hello" } //@quickfix("nil", re"too many return", y)
++func y() { return } //@quickfix("nil", re"too many return", y)

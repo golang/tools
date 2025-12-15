@@ -14,13 +14,13 @@ package trie
 //
 // Collisions functions may be applied whenever a value is inserted
 // or two maps are merged, or intersected.
-type Collision func(lhs interface{}, rhs interface{}) interface{}
+type Collision func(lhs any, rhs any) any
 
 // TakeLhs always returns the left value in a collision.
-func TakeLhs(lhs, rhs interface{}) interface{} { return lhs }
+func TakeLhs(lhs, rhs any) any { return lhs }
 
 // TakeRhs always returns the right hand side in a collision.
-func TakeRhs(lhs, rhs interface{}) interface{} { return rhs }
+func TakeRhs(lhs, rhs any) any { return rhs }
 
 // Builder creates new Map. Each Builder has a unique Scope.
 //
@@ -78,7 +78,7 @@ func (b *Builder) Empty() Map { return Map{b.Scope(), b.empty} }
 //	if _, ok := m[k]; ok { m[k] = c(m[k], v} else { m[k] = v}
 //
 // An insertion or update happened whenever Insert(m, ...) != m .
-func (b *Builder) InsertWith(c Collision, m Map, k uint64, v interface{}) Map {
+func (b *Builder) InsertWith(c Collision, m Map, k uint64, v any) Map {
 	m = b.Clone(m)
 	return Map{b.Scope(), b.insert(c, m.n, b.mkLeaf(key(k), v), false)}
 }
@@ -92,7 +92,7 @@ func (b *Builder) InsertWith(c Collision, m Map, k uint64, v interface{}) Map {
 //	if _, ok := m[k]; ok { m[k] = val }
 //
 // This is equivalent to b.Merge(m, b.Create({k: v})).
-func (b *Builder) Insert(m Map, k uint64, v interface{}) Map {
+func (b *Builder) Insert(m Map, k uint64, v any) Map {
 	return b.InsertWith(TakeLhs, m, k, v)
 }
 
@@ -100,7 +100,7 @@ func (b *Builder) Insert(m Map, k uint64, v interface{}) Map {
 // updating a map[uint64]interface{} by:
 //
 //	m[key] = val
-func (b *Builder) Update(m Map, key uint64, val interface{}) Map {
+func (b *Builder) Update(m Map, key uint64, val any) Map {
 	return b.InsertWith(TakeRhs, m, key, val)
 }
 
@@ -185,14 +185,14 @@ func (b *Builder) MutEmpty() MutMap {
 
 // Insert an element into the map using the collision function for the builder.
 // Returns true if the element was inserted.
-func (mm *MutMap) Insert(k uint64, v interface{}) bool {
+func (mm *MutMap) Insert(k uint64, v any) bool {
 	old := mm.M
 	mm.M = mm.B.Insert(old, k, v)
 	return old != mm.M
 }
 
 // Updates an element in the map. Returns true if the map was updated.
-func (mm *MutMap) Update(k uint64, v interface{}) bool {
+func (mm *MutMap) Update(k uint64, v any) bool {
 	old := mm.M
 	mm.M = mm.B.Update(old, k, v)
 	return old != mm.M
@@ -221,7 +221,7 @@ func (mm *MutMap) Intersect(other Map) bool {
 	return old != mm.M
 }
 
-func (b *Builder) Create(m map[uint64]interface{}) Map {
+func (b *Builder) Create(m map[uint64]any) Map {
 	var leaves []*leaf
 	for k, v := range m {
 		leaves = append(leaves, b.mkLeaf(key(k), v))
@@ -245,7 +245,7 @@ func (b *Builder) create(leaves []*leaf) node {
 	} else if n == 1 {
 		return leaves[0]
 	}
-	// Note: we can do a more sophisicated algorithm by:
+	// Note: we can do a more sophisticated algorithm by:
 	// - sorting the leaves ahead of time,
 	// - taking the prefix and branching bit of the min and max key,
 	// - binary searching for the branching bit,
@@ -259,13 +259,13 @@ func (b *Builder) create(leaves []*leaf) node {
 }
 
 // mkLeaf returns the hash-consed representative of (k, v) in the current scope.
-func (b *Builder) mkLeaf(k key, v interface{}) *leaf {
-	l := &leaf{k: k, v: v}
-	if rep, ok := b.leaves[*l]; ok {
-		return rep
+func (b *Builder) mkLeaf(k key, v any) *leaf {
+	rep, ok := b.leaves[leaf{k, v}]
+	if !ok {
+		rep = &leaf{k, v} // heap-allocated copy
+		b.leaves[leaf{k, v}] = rep
 	}
-	b.leaves[*l] = l
-	return l
+	return rep
 }
 
 // mkBranch returns the hash-consed representative of the tuple
@@ -274,18 +274,20 @@ func (b *Builder) mkLeaf(k key, v interface{}) *leaf {
 //
 // in the current scope.
 func (b *Builder) mkBranch(p prefix, bp bitpos, left node, right node) *branch {
-	br := &branch{
+	br := branch{
 		sz:        left.size() + right.size(),
 		prefix:    p,
 		branching: bp,
 		left:      left,
 		right:     right,
 	}
-	if rep, ok := b.branches[*br]; ok {
-		return rep
+	rep, ok := b.branches[br]
+	if !ok {
+		rep = new(branch) // heap-allocated copy
+		*rep = br
+		b.branches[br] = rep
 	}
-	b.branches[*br] = br
-	return br
+	return rep
 }
 
 // join two maps with prefixes p0 and p1 that are *known* to disagree.
@@ -378,7 +380,7 @@ func (b *Builder) merge(c Collision, lhs, rhs node) node {
 		}
 	}
 
-	// Last remaining case is branch branch merging.
+	// Last remaining case is branch merging.
 	// For brevity, we adopt the Okasaki and Gill naming conventions
 	// for branching and prefixes.
 	s, t := lhs.(*branch), rhs.(*branch)
@@ -472,7 +474,7 @@ func (b *Builder) intersect(c Collision, l, r node) node {
 			// fallthrough
 		}
 	}
-	// Last remaining case is branch branch intersection.
+	// Last remaining case is branch intersection.
 	s, t := l.(*branch), r.(*branch)
 	p, m := s.prefix, s.branching
 	q, n := t.prefix, t.branching

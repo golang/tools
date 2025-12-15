@@ -1,0 +1,27 @@
+This test checks that gopls successfully suppresses loopclosure diagnostics
+when the go.mod go version is set to a 1.22 toolchain version (1.22.x).
+
+In golang/go#66876, gopls failed to handle this correctly.
+
+-- flags --
+-min_go_command=go1.22
+
+-- go.mod --
+module example.com/loopclosure
+
+go 1.22.0
+
+-- p.go --
+package main
+
+var x int //@loc(x, "x")
+
+func main() {
+	// Verify that type checking actually succeeded by jumping to
+	// an arbitrary definition.
+	_ = x //@def("x", x)
+
+	for i := range 10 {
+		go func() { println(i) }()
+	}
+}

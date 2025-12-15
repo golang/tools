@@ -1,0 +1,108 @@
+This test demonstrates some basic features of hover.
+
+Needs go1.22 for the gotypesalias godebug value.
+
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
+-- flags --
+-min_go_command=go1.22
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a.go --
+// package comment
+package aa //@hover("aa", "aa", aa)
+
+const abc = 0x2a //@hover("b", "abc", abc),hover(re"() =", "abc", abc)
+
+-- a2.go --
+
+//go:build go1.21
+
+package aa //@hover("aa", "aa", aa2)
+
+-- typeswitch.go --
+package aa
+
+func _() {
+	var y any
+	switch x := y.(type) { //@hover("x", "x", x)
+	case int:
+		println(x) //@hover("x", "x", xint)
+	}
+}
+-- cmd/main.go --
+//go:debug gotypesalias=0
+
+// Note that since GODEBUG shows only settings that differ from
+// the current toolchain, the output here depends on the toolchain used.
+package main //@hover("main", "main", main)
+
+func main() {
+}
+
+-- @abc --
+```go
+const abc untyped int = 0x2a // 42
+```
+
+---
+
+@hover("b", "abc", abc),hover(re"() =", "abc", abc)
+-- @x --
+```go
+var x any
+```
+-- @xint --
+```go
+var x int
+```
+-- @aa --
+```go
+package aa
+```
+
+---
+
+package comment
+
+
+---
+
+ - Package path: example.com
+ - Module: example.com
+ - Language version: go1.18
+-- @aa2 --
+```go
+package aa
+```
+
+---
+
+package comment
+
+
+---
+
+ - Package path: example.com
+ - Module: example.com
+ - Language version (current file): go1.21
+-- @main --
+```go
+package main
+```
+
+---
+
+Note that since GODEBUG shows only settings that differ from the current toolchain, the output here depends on the toolchain used.
+
+
+---
+
+ - Package path: example.com/cmd
+ - Module: example.com
+ - Language version: go1.18

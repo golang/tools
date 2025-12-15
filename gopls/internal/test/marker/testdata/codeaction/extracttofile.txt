@@ -1,0 +1,351 @@
+This test checks the behavior of the 'extract to a new file' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/extracttofile
+
+go 1.18
+
+-- a.go --
+package main
+
+// docs
+func fn() {} //@codeaction("func", "refactor.extract.toNewFile", edit=function_declaration)
+
+func fn2() {} //@codeaction("fn2", "refactor.extract.toNewFile", edit=only_select_func_name)
+
+func fn3() {} //@codeaction(re`()fn3`, "refactor.extract.toNewFile", edit=zero_width_selection_on_func_name)
+
+// docs
+type T int //@codeaction("type", "refactor.extract.toNewFile", edit=type_declaration)
+
+// docs
+var V int //@codeaction("var", "refactor.extract.toNewFile", edit=var_declaration)
+
+// docs
+const K = "" //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration)
+
+const ( //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration_multiple_specs)
+    P = iota
+    Q
+    R
+)
+
+func fnA () {} //@codeaction("func", "refactor.extract.toNewFile", end=mdEnd, result=multiple_declarations)
+
+// unattached comment
+
+func fnB () {} //@loc(mdEnd, "}")
+
+-- @const_declaration_multiple_specs/p.go --
+@@ -0,0 +1,7 @@
++package main
++
++const ( //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration_multiple_specs)
++	P = iota
++	Q
++	R
++)
+-- @multiple_declarations/fna.go --
+package main
+
+func fnA() {} //@codeaction("func", "refactor.extract.toNewFile", end=mdEnd, result=multiple_declarations)
+
+// unattached comment
+
+func fnB() {}
+-- @multiple_declarations/a.go --
+package main
+
+// docs
+func fn() {} //@codeaction("func", "refactor.extract.toNewFile", edit=function_declaration)
+
+func fn2() {} //@codeaction("fn2", "refactor.extract.toNewFile", edit=only_select_func_name)
+
+func fn3() {} //@codeaction(re`()fn3`, "refactor.extract.toNewFile", edit=zero_width_selection_on_func_name)
+
+// docs
+type T int //@codeaction("type", "refactor.extract.toNewFile", edit=type_declaration)
+
+// docs
+var V int //@codeaction("var", "refactor.extract.toNewFile", edit=var_declaration)
+
+// docs
+const K = "" //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration)
+
+const ( //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration_multiple_specs)
+    P = iota
+    Q
+    R
+)
+
+//@loc(mdEnd, "}")
+
+-- @const_declaration_multiple_specs/a.go --
+@@ -19,6 +19 @@
+-const ( //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration_multiple_specs)
+-    P = iota
+-    Q
+-    R
+-)
+-
+-- existing.go --
+-- existing2.go --
+-- existing2.1.go --
+-- b.go --
+package main
+func existing() {} //@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict)
+func existing2() {} //@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict_again)
+
+-- single_import.go --
+package main
+import "fmt"
+func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=single_import)
+    fmt.Println()
+}
+
+-- multiple_imports.go --
+package main
+import (
+    "fmt"
+    "log"
+    time1 "time"
+)
+func init(){
+    log.Println()
+}
+func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=multiple_imports)
+    fmt.Println()
+}
+func g() string{ //@codeaction("func", "refactor.extract.toNewFile", edit=renamed_import)
+    return time1.Now().string()
+}
+
+-- blank_import.go --
+package main
+import _ "fmt"
+func F() {} //@codeaction("func", "refactor.extract.toNewFile", edit=blank_import)
+
+
+
+-- @blank_import/blank_import.go --
+@@ -3 +3 @@
+-func F() {} //@codeaction("func", "refactor.extract.toNewFile", edit=blank_import)
++//@codeaction("func", "refactor.extract.toNewFile", edit=blank_import)
+-- @blank_import/f.go --
+@@ -0,0 +1,3 @@
++package main
++
++func F() {}
+-- @const_declaration/a.go --
+@@ -16,2 +16 @@
+-// docs
+-const K = "" //@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration)
++//@codeaction("const", "refactor.extract.toNewFile", edit=const_declaration)
+-- @const_declaration/k.go --
+@@ -0,0 +1,4 @@
++package main
++
++// docs
++const K = ""
+-- @file_name_conflict/b.go --
+@@ -2 +2 @@
+-func existing() {} //@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict)
++//@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict)
+-- @file_name_conflict/existing.1.go --
+@@ -0,0 +1,3 @@
++package main
++
++func existing() {}
+-- @file_name_conflict_again/b.go --
+@@ -3 +3 @@
+-func existing2() {} //@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict_again)
++//@codeaction("func", "refactor.extract.toNewFile", edit=file_name_conflict_again)
+-- @file_name_conflict_again/existing2.2.go --
+@@ -0,0 +1,3 @@
++package main
++
++func existing2() {}
+-- @function_declaration/a.go --
+@@ -3,2 +3 @@
+-// docs
+-func fn() {} //@codeaction("func", "refactor.extract.toNewFile", edit=function_declaration)
++//@codeaction("func", "refactor.extract.toNewFile", edit=function_declaration)
+-- @function_declaration/fn.go --
+@@ -0,0 +1,4 @@
++package main
++
++// docs
++func fn() {}
+-- @multiple_imports/f.go --
+@@ -0,0 +1,9 @@
++package main
++
++import (
++	"fmt"
++)
++
++func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=multiple_imports)
++	fmt.Println()
++}
+-- @multiple_imports/multiple_imports.go --
+@@ -3 +3 @@
+-    "fmt"
++    
+@@ -10,3 +10 @@
+-func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=multiple_imports)
+-    fmt.Println()
+-}
+-- @only_select_func_name/a.go --
+@@ -6 +6 @@
+-func fn2() {} //@codeaction("fn2", "refactor.extract.toNewFile", edit=only_select_func_name)
++//@codeaction("fn2", "refactor.extract.toNewFile", edit=only_select_func_name)
+-- @only_select_func_name/fn2.go --
+@@ -0,0 +1,3 @@
++package main
++
++func fn2() {}
+-- @single_import/f.go --
+@@ -0,0 +1,9 @@
++package main
++
++import (
++	"fmt"
++)
++
++func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=single_import)
++	fmt.Println()
++}
+-- @single_import/single_import.go --
+@@ -2,4 +2 @@
+-import "fmt"
+-func F() { //@codeaction("func", "refactor.extract.toNewFile", edit=single_import)
+-    fmt.Println()
+-}
+-- @type_declaration/a.go --
+@@ -10,2 +10 @@
+-// docs
+-type T int //@codeaction("type", "refactor.extract.toNewFile", edit=type_declaration)
++//@codeaction("type", "refactor.extract.toNewFile", edit=type_declaration)
+-- @type_declaration/t.go --
+@@ -0,0 +1,4 @@
++package main
++
++// docs
++type T int
+-- @var_declaration/a.go --
+@@ -13,2 +13 @@
+-// docs
+-var V int //@codeaction("var", "refactor.extract.toNewFile", edit=var_declaration)
++//@codeaction("var", "refactor.extract.toNewFile", edit=var_declaration)
+-- @var_declaration/v.go --
+@@ -0,0 +1,4 @@
++package main
++
++// docs
++var V int
+-- @zero_width_selection_on_func_name/a.go --
+@@ -8 +8 @@
+-func fn3() {} //@codeaction(re`()fn3`, "refactor.extract.toNewFile", edit=zero_width_selection_on_func_name)
++//@codeaction(re`()fn3`, "refactor.extract.toNewFile", edit=zero_width_selection_on_func_name)
+-- @zero_width_selection_on_func_name/fn3.go --
+@@ -0,0 +1,3 @@
++package main
++
++func fn3() {}
+-- @renamed_import/g.go --
+@@ -0,0 +1,9 @@
++package main
++
++import (
++	time1 "time"
++)
++
++func g() string { //@codeaction("func", "refactor.extract.toNewFile", edit=renamed_import)
++	return time1.Now().string()
++}
+-- @renamed_import/multiple_imports.go --
+@@ -5 +5 @@
+-    time1 "time"
++    
+@@ -13,4 +13 @@
+-func g() string{ //@codeaction("func", "refactor.extract.toNewFile", edit=renamed_import)
+-    return time1.Now().string()
+-}
+-
+-- copyright.go --
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
+
+-- @copyright/c.go --
+@@ -0,0 +1,8 @@
++// Copyright 2020 The Go Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++package main
++
++// docs
++const C = ""
+-- @copyright/copyright.go --
+@@ -7,2 +7 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
++//@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
+-- buildconstraint.go --
+//go:build go1.18
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
+
+-- @buildconstraint/buildconstraint.go --
+@@ -5,2 +5 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
++//@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
+-- @buildconstraint/c.go --
+@@ -0,0 +1,6 @@
++//go:build go1.18
++
++package main
++
++// docs
++const C = ""
+-- copyrightandbuildconstraint.go --
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.18
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
+-- @copyrightandbuildconstraint/c.go --
+@@ -0,0 +1,10 @@
++// Copyright 2020 The Go Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++//go:build go1.18
++
++package main
++
++// docs
++const C = ""
+-- @copyrightandbuildconstraint/copyrightandbuildconstraint.go --
+@@ -9,2 +9 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
++//@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)

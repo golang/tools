@@ -6,9 +6,9 @@ package lcs
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
-	"math/rand"
+	"math/rand/v2"
+	"os"
 	"strings"
 	"testing"
 )
@@ -106,15 +106,16 @@ func TestRegressionOld003(t *testing.T) {
 }
 
 func TestRandOld(t *testing.T) {
-	rand.Seed(1)
-	for i := 0; i < 1000; i++ {
+	rng := rng(t)
+
+	for i := range 1000 {
 		// TODO(adonovan): use ASCII and bytesSeqs here? The use of
 		// non-ASCII isn't relevant to the property exercised by the test.
-		a := []rune(randstr("abω", 16))
-		b := []rune(randstr("abωc", 16))
+		a := []rune(randstr(rng, "abω", 16))
+		b := []rune(randstr(rng, "abωc", 16))
 		seq := runesSeqs{a, b}
 
-		const lim = 24 // large enough to get true lcs
+		const lim = 0 // make sure we get the lcs (24 was too small)
 		_, forw := compute(seq, forward, lim)
 		_, back := compute(seq, backward, lim)
 		_, two := compute(seq, twosided, lim)
@@ -129,21 +130,16 @@ func TestRandOld(t *testing.T) {
 }
 
 // TestDiffAPI tests the public API functions (Diff{Bytes,Strings,Runes})
-// to ensure at least miminal parity of the three representations.
+// to ensure at least minimal parity of the three representations.
 func TestDiffAPI(t *testing.T) {
 	for _, test := range []struct {
-		a, b                              string
-		wantStrings, wantBytes, wantRunes string
+		a, b                 string
+		wantBytes, wantRunes string
 	}{
-		{"abcXdef", "abcxdef", "[{3 4 3 4}]", "[{3 4 3 4}]", "[{3 4 3 4}]"}, // ASCII
-		{"abcωdef", "abcΩdef", "[{3 5 3 5}]", "[{3 5 3 5}]", "[{3 4 3 4}]"}, // non-ASCII
+		{"abcXdef", "abcxdef", "[{3 4 3 4}]", "[{3 4 3 4}]"}, // ASCII
+		{"abcωdef", "abcΩdef", "[{3 5 3 5}]", "[{3 4 3 4}]"}, // non-ASCII
 	} {
 
-		gotStrings := fmt.Sprint(DiffStrings(test.a, test.b))
-		if gotStrings != test.wantStrings {
-			t.Errorf("DiffStrings(%q, %q) = %v, want %v",
-				test.a, test.b, gotStrings, test.wantStrings)
-		}
 		gotBytes := fmt.Sprint(DiffBytes([]byte(test.a), []byte(test.b)))
 		if gotBytes != test.wantBytes {
 			t.Errorf("DiffBytes(%q, %q) = %v, want %v",
@@ -158,8 +154,8 @@ func TestDiffAPI(t *testing.T) {
 }
 
 func BenchmarkTwoOld(b *testing.B) {
-	tests := genBench("abc", 96)
-	for i := 0; i < b.N; i++ {
+	tests := genBench(rng(b), "abc", 96)
+	for b.Loop() {
 		for _, tt := range tests {
 			_, two := compute(stringSeqs{tt.before, tt.after}, twosided, 100)
 			if !two.valid() {
@@ -170,8 +166,8 @@ func BenchmarkTwoOld(b *testing.B) {
 }
 
 func BenchmarkForwOld(b *testing.B) {
-	tests := genBench("abc", 96)
-	for i := 0; i < b.N; i++ {
+	tests := genBench(rng(b), "abc", 96)
+	for b.Loop() {
 		for _, tt := range tests {
 			_, two := compute(stringSeqs{tt.before, tt.after}, forward, 100)
 			if !two.valid() {
@@ -181,14 +177,21 @@ func BenchmarkForwOld(b *testing.B) {
 	}
 }
 
-func genBench(set string, n int) []struct{ before, after string } {
+// rng returns a randomly initialized PRNG whose seeds are logged so
+// that occasional test failures can be deterministically replayed.
+func rng(tb testing.TB) *rand.Rand {
+	seed1, seed2 := rand.Uint64(), rand.Uint64()
+	tb.Logf("PRNG seeds: %d, %d", seed1, seed2)
+	return rand.New(rand.NewPCG(seed1, seed2))
+}
+
+func genBench(rng *rand.Rand, set string, n int) []struct{ before, after string } {
 	// before and after for benchmarks. 24 strings of length n with
 	// before and after differing at least once, and about 5%
-	rand.Seed(3)
 	var ans []struct{ before, after string }
-	for i := 0; i < 24; i++ {
+	for range 24 {
 		// maybe b should have an approximately known number of diffs
-		a := randstr(set, n)
+		a := randstr(rng, set, n)
 		cnt := 0
 		bb := make([]rune, 0, n)
 		for _, r := range a {
@@ -218,7 +221,7 @@ func genBench(set string, n int) []struct{ before, after string } {
 // itself minus the last byte is faster still; I don't know why.
 // There is much low-hanging fruit here for further improvement.
 func BenchmarkLargeFileSmallDiff(b *testing.B) {
-	data, err := ioutil.ReadFile("old.go") // large file
+	data, err := os.ReadFile("old.go") // large file
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,7 +231,7 @@ func BenchmarkLargeFileSmallDiff(b *testing.B) {
 	src := string(data)
 	dst := src[:n*49/100] + src[n*51/100:] // remove 2% from the middle
 	b.Run("string", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			compute(stringSeqs{src, dst}, twosided, len(src)+len(dst))
 		}
 	})
@@ -236,7 +239,7 @@ func BenchmarkLargeFileSmallDiff(b *testing.B) {
 	srcBytes := []byte(src)
 	dstBytes := []byte(dst)
 	b.Run("bytes", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			compute(bytesSeqs{srcBytes, dstBytes}, twosided, len(srcBytes)+len(dstBytes))
 		}
 	})
@@ -244,7 +247,7 @@ func BenchmarkLargeFileSmallDiff(b *testing.B) {
 	srcRunes := []rune(src)
 	dstRunes := []rune(dst)
 	b.Run("runes", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			compute(runesSeqs{srcRunes, dstRunes}, twosided, len(srcRunes)+len(dstRunes))
 		}
 	})

@@ -1,0 +1,134 @@
+This test checks that hover reports accessible embedded fields
+(after the doc comment  and before the accessible methods).
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- q/q.go --
+package q
+
+type Q struct {
+	One int
+	two string
+	q2[chan int]
+}
+
+type q2[T any] struct {
+	Three *T
+	four string
+}
+
+-- p.go --
+package p
+
+import "example.com/q"
+
+// doc
+type P struct {
+	q.Q
+}
+
+func (P) m() {}
+
+var p P //@hover("P", "P", P)
+
+var _, _ = P.m, p // pacify unusedfunc
+
+type A struct {
+	*B
+}
+
+type B struct {
+	*C
+}
+
+type C struct {
+	*D
+}
+
+type D struct {
+	E int
+}
+
+type X struct{
+	*Y
+}
+
+type Y struct {
+	*Z
+}
+
+type Z struct{
+	z int
+}
+
+var a A
+var _ = a.E //@hover("E", "E", E)
+
+var x struct {
+	*X
+}
+var _ = x.z //@hover("z", "z", Z)
+
+type Al2 = int
+type N struct{
+	x Al2
+	y struct{ ZA }
+}
+type Al = *N
+type S struct{ Al }
+type ZA = *Z
+var _ = new(S).x //@hover("x", "x", X)
+var _ = new(S).y.z //@hover("z", "z", Zz), hover("y", "y", y)
+
+-- @P --
+```go
+type P struct {
+	q.Q
+}
+```
+
+---
+
+doc
+
+
+```go
+// Embedded fields:
+One   int       // through Q    
+Three *chan int // through Q.q2 
+```
+
+```go
+func (P) m()
+```
+
+---
+
+[`p.P` on pkg.go.dev](https://pkg.go.dev/example.com#P)
+-- @E --
+```go
+field E int // through *B, *C, *D
+```
+
+---
+
+[`(p.D).E` on pkg.go.dev](https://pkg.go.dev/example.com#D.E)
+-- @Z --
+```go
+field z int // through *X, *Y, *Z
+```
+-- @X --
+```go
+field x Al2 // through Al
+```
+-- @Zz --
+```go
+field z int // through ZA
+```
+-- @y --
+```go
+field y struct{ZA} // through Al
+```

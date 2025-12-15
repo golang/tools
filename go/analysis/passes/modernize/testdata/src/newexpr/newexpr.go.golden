@@ -1,0 +1,34 @@
+//go:build go1.26
+
+package newexpr
+
+// intVar returns a new var whose value is i.
+//
+//go:fix inline
+func intVar(i int) *int { return new(i) } // want `intVar can be an inlinable wrapper around new\(expr\)` intVar:"newlike"
+
+//go:fix inline
+func int64Var(i int64) *int64 { return new(i) } // want `int64Var can be an inlinable wrapper around new\(expr\)` int64Var:"newlike"
+
+//go:fix inline
+func stringVar(s string) *string { return new(s) } // want `stringVar can be an inlinable wrapper around new\(expr\)` stringVar:"newlike"
+
+//go:fix inline
+func varOf[T any](x T) *T { return new(x) } // want `varOf can be an inlinable wrapper around new\(expr\)` varOf:"newlike"
+
+var (
+	s struct {
+		int
+		string
+	}
+	_ = new(123)          // want `call of intVar\(x\) can be simplified to new\(x\)`
+	_ = int64Var(123)     // nope: implicit conversion from untyped int to int64
+	_ = new("abc")        // want `call of stringVar\(x\) can be simplified to new\(x\)`
+	_ = new(s)            // want `call of varOf\(x\) can be simplified to new\(x\)`
+	_ = new(123)          // want `call of varOf\(x\) can be simplified to new\(x\)`
+	_ = new(int64(123))   // want `call of varOf\(x\) can be simplified to new\(x\)`
+	_ = new(123)          // want `call of varOf\(x\) can be simplified to new\(x\)`
+	_ = varOf[int64](123) // nope: implicit conversion from untyped int to int64
+	_ = new(              // want `call of varOf\(x\) can be simplified to new\(x\)`
+		new(123)) // want `call of varOf\(x\) can be simplified to new\(x\)`
+)

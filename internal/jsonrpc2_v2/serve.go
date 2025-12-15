@@ -54,13 +54,15 @@ type Server struct {
 // Handler provided by the Binder, and will release its own resources when the
 // connection is broken, but the caller may Close it earlier to stop accepting
 // (or sending) new requests.
-func Dial(ctx context.Context, dialer Dialer, binder Binder) (*Connection, error) {
+//
+// If non-nil, the onDone function is called when the connection is closed.
+func Dial(ctx context.Context, dialer Dialer, binder Binder, onDone func()) (*Connection, error) {
 	// dial a server
 	rwc, err := dialer.Dial(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return newConnection(ctx, rwc, binder, nil), nil
+	return bindConnection(ctx, rwc, binder, onDone), nil
 }
 
 // NewServer starts a new server listening for incoming connections and returns
@@ -104,7 +106,7 @@ func (s *Server) run(ctx context.Context) {
 		rwc, err := s.listener.Accept(ctx)
 		if err != nil {
 			// Only Shutdown closes the listener. If we get an error after Shutdown is
-			// called, assume that that was the cause and don't report the error;
+			// called, assume that was the cause and don't report the error;
 			// otherwise, report the error in case it is unexpected.
 			if atomic.LoadInt32(&s.closing) == 0 {
 				s.async.setError(err)
@@ -115,7 +117,7 @@ func (s *Server) run(ctx context.Context) {
 
 		// A new inbound connection.
 		activeConns.Add(1)
-		_ = newConnection(ctx, rwc, s.binder, activeConns.Done) // unregisters itself when done
+		_ = bindConnection(ctx, rwc, s.binder, activeConns.Done) // unregisters itself when done
 	}
 	activeConns.Wait()
 }

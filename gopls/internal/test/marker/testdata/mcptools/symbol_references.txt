@@ -1,0 +1,58 @@
+This test exercises the "go_symbol_references" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+// TODO(rfindley): add error assertions here.
+
+//@mcptool("go_symbol_references", `{"file":"$WORKDIR/a/a.go","symbol":"Foo"}`, output=aFoo)
+//@mcptool("go_symbol_references", `{"file":"$WORKDIR/b/b.go","symbol":"a.Foo"}`, output=aFoo)
+//@mcptool("go_symbol_references", `{"file":"$WORKDIR/a/a.go","symbol":"T.Bar"}`, output=aBar)
+//@mcptool("go_symbol_references", `{"file":"$WORKDIR/b/b.go","symbol":"a.T.Bar"}`, output=aBar)
+
+-- a/a.go --
+package a
+
+func Foo() {}
+
+func callFoo() {
+    Foo()
+}
+
+type T int
+
+func (T) Bar() {}
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func callFoo() {
+    a.Foo()
+}
+
+-- @aFoo --
+The object has 3 references. Their locations are listed below
+Reference 1
+Located in the file: $WORKDIR/a/a.go
+The reference is located on line 2, which has content `func Foo() {}`
+
+Reference 2
+Located in the file: $WORKDIR/a/a.go
+The reference is located on line 5, which has content `Foo()`
+
+Reference 3
+Located in the file: $WORKDIR/b/b.go
+The reference is located on line 5, which has content `a.Foo()`
+
+-- @aBar --
+The object has 1 references. Their locations are listed below
+Reference 1
+Located in the file: $WORKDIR/a/a.go
+The reference is located on line 10, which has content `func (T) Bar() {}`
+

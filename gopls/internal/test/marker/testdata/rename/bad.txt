@@ -1,0 +1,29 @@
+This test checks that rename fails in the presence of errors.
+
+-- go.mod --
+module golang.org/lsptests/bad
+
+go 1.18
+
+-- bad.go --
+package bad
+
+type myStruct struct {
+}
+
+func (s *myStruct) sFunc() bool { //@renameerr("sFunc", "rFunc", "not possible because \"bad.go\" in \"golang.org/lsptests/bad\" has errors")
+	return s.Bad //@diag("Bad", re"no field or method")
+}
+
+-- bad_test.go --
+package bad
+
+
+-- badsyntax/badsyntax.go --
+package badsyntax
+
+type S struct {}
+
+func (s *S) sFunc() bool { //@renameerr("sFunc", "rFunc", "not possible because \"badsyntax.go\" in \"golang.org/lsptests/bad/badsyntax\" has errors")
+	# //@diag("#", re"expected statement, found")
+}

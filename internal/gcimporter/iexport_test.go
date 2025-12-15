@@ -4,82 +4,39 @@
 
 // This is a copy of bexport_test.go for iexport.go.
 
-//go:build go1.11
-// +build go1.11
-
 package gcimporter_test
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"math/big"
-	"os"
+	"path/filepath"
 	"reflect"
-	"runtime"
-	"sort"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/gcexportdata"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams/genericfeatures"
 )
-
-func readExportFile(filename string) ([]byte, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	buf := bufio.NewReader(f)
-	if _, _, err := gcimporter.FindExportData(buf); err != nil {
-		return nil, err
-	}
-
-	if ch, err := buf.ReadByte(); err != nil {
-		return nil, err
-	} else if ch != 'i' {
-		return nil, fmt.Errorf("unexpected byte: %v", ch)
-	}
-
-	return ioutil.ReadAll(buf)
-}
 
 func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
 	const bundle, shallow = false, false
-	if err := gcimporter.IExportCommon(&buf, fset, bundle, shallow, version, []*types.Package{pkg}); err != nil {
+	if err := gcimporter.IExportCommon(&buf, fset, bundle, shallow, version, []*types.Package{pkg}, nil); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-// isUnifiedBuilder reports whether we are executing on a go builder that uses
-// unified export data.
-func isUnifiedBuilder() bool {
-	return os.Getenv("GO_BUILDER_NAME") == "linux-amd64-unified"
-}
-
-const minStdlibPackages = 248
-
 func TestIExportData_stdlib(t *testing.T) {
-	if runtime.Compiler == "gccgo" {
-		t.Skip("gccgo standard library is inaccessible")
-	}
-	testenv.NeedsGoBuild(t)
+	testenv.NeedsGoPackages(t)
 	if isRace {
 		t.Skipf("stdlib tests take too long in race mode and flake on builders")
 	}
@@ -87,84 +44,90 @@ func TestIExportData_stdlib(t *testing.T) {
 		t.Skip("skipping RAM hungry test in -short mode")
 	}
 
-	// Load, parse and type-check the program.
-	ctxt := build.Default // copy
-	ctxt.GOPATH = ""      // disable GOPATH
-	conf := loader.Config{
-		Build:       &ctxt,
-		AllowErrors: true,
-		TypeChecker: types.Config{
-			Sizes: types.SizesFor(ctxt.Compiler, ctxt.GOARCH),
-			Error: func(err error) { t.Log(err) },
-		},
-	}
-	for _, path := range buildutil.AllPackages(conf.Build) {
-		conf.Import(path)
+	testAliases(t, testIExportData_stdlib)
+}
+
+func testIExportData_stdlib(t *testing.T) {
+	var errorsDir string // GOROOT/src/errors directory
+	{
+		cfg := packages.Config{
+			Mode: packages.NeedName | packages.NeedFiles,
+		}
+		pkgs, err := packages.Load(&cfg, "errors")
+		if err != nil {
+			t.Fatal(err)
+		}
+		errorsDir = filepath.Dir(pkgs[0].GoFiles[0])
 	}
 
-	// Create a package containing type and value errors to ensure
-	// they are properly encoded/decoded.
-	f, err := conf.ParseFile("haserrors/haserrors.go", `package haserrors
+	// Load types from syntax for all std packages.
+	//
+	// Append a file to package errors containing type and
+	// value errors to ensure they are properly encoded/decoded.
+	const bad = `package errors
 const UnknownValue = "" + 0
 type UnknownType undefined
-`)
+`
+	cfg := packages.Config{
+		Mode:    packages.LoadAllSyntax | packages.NeedDeps,
+		Overlay: map[string][]byte{filepath.Join(errorsDir, "bad.go"): []byte(bad)},
+	}
+	pkgs, err := packages.Load(&cfg, "std") // ~800ms
 	if err != nil {
 		t.Fatal(err)
 	}
-	conf.CreateFromFiles("haserrors", f)
-
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	var sorted []*types.Package
-	isUnified := isUnifiedBuilder()
-	for pkg, info := range prog.AllPackages {
-		// Temporarily skip packages that use generics on the unified builder, to
-		// fix TryBots.
-		//
-		// TODO(#48595): fix this test with GOEXPERIMENT=unified.
-		inspect := inspector.New(info.Files)
-		features := genericfeatures.ForPackage(inspect, &info.Info)
-		if isUnified && features != 0 {
-			t.Logf("skipping package %q which uses generics", pkg.Path())
-			continue
-		}
-		if info.Files != nil { // non-empty directory
-			sorted = append(sorted, pkg)
-		}
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Path() < sorted[j].Path()
-	})
+	fset := pkgs[0].Fset
 
 	version := gcimporter.IExportVersion
-	numPkgs := len(sorted)
-	if want := minStdlibPackages; numPkgs < want {
-		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
-	}
 
-	for _, pkg := range sorted {
-		if exportdata, err := iexport(conf.Fset, version, pkg); err != nil {
+	// Export and reimport each package, and check that they match.
+	var allPkgs []*types.Package
+	var errorsPkg *types.Package                             // reimported errors package
+	packages.Visit(pkgs, nil, func(ppkg *packages.Package) { // ~300ms
+		pkg := ppkg.Types
+		path := pkg.Path()
+		if path == "unsafe" ||
+			strings.HasPrefix(path, "cmd/") ||
+			strings.HasPrefix(path, "vendor/") {
+			return
+		}
+		allPkgs = append(allPkgs, pkg)
+
+		// Export and reimport the package, and compare.
+		exportdata, err := iexport(fset, version, pkg)
+		if err != nil {
 			t.Error(err)
-		} else {
-			testPkgData(t, conf.Fset, version, pkg, exportdata)
+			return
 		}
+		pkg2 := testPkgData(t, fset, version, pkg, exportdata)
+		if path == "errors" {
+			errorsPkg = pkg2
+		}
+	})
 
-		if pkg.Name() == "main" || pkg.Name() == "haserrors" {
-			// skip; no export data
-		} else if bp, err := ctxt.Import(pkg.Path(), "", build.FindOnly); err != nil {
-			t.Log("warning:", err)
-		} else if exportdata, err := readExportFile(bp.PkgObj); err != nil {
-			t.Log("warning:", err)
-		} else {
-			testPkgData(t, conf.Fset, version, pkg, exportdata)
+	// Assert that we saw a plausible sized library.
+	const minStdlibPackages = 248
+	if n := len(allPkgs); n < minStdlibPackages {
+		t.Errorf("Loaded only %d packages, want at least %d", n, minStdlibPackages)
+	}
+
+	// Check that reimported errors package has bad decls.
+	if errorsPkg == nil {
+		t.Fatalf("'errors' package not found")
+	}
+	for _, name := range []string{"UnknownType", "UnknownValue"} {
+		obj := errorsPkg.Scope().Lookup(name)
+		if obj == nil {
+			t.Errorf("errors.%s not found", name)
+		}
+		if typ := obj.Type().Underlying(); typ.String() != "invalid type" {
+			t.Errorf("errors.%s has underlying type %s, want invalid type", name, typ)
 		}
 	}
 
+	// (Sole) test of bundle functionality (250ms).
 	var bundle bytes.Buffer
-	if err := gcimporter.IExportBundle(&bundle, conf.Fset, sorted); err != nil {
+	if err := gcimporter.IExportBundle(&bundle, fset, allPkgs); err != nil {
 		t.Fatal(err)
 	}
 	fset2 := token.NewFileSet()
@@ -173,13 +136,13 @@ type UnknownType undefined
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	for i, pkg := range sorted {
-		testPkg(t, conf.Fset, version, pkg, fset2, pkgs2[i])
+	for i, pkg := range allPkgs {
+		testPkg(t, fset, version, pkg, fset2, pkgs2[i])
 	}
 }
 
-func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) {
+// testPkgData imports a package from export data and compares it with pkg.
+func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
 	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
@@ -188,6 +151,7 @@ func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Pack
 	}
 
 	testPkg(t, fset, version, pkg, fset2, pkg2)
+	return pkg2
 }
 
 func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
@@ -221,7 +185,7 @@ func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package,
 	}
 }
 
-// TestVeryLongFile tests the position of an import object declared in
+// TestIExportData_long tests the position of an import object declared in
 // a very long input file.  Line numbers greater than maxlines are
 // reported as line 1, not garbage or token.NoPos.
 func TestIExportData_long(t *testing.T) {
@@ -262,6 +226,9 @@ func TestIExportData_long(t *testing.T) {
 }
 
 func TestIExportData_typealiases(t *testing.T) {
+	testAliases(t, testIExportData_typealiases)
+}
+func testIExportData_typealiases(t *testing.T) {
 	// parse and typecheck
 	fset1 := token.NewFileSet()
 	f, err := parser.ParseFile(fset1, "p.go", src, 0)
@@ -333,14 +300,15 @@ func cmpObj(x, y types.Object) error {
 		if xalias, yalias := x.IsAlias(), y.(*types.TypeName).IsAlias(); xalias != yalias {
 			return fmt.Errorf("mismatching IsAlias(): %s vs %s", x, y)
 		}
+
 		// equalType does not recurse into the underlying types of named types, so
 		// we must pass the underlying type explicitly here. However, in doing this
 		// we may skip checking the features of the named types themselves, in
 		// situations where the type name is not referenced by the underlying or
 		// any other top-level declarations. Therefore, we must explicitly compare
 		// named types here, before passing their underlying types into equalType.
-		xn, _ := xt.(*types.Named)
-		yn, _ := yt.(*types.Named)
+		xn, _ := types.Unalias(xt).(*types.Named)
+		yn, _ := types.Unalias(yt).(*types.Named)
 		if (xn == nil) != (yn == nil) {
 			return fmt.Errorf("mismatching types: %T vs %T", xt, yt)
 		}
@@ -451,3 +419,78 @@ func TestUnexportedStructFields(t *testing.T) {
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// TestIExportDataTypeParameterizedAliases tests IExportData
+// on both declarations and uses of type parameterized aliases.
+func TestIExportDataTypeParameterizedAliases(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23)
+	skipWindows(t)
+	if testenv.Go1Point() == 23 {
+		testenv.NeedsGoExperiment(t, "aliastypeparams") // testenv.Go1Point() >= 24 implies aliastypeparams=1
+	}
+
+	t.Setenv("GODEBUG", aliasesOn)
+
+	// High level steps:
+	// * parse  and typecheck
+	// * export the data for the importer (via IExportData),
+	// * import the data (via either x/tools or GOROOT's gcimporter), and
+	// * check the imported types.
+
+	const src = `package pkg
+
+type A[T any] = *T
+type B[R any, S *R] = []S
+type C[U any] = B[U, A[U]]
+
+type Named int
+type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
+`
+
+	// parse and typecheck
+	fset1 := token.NewFileSet()
+	f, err := parser.ParseFile(fset1, "pkg", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conf types.Config
+	pkg1, err := conf.Check("pkg", fset1, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the result of IExportData through x/tools/internal/gcimporter.IImportData.
+	// export
+	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// import
+	imports := make(map[string]*types.Package)
+	fset2 := token.NewFileSet()
+	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	if err != nil {
+		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
+	}
+
+	pkg := pkg2
+	for name, want := range map[string]string{
+		"A":       "type pkg.A[T any] = *T",
+		"B":       "type pkg.B[R any, S *R] = []S",
+		"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
+		"Named":   "type pkg.Named int",
+		"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
+	} {
+		obj := pkg.Scope().Lookup(name)
+		if obj == nil {
+			t.Errorf("failed to find %q in package %s", name, pkg)
+			continue
+		}
+
+		got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
+		if got != want {
+			t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
+		}
+	}
+}

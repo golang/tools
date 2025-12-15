@@ -1,0 +1,141 @@
+Test of warning diagnostics from various analyzers:
+copylocks, printf, slog, tests, timeformat, nilness, and cgocall.
+
+-- settings.json --
+{
+	"pullDiagnostics": true
+}
+
+-- go.mod --
+module example.com
+go 1.23
+
+-- flags --
+-min_go_command=go1.23
+-cgo
+
+-- bad/bad_test.go --
+package bad
+
+import (
+	"fmt"
+	"iter"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+)
+
+// copylocks
+func _() {
+	var x sync.Mutex
+	_ = x //@diag("x", re"assignment copies lock value to _: sync.Mutex")
+}
+
+// printf
+func _() {
+	printfWrapper("%s") //@diag(re`%s`, re"example.com/bad.printfWrapper format %s reads arg #1, but call has 0 args")
+}
+
+func printfWrapper(format string, args ...any) {
+	fmt.Printf(format, args...)
+}
+
+// tests
+func Testbad(t *testing.T) { //@diag("Testbad", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
+}
+
+// timeformat
+func _() {
+	now := time.Now()
+	fmt.Println(now.Format("2006-02-01")) //@diag("2006-02-01", re"2006-02-01 should be 2006-01-02")
+}
+
+// nilness
+func _(ptr *int) {
+	if ptr == nil {
+		_ = *ptr //@diag("*ptr", re"nil dereference in load")
+	}
+}
+
+// unusedwrite
+func _(s struct{x int}) {
+	s.x = 1  //@diag("x", re"unused write to field x")
+}
+
+// slog
+func _() {
+	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
+}
+
+// waitgroup
+func _() {
+	var wg sync.WaitGroup
+	go func() {
+		wg.Add(1) //@diag("(", re"WaitGroup.Add called from inside new goroutine")
+	}()
+}
+
+// inline
+func _() {
+	f()  //@diag("f", re"Call of bad.f should be inlined")
+}
+
+//go:fix inline
+func f() { fmt.Println(1) }
+
+// recursiveiter
+func F() iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for range F() {} //@ diag("range", re"inefficient recursion in iterator F")
+	}
+}
+
+-- cgocall/cgocall.go --
+package cgocall
+
+// Note: this test must be in a separate package, as the unsafe import
+// silences the unusedwrite analyzer.
+import "unsafe"
+
+// void f(void *ptr) {}
+import "C"
+
+// cgocall
+func _(c chan bool) {
+	C.f(unsafe.Pointer(&c)) //@ diag("unsafe", re"passing Go type with embedded pointer to C")
+}
+
+-- maprange/maprange.go --
+package maprange
+
+import "maps"
+
+func _(m map[int]int) {
+	for range maps.Keys(m) {} //@ diag("maps.Keys", re"unnecessary and inefficient call of maps.Keys")
+}
+
+-- unusedresult/unusedresult.go --
+package unusedresult
+
+import "fmt"
+
+func _() {
+	fmt.Appendf(nil, "%d", 1) //@ diag("fmt.Appendf", re"result.*not used")
+}
+
+-- staticcheck/staticcheck.go --
+package staticcheck
+
+// staticcheck includes hundreds of other analyzers.
+// Here we test only two: one enabled by default, one disabled.
+
+func S1000(ch chan int) {
+	select { case <-ch: } //@ diag("select", re"use .*receive instead of select")
+}
+
+func S1011(x, y []int) {
+	for _, e := range y {
+		x = append(x, e) // no "replace loop with append" diagnostic
+	}
+}

@@ -1,0 +1,40 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+// Replace call to void function by call to non-void function.
+
+func before(x interface{}) { log.Fatal(x) }
+func after(x interface{})  { fmt.Fprintf(os.Stderr, "warning: %v", x) }
+
+-- in/e1/e1.go --
+package e1
+
+import "log"
+
+func example() {
+	log.Fatal("oops") // match
+}
+
+-- out/e1/e1.go --
+package e1
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+func example() {
+	fmt.Fprintf(os.Stderr, "warning: %v", "oops") // match
+}

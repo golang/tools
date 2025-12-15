@@ -1,0 +1,224 @@
+Test of "too new" diagnostics from the stdversion analyzer.
+
+This test references go1.21 and go1.22 symbols from std.
+
+See also gopls/internal/test/marker/testdata/diagnostics/stdversion.txt
+which runs the same test within the gopls analysis driver, to ensure
+coverage of per-file Go version support.
+
+-- go.work --
+go 1.22
+
+use .
+use mod20
+use mod21
+use mod22
+use old
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- basic/basic.go --
+// File version is 1.21.
+package basic
+
+import "go/types"
+
+func _() {
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
+
+	// new field of older type
+	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+
+	// new method of older type
+	new(types.Info).PkgNameOf // want `types.PkgNameOf requires go1.22 or later \(module is go1.21\)`
+
+	// new package-level type
+	var a types.Alias // want `types.Alias requires go1.22 or later \(module is go1.21\)`
+
+	// new method of new type
+	a.Underlying() // no diagnostic
+}
+
+-- despite/errors.go --
+// File version is 1.21.
+
+// Check that RunDespiteErrors is enabled.
+package ignore
+
+import "go/types"
+
+func _() {
+	// report something before the syntax error.
+	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+}
+
+invalid syntax // exercise RunDespiteErrors
+
+-- mod20/go.mod --
+module example.com/mod20
+
+go 1.20
+
+-- mod20/notag.go --
+// The 1.20 module is before the forward compatibility regime:
+// The file's build tag effects selection, but
+// not language semantics, so stdversion is silent.
+
+package mod20
+
+import "go/types"
+
+func _() {
+	var _ types.Alias
+}
+
+-- mod20/tag16.go --
+// The 1.20 module is before the forward compatibility regime:
+// The file's build tag effects selection, but
+// not language semantics, so stdversion is silent.
+
+//go:build go1.16
+
+package mod20
+
+import "bytes"
+import "go/types"
+
+var _ = bytes.Clone
+var _ = types.Alias
+
+-- mod20/tag22.go --
+// The 1.20 module is before the forward compatibility regime:
+// The file's build tag effects selection, but
+// not language semantics, so stdversion is silent.
+
+//go:build go1.22
+
+package mod20
+
+import "bytes"
+import "go/types"
+
+var _ = bytes.Clone
+var _ = types.Alias
+
+-- mod21/go.mod --
+module example.com/mod21
+
+go 1.21
+
+-- mod21/notag.go --
+// File version is 1.21.
+package mod21
+
+import "go/types"
+
+func _() {
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
+
+	// new field of older type
+	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+
+	// new method of older type
+	new(types.Info).PkgNameOf // want `types.PkgNameOf requires go1.22 or later \(module is go1.21\)`
+
+	// new package-level type
+	var a types.Alias // want `types.Alias requires go1.22 or later \(module is go1.21\)`
+
+	// new method of new type
+	a.Underlying() // no diagnostic
+}
+
+-- mod21/tag16.go --
+// File version is 1.21.
+//
+// The module is within the forward compatibility regime so
+// the build tag (1.16) can modify the file version, but it cannot
+// go below the 1.21 "event horizon" (#68658).
+
+//go:build go1.16
+
+package mod21
+
+import "bytes"
+import "go/types"
+
+var _ = bytes.Clone
+var _ = types.Alias // want `types.Alias requires go1.22 or later \(module is go1.21\)`
+
+-- mod21/tag22.go --
+// File version is 1.22.
+//
+// The module is within the forward compatibility regime so
+// the build tag (1.22) updates the file version to 1.22.
+
+//go:build go1.22
+
+package mod21
+
+import "bytes"
+import "go/types"
+
+var _ = bytes.Clone
+var _ = types.Alias 
+
+-- mod22/go.mod --
+module example.com/mod22
+
+go 1.22
+
+-- mod22/notag.go --
+// File version is 1.22.
+package mod22
+
+import "go/types"
+
+func _() {
+	var _ = bytes.Clone
+	var _ = types.Alias
+}
+
+-- mod22/tag16.go --
+// File version is 1.21.
+//
+// The module is within the forward compatibility regime so
+// the build tag (1.16) can modify the file version, but it cannot
+// go below the 1.21 "event horizon" (#68658).
+
+//go:build go1.16
+
+package mod22
+
+import "bytes"
+import "go/types"
+
+var _ = bytes.Clone
+var _ = types.Alias // want `types.Alias requires go1.22 or later \(file is go1.21\)`
+
+-- old/go.mod --
+module example.com/old
+
+go 1.5
+
+-- old/notag.go --
+package old
+
+import "go/types"
+
+var _ types.Alias // no diagnostic: go.mod is too old for us to care
+
+-- old/tag21.go --
+// The build tag is ignored due to the module version.
+
+//go:build go1.21
+
+package old
+
+import "go/types"
+
+var _ = types.Alias // no diagnostic: go.mod is too old for us to care

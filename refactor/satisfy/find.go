@@ -8,9 +8,7 @@
 // interface, and this fact is necessary for the package to be
 // well-typed.
 //
-// THIS PACKAGE IS EXPERIMENTAL AND MAY CHANGE AT ANY TIME.
-//
-// It is provided only for the gopls tool. It requires well-typed inputs.
+// It requires well-typed inputs.
 package satisfy // import "golang.org/x/tools/refactor/satisfy"
 
 // NOTES:
@@ -43,7 +41,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -85,6 +82,9 @@ type Finder struct {
 // info.{Defs,Uses,Selections,Types} must have been populated by the
 // type-checker.
 func (f *Finder) Find(info *types.Info, files []*ast.File) {
+	if info.Defs == nil || info.Uses == nil || info.Selections == nil || info.Types == nil {
+		panic("Finder.Find: one of info.{Defs,Uses,Selections.Types} is not populated")
+	}
 	if f.Result == nil {
 		f.Result = make(map[Constraint]bool)
 	}
@@ -127,13 +127,13 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 
 	case *ast.CallExpr:
 		// x, err := f(args)
-		sig := coreType(f.expr(e.Fun)).(*types.Signature)
+		sig := typeparams.CoreType(f.expr(e.Fun)).(*types.Signature)
 		f.call(sig, e.Args)
 
 	case *ast.IndexExpr:
 		// y, ok := x[i]
 		x := f.expr(e.X)
-		f.assign(f.expr(e.Index), coreType(x).(*types.Map).Key())
+		f.assign(f.expr(e.Index), typeparams.CoreType(x).(*types.Map).Key())
 
 	case *ast.TypeAssertExpr:
 		// y, ok := x.(T)
@@ -170,8 +170,8 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 		// f(g()) call where g has multiple results?
 		f.expr(args[0])
 		// unpack the tuple
-		for i := 0; i < tuple.Len(); i++ {
-			argtypes = append(argtypes, tuple.At(i).Type())
+		for v := range tuple.Variables() {
+			argtypes = append(argtypes, v.Type())
 		}
 	} else {
 		for _, arg := range args {
@@ -202,8 +202,10 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr) {
 	switch obj.Name() {
 	case "make", "new":
-		// skip the type operand
-		for _, arg := range args[1:] {
+		for i, arg := range args {
+			if i == 0 && f.info.Types[arg].IsType() {
+				continue // skip the type operand
+			}
 			f.expr(arg)
 		}
 
@@ -214,7 +216,7 @@ func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Ex
 			f.expr(args[1])
 		} else {
 			// append(x, y, z)
-			tElem := coreType(s).(*types.Slice).Elem()
+			tElem := typeparams.CoreType(s).(*types.Slice).Elem()
 			for _, arg := range args[1:] {
 				f.assign(tElem, f.expr(arg))
 			}
@@ -223,7 +225,7 @@ func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Ex
 	case "delete":
 		m := f.expr(args[0])
 		k := f.expr(args[1])
-		f.assign(coreType(m).(*types.Map).Key(), k)
+		f.assign(typeparams.CoreType(m).(*types.Map).Key(), k)
 
 	default:
 		// ordinary call
@@ -274,7 +276,7 @@ func (f *Finder) assign(lhs, rhs types.Type) {
 	if types.Identical(lhs, rhs) {
 		return
 	}
-	if !isInterface(lhs) {
+	if !types.IsInterface(lhs) {
 		return
 	}
 
@@ -355,8 +357,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 		f.sig = saved
 
 	case *ast.CompositeLit:
-		// No need for coreType here: go1.18 disallows P{...} for type param P.
-		switch T := deref(tv.Type).Underlying().(type) {
+		switch T := typeparams.CoreType(typeparams.Deref(tv.Type)).(type) {
 		case *types.Struct:
 			for i, elem := range e.Elts {
 				if kv, ok := elem.(*ast.KeyValueExpr); ok {
@@ -387,7 +388,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 
 		default:
-			panic("unexpected composite literal type: " + tv.Type.String())
+			panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
 		}
 
 	case *ast.ParenExpr:
@@ -407,12 +408,12 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// x[i] or m[k] -- index or lookup operation
 			x := f.expr(e.X)
 			i := f.expr(e.Index)
-			if ux, ok := coreType(x).(*types.Map); ok {
+			if ux, ok := typeparams.CoreType(x).(*types.Map); ok {
 				f.assign(ux.Key(), i)
 			}
 		}
 
-	case *typeparams.IndexListExpr:
+	case *ast.IndexListExpr:
 		// f[X, Y] -- generic instantiation
 
 	case *ast.SliceExpr:
@@ -442,7 +443,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// unsafe call. Treat calls to functions in unsafe like ordinary calls,
 			// except that their signature cannot be determined by their func obj.
 			// Without this special handling, f.expr(e.Fun) would fail below.
-			if s, ok := unparen(e.Fun).(*ast.SelectorExpr); ok {
+			if s, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
 				if obj, ok := f.info.Uses[s.Sel].(*types.Builtin); ok && obj.Pkg().Path() == "unsafe" {
 					sig := f.info.Types[e.Fun].Type.(*types.Signature)
 					f.call(sig, e.Args)
@@ -451,7 +452,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 
 			// builtin call
-			if id, ok := unparen(e.Fun).(*ast.Ident); ok {
+			if id, ok := ast.Unparen(e.Fun).(*ast.Ident); ok {
 				if obj, ok := f.info.Uses[id].(*types.Builtin); ok {
 					sig := f.info.Types[id].Type.(*types.Signature)
 					f.builtin(obj, sig, e.Args)
@@ -460,7 +461,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 
 			// ordinary call
-			f.call(coreType(f.expr(e.Fun)).(*types.Signature), e.Args)
+			f.call(typeparams.CoreType(f.expr(e.Fun)).(*types.Signature), e.Args)
 		}
 
 	case *ast.StarExpr:
@@ -520,7 +521,7 @@ func (f *Finder) stmt(s ast.Stmt) {
 	case *ast.SendStmt:
 		ch := f.expr(s.Chan)
 		val := f.expr(s.Value)
-		f.assign(coreType(ch).(*types.Chan).Elem(), val)
+		f.assign(typeparams.CoreType(ch).(*types.Chan).Elem(), val)
 
 	case *ast.IncDecStmt:
 		f.expr(s.X)
@@ -624,9 +625,9 @@ func (f *Finder) stmt(s ast.Stmt) {
 		var I types.Type
 		switch ass := s.Assign.(type) {
 		case *ast.ExprStmt: // x.(type)
-			I = f.expr(unparen(ass.X).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.X).(*ast.TypeAssertExpr).X)
 		case *ast.AssignStmt: // y := x.(type)
-			I = f.expr(unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
 		}
 		for _, cc := range s.Body.List {
 			cc := cc.(*ast.CaseClause)
@@ -670,7 +671,7 @@ func (f *Finder) stmt(s ast.Stmt) {
 				var xelem types.Type
 				// Keys of array, *array, slice, string aren't interesting
 				// since the RHS key type is just an int.
-				switch ux := coreType(x).(type) {
+				switch ux := typeparams.CoreType(x).(type) {
 				case *types.Chan:
 					xelem = ux.Elem()
 				case *types.Map:
@@ -685,13 +686,13 @@ func (f *Finder) stmt(s ast.Stmt) {
 				var xelem types.Type
 				// Values of type strings aren't interesting because
 				// the RHS value type is just a rune.
-				switch ux := coreType(x).(type) {
+				switch ux := typeparams.CoreType(x).(type) {
 				case *types.Array:
 					xelem = ux.Elem()
 				case *types.Map:
 					xelem = ux.Elem()
 				case *types.Pointer: // *array
-					xelem = coreType(deref(ux)).(*types.Array).Elem()
+					xelem = typeparams.CoreType(typeparams.Deref(ux)).(*types.Array).Elem()
 				case *types.Slice:
 					xelem = ux.Elem()
 				}
@@ -709,20 +710,6 @@ func (f *Finder) stmt(s ast.Stmt) {
 
 // -- Plundered from golang.org/x/tools/go/ssa -----------------
 
-// deref returns a pointer's element type; otherwise it returns typ.
-func deref(typ types.Type) types.Type {
-	if p, ok := coreType(typ).(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return typ
-}
-
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
-
-func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
-func coreType(T types.Type) types.Type { return typeparams.CoreType(T) }
-
 func instance(info *types.Info, expr ast.Expr) bool {
 	var id *ast.Ident
 	switch x := expr.(type) {
@@ -733,6 +720,6 @@ func instance(info *types.Info, expr ast.Expr) bool {
 	default:
 		return false
 	}
-	_, ok := typeparams.GetInstances(info)[id]
+	_, ok := info.Instances[id]
 	return ok
 }

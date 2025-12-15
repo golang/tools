@@ -1,0 +1,601 @@
+This test verifies various behaviors of function extraction.
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- basic.go --
+package extract
+
+func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, result=outer)
+	a := 1    //@codeaction("a", "refactor.extract.function", end=end, result=inner)
+	_ = a + 4 //@loc(end, "4")
+} //@loc(closeBracket, "}")
+
+-- @outer/basic.go --
+package extract
+
+func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, result=outer)
+	newFunction() //@loc(end, "4")
+}
+
+func newFunction() {
+	a := 1 //@codeaction("a", "refactor.extract.function", end=end, result=inner)
+	_ = a + 4
+} //@loc(closeBracket, "}")
+
+-- @inner/basic.go --
+package extract
+
+func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, result=outer)
+	newFunction() //@loc(end, "4")
+}
+
+func newFunction() {
+	a := 1 //@codeaction("a", "refactor.extract.function", end=end, result=inner)
+	_ = a + 4
+} //@loc(closeBracket, "}")
+
+-- return.go --
+package extract
+
+func _() bool {
+	x := 1
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=ifend, result=return)
+		return true
+	} //@loc(ifend, "}")
+	return false
+}
+
+-- @return/return.go --
+package extract
+
+func _() bool {
+	x := 1
+	b, shouldReturn := newFunction(x)
+	if shouldReturn {
+		return b
+	} //@loc(ifend, "}")
+	return false
+}
+
+func newFunction(x int) (bool, bool) {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=ifend, result=return)
+		return true, true
+	}
+	return false, false
+}
+
+-- return_nonnested.go --
+package extract
+
+func _() bool {
+	x := 1 //@codeaction("x", "refactor.extract.function", end=rnnEnd, result=rnn)
+	if x == 0 {
+		return true
+	}
+	return false //@loc(rnnEnd, "false")
+}
+
+-- @rnn/return_nonnested.go --
+package extract
+
+func _() bool {
+	return newFunction() //@loc(rnnEnd, "false")
+}
+
+func newFunction() bool {
+	x := 1 //@codeaction("x", "refactor.extract.function", end=rnnEnd, result=rnn)
+	if x == 0 {
+		return true
+	}
+	return false
+}
+
+-- return_complex.go --
+package extract
+
+import "fmt"
+
+func _() (int, string, error) {
+	x := 1
+	y := "hello"
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
+	if y == z {
+		return x, y, fmt.Errorf("same")
+	} else if false {
+		z = "hi"
+		return x, z, nil
+	} //@loc(rcEnd, "}")
+	return x, z, nil
+}
+
+-- @rc/return_complex.go --
+package extract
+
+import "fmt"
+
+func _() (int, string, error) {
+	x := 1
+	y := "hello"
+	z, i, s, err, shouldReturn := newFunction(y, x)
+	if shouldReturn {
+		return i, s, err
+	} //@loc(rcEnd, "}")
+	return x, z, nil
+}
+
+func newFunction(y string, x int) (string, int, string, error, bool) {
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
+	if y == z {
+		return "", x, y, fmt.Errorf("same"), true
+	} else if false {
+		z = "hi"
+		return "", x, z, nil, true
+	}
+	return z, 0, "", nil, false
+}
+
+-- return_complex_nonnested.go --
+package extract
+
+import "fmt"
+
+func _() (int, string, error) {
+	x := 1
+	y := "hello"
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcnnEnd, result=rcnn)
+	if y == z {
+		return x, y, fmt.Errorf("same")
+	} else if false {
+		z = "hi"
+		return x, z, nil
+	}
+	return x, z, nil //@loc(rcnnEnd, "nil")
+}
+
+-- @rcnn/return_complex_nonnested.go --
+package extract
+
+import "fmt"
+
+func _() (int, string, error) {
+	x := 1
+	y := "hello"
+	return newFunction(y, x) //@loc(rcnnEnd, "nil")
+}
+
+func newFunction(y string, x int) (int, string, error) {
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcnnEnd, result=rcnn)
+	if y == z {
+		return x, y, fmt.Errorf("same")
+	} else if false {
+		z = "hi"
+		return x, z, nil
+	}
+	return x, z, nil
+}
+
+-- return_func_lit.go --
+package extract
+
+import "go/ast"
+
+func _() {
+	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
+		if n == nil { //@codeaction("if", "refactor.extract.function", end=rflEnd, result=rfl)
+			return true
+		} //@loc(rflEnd, "}")
+		return false
+	})
+}
+
+-- @rfl/return_func_lit.go --
+package extract
+
+import "go/ast"
+
+func _() {
+	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
+		b, shouldReturn := newFunction(n)
+		if shouldReturn {
+			return b
+		} //@loc(rflEnd, "}")
+		return false
+	})
+}
+
+func newFunction(n ast.Node) (bool, bool) {
+	if n == nil { //@codeaction("if", "refactor.extract.function", end=rflEnd, result=rfl)
+		return true, true
+	}
+	return false, false
+}
+
+-- return_func_lit_nonnested.go --
+package extract
+
+import "go/ast"
+
+func _() {
+	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
+		if n == nil { //@codeaction("if", "refactor.extract.function", end=rflnnEnd, result=rflnn)
+			return true
+		}
+		return false //@loc(rflnnEnd, "false")
+	})
+}
+
+-- @rflnn/return_func_lit_nonnested.go --
+package extract
+
+import "go/ast"
+
+func _() {
+	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
+		return newFunction(n) //@loc(rflnnEnd, "false")
+	})
+}
+
+func newFunction(n ast.Node) bool {
+	if n == nil { //@codeaction("if", "refactor.extract.function", end=rflnnEnd, result=rflnn)
+		return true
+	}
+	return false
+}
+
+-- return_init.go --
+package extract
+
+func _() string {
+	x := 1
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
+		x = 3
+		return "a"
+	} //@loc(riEnd, "}")
+	x = 2
+	return "b"
+}
+
+-- @ri/return_init.go --
+package extract
+
+func _() string {
+	x := 1
+	s, shouldReturn := newFunction(x)
+	if shouldReturn {
+		return s
+	} //@loc(riEnd, "}")
+	x = 2
+	return "b"
+}
+
+func newFunction(x int) (string, bool) {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
+		x = 3
+		return "a", true
+	}
+	return "", false
+}
+
+-- return_init_nonnested.go --
+package extract
+
+func _() string {
+	x := 1
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=rinnEnd, result=rinn)
+		x = 3
+		return "a"
+	}
+	x = 2
+	return "b" //@loc(rinnEnd, "\"b\"")
+}
+
+-- @rinn/return_init_nonnested.go --
+package extract
+
+func _() string {
+	x := 1
+	return newFunction(x) //@loc(rinnEnd, "\"b\"")
+}
+
+func newFunction(x int) string {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=rinnEnd, result=rinn)
+		x = 3
+		return "a"
+	}
+	x = 2
+	return "b"
+}
+
+-- args_returns.go --
+package extract
+
+func _() {
+	a := 1
+	a = 5     //@codeaction("a", "refactor.extract.function", end=araend, result=ara)
+	a = a + 2 //@loc(araend, "2")
+
+	b := a * 2 //@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
+	_ = b + 4  //@loc(arbend, "4")
+}
+
+-- @ara/args_returns.go --
+package extract
+
+func _() {
+	a := 1
+	a = newFunction(a) //@loc(araend, "2")
+
+	b := a * 2 //@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
+	_ = b + 4  //@loc(arbend, "4")
+}
+
+func newFunction(a int) int {
+	a = 5 //@codeaction("a", "refactor.extract.function", end=araend, result=ara)
+	a = a + 2
+	return a
+}
+
+-- @arb/args_returns.go --
+package extract
+
+func _() {
+	a := 1
+	a = 5     //@codeaction("a", "refactor.extract.function", end=araend, result=ara)
+	a = a + 2 //@loc(araend, "2")
+
+	newFunction(a)  //@loc(arbend, "4")
+}
+
+func newFunction(a int) {
+	b := a * 2 //@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
+	_ = b + 4
+}
+
+-- scope.go --
+package extract
+
+func _() {
+	newFunction := 1
+	a := newFunction //@codeaction("a", "refactor.extract.function", end="newFunction", result=scope)
+	_ = a // avoid diagnostic
+}
+
+func newFunction1() int {
+	return 1
+}
+
+var _ = newFunction1
+
+-- @scope/scope.go --
+package extract
+
+func _() {
+	newFunction := 1
+	a := newFunction2(newFunction) //@codeaction("a", "refactor.extract.function", end="newFunction", result=scope)
+	_ = a // avoid diagnostic
+}
+
+func newFunction2(newFunction int) int {
+	a := newFunction
+	return a
+}
+
+func newFunction1() int {
+	return 1
+}
+
+var _ = newFunction1
+
+-- smart_initialization.go --
+package extract
+
+func _() {
+	var a []int
+	a = append(a, 2) //@codeaction("a", "refactor.extract.function", end=siEnd, result=si)
+	b := 4           //@loc(siEnd, "4")
+	a = append(a, b)
+}
+
+-- @si/smart_initialization.go --
+package extract
+
+func _() {
+	var a []int
+	a, b := newFunction(a)           //@loc(siEnd, "4")
+	a = append(a, b)
+}
+
+func newFunction(a []int) ([]int, int) {
+	a = append(a, 2) //@codeaction("a", "refactor.extract.function", end=siEnd, result=si)
+	b := 4
+	return a, b
+}
+
+-- smart_return.go --
+package extract
+
+func _() {
+	var b []int
+	var a int
+	a = 2 //@codeaction("a", "refactor.extract.function", end=srEnd, result=sr)
+	b = []int{}
+	b = append(b, a) //@loc(srEnd, ")")
+	b[0] = 1
+}
+
+-- @sr/smart_return.go --
+package extract
+
+func _() {
+	var b []int
+	var a int
+	b = newFunction(a, b) //@loc(srEnd, ")")
+	b[0] = 1
+}
+
+func newFunction(a int, b []int) []int {
+	a = 2 //@codeaction("a", "refactor.extract.function", end=srEnd, result=sr)
+	b = []int{}
+	b = append(b, a)
+	return b
+}
+
+-- unnecessary_param.go --
+package extract
+
+func _() {
+	var b []int
+	a := 2 //@codeaction("a", "refactor.extract.function", end=upEnd, result=up)
+	b = []int{}
+	b = append(b, a) //@loc(upEnd, ")")
+	b[0] = 1
+	if a == 2 {
+		return
+	}
+}
+
+-- @up/unnecessary_param.go --
+package extract
+
+func _() {
+	var b []int
+	a, b := newFunction(b) //@loc(upEnd, ")")
+	b[0] = 1
+	if a == 2 {
+		return
+	}
+}
+
+func newFunction(b []int) (int, []int) {
+	a := 2 //@codeaction("a", "refactor.extract.function", end=upEnd, result=up)
+	b = []int{}
+	b = append(b, a)
+	return a, b
+}
+
+-- comment.go --
+package extract
+
+func _() {
+	a := /* comment in the middle of a line */ 1 //@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
+	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
+	_ = a + 4 //@loc(commentEnd, "4"),codeaction("_", "refactor.extract.function", end=lastComment, result=comment3)
+	// Comment right after 3 + 4
+
+	// Comment after with space //@loc(lastComment, "Comment")
+}
+
+-- @comment1/comment.go --
+package extract
+
+func _() {
+	newFunction() //@loc(commentEnd, "4"),codeaction("_", "refactor.extract.function", end=lastComment, result=comment3)
+	// Comment right after 3 + 4
+
+	// Comment after with space //@loc(lastComment, "Comment")
+}
+
+func newFunction() {
+	a := /* comment in the middle of a line */ 1 //@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
+	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
+	_ = a + 4
+}
+
+-- @comment2/comment.go --
+package extract
+
+func _() {
+	a := /* comment in the middle of a line */ 1 //@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
+	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
+	newFunction(a) //@loc(commentEnd, "4"),codeaction("_", "refactor.extract.function", end=lastComment, result=comment3)
+	// Comment right after 3 + 4
+
+	// Comment after with space //@loc(lastComment, "Comment")
+}
+
+func newFunction(a int) {
+	_ = a + 4
+}
+
+-- @comment3/comment.go --
+package extract
+
+func _() {
+	a := /* comment in the middle of a line */ 1 //@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
+	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
+	newFunction(a) //@loc(commentEnd, "4"),codeaction("_", "refactor.extract.function", end=lastComment, result=comment3)
+	// Comment right after 3 + 4
+
+	// Comment after with space //@loc(lastComment, "Comment")
+}
+
+func newFunction(a int) {
+	_ = a + 4
+}
+
+-- redefine.go --
+package extract
+
+import "strconv"
+
+func _() {
+	i, err := strconv.Atoi("1")
+	u, err := strconv.Atoi("2") //@codeaction(re`u.*\)`, "refactor.extract.function", result=redefine)
+	if i == u || err == nil {
+		return
+	}
+}
+
+-- @redefine/redefine.go --
+package extract
+
+import "strconv"
+
+func _() {
+	i, err := strconv.Atoi("1")
+	u, err := newFunction() //@codeaction(re`u.*\)`, "refactor.extract.function", result=redefine)
+	if i == u || err == nil {
+		return
+	}
+}
+
+func newFunction() (int, error) {
+	u, err := strconv.Atoi("2")
+	return u, err
+}
+
+-- anonymousfunc.go --
+package extract
+import "cmp"
+import "slices"
+
+// issue go#64821
+func _() {
+	var s []string //@codeaction("var", "refactor.extract.function", end=anonEnd, result=anon1)
+	slices.SortFunc(s, func(a, b string) int {
+		return cmp.Compare(a, b)
+	})
+	println(s) //@loc(anonEnd, ")")
+}
+
+-- @anon1/anonymousfunc.go --
+package extract
+import "cmp"
+import "slices"
+
+// issue go#64821
+func _() {
+	newFunction() //@loc(anonEnd, ")")
+}
+
+func newFunction() {
+	var s []string //@codeaction("var", "refactor.extract.function", end=anonEnd, result=anon1)
+	slices.SortFunc(s, func(a, b string) int {
+		return cmp.Compare(a, b)
+	})
+	println(s)
+}
+

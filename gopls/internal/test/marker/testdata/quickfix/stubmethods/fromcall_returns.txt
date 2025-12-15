@@ -1,0 +1,278 @@
+This test checks the return type of the generated missing method based on CallExpr.
+
+-- param.go --
+package fromcallreturns
+
+type A struct{}
+
+func inferFromParam() {
+	a := A{}
+	f(a.as_param()) //@quickfix("as_param", re"has no field or method", infer_param)
+}
+
+func f(i int) {}
+-- @infer_param/param.go --
+@@ -5 +5,4 @@
++func (a A) as_param() int {
++	panic("unimplemented")
++}
++
+-- assign.go --
+package fromcallreturns
+
+type Assign struct{}
+
+func inferReturnfromAssign() {
+	var assign int //@diag("assign",re"not used")
+	a := Assign{}
+	assign = a.as_assign() //@quickfix("as_assign", re"has no field or method", infer_assign)
+}
+-- @infer_assign/assign.go --
+@@ -5 +5,4 @@
++func (a Assign) as_assign() int {
++	panic("unimplemented")
++}
++
+-- multiple_assign.go --
+package fromcallreturns
+
+type MultiAssign struct{}
+
+func inferReturnfromMultipleAssign() {
+	var assign1 int //@diag("assign1",re"not used")
+	var assign2 int //@diag("assign2",re"not used")
+	m := MultiAssign{}
+	assign1, assign2 = m.multi_assign() //@quickfix("multi_assign", re"has no field or method", infer_multiple_assign)
+}
+-- @infer_multiple_assign/multiple_assign.go --
+@@ -5 +5,4 @@
++func (m MultiAssign) multi_assign() (int, int) {
++	panic("unimplemented")
++}
++
+-- multiple_return_in_param.go --
+package fromcallreturns
+
+type MultiReturn struct{}
+
+func inferMultipleReturnInParam() {
+	m := MultiReturn{}
+	m.param_has_multi_return(multiReturn()) //@quickfix("param_has_multi_return", re"has no field or method", multiple_return)
+}
+
+func multiReturn() (int, int) {
+	return 1, 1
+}
+-- @multiple_return/multiple_return_in_param.go --
+@@ -5 +5,4 @@
++func (m MultiReturn) param_has_multi_return(i int, param2 int) {
++	panic("unimplemented")
++}
++
+-- error_nodes.go --
+package fromcallreturns
+
+type E struct{}
+
+func all_error() {
+	e := E{}
+	errorFunc(e.errors(undefined1(), undefined2(), undefined3{})) //@quickfix("errors", re"has no field or method", all_error),diag("undefined1",re"undefined"),diag("undefined2",re"undefined"),diag("undefined3",re"undefined")
+}
+func errorFunc(u undefined4) {} //@diag("undefined4",re"undefined")
+-- @all_error/error_nodes.go --
+@@ -5 +5,4 @@
++func (e E) errors(param any, param2 any, param3 any) any {
++	panic("unimplemented")
++}
++
+-- paren.go --
+package fromcallreturns
+
+type Paren struct{}
+
+func paren() {
+	p := Paren{}
+	fn()((p.surroundingParen())) //@quickfix("surroundingParen", re"has no field or method", surrounding_paren)
+}
+
+func fn() func(i int) {
+	return func(i int) {}
+}
+-- @surrounding_paren/paren.go --
+@@ -5 +5,4 @@
++func (p Paren) surroundingParen() int {
++	panic("unimplemented")
++}
++
+-- if_stmt.go --
+package fromcallreturns
+
+type IfStruct struct{}
+
+func testIfStmt() {
+	i := IfStruct{}
+	if i.isValid() { //@quickfix("isValid", re"has no field or method", infer_if_stmt)
+		// do something
+	}
+}
+-- @infer_if_stmt/if_stmt.go --
+@@ -5 +5,4 @@
++func (i IfStruct) isValid() bool {
++	panic("unimplemented")
++}
++
+-- for_stmt.go --
+package fromcallreturns
+
+type ForStruct struct{}
+
+func testForStmt() {
+	f := ForStruct{}
+	for f.hasNext() { //@quickfix("hasNext", re"has no field or method", infer_for_stmt1)
+		// do something
+	}
+	for i := 0; f.inside(); i++ { //@quickfix("inside", re"has no field or method", infer_for_stmt2)
+		// do something
+	}
+}
+-- @infer_for_stmt1/for_stmt.go --
+@@ -5 +5,4 @@
++func (f ForStruct) hasNext() bool {
++	panic("unimplemented")
++}
++
+-- @infer_for_stmt2/for_stmt.go --
+@@ -5 +5,4 @@
++func (f ForStruct) inside() bool {
++	panic("unimplemented")
++}
++
+-- unary.go --
+package fromcallreturns
+
+type Unary struct{}
+
+func testUnaryExpr() {
+	u := Unary{}
+	a, b, c, d := !u.Boolean(), -u.Minus(), +u.Plus(), ^u.Xor() //@quickfix("Boolean", re"has no field or method", infer_unary_expr1),quickfix("Minus", re"has no field or method", infer_unary_expr2),quickfix("Plus", re"has no field or method", infer_unary_expr3),quickfix("Xor", re"has no field or method", infer_unary_expr4)
+	_, _, _, _ = a, b, c, d
+}
+-- @infer_unary_expr1/unary.go --
+@@ -5 +5,4 @@
++func (u Unary) Boolean() bool {
++	panic("unimplemented")
++}
++
+-- @infer_unary_expr2/unary.go --
+@@ -5 +5,4 @@
++func (u Unary) Minus() int {
++	panic("unimplemented")
++}
++
+-- @infer_unary_expr3/unary.go --
+@@ -5 +5,4 @@
++func (u Unary) Plus() int {
++	panic("unimplemented")
++}
++
+-- @infer_unary_expr4/unary.go --
+@@ -5 +5,4 @@
++func (u Unary) Xor() int {
++	panic("unimplemented")
++}
++
+-- binary.go --
+package fromcallreturns
+
+type Binary struct{}
+
+func testBinaryExpr() {
+	b := Binary{}
+	_ = 1 + b.Num()   //@quickfix("Num", re"has no field or method", infer_binary_expr1)
+	_ = "s" + b.Str() //@quickfix("Str", re"has no field or method", infer_binary_expr2)
+}
+-- @infer_binary_expr1/binary.go --
+@@ -5 +5,4 @@
++func (b Binary) Num() int {
++	panic("unimplemented")
++}
++
+-- @infer_binary_expr2/binary.go --
+@@ -5 +5,4 @@
++func (b Binary) Str() string {
++	panic("unimplemented")
++}
++
+-- value.go --
+package fromcallreturns
+
+type Value struct{}
+
+func v() {
+	v := Value{}
+	var a, b int = v.Multi()     //@quickfix("Multi", re"has no field or method", infer_value_expr1)
+	var c, d int = 4, v.Single() //@quickfix("Single", re"has no field or method", infer_value_expr2)
+	_, _, _, _ = a, b, c, d
+}
+-- @infer_value_expr1/value.go --
+@@ -5 +5,4 @@
++func (v Value) Multi() (int, int) {
++	panic("unimplemented")
++}
++
+-- @infer_value_expr2/value.go --
+@@ -5 +5,4 @@
++func (v Value) Single() int {
++	panic("unimplemented")
++}
++
+-- return.go --
+package fromcallreturns
+
+type Return struct{}
+
+func r() {
+	r := Return{}
+	_ = func() (int, int) {
+		return r.Multi() //@quickfix("Multi", re"has no field or method", infer_retrun_expr1)
+	}
+	_ = func() string {
+		return r.Single() //@quickfix("Single", re"has no field or method", infer_retrun_expr2)
+	}
+}
+-- @infer_retrun_expr1/return.go --
+@@ -5 +5,4 @@
++func (r Return) Multi() (int, int) {
++	panic("unimplemented")
++}
++
+-- @infer_retrun_expr2/return.go --
+@@ -5 +5,4 @@
++func (r Return) Single() string {
++	panic("unimplemented")
++}
++
+-- successive_return.go --
+package fromcallreturns
+
+type R struct{}
+
+func _() (x int, y, z string, k int64) {
+	r := R{}
+	_ = func() (a, b float32, c int) {
+		return r.Multi() //@quickfix("Multi", re"has no field or method", successive1)
+	}
+	return 3, "", r.Single(), 6 //@quickfix("Single", re"has no field or method", successive2)
+}
+-- @successive1/successive_return.go --
+@@ -5 +5,4 @@
++func (r R) Multi() (float32, float32, int) {
++	panic("unimplemented")
++}
++
+-- @successive2/successive_return.go --
+@@ -5 +5,4 @@
++func (r R) Single() string {
++	panic("unimplemented")
++}
++

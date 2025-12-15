@@ -3,13 +3,11 @@
 // license that can be found in the LICENSE file.
 
 //go:build windows || darwin
-// +build windows darwin
 
 package robustio
 
 import (
 	"errors"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"syscall"
@@ -75,7 +73,7 @@ func rename(oldpath, newpath string) (err error) {
 func readFile(filename string) ([]byte, error) {
 	var b []byte
 	err := retry(func() (err error, mayRetry bool) {
-		b, err = ioutil.ReadFile(filename)
+		b, err = os.ReadFile(filename)
 
 		// Unlike in rename, we do not retry errFileNotFound here: it can occur
 		// as a spurious error, but the file may also genuinely not exist, so the

@@ -1,0 +1,143 @@
+This test demonstrates file uri over doc link in hover.
+
+-- settings.json --
+{
+	"hoverKind": "FullDocumentation"
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- main.go --
+package main
+
+import (
+    "example.com/foo"
+)
+
+func main() {
+    // Call [foo.Foo]//@hover("Foo", "Foo", Foo)
+    foo.Foo()//@hover("Foo", "Foo", fooFoo)
+}
+
+-- foo/foo.go --
+// package foo defines function [Foo]//@hover("Foo", "Foo", Foo)
+package foo
+
+import(
+    "example.com/a"
+    "example.com/b"
+)
+
+// doc comment for Foo will reference the following
+//
+// two packages [a] and [b]
+//
+// a type [a.A]
+//
+// a type's field [a.A.A]
+//
+// a type's method [a.A.Bar]
+//
+// an interface [a.I]
+//
+// an interface's method [a.I.Foo]
+//
+// a const [b.B]
+//
+// a variable [b.V]
+//
+// a doc link [xtools github website]
+//
+// [xtools github website]: https://github.com/golang/tools
+func Foo() {} //@hover("Foo", "Foo", Foo)
+-- a/a.go --
+package a
+
+type A struct {
+    A string
+}
+
+func (*A) Bar(){}
+
+type I interface {
+    Foo()
+}
+
+-- b/b.go --
+package b
+
+import (
+    "example.com/a"
+)
+
+const B = 3
+
+var V = 4
+-- @Foo --
+```go
+func Foo()
+```
+
+---
+
+doc comment for Foo will reference the following
+
+two packages [a](file://$WORKDIR/foo/foo.go#5,5) and [b](file://$WORKDIR/foo/foo.go#6,5)
+
+a type [a.A](file://$WORKDIR/a/a.go#3,6)
+
+a type's field [a.A.A](file://$WORKDIR/a/a.go#4,5)
+
+a type's method [a.A.Bar](file://$WORKDIR/a/a.go#7,11)
+
+an interface [a.I](file://$WORKDIR/a/a.go#9,6)
+
+an interface's method [a.I.Foo](file://$WORKDIR/a/a.go#10,5)
+
+a const [b.B](file://$WORKDIR/b/b.go#7,7)
+
+a variable [b.V](file://$WORKDIR/b/b.go#9,5)
+
+a doc link [xtools github website](https://github.com/golang/tools)
+
+
+---
+
+[`foo.Foo` on pkg.go.dev](https://pkg.go.dev/example.com/foo#Foo)
+-- @fooFoo --
+```go
+func foo.Foo()
+```
+
+---
+
+doc comment for Foo will reference the following
+
+two packages [a](file://$WORKDIR/foo/foo.go#5,5) and [b](file://$WORKDIR/foo/foo.go#6,5)
+
+a type [a.A](file://$WORKDIR/a/a.go#3,6)
+
+a type's field [a.A.A](file://$WORKDIR/a/a.go#4,5)
+
+a type's method [a.A.Bar](file://$WORKDIR/a/a.go#7,11)
+
+an interface [a.I](file://$WORKDIR/a/a.go#9,6)
+
+an interface's method [a.I.Foo](file://$WORKDIR/a/a.go#10,5)
+
+a const [b.B](file://$WORKDIR/b/b.go#7,7)
+
+a variable [b.V](file://$WORKDIR/b/b.go#9,5)
+
+a doc link [xtools github website](https://github.com/golang/tools)
+
+
+---
+
+[`foo.Foo` on pkg.go.dev](https://pkg.go.dev/example.com/foo#Foo)

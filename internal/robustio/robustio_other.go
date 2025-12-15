@@ -3,12 +3,10 @@
 // license that can be found in the LICENSE file.
 
 //go:build !windows && !darwin
-// +build !windows,!darwin
 
 package robustio
 
 import (
-	"io/ioutil"
 	"os"
 )
 
@@ -17,7 +15,7 @@ func rename(oldpath, newpath string) error {
 }
 
 func readFile(filename string) ([]byte, error) {
-	return ioutil.ReadFile(filename)
+	return os.ReadFile(filename)
 }
 
 func removeAll(path string) error {

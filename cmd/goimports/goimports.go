@@ -11,16 +11,16 @@ import (
 	"flag"
 	"fmt"
 	"go/scanner"
-	exec "golang.org/x/sys/execabs"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"strings"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 )
@@ -106,7 +106,7 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 		in = f
 	}
 
-	src, err := ioutil.ReadAll(in)
+	src, err := io.ReadAll(in)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 			if fi, err := os.Stat(filename); err == nil {
 				perms = fi.Mode() & os.ModePerm
 			}
-			err = ioutil.WriteFile(filename, res, perms)
+			err = os.WriteFile(filename, res, perms)
 			if err != nil {
 				return err
 			}
@@ -199,6 +199,9 @@ func walkDir(path string) {
 }
 
 func main() {
+	// is anyone using this command?
+	counter.Open()
+	counter.Inc("tools/cmd:goimports")
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// call gofmtMain in a separate function
@@ -296,7 +299,7 @@ func gofmtMain() {
 }
 
 func writeTempFile(dir, prefix string, data []byte) (string, error) {
-	file, err := ioutil.TempFile(dir, prefix)
+	file, err := os.CreateTemp(dir, prefix)
 	if err != nil {
 		return "", err
 	}
@@ -362,8 +365,8 @@ func replaceTempFilename(diff []byte, filename string) ([]byte, error) {
 	}
 	// Always print filepath with slash separator.
 	f := filepath.ToSlash(filename)
-	bs[0] = []byte(fmt.Sprintf("--- %s%s", f+".orig", t0))
-	bs[1] = []byte(fmt.Sprintf("+++ %s%s", f, t1))
+	bs[0] = fmt.Appendf(nil, "--- %s%s", f+".orig", t0)
+	bs[1] = fmt.Appendf(nil, "+++ %s%s", f, t1)
 	return bytes.Join(bs, []byte{'\n'}), nil
 }
 

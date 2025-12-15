@@ -1,0 +1,158 @@
+This test checks basic functionality of the textDocument/highlight request.
+
+-- highlights.go --
+package highlights
+
+import (
+	"fmt"         //@hiloc(fmtImp, "\"fmt\"", text),highlightall(fmtImp, fmt1, fmt2, fmt3, fmt4)
+	h2 "net/http" //@hiloc(hImp, "h2", text),highlightall(hImp, hUse)
+	"sort"
+)
+
+type F struct{ bar int } //@hiloc(barDeclaration, "bar", text),highlightall(barDeclaration, bar1, bar2, bar3)
+
+func _() F {
+	return F{
+		bar: 123, //@hiloc(bar1, "bar", write)
+	}
+}
+
+var foo = F{bar: 52} //@hiloc(fooDeclaration, "foo", write),hiloc(bar2, "bar", write),highlightall(fooDeclaration, fooUse)
+
+func Print() { //@hiloc(printFunc, "Print", text),highlightall(printFunc, printTest)
+	_ = h2.Client{} //@hiloc(hUse, "h2", text)
+
+	fmt.Println(foo) //@hiloc(fooUse, "foo", read),hiloc(fmt1, "fmt", text)
+	fmt.Print("yo")  //@hiloc(printSep, "Print", text),highlightall(printSep, print1, print2),hiloc(fmt2, "fmt", text)
+}
+
+func (x *F) Inc() { //@hiloc(xRightDecl, "x", text),hiloc(xLeftDecl, " *", text),highlightall(xRightDecl, xUse),highlight(xLeftDecl, xRightDecl, xUse)
+	x.bar++ //@hiloc(xUse, "x", read),hiloc(bar3, "bar", write)
+}
+
+func testFunctions() {
+	fmt.Print("main start") //@hiloc(print1, "Print", text),hiloc(fmt3, "fmt", text)
+	fmt.Print("ok")         //@hiloc(print2, "Print", text),hiloc(fmt4, "fmt", text)
+	Print()                 //@hiloc(printTest, "Print", text)
+}
+
+// DocumentHighlight is undefined, so its uses below are type errors.
+// Nevertheless, document highlighting should still work.
+//@diag(locdoc1, re"undefined|undeclared"), diag(locdoc2, re"undefined|undeclared"), diag(locdoc3, re"undefined|undeclared")
+
+func toProtocolHighlight(rngs []int) []DocumentHighlight { //@loc(locdoc1, "DocumentHighlight"), hiloc(doc1, "DocumentHighlight", text),hiloc(docRet1, "[]DocumentHighlight", text),highlight(doc1, docRet1, doc1, doc2, doc3, result)
+	result := make([]DocumentHighlight, 0, len(rngs)) //@loc(locdoc2, "DocumentHighlight"), hiloc(doc2, "DocumentHighlight", text),highlight(doc2, doc1, doc2, doc3)
+	for _, rng := range rngs {
+		result = append(result, DocumentHighlight{ //@loc(locdoc3, "DocumentHighlight"), hiloc(doc3, "DocumentHighlight", text),highlight(doc3, doc1, doc2, doc3)
+			Range: rng,
+		})
+	}
+	return result //@hiloc(result, "result", text)
+}
+
+func testForLoops() {
+	for i := 0; i < 10; i++ { //@hiloc(forDecl1, "for", text),highlightall(forDecl1, brk1, cont1)
+		if i > 8 {
+			break //@hiloc(brk1, "break", text)
+		}
+		if i < 2 {
+			for j := 1; j < 10; j++ { //@hiloc(forDecl2, "for", text),highlightall(forDecl2, cont2)
+				if j < 3 {
+					for k := 1; k < 10; k++ { //@hiloc(forDecl3, "for", text),highlightall(forDecl3, cont3)
+						if k < 3 {
+							continue //@hiloc(cont3, "continue", text)
+						}
+					}
+					continue //@hiloc(cont2, "continue", text)
+				}
+			}
+			continue //@hiloc(cont1, "continue", text)
+		}
+	}
+
+	arr := []int{}
+	for i := range arr { //@hiloc(forDecl4, "for", text),highlightall(forDecl4, brk4, cont4)
+		if i > 8 {
+			break //@hiloc(brk4, "break", text)
+		}
+		if i < 4 {
+			continue //@hiloc(cont4, "continue", text)
+		}
+	}
+
+Outer:
+	for i := 0; i < 10; i++ { //@hiloc(forDecl5, "for", text),highlightall(forDecl5, brk5, brk6, brk8)
+		break //@hiloc(brk5, "break", text)
+		for { //@hiloc(forDecl6, "for", text),highlightall(forDecl6, cont5), diag("for", re"unreachable")
+			if i == 1 {
+				break Outer //@hiloc(brk6, "break Outer", text)
+			}
+			switch i { //@hiloc(switch1, "switch", text),highlightall(switch1, brk7)
+			case 5:
+				break //@hiloc(brk7, "break", text)
+			case 6:
+				continue //@hiloc(cont5, "continue", text)
+			case 7:
+				break Outer //@hiloc(brk8, "break Outer", text)
+			}
+		}
+	}
+}
+
+func testSwitch() {
+	var i, j int
+
+L1:
+	for { //@hiloc(forDecl7, "for", text),highlightall(forDecl7, brk10, cont6)
+	L2:
+		switch i { //@hiloc(switch2, "switch", text),highlightall(switch2, brk11, brk12, brk13)
+		case 1:
+			switch j { //@hiloc(switch3, "switch", text),highlightall(switch3, brk9)
+			case 1:
+				break //@hiloc(brk9, "break", text)
+			case 2:
+				break L1 //@hiloc(brk10, "break L1", text)
+			case 3:
+				break L2 //@hiloc(brk11, "break L2", text)
+			default:
+				continue //@hiloc(cont6, "continue", text)
+			}
+		case 2:
+			break //@hiloc(brk12, "break", text)
+		default:
+			break L2 //@hiloc(brk13, "break L2", text)
+		}
+	}
+}
+
+func testReturn() bool { //@hiloc(func1, "func", text),hiloc(bool1, "bool", text),highlight(func1, func1, fullRet11, fullRet12),highlight(bool1, bool1, false1, bool2, true1)
+	if 1 < 2 {
+		return false //@hiloc(ret11, "return", text),hiloc(fullRet11, "return false", text),hiloc(false1, "false", text),highlight(ret11, func1, fullRet11, fullRet12)
+	}
+	candidates := []int{}
+	sort.SliceStable(candidates, func(i, j int) bool { //@hiloc(func2, "func", text),hiloc(bool2, "bool", text),highlight(func2, func2, fullRet2)
+		return candidates[i] > candidates[j] //@hiloc(ret2, "return", text),hiloc(fullRet2, "return candidates[i] > candidates[j]", text),highlight(ret2, func2, fullRet2)
+	})
+	return true //@hiloc(ret12, "return", text),hiloc(fullRet12, "return true", text),hiloc(true1, "true", text),highlight(ret12, func1, fullRet11, fullRet12)
+}
+
+func testReturnFields() float64 { //@hiloc(retVal1, "float64", text),highlight(retVal1, retVal1, retVal11, retVal21)
+	if 1 < 2 {
+		return 20.1 //@hiloc(retVal11, "20.1", text),highlight(retVal11, retVal1, retVal11, retVal21)
+	}
+	z := 4.3 //@hiloc(zDecl, "z", write)
+	return z //@hiloc(retVal21, "z", text),highlight(retVal21, retVal1, retVal11, zDecl, retVal21)
+}
+
+func testReturnMultipleFields() (float32, string) { //@hiloc(retVal31, "float32", text),hiloc(retVal32, "string", text),highlight(retVal31, retVal31, retVal41, retVal51),highlight(retVal32, retVal32, retVal42, retVal52)
+	y := "im a var" //@hiloc(yDecl, "y", write),
+	if 1 < 2 {
+		return 20.1, y //@hiloc(retVal41, "20.1", text),hiloc(retVal42, "y", text),highlight(retVal41, retVal31, retVal41, retVal51),highlight(retVal42, retVal32, yDecl, retVal42, retVal52)
+	}
+	return 4.9, "test" //@hiloc(retVal51, "4.9", text),hiloc(retVal52, "\"test\"", text),highlight(retVal51, retVal31, retVal41, retVal51),highlight(retVal52, retVal32, retVal42, retVal52)
+}
+
+func testReturnFunc() int32 { //@hiloc(retCall, "int32", text)
+	mulch := 1          //@hiloc(mulchDec, "mulch", write),highlight(mulchDec, mulchDec, mulchRet)
+	return int32(mulch) //@hiloc(mulchRet, "mulch", read),hiloc(retFunc, "int32", text),hiloc(retTotal, "int32(mulch)", text),highlight(mulchRet, mulchDec, mulchRet),highlight(retFunc, retCall, retFunc, retTotal)
+}

@@ -1,0 +1,36 @@
+This test demonstrates diagnostics for various forms of file exclusion.
+
+Note: this test used to also check the errors when a file was excluded due to
+an inactive module, or mismatching GOOS/GOARCH, comment, but with zero-config
+gopls (golang/go#57979) and improved build tag support (golang/go#29202), we no
+longer get these errors.
+
+-- go.work --
+go 1.21
+
+use (
+	./a
+)
+-- a/go.mod --
+module mod.com/a
+
+go 1.18
+
+-- a/a.go --
+package a
+
+-- a/a_plan9.go --
+package a // Not excluded, due to improved build tag support.
+
+-- a/a_ignored.go --
+//go:build skip
+package a //@diag(re"package (a)", re"excluded due to its build tags")
+
+-- b/go.mod --
+module mod.com/b
+
+go 1.18
+
+-- b/b.go --
+package b // Not excluded, due to zero-config gopls.
+

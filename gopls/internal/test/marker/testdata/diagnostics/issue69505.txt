@@ -1,0 +1,22 @@
+This test checks that diagnostics ranges computed with the TypeErrorEndPos
+heuristic span at least a full token.
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- main.go --
+package main
+
+import "example.com/foo-bar" //@ diag(re`"[^"]*"`, re`not used`, exact=true)
+
+func f(int) {}
+
+func main() {
+	var x int
+	_ = x + 1.e+0i //@ diag("1.e+0i", re`truncated`, exact=true)
+}
+
+-- foo-bar/baz.go --
+package foo

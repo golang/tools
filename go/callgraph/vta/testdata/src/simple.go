@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// go:build ignore
-
-package testdata
+package main
 
 var gl int
 
@@ -16,3 +14,5 @@ type X struct {
 func main() {
 	print(gl)
 }
+
+func foo() (r int) { return gl }

@@ -1,0 +1,36 @@
+
+-- shadow.go --
+package shadow
+
+func _() {
+	a := true
+	b, c, _ := A(), B(), D() //@renameerr("A", "a", re"shadowed"),rename("B", "b", BTob),renameerr("b", "c", re"conflict"),rename("D", "d", DTod)
+	d := false
+	_, _, _, _ = a, b, c, d
+}
+
+func A() int {
+	return 0
+}
+
+func B() int {
+	return 0
+}
+
+func D() int {
+	return 0
+}
+-- @BTob/shadow.go --
+@@ -5 +5 @@
+-	b, c, _ := A(), B(), D() //@renameerr("A", "a", re"shadowed"),rename("B", "b", BTob),renameerr("b", "c", re"conflict"),rename("D", "d", DTod)
++	b, c, _ := A(), b(), D() //@renameerr("A", "a", re"shadowed"),rename("B", "b", BTob),renameerr("b", "c", re"conflict"),rename("D", "d", DTod)
+@@ -14 +14 @@
+-func B() int {
++func b() int {
+-- @DTod/shadow.go --
+@@ -5 +5 @@
+-	b, c, _ := A(), B(), D() //@renameerr("A", "a", re"shadowed"),rename("B", "b", BTob),renameerr("b", "c", re"conflict"),rename("D", "d", DTod)
++	b, c, _ := A(), B(), d() //@renameerr("A", "a", re"shadowed"),rename("B", "b", BTob),renameerr("b", "c", re"conflict"),rename("D", "d", DTod)
+@@ -18 +18 @@
+-func D() int {
++func d() int {

@@ -16,8 +16,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = "check for non-64-bits-aligned arguments to sync/atomic functions"
@@ -30,11 +31,11 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	if 8*pass.TypesSizes.Sizeof(types.Typ[types.Uintptr]) == 64 {
 		return nil, nil // 64-bit platform
 	}
-	if !analysisutil.Imports(pass.Pkg, "sync/atomic") {
+	if !typesinternal.Imports(pass.Pkg, "sync/atomic") {
 		return nil, nil // doesn't directly import sync/atomic
 	}
 
@@ -42,31 +43,20 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 	}
+	funcNames := []string{
+		"AddInt64", "AddUint64",
+		"LoadInt64", "LoadUint64",
+		"StoreInt64", "StoreUint64",
+		"SwapInt64", "SwapUint64",
+		"CompareAndSwapInt64", "CompareAndSwapUint64",
+	}
 
 	inspect.Preorder(nodeFilter, func(node ast.Node) {
 		call := node.(*ast.CallExpr)
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return
-		}
-		pkgIdent, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return
-		}
-		pkgName, ok := pass.TypesInfo.Uses[pkgIdent].(*types.PkgName)
-		if !ok || pkgName.Imported().Path() != "sync/atomic" {
-			return
-		}
-
-		switch sel.Sel.Name {
-		case "AddInt64", "AddUint64",
-			"LoadInt64", "LoadUint64",
-			"StoreInt64", "StoreUint64",
-			"SwapInt64", "SwapUint64",
-			"CompareAndSwapInt64", "CompareAndSwapUint64":
-
+		obj := typeutil.Callee(pass.TypesInfo, call)
+		if typesinternal.IsFunctionNamed(obj, "sync/atomic", funcNames...) {
 			// For all the listed functions, the expression to check is always the first function argument.
-			check64BitAlignment(pass, sel.Sel.Name, call.Args[0])
+			check64BitAlignment(pass, obj.Name(), call.Args[0])
 		}
 	})
 
@@ -75,8 +65,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 func check64BitAlignment(pass *analysis.Pass, funcName string, arg ast.Expr) {
 	// Checks the argument is made of the address operator (&) applied to
-	// to a struct field (as opposed to a variable as the first word of
-	// uint64 and int64 variables can be relied upon to be 64-bit aligned.
+	// a struct field (as opposed to a variable as the first word of
+	// uint64 and int64 variables can be relied upon to be 64-bit aligned).
 	unary, ok := arg.(*ast.UnaryExpr)
 	if !ok || unary.Op != token.AND {
 		return

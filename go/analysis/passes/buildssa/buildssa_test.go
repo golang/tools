@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
@@ -20,7 +19,7 @@ func Test(t *testing.T) {
 
 	ssainfo := result.(*buildssa.SSA)
 	got := fmt.Sprint(ssainfo.SrcFuncs)
-	want := `[a.Fib (a.T).fib]`
+	want := `[a.Fib (a.T).fib a._ a._]`
 	if got != want {
 		t.Errorf("SSA.SrcFuncs = %s, want %s", got, want)
 		for _, f := range ssainfo.SrcFuncs {
@@ -30,9 +29,6 @@ func Test(t *testing.T) {
 }
 
 func TestGenericDecls(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestGenericDecls requires type parameters.")
-	}
 	testdata := analysistest.TestData()
 	result := analysistest.Run(t, testdata, buildssa.Analyzer, "b")[0].Result
 
@@ -48,9 +44,6 @@ func TestGenericDecls(t *testing.T) {
 }
 
 func TestImporting(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestImporting depends on testdata/b/b/go which uses type parameters.")
-	}
 	testdata := analysistest.TestData()
 	result := analysistest.Run(t, testdata, buildssa.Analyzer, "c")[0].Result
 

@@ -1,0 +1,64 @@
+Regression test that Implementation(I) returns J even when I and J are
+both interfaces; see issue #68641. Previously, interface/interface
+matches were never reported.
+
+However, the direction of the query is determined by the concreteness
+of the query type: Implements on a.B, an interface, reports types that
+are assignable to it, a.C; but Implements on concrete a.impl reports
+only interface types to which it may be assigned, and there is no way
+to query from interface B to find the (wider) interface A. (This would
+be a useful feature of LSP though; see
+https://github.com/microsoft/language-server-protocol/issues/2037.)
+
+The test exercises both the local (intra-) and global (cross-package)
+algorithms and checks that they are consistent.
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- a/a.go --
+package a
+
+type A interface { //@ loc(aA, "A"), implementation("A", aB, aC, aimpl, bA, bB, bC, bimpl)
+	A() //@ loc(aAA, "A"), implementation("A", aimplA, bimplA, bAA)
+}
+
+type B interface { //@ loc(aB, "B"), implementation("B", aC, aimpl, bB, bC, bimpl)
+	A
+	B()
+}
+
+type C interface { //@ loc(aC, "C"), implementation("C", aimpl, bC, bimpl)
+	B
+	C()
+}
+
+type impl int //@ loc(aimpl, "impl"), implementation("impl", aA, aB, aC, bA, bB, bC)
+
+func (impl) A() //@ loc(aimplA, "A")
+func (impl) B()
+func (impl) C()
+
+-- b/b.go --
+package b
+
+type A interface { //@ loc(bA, "A"), implementation("A", aA, aB, aC, aimpl, bB, bC, bimpl)
+	A() //@ loc(bAA, "A")
+}
+
+type B interface { //@ loc(bB, "B"), implementation("B", aB, aC, aimpl, bC, bimpl)
+	A
+	B()
+}
+
+type C interface { //@ loc(bC, "C"), implementation("C", aC, aimpl, bimpl)
+	B
+	C()
+}
+
+type impl int //@ loc(bimpl, "impl"), implementation("impl", aA, aB, aC, bA, bB, bC)
+
+func (impl) A() //@ loc(bimplA, "A")
+func (impl) B()
+func (impl) C()

@@ -1,0 +1,25 @@
+package bytescutprefix
+
+import (
+	"bytes"
+)
+
+func _() {
+	if after, ok := bytes.CutPrefix(bss, bspre); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
+		a := after
+		_ = a
+	}
+	if after, ok := bytes.CutPrefix([]byte(""), []byte("")); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
+		a := after
+		_ = a
+	}
+
+	if before, ok := bytes.CutSuffix(bss, bssuf); ok { // want "HasSuffix \\+ TrimSuffix can be simplified to CutSuffix"
+		a := before
+		_ = a
+	}
+	if before, ok := bytes.CutSuffix([]byte(""), []byte("")); ok { // want "HasSuffix \\+ TrimSuffix can be simplified to CutSuffix"
+		a := before
+		_ = a
+	}
+}

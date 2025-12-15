@@ -1,0 +1,23 @@
+This test shows we prefer rangeable funcs in range statements.
+
+-- flags --
+-ignore_extra_diags
+
+-- range_func.go --
+package rangefunc
+
+func iterNot(func(int)) {}
+func iter0(func() bool) {}
+func iter1(func(int) bool) {}
+func iter2(func(int, int) bool)
+
+func _() {
+	for range i { //@rank(" {", "iter0", "iterNot"),rank(" {", "iter1", "iterNot"),rank(" {", "iter2", "iterNot")
+	}
+
+	for k := range i { //@rank(" {", "iter1", "iterNot"),rank(" {", "iter1", "iter0"),rank(" {", "iter2", "iter0")
+	}
+
+	for k, v := range i { //@rank(" {", "iter2", "iterNot"),rank(" {", "iter2", "iter0"),rank(" {", "iter2", "iter1")
+	}
+}

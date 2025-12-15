@@ -1,0 +1,70 @@
+This test checks the behavior of the 'extract variable/constant' code action, with resolve support.
+See extract_variable.txt for the same test without resolve support.
+
+-- flags --
+-ignore_extra_diags
+
+-- basic_lit.go --
+package extract
+
+func _() {
+	var _ = 1 + 2 //@codeaction("1", "refactor.extract.constant", edit=basic_lit1)
+	var _ = 3 + 4 //@codeaction("3 + 4", "refactor.extract.constant", edit=basic_lit2)
+}
+
+-- @basic_lit1/basic_lit.go --
+@@ -4 +4,2 @@
+-	var _ = 1 + 2 //@codeaction("1", "refactor.extract.constant", edit=basic_lit1)
++	const newConst = 1
++	var _ = newConst + 2 //@codeaction("1", "refactor.extract.constant", edit=basic_lit1)
+-- @basic_lit2/basic_lit.go --
+@@ -5 +5,2 @@
+-	var _ = 3 + 4 //@codeaction("3 + 4", "refactor.extract.constant", edit=basic_lit2)
++	const newConst = 3 + 4
++	var _ = newConst //@codeaction("3 + 4", "refactor.extract.constant", edit=basic_lit2)
+-- func_call.go --
+package extract
+
+import "strconv"
+
+func _() {
+	x0 := append([]int{}, 1) //@codeaction("append([]int{}, 1)", "refactor.extract.variable", edit=func_call1)
+	str := "1"
+	b, err := strconv.Atoi(str) //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
+}
+
+-- @func_call1/func_call.go --
+@@ -6 +6,2 @@
+-	x0 := append([]int{}, 1) //@codeaction("append([]int{}, 1)", "refactor.extract.variable", edit=func_call1)
++	newVar := append([]int{}, 1)
++	x0 := newVar //@codeaction("append([]int{}, 1)", "refactor.extract.variable", edit=func_call1)
+-- @func_call2/func_call.go --
+@@ -8 +8,2 @@
+-	b, err := strconv.Atoi(str) //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
++	newVar, newVar1 := strconv.Atoi(str)
++	b, err := newVar, newVar1 //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
+-- scope.go --
+package extract
+
+import "go/ast"
+
+func _() {
+	x0 := 0
+	if true {
+		y := ast.CompositeLit{} //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
+	}
+	if true {
+		x := !false //@codeaction("!false", "refactor.extract.constant", edit=scope2)
+	}
+}
+
+-- @scope1/scope.go --
+@@ -8 +8,2 @@
+-		y := ast.CompositeLit{} //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
++		newVar := ast.CompositeLit{}
++		y := newVar //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
+-- @scope2/scope.go --
+@@ -11 +11,2 @@
+-		x := !false //@codeaction("!false", "refactor.extract.constant", edit=scope2)
++		const newConst = !false
++		x := newConst //@codeaction("!false", "refactor.extract.constant", edit=scope2)

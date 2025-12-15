@@ -41,5 +41,5 @@ func Baz(m map[I]I, b1, b2 B, n map[string]*J) *J {
 // Local(b2) -> Local(t1)
 // Local(t1) -> MapValue(testdata.I)
 // Local(t0) -> MapKey(testdata.I)
-// Local(t3) -> MapValue(*testdata.J)
+// Local(t3) -> MapValue(*testdata.J), Return(Baz[0])
 // MapValue(*testdata.J) -> Local(t3)

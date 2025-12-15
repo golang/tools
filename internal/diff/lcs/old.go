@@ -16,10 +16,6 @@ type Diff struct {
 	ReplStart, ReplEnd int // offset of replacement text in B
 }
 
-// DiffStrings returns the differences between two strings.
-// It does not respect rune boundaries.
-func DiffStrings(a, b string) []Diff { return diff(stringSeqs{a, b}) }
-
 // DiffBytes returns the differences between two byte sequences.
 // It does not respect rune boundaries.
 func DiffBytes(a, b []byte) []Diff { return diff(bytesSeqs{a, b}) }
@@ -29,7 +25,7 @@ func DiffRunes(a, b []rune) []Diff { return diff(runesSeqs{a, b}) }
 
 func diff(seqs sequences) []Diff {
 	// A limit on how deeply the LCS algorithm should search. The value is just a guess.
-	const maxDiffs = 30
+	const maxDiffs = 100
 	diff, _ := compute(seqs, twosided, maxDiffs/2)
 	return diff
 }
@@ -86,7 +82,7 @@ func (lcs lcs) toDiffs(alen, blen int) []Diff {
 
 // --- FORWARD ---
 
-// fdone decides if the forwward path has reached the upper right
+// fdone decides if the forward path has reached the upper right
 // corner of the rectangle. If so, it also returns the computed lcs.
 func (e *editGraph) fdone(D, k int) (bool, lcs) {
 	// x, y, k are relative to the rectangle
@@ -105,7 +101,7 @@ func forward(e *editGraph) lcs {
 		return ans
 	}
 	// from D to D+1
-	for D := 0; D < e.limit; D++ {
+	for D := range e.limit {
 		e.setForward(D+1, -(D + 1), e.getForward(D, -D))
 		if ok, ans := e.fdone(D+1, -(D + 1)); ok {
 			return ans
@@ -199,13 +195,14 @@ func (e *editGraph) bdone(D, k int) (bool, lcs) {
 }
 
 // run the backward algorithm, until success or up to the limit on D.
+// (used only by tests)
 func backward(e *editGraph) lcs {
 	e.setBackward(0, 0, e.ux)
 	if ok, ans := e.bdone(0, 0); ok {
 		return ans
 	}
 	// from D to D+1
-	for D := 0; D < e.limit; D++ {
+	for D := range e.limit {
 		e.setBackward(D+1, -(D + 1), e.getBackward(D, -D)-1)
 		if ok, ans := e.bdone(D+1, -(D + 1)); ok {
 			return ans
@@ -299,7 +296,7 @@ func twosided(e *editGraph) lcs {
 	e.setBackward(0, 0, e.ux)
 
 	// from D to D+1
-	for D := 0; D < e.limit; D++ {
+	for D := range e.limit {
 		// just finished a backwards pass, so check
 		if got, ok := e.twoDone(D, D); ok {
 			return e.twolcs(D, D, got)
@@ -376,14 +373,8 @@ func (e *editGraph) twoDone(df, db int) (int, bool) {
 	if (df+db+e.delta)%2 != 0 {
 		return 0, false // diagonals cannot overlap
 	}
-	kmin := -db + e.delta
-	if -df > kmin {
-		kmin = -df
-	}
-	kmax := db + e.delta
-	if df < kmax {
-		kmax = df
-	}
+	kmin := max(-df, -db+e.delta)
+	kmax := min(df, db+e.delta)
 	for k := kmin; k <= kmax; k += 2 {
 		x := e.vf.get(df, k)
 		u := e.vb.get(db, k-e.delta)

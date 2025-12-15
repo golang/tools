@@ -1,0 +1,13 @@
+Regresson test for #63804: conversion to built-in type caused panic.
+
+the server's Signature method never returns an actual error,
+so the best we can assert is that there is no result.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+var _ = int(123) //@signature("123", "", 0)

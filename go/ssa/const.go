@@ -12,9 +12,9 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
-	"strings"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // NewConst returns a new constant of the specified value and type.
@@ -45,9 +45,9 @@ func soleTypeKind(typ types.Type) types.BasicInfo {
 	// Candidates (perhaps all) are eliminated during the type-set
 	// iteration, which executes at least once.
 	state := types.IsBoolean | types.IsInteger | types.IsString
-	underIs(typeSetOf(typ), func(t types.Type) bool {
+	underIs(typ, func(ut types.Type) bool {
 		var c types.BasicInfo
-		if t, ok := t.(*types.Basic); ok {
+		if t, ok := ut.(*types.Basic); ok {
 			c = t.Info()
 		}
 		if c&types.IsNumeric != 0 { // int/float/complex
@@ -78,7 +78,7 @@ func zeroConst(t types.Type) *Const {
 func (c *Const) RelString(from *types.Package) string {
 	var s string
 	if c.Value == nil {
-		s = zeroString(c.typ, from)
+		s, _ = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
 	} else if c.Value.Kind() == constant.String {
 		s = constant.StringVal(c.Value)
 		const max = 20
@@ -91,44 +91,6 @@ func (c *Const) RelString(from *types.Package) string {
 		s = c.Value.String()
 	}
 	return s + ":" + relType(c.Type(), from)
-}
-
-// zeroString returns the string representation of the "zero" value of the type t.
-func zeroString(t types.Type, from *types.Package) string {
-	switch t := t.(type) {
-	case *types.Basic:
-		switch {
-		case t.Info()&types.IsBoolean != 0:
-			return "false"
-		case t.Info()&types.IsNumeric != 0:
-			return "0"
-		case t.Info()&types.IsString != 0:
-			return `""`
-		case t.Kind() == types.UnsafePointer:
-			fallthrough
-		case t.Kind() == types.UntypedNil:
-			return "nil"
-		default:
-			panic(fmt.Sprint("zeroString for unexpected type:", t))
-		}
-	case *types.Pointer, *types.Slice, *types.Interface, *types.Chan, *types.Map, *types.Signature:
-		return "nil"
-	case *types.Named:
-		return zeroString(t.Underlying(), from)
-	case *types.Array, *types.Struct:
-		return relType(t, from) + "{}"
-	case *types.Tuple:
-		// Tuples are not normal values.
-		// We are currently format as "(t[0], ..., t[n])". Could be something else.
-		components := make([]string, t.Len())
-		for i := 0; i < t.Len(); i++ {
-			components[i] = zeroString(t.At(i).Type(), from)
-		}
-		return "(" + strings.Join(components, ", ") + ")"
-	case *typeparams.TypeParam:
-		return "*new(" + relType(t, from) + ")"
-	}
-	panic(fmt.Sprint("zeroString: unexpected ", t))
 }
 
 func (c *Const) Name() string {
@@ -164,7 +126,7 @@ func (c *Const) IsNil() bool {
 // nillable reports whether *new(T) == nil is legal for type T.
 func nillable(t types.Type) bool {
 	if typeparams.IsTypeParam(t) {
-		return underIs(typeSetOf(t), func(u types.Type) bool {
+		return underIs(t, func(u types.Type) bool {
 			// empty type set (u==nil) => any underlying types => not nillable
 			return u != nil && nillable(u)
 		})

@@ -1,0 +1,25 @@
+This is regression test of a second crash in
+refactor.inline.variable covered by #74347.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+func _() {
+	type S struct{ F int }
+	x := S{F: 0}
+	_ = x //@codeaction("x", "refactor.inline.variable", result=out)
+}
+
+-- @out/a/a.go --
+package a
+
+func _() {
+	type S struct{ F int }
+	x := S{F: 0}
+	_ = S{F: 0} //@codeaction("x", "refactor.inline.variable", result=out)
+}
+

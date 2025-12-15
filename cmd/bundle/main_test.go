@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/packagestest"
 )
 
 func TestBundle(t *testing.T) { packagestest.TestAll(t, testBundle) }
@@ -27,7 +27,7 @@ func testBundle(t *testing.T, x packagestest.Exporter) {
 	e := packagestest.Export(t, x, []packagestest.Module{
 		{
 			Name: "initial",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a.go": load("testdata/src/initial/a.go"),
 				"b.go": load("testdata/src/initial/b.go"),
 				"c.go": load("testdata/src/initial/c.go"),
@@ -36,7 +36,7 @@ func testBundle(t *testing.T, x packagestest.Exporter) {
 		},
 		{
 			Name: "domain.name/importdecl",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"p.go": load("testdata/src/domain.name/importdecl/p.go"),
 			},
 		},

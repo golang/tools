@@ -1,0 +1,69 @@
+This test checks that gopls works with nested modules, including multiple
+nested modules.
+
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println(mainMsg) //@def("mainMsg", mainMsg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+-- main2.go --
+package main
+
+const mainMsg = "main" //@loc(mainMsg, "mainMsg")
+
+-- mod1/go.mod --
+module golang.org/lsptests/mod1
+
+go 1.20
+
+-- mod1/a/a.go --
+package a
+
+import (
+	"fmt"
+	"golang.org/lsptests/mod1/b"
+)
+
+func _() {
+	fmt.Println(b.Msg) //@def("Msg", Msg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}
+
+-- mod1/a/tagged.go --
+//go:build tag1
+
+// golang/go#60776: verify that we get an accurate error about build tags
+// here, rather than an inaccurate error suggesting to add a go.work
+// file (which won't help).
+package a //@diag(re`package (a)`, re`excluded due to its build tags`)
+
+-- mod1/b/b.go --
+package b
+
+const Msg = "1" //@loc(Msg, "Msg")
+
+-- mod2/go.mod --
+module golang.org/lsptests/mod2
+
+require golang.org/lsptests/mod1 v0.0.1
+
+replace golang.org/lsptests/mod1 => ../mod1
+
+go 1.20
+
+-- mod2/c/c.go --
+package c
+
+import (
+	"fmt"
+	"golang.org/lsptests/mod1/b"
+)
+
+func _() {
+	fmt.Println(b.Msg) //@def("Msg", Msg)
+	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
+}

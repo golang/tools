@@ -1,4 +1,6 @@
-# Documentation for plugin authors
+---
+title: "Documentation for plugin authors"
+---
 
 If you are integrating `gopls` into an editor by writing an editor plugin, there are quite a few semantics of the communication between the editor and `gopls` that are not specified by the [LSP specification].
 
@@ -8,7 +10,9 @@ If you are implementing a plugin yourself and have questions this page does not 
 
 ## Supported features
 
-For the most part you should look at the [list](status.md#supported-features) in the current status document to know if gopls supports a feature.
+For the most part you should look at the [Index of features](../features/)
+to know whether gopls supports a feature.
+
 For a truly authoritative answer you should check the [result][InitializeResult] of the [initialize] request, where gopls enumerates its support in the [ServerCapabilities].
 
 
@@ -19,9 +23,7 @@ Many LSP requests pass position or range information. This is described in the [
 > A position inside a document (see Position definition below) is expressed as a zero-based line and character offset. The offsets are based on a UTF-16 string representation. So a string of the form a𐐀b the character offset of the character a is 0, the character offset of 𐐀 is 1 and the character offset of b is 3 since 𐐀 is represented using two code units in UTF-16.
 
 This means that integrators will need to calculate UTF-16 based column offsets.
-
-[`golang.org/x/tools/gopls/internal/span`] has the code to do this in go.
-[#31080] tracks making `span` and other useful packages non-internal.
+Use `protocol.Mapper` for all the conversions.
 
 ## Edits
 
@@ -61,9 +63,9 @@ For instance, files that are needed to do correct type checking are modified by 
 Monitoring files inside gopls directly has a lot of awkward problems, but the [LSP specification] has methods that allow gopls to request that the client notify it of file system changes, specifically [`workspace/didChangeWatchedFiles`].
 This is currently being added to gopls by a community member, and tracked in [#31553]
 
-[InitializeResult]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/lsp/protocol#InitializeResult
-[ServerCapabilities]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/lsp/protocol#ServerCapabilities
-[`golang.org/x/tools/gopls/internal/span`]: https://pkg.go.dev/golang.org/x/tools/internal/span#NewPoint
+[InitializeResult]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol#InitializeResult
+[ServerCapabilities]: https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol#ServerCapabilities
+[`golang.org/x/tools/gopls/internal/protocol`]: https://pkg.go.dev/golang.org/x/tools/internal/protocol#NewPoint
 
 [LSP specification]: https://microsoft.github.io/language-server-protocol/specifications/specification-3-14/
 [lsp-response]: https://github.com/Microsoft/language-server-protocol/blob/gh-pages/_specifications/specification-3-14.md#response-message

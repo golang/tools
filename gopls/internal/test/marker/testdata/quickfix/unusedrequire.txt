@@ -1,0 +1,25 @@
+This test checks the suggested fix to remove unused require statements from
+go.mod files.
+
+-- flags --
+-write_sumfile=a
+
+-- proxy/example.com@v1.0.0/x.go --
+package pkg
+const X = 1
+
+-- a/go.mod --
+module mod.com
+
+go 1.14
+
+require example.com v1.0.0 //@quickfix("require", re"not used", a)
+
+-- @a/a/go.mod --
+@@ -4,3 +4 @@
+-
+-require example.com v1.0.0 //@quickfix("require", re"not used", a)
+-
+-- a/main.go --
+package main
+func main() {}

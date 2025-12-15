@@ -6,7 +6,7 @@ package event_test
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"log"
 	"testing"
 
@@ -119,7 +119,7 @@ func Benchmark(b *testing.B) {
 		b.Run(t.name+"Noop", t.test)
 	}
 
-	event.SetExporter(export.Spans(export.LogWriter(ioutil.Discard, false)))
+	event.SetExporter(export.Spans(export.LogWriter(io.Discard, false)))
 	for _, t := range benchmarks {
 		b.Run(t.name, t.test)
 	}
@@ -140,9 +140,9 @@ func B(ctx context.Context, hooks Hooks, a int, b string) int {
 func (hooks Hooks) runBenchmark(b *testing.B) {
 	ctx := context.Background()
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	var acc int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, value := range initialList {
 			acc += A(ctx, hooks, value)
 		}
@@ -150,7 +150,7 @@ func (hooks Hooks) runBenchmark(b *testing.B) {
 }
 
 func init() {
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 }
 
 func noopExporter(ctx context.Context, ev core.Event, lm label.Map) context.Context {

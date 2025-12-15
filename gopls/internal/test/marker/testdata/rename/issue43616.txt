@@ -1,0 +1,31 @@
+This test verifies the fix for golang/go#43616: renaming mishandles embedded
+fields.
+
+-- p.go --
+package issue43616
+
+type foo int //@rename("foo", "bar", fooToBar),preparerename("oo","foo",span="foo")
+
+var x struct{ foo } //@rename("foo", "baz", fooToBaz)
+
+var _ = x.foo //@renameerr("foo", "quux", "must be renamed at its declaration")
+-- @fooToBar/p.go --
+@@ -3 +3 @@
+-type foo int //@rename("foo", "bar", fooToBar),preparerename("oo","foo",span="foo")
++type bar int //@rename("foo", "bar", fooToBar),preparerename("oo","foo",span="foo")
+@@ -5 +5 @@
+-var x struct{ foo } //@rename("foo", "baz", fooToBaz)
++var x struct{ bar } //@rename("foo", "baz", fooToBaz)
+@@ -7 +7 @@
+-var _ = x.foo //@renameerr("foo", "quux", "must be renamed at its declaration")
++var _ = x.bar //@renameerr("foo", "quux", "must be renamed at its declaration")
+-- @fooToBaz/p.go --
+@@ -3 +3 @@
+-type foo int //@rename("foo", "bar", fooToBar),preparerename("oo","foo",span="foo")
++type baz int //@rename("foo", "bar", fooToBar),preparerename("oo","foo",span="foo")
+@@ -5 +5 @@
+-var x struct{ foo } //@rename("foo", "baz", fooToBaz)
++var x struct{ baz } //@rename("foo", "baz", fooToBaz)
+@@ -7 +7 @@
+-var _ = x.foo //@renameerr("foo", "quux", "must be renamed at its declaration")
++var _ = x.baz //@renameerr("foo", "quux", "must be renamed at its declaration")

@@ -1,0 +1,49 @@
+This test exercises the "go_package_api" MCP tool.
+
+-- flags --
+-mcp
+
+-- go.mod --
+module example.com/mod
+
+//@mcptool("go_package_api", `{"packagePaths":["example.com/mod/lib"]}`, output=outline)
+
+go 1.21
+
+-- main.go --
+package main
+
+import "example.com/mod/lib"
+
+func main() {
+	println(lib.Foo(0))
+}
+-- lib/lib.go --
+package lib
+
+type T int
+
+func Foo(int) string {
+	return ""
+}
+
+-- lib/lib_test.go --
+package lib
+
+import "testing"
+
+func Test(*testing.T) {
+}
+
+-- @outline --
+"example.com/mod/lib" (package lib)
+lib.go:
+```go
+package lib
+
+type T int
+
+func Foo(int) string
+
+```
+

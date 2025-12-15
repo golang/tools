@@ -1,0 +1,15 @@
+This is a regression test for issue 60435:
+Highlighting "net/http" shouldn't have any effect
+on an import path that contains it as a substring,
+such as httptest.
+
+-- highlights.go --
+package highlights
+
+import (
+	"net/http"          //@hiloc(httpImp, `"net/http"`, text)
+	"net/http/httptest" //@hiloc(httptestImp, `"net/http/httptest"`, text)
+)
+
+var _ = httptest.NewRequest
+var _ = http.NewRequest //@hiloc(here, "http", text), highlight(here, here, httpImp)

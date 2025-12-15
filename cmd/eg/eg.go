@@ -15,12 +15,11 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	exec "golang.org/x/sys/execabs"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/refactor/eg"
 )
@@ -28,6 +27,7 @@ import (
 var (
 	beforeeditFlag = flag.String("beforeedit", "", "A command to exec before each file is edited (e.g. chmod, checkout).  Whitespace delimits argument words.  The string '{}' is replaced by the file name.")
 	helpFlag       = flag.Bool("help", false, "show detailed help message")
+	tagsFlag       = flag.String("tags", "", "comma-separated list of build tags to apply (see: go help buildconstraint)")
 	templateFlag   = flag.String("t", "", "template.go file specifying the refactoring")
 	transitiveFlag = flag.Bool("transitive", false, "apply refactoring to all dependencies too")
 	writeFlag      = flag.Bool("w", false, "rewrite input files in place (by default, the results are printed to standard output)")
@@ -36,13 +36,14 @@ var (
 
 const usage = `eg: an example-based refactoring tool.
 
-Usage: eg -t template.go [-w] [-transitive] <packages>
+Usage: eg -t template.go [-w] [-transitive] [-tags=tag,...] <packages>
 
 -help            show detailed help message
--t template.go	 specifies the template file (use -help to see explanation)
--w          	 causes files to be re-written in place.
--transitive 	 causes all dependencies to be refactored too.
+-t template.go   specifies the template file (use -help to see explanation)
+-w               causes files to be re-written in place.
+-transitive      causes all dependencies to be refactored too.
 -v               show verbose matcher diagnostics
+-tags tag,...    comma-separated list of build tags to apply (see: go help buildconstraint)
 -beforeedit cmd  a command to exec before each file is modified.
                  "{}" represents the name of the file.
 `
@@ -77,15 +78,16 @@ func doMain() error {
 	if err != nil {
 		return err
 	}
-	template, err := ioutil.ReadFile(tAbs)
+	template, err := os.ReadFile(tAbs)
 	if err != nil {
 		return err
 	}
 
 	cfg := &packages.Config{
-		Fset:  token.NewFileSet(),
-		Mode:  packages.NeedTypesInfo | packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps | packages.NeedCompiledGoFiles,
-		Tests: true,
+		BuildFlags: []string{"-tags=" + *tagsFlag},
+		Fset:       token.NewFileSet(),
+		Mode:       packages.NeedTypesInfo | packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps | packages.NeedCompiledGoFiles,
+		Tests:      true,
 	}
 
 	pkgs, err := packages.Load(cfg, args...)

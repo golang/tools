@@ -1,0 +1,18 @@
+
+-- flags --
+-ignore_extra_diags
+
+-- p.go --
+package issue39614
+
+func fn() {
+	var foo bool //@rename("foo", "bar", fooTobar)
+	make(map[string]bool
+	if true {
+	}
+}
+
+-- @fooTobar/p.go --
+@@ -4 +4 @@
+-	var foo bool //@rename("foo", "bar", fooTobar)
++	var bar bool //@rename("foo", "bar", fooTobar)

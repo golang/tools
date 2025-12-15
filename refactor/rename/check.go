@@ -13,11 +13,14 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	r.hadConflicts = true
 	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }
@@ -34,7 +37,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)
@@ -311,19 +314,12 @@ func deeper(x, y *types.Scope) bool {
 // iteration is terminated and findLexicalRefs returns false.
 func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *ast.Ident, block *types.Scope) bool) bool {
 	ok := true
-	var stack []ast.Node
 
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
-		if n == nil {
-			stack = stack[:len(stack)-1] // pop
-			return false
-		}
+	var visit func(n ast.Node, stack []ast.Node) bool
+	visit = func(n ast.Node, stack []ast.Node) bool {
 		if !ok {
 			return false // bail out
 		}
-
-		stack = append(stack, n) // push
 		switch n := n.(type) {
 		case *ast.Ident:
 			if info.Uses[n] == obj {
@@ -332,39 +328,36 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 					ok = false
 				}
 			}
-			return visit(nil) // pop stack
+			return false
 
 		case *ast.SelectorExpr:
 			// don't visit n.Sel
-			ast.Inspect(n.X, visit)
-			return visit(nil) // pop stack, don't descend
+			astutil.PreorderStack(n.X, stack, visit)
+			return false // don't descend
 
 		case *ast.CompositeLit:
 			// Handle recursion ourselves for struct literals
 			// so we don't visit field identifiers.
 			tv := info.Types[n]
-			if _, ok := deref(tv.Type).Underlying().(*types.Struct); ok {
+			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
-					ast.Inspect(n.Type, visit)
+					astutil.PreorderStack(n.Type, stack, visit)
 				}
 				for _, elt := range n.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
-						ast.Inspect(kv.Value, visit)
+						astutil.PreorderStack(kv.Value, stack, visit)
 					} else {
-						ast.Inspect(elt, visit)
+						astutil.PreorderStack(elt, stack, visit)
 					}
 				}
-				return visit(nil) // pop stack, don't descend
+				return false // don't descend
 			}
 		}
 		return true
 	}
 
 	for _, f := range info.Files {
-		ast.Inspect(f, visit)
-		if len(stack) != 0 {
-			panic(stack)
-		}
+		astutil.PreorderStack(f, nil, visit)
 		if !ok {
 			break
 		}
@@ -435,8 +428,8 @@ func (r *renamer) checkStructField(from *types.Var) {
 		}
 		i++
 	}
-	if spec, ok := path[i].(*ast.TypeSpec); ok {
-		// This struct is also a named type.
+	if spec, ok := path[i].(*ast.TypeSpec); ok && !spec.Assign.IsValid() {
+		// This struct is also a defined type.
 		// We must check for direct (non-promoted) field/field
 		// and method/field conflicts.
 		named := info.Defs[spec.Name].Type()
@@ -449,11 +442,11 @@ func (r *renamer) checkStructField(from *types.Var) {
 			return // skip checkSelections to avoid redundant errors
 		}
 	} else {
-		// This struct is not a named type.
+		// This struct is not a defined type. (It may be an alias.)
 		// We need only check for direct (non-promoted) field/field conflicts.
 		T := info.Types[tStruct].Type.Underlying().(*types.Struct)
-		for i := 0; i < T.NumFields(); i++ {
-			if prev := T.Field(i); prev.Name() == r.to {
+		for field := range T.Fields() {
+			if prev := field; prev.Name() == r.to {
 				r.errorf(from.Pos(), "renaming this field %q to %q",
 					from.Name(), r.to)
 				r.errorf(prev.Pos(), "\twould conflict with this field")
@@ -462,21 +455,23 @@ func (r *renamer) checkStructField(from *types.Var) {
 		}
 	}
 
-	// Renaming an anonymous field requires renaming the type too. e.g.
+	// Renaming an anonymous field requires renaming the TypeName too. e.g.
 	// 	print(s.T)       // if we rename T to U,
 	// 	type T int       // this and
 	// 	var s struct {T} // this must change too.
 	if from.Anonymous() {
-		if named, ok := from.Type().(*types.Named); ok {
-			r.check(named.Obj())
-		} else if named, ok := deref(from.Type()).(*types.Named); ok {
-			r.check(named.Obj())
+		// A TypeParam cannot appear as an anonymous field.
+		if t, ok := typesinternal.Unpointer(from.Type()).(hasTypeName); ok {
+			r.check(t.Obj())
 		}
 	}
 
 	// Check integrity of existing (field and method) selections.
 	r.checkSelections(from)
 }
+
+// hasTypeName abstracts the named types, *types.{Named,Alias,TypeParam}.
+type hasTypeName interface{ Obj() *types.TypeName }
 
 // checkSelections checks that all uses and selections that resolve to
 // the specified object would continue to do so after the renaming.
@@ -591,7 +586,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 	// Check for conflict at point of declaration.
 	// Check to ensure preservation of assignability requirements.
 	R := recv(from).Type()
-	if isInterface(R) {
+	if types.IsInterface(R) {
 		// Abstract method
 
 		// declaration
@@ -608,7 +603,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 		for _, info := range r.packages {
 			// Start with named interface types (better errors)
 			for _, obj := range info.Defs {
-				if obj, ok := obj.(*types.TypeName); ok && isInterface(obj.Type()) {
+				if obj, ok := obj.(*types.TypeName); ok && types.IsInterface(obj.Type()) {
 					f, _, _ := types.LookupFieldOrMethod(
 						obj.Type(), false, from.Pkg(), from.Name())
 					if f == nil {
@@ -680,7 +675,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 			// yields abstract method I.f.  This can make error
 			// messages less than obvious.
 			//
-			if !isInterface(key.RHS) {
+			if !types.IsInterface(key.RHS) {
 				// The logic below was derived from checkSelections.
 
 				rtosel := rmethods.Lookup(from.Pkg(), r.to)
@@ -755,7 +750,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 		//
 		for key := range r.satisfy() {
 			// key = (lhs, rhs) where lhs is always an interface.
-			if isInterface(key.RHS) {
+			if types.IsInterface(key.RHS) {
 				continue
 			}
 			rsel := r.msets.MethodSet(key.RHS).Lookup(from.Pkg(), from.Name())
@@ -777,7 +772,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := I.(*types.Named); ok {
+				if named, ok := I.(hasTypeName); ok { // *Named or *Alias
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {
@@ -833,7 +828,7 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 
 // recv returns the method's receiver.
 func recv(meth *types.Func) *types.Var {
-	return meth.Type().(*types.Signature).Recv()
+	return meth.Signature().Recv()
 }
 
 // someUse returns an arbitrary use of obj within info.
@@ -844,15 +839,4 @@ func someUse(info *loader.PackageInfo, obj types.Object) *ast.Ident {
 		}
 	}
 	return nil
-}
-
-// -- Plundered from golang.org/x/tools/go/ssa -----------------
-
-func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
-func deref(typ types.Type) types.Type {
-	if p, _ := typ.(*types.Pointer); p != nil {
-		return p.Elem()
-	}
-	return typ
 }

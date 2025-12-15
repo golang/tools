@@ -1,0 +1,18 @@
+This test checks that we don't crash while completing receivers that may happen
+to be builtin types (due to invalid code). This crash was reported by telemetry
+in golang/go#71044.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com/amap
+
+go 1.18
+
+-- a.go --
+package amap
+
+import "unsafe"
+
+func (unsafe.Pointer) _() {} //@ rank("unsafe")

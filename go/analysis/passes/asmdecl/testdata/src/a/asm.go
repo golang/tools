@@ -54,5 +54,6 @@ func pickFutureABI(x int)
 
 func returnABIInternal() int
 func returnmissingABIInternal() int
+func returnsyscallABIInternal() int
 
 func retjmp() int

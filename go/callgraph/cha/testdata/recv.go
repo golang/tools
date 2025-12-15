@@ -1,5 +1,3 @@
-// +build ignore
-
 package main
 
 type I interface {

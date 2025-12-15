@@ -1,8 +1,0 @@
-show semantic tokens for the specified file
-
-Usage:
-  gopls [flags] semtok <filename>
-
-Example: show the semantic tokens for this file:
-
-	$ gopls semtok internal/lsp/cmd/semtok.go

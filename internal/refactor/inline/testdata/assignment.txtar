@@ -1,0 +1,133 @@
+Basic tests of inlining a call on the RHS of an assignment.
+
+-- go.mod --
+module testdata
+
+go 1.20
+
+-- a/a1.go --
+package a
+
+import "testdata/b"
+
+func _() {
+	var y int
+	x, y := b.B1() //@ inline(re"B", b1)
+	_, _ = x, y
+}
+
+-- a/a2.go --
+package a
+
+import "testdata/b"
+
+func _() {
+	var y int
+	x, y := b.B2() //@ inline(re"B", b2)
+	_, _ = x, y
+}
+
+-- a/a3.go --
+package a
+
+import "testdata/b"
+
+func _() {
+	x, y := b.B3() //@ inline(re"B", b3)
+	_, _ = x, y
+}
+
+-- a/a4.go --
+package a
+
+import "testdata/b"
+
+func _() {
+	x, y := b.B4() //@ inline(re"B", b4)
+	_, _ = x, y
+}
+
+-- b/b.go --
+package b
+
+import (
+	"testdata/c"
+)
+
+func B1() (c.C, int) {
+	return 0, 1
+}
+
+func B2() (c.C, int) {
+	return B1()
+}
+
+func B3() (c.C, c.C) {
+	return 0, 1
+}
+
+-- b/b4.go --
+package b
+
+import (
+	c1 "testdata/c"
+	c2 "testdata/c2"
+)
+
+func B4() (c1.C, c2.C) {
+	return 0, 1
+}
+
+-- c/c.go --
+package c
+
+type C int
+
+-- c2/c.go --
+package c
+
+type C int
+
+-- b1 --
+package a
+
+import "testdata/c"
+
+func _() {
+	var y int
+	x, y := c.C(0), 1 //@ inline(re"B", b1)
+	_, _ = x, y
+}
+-- b2 --
+package a
+
+import "testdata/c"
+
+import "testdata/b"
+
+func _() {
+	var y int
+	x, y := b.B1() //@ inline(re"B", b2)
+	_, _ = x, y
+}
+-- b3 --
+package a
+
+import "testdata/c"
+
+func _() {
+	x, y := c.C(0), c.C(1) //@ inline(re"B", b3)
+	_, _ = x, y
+}
+
+-- b4 --
+package a
+
+import c1 "testdata/c"
+
+import c2 "testdata/c2"
+
+func _() {
+	x, y := c1.C(0), c2.C(1) //@ inline(re"B", b4)
+	_, _ = x, y
+}

@@ -1,0 +1,57 @@
+This test exercises renaming of types used as embedded fields.
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- a/a.go --
+package a
+
+type A int //@rename("A", "A2", type)
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+type B struct { a.A } //@rename("A", "A3", embedA)
+
+var _ = new(B).A //@renameerr("A", "A4", errAnonField)
+
+type C int
+
+type D struct {
+    C //@rename("C", "C2", embedC)
+}
+
+-- @errAnonField --
+an embedded field must be renamed at its declaration (since it renames the type too)
+-- @type/a/a.go --
+@@ -3 +3 @@
+-type A int //@rename("A", "A2", type)
++type A2 int //@rename("A", "A2", type)
+-- @type/b/b.go --
+@@ -5 +5 @@
+-type B struct { a.A } //@rename("A", "A3", embedA)
++type B struct { a.A2 } //@rename("A", "A3", embedA)
+@@ -7 +7 @@
+-var _ = new(B).A //@renameerr("A", "A4", errAnonField)
++var _ = new(B).A2 //@renameerr("A", "A4", errAnonField)
+-- @embedA/a/a.go --
+@@ -3 +3 @@
+-type A int //@rename("A", "A2", type)
++type A3 int //@rename("A", "A2", type)
+-- @embedA/b/b.go --
+@@ -5 +5 @@
+-type B struct { a.A } //@rename("A", "A3", embedA)
++type B struct { a.A3 } //@rename("A", "A3", embedA)
+@@ -7 +7 @@
+-var _ = new(B).A //@renameerr("A", "A4", errAnonField)
++var _ = new(B).A3 //@renameerr("A", "A4", errAnonField)
+-- @embedC/b/b.go --
+@@ -9 +9 @@
+-type C int
++type C2 int
+@@ -12 +12 @@
+-    C //@rename("C", "C2", embedC)
++    C2 //@rename("C", "C2", embedC)

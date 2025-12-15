@@ -19,12 +19,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A spec specifies an entity to rename.
@@ -154,7 +154,7 @@ func parseObjectSpec(spec *spec, main string) error {
 	}
 
 	if e, ok := e.(*ast.SelectorExpr); ok {
-		x := unparen(e.X)
+		x := ast.Unparen(e.X)
 
 		// Strip off star constructor, if any.
 		if star, ok := x.(*ast.StarExpr); ok {
@@ -171,7 +171,7 @@ func parseObjectSpec(spec *spec, main string) error {
 
 		if x, ok := x.(*ast.SelectorExpr); ok {
 			// field/method of type e.g. ("encoding/json".Decoder).Decode
-			y := unparen(x.X)
+			y := ast.Unparen(x.X)
 			if pkg := parseImportPath(y); pkg != "" {
 				spec.pkg = pkg               // e.g. "encoding/json"
 				spec.pkgMember = x.Sel.Name  // e.g. "Decoder"
@@ -259,7 +259,7 @@ var wd = func() string {
 }()
 
 // For source trees built with 'go build', the -from or -offset
-// spec identifies exactly one initial 'from' object to rename ,
+// spec identifies exactly one initial 'from' object to rename,
 // but certain proprietary build systems allow a single file to
 // appear in multiple packages (e.g. the test package contains a
 // copy of its library), so there may be multiple objects for
@@ -312,7 +312,7 @@ func findFromObjectsInFile(iprog *loader.Program, spec *spec) ([]types.Object, e
 		// NB: under certain proprietary build systems, a given
 		// filename may appear in multiple packages.
 		for _, f := range info.Files {
-			thisFile := iprog.Fset.File(f.Pos())
+			thisFile := iprog.Fset.File(f.FileStart)
 			if !sameFile(thisFile.Name(), spec.filename) {
 				continue
 			}
@@ -320,7 +320,7 @@ func findFromObjectsInFile(iprog *loader.Program, spec *spec) ([]types.Object, e
 
 			if spec.offset != 0 {
 				// We cannot refactor generated files since position information is invalidated.
-				if generated(f, thisFile) {
+				if ast.IsGenerated(f) {
 					return nil, fmt.Errorf("cannot rename identifiers in generated file containing DO NOT EDIT marker: %s", thisFile.Name())
 				}
 
@@ -458,17 +458,15 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 		// search within named type.
 		obj, _, _ := types.LookupFieldOrMethod(tName.Type(), true, info.Pkg, spec.typeMember)
 		if obj == nil {
-			return nil, fmt.Errorf("cannot find field or method %q of %s %s.%s",
-				spec.typeMember, typeKind(tName.Type()), info.Pkg.Path(), tName.Name())
+			return nil, fmt.Errorf("cannot find field or method %q of %s.%s",
+				spec.typeMember, info.Pkg.Path(), tName.Name())
 		}
 
 		if spec.searchFor == "" {
-			// If it is an embedded field, return the type of the field.
+			// If it is an embedded field (*Named or *Alias),
+			// return the type of the field.
 			if v, ok := obj.(*types.Var); ok && v.Anonymous() {
-				switch t := v.Type().(type) {
-				case *types.Pointer:
-					return []types.Object{t.Elem().(*types.Named).Obj()}, nil
-				case *types.Named:
+				if t, ok := typesinternal.Unpointer(v.Type()).(hasTypeName); ok {
 					return []types.Object{t.Obj()}, nil
 				}
 			}
@@ -481,7 +479,7 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 				spec.searchFor, objectKind(obj), info.Pkg.Path(), tName.Name(),
 				obj.Name())
 		}
-		if isInterface(tName.Type()) {
+		if types.IsInterface(tName.Type()) {
 			return nil, fmt.Errorf("cannot search for local name %q within abstract method (%s.%s).%s",
 				spec.searchFor, info.Pkg.Path(), tName.Name(), searchFunc.Name())
 		}
@@ -567,26 +565,4 @@ func ambiguityError(fset *token.FileSet, objects []types.Object) error {
 	}
 	return fmt.Errorf("ambiguous specifier %s matches %s",
 		objects[0].Name(), buf.String())
-}
-
-// Matches cgo generated comment as well as the proposed standard:
-//
-//	https://golang.org/s/generatedcode
-var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
-
-// generated reports whether ast.File is a generated file.
-func generated(f *ast.File, tokenFile *token.File) bool {
-
-	// Iterate over the comments in the file
-	for _, commentGroup := range f.Comments {
-		for _, comment := range commentGroup.List {
-			if matched := generatedRx.MatchString(comment.Text); matched {
-				// Check if comment is at the beginning of the line in source
-				if pos := tokenFile.Position(comment.Slash); pos.Column == 1 {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

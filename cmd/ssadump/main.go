@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/interp"
@@ -38,11 +37,12 @@ T	[T]race execution of the program.  Best for single-threaded programs!
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 	args stringListValue
+
+	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
 )
 
 func init() {
 	flag.Var(&mode, "build", ssa.BuilderModeDoc)
-	flag.Var((*buildutil.TagsFlag)(&build.Default.BuildTags), "tags", buildutil.TagsFlagDoc)
 	flag.Var(&args, "arg", "add argument to interpreted program")
 }
 
@@ -76,8 +76,9 @@ func doMain() error {
 	}
 
 	cfg := &packages.Config{
-		Mode:  packages.LoadSyntax,
-		Tests: *testFlag,
+		BuildFlags: []string{"-tags=" + *tagsFlag},
+		Mode:       packages.LoadSyntax,
+		Tests:      *testFlag,
 	}
 
 	// Choose types.Sizes from conf.Build.
@@ -131,28 +132,30 @@ func doMain() error {
 		return fmt.Errorf("packages contain errors")
 	}
 
-	// Turn on instantiating generics during build if the program will be run.
-	if *runFlag {
-		mode |= ssa.InstantiateGenerics
-	}
-
-	// Create SSA-form program representation.
-	prog, pkgs := ssautil.AllPackages(initial, mode)
-
-	for i, p := range pkgs {
-		if p == nil {
-			return fmt.Errorf("cannot build SSA for package %s", initial[i])
-		}
-	}
-
 	if !*runFlag {
-		// Build and display only the initial packages
-		// (and synthetic wrappers).
-		for _, p := range pkgs {
+		// Create (and display) SSA only for initial packages and wrappers.
+		_, pkgs := ssautil.Packages(initial, mode)
+		for i, p := range pkgs {
+			if p == nil {
+				return fmt.Errorf("cannot build SSA for package %s", initial[i])
+			}
 			p.Build()
 		}
 
 	} else {
+		// Create SSA for initial packages and all dependencies, instantiating generics.
+		mode |= ssa.InstantiateGenerics
+
+		// TODO(adonovan): opt: use noreturn analysis over transitive
+		// dependencies to prune spurious control flow graph edges.
+
+		prog, pkgs := ssautil.AllPackages(initial, mode)
+		for i, p := range pkgs {
+			if p == nil {
+				return fmt.Errorf("cannot build SSA for package %s", initial[i])
+			}
+		}
+
 		// Run the interpreter.
 		// Build SSA for all packages.
 		prog.Build()
@@ -187,12 +190,7 @@ func doMain() error {
 // e.g. --flag=one --flag=two would produce []string{"one", "two"}.
 type stringListValue []string
 
-func newStringListValue(val []string, p *[]string) *stringListValue {
-	*p = val
-	return (*stringListValue)(p)
-}
-
-func (ss *stringListValue) Get() interface{} { return []string(*ss) }
+func (ss *stringListValue) Get() any { return []string(*ss) }
 
 func (ss *stringListValue) String() string { return fmt.Sprintf("%q", *ss) }
 

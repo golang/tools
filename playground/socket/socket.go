@@ -3,9 +3,8 @@
 // license that can be found in the LICENSE file.
 
 //go:build !appengine
-// +build !appengine
 
-// Package socket implements an WebSocket-based playground backend.
+// Package socket implements a WebSocket-based playground backend.
 // Clients connect to a websocket handler and send run/kill commands, and
 // the server sends the output and exit status of the running processes.
 // Multiple clients running multiple processes may be served concurrently.
@@ -20,16 +19,16 @@ import (
 	"errors"
 	"go/parser"
 	"go/token"
-	exec "golang.org/x/sys/execabs"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -356,7 +355,7 @@ func (p *process) start(body string, opt *Options) error {
 	// (rather than the go tool process).
 	// This makes Kill work.
 
-	path, err := ioutil.TempDir("", "present-")
+	path, err := os.MkdirTemp("", "present-")
 	if err != nil {
 		return err
 	}
@@ -376,7 +375,7 @@ func (p *process) start(body string, opt *Options) error {
 	}
 	hasModfile := false
 	for _, f := range a.Files {
-		err = ioutil.WriteFile(filepath.Join(path, f.Name), f.Data, 0666)
+		err = os.WriteFile(filepath.Join(path, f.Name), f.Data, 0666)
 		if err != nil {
 			return err
 		}
@@ -441,12 +440,7 @@ func (p *process) cmd(dir string, args ...string) *exec.Cmd {
 }
 
 func isNacl() bool {
-	for _, v := range append(Environ(), os.Environ()...) {
-		if v == "GOOS=nacl" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(append(Environ(), os.Environ()...), "GOOS=nacl")
 }
 
 // naclCmd returns an *exec.Cmd that executes bin under native client.

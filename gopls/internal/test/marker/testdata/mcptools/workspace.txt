@@ -1,0 +1,37 @@
+This test exercises the "go_workspace" MCP tool.
+
+-- flags --
+-mcp
+-min_go_command=go1.23
+
+-- go.work --
+go 1.23.0
+
+//@mcptool("go_workspace", `{}`, output=workspace)
+
+use (
+	./a
+	./b
+)
+
+-- a/go.mod --
+module example.com/a
+
+go 1.23.0
+
+-- a/a.go --
+package a
+
+-- b/go.mod --
+module example.com/b
+
+go 1.23.0
+
+-- b/b.go --
+package b
+
+-- @workspace --
+The `$WORKDIR` directory is in the go workspace defined by `$WORKDIR/go.work`, with the following main modules:
+	$WORKDIR/a/go.mod (module example.com/a)
+	$WORKDIR/b/go.mod (module example.com/b)
+

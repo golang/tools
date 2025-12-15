@@ -1,0 +1,10 @@
+show diagnostic results for the specified file
+
+Usage:
+  gopls [flags] check <filename>
+
+Example: show the diagnostic results of this file:
+
+	$ gopls check internal/cmd/check.go
+  -severity=string
+    	minimum diagnostic severity (hint, info, warning, or error) (default "warning")

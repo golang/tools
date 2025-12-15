@@ -9,14 +9,14 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
-	"golang.org/x/tools/internal/typeparams"
 )
+
+func init() {
+	testinggoroutine.Analyzer.Flags.Set("subtest", "true")
+}
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	pkgs := []string{"a"}
-	if typeparams.Enabled {
-		pkgs = append(pkgs, "typeparams")
-	}
+	pkgs := []string{"a", "typeparams"}
 	analysistest.Run(t, testdata, testinggoroutine.Analyzer, pkgs...)
 }

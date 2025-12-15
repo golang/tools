@@ -1,0 +1,62 @@
+This test checks the splice assignment substrategy.
+
+-- go.mod --
+module testdata
+
+go 1.20
+
+-- a.go --
+package a
+
+func a() (int32, string) {
+	return b()
+}
+
+func b() (int32, string) {
+	return 0, "a"
+}
+
+func c() (int, chan<- int) {
+	return 0, make(chan int) // nontrivial conversion
+}
+
+-- a1.go --
+package a
+
+func _() {
+	x, y := a() //@ inline(re"a", a1)
+}
+-- a1 --
+package a
+
+func _() {
+	x, y := b() //@ inline(re"a", a1)
+}
+-- a2.go --
+package a
+
+func _() {
+	var x, y any
+	x, y = a() //@ inline(re"a", a2)
+}
+-- a2 --
+package a
+
+func _() {
+	var x, y any
+	x, y = b() //@ inline(re"a", a2)
+}
+-- a3.go --
+package a
+
+func _() {
+	var y chan<- int
+	x, y := c() //@ inline(re"c", a3)
+}
+-- a3 --
+package a
+
+func _() {
+	var y chan<- int
+	x, y := 0, make(chan int) //@ inline(re"c", a3)
+}

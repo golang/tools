@@ -5,18 +5,15 @@
 package loopclosure_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/testfiles"
 )
 
-func Test(t *testing.T) {
-	testdata := analysistest.TestData()
-	tests := []string{"a", "golang.org/...", "subtests"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.Run(t, testdata, loopclosure.Analyzer, tests...)
+func TestVersions(t *testing.T) {
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "src", "versions", "go22.txtar"))
+	analysistest.Run(t, dir, loopclosure.Analyzer, "golang.org/fake/versions")
 }

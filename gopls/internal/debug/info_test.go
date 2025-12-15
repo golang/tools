@@ -1,0 +1,45 @@
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package debug exports debug information for gopls.
+package debug
+
+import (
+	"bytes"
+	"encoding/json"
+	"runtime"
+	"testing"
+
+	"golang.org/x/tools/gopls/internal/version"
+)
+
+func TestPrintVersionInfoJSON(t *testing.T) {
+	buf := new(bytes.Buffer)
+	WriteVersionInfo(buf, true, JSON)
+	res := buf.Bytes()
+
+	var got ServerVersion
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unexpected output: %v\n%s", err, res)
+	}
+	if g, w := got.GoVersion, runtime.Version(); g != w {
+		t.Errorf("go version = %v, want %v", g, w)
+	}
+	if g, w := got.Version, version.Version(); g != w {
+		t.Errorf("gopls version = %v, want %v", g, w)
+	}
+	// Other fields of BuildInfo may not be available during test.
+}
+
+func TestPrintVersionInfoPlainText(t *testing.T) {
+	buf := new(bytes.Buffer)
+	WriteVersionInfo(buf, true, PlainText)
+	res := buf.Bytes()
+
+	// Other fields of BuildInfo may not be available during test.
+	wantGoplsVersion, wantGoVersion := version.Version(), runtime.Version()
+	if !bytes.Contains(res, []byte(wantGoplsVersion)) || !bytes.Contains(res, []byte(wantGoVersion)) {
+		t.Errorf("plaintext output = %q,\nwant (version: %v, go: %v)", res, wantGoplsVersion, wantGoVersion)
+	}
+}

@@ -1,0 +1,10 @@
+This directory contains the draft release notes for each upcoming release.
+
+Be sure to update the file for the forthcoming release in the same CL
+that you add new features or fix noteworthy bugs.
+
+See https://github.com/golang/tools/releases for all past releases.
+
+Tip: when reviewing edits to markdown files in Gerrit, to see the
+rendered form, click the "Open in Code Search" link (magnifying glass
+in blue square) then click "View in > gitiles" (shortcut: `v g`).

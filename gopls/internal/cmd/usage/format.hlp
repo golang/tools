@@ -1,0 +1,20 @@
+format the code according to the go standard
+
+Usage:
+  gopls [flags] format [format-flags] <filerange>
+
+The arguments supplied may be simple file names, or ranges within files.
+
+Example: reformat this file:
+
+	$ gopls format -w internal/cmd/check.go
+
+format-flags:
+  -d,-diff
+    	display diffs instead of edited file content
+  -l,-list
+    	display names of edited files
+  -preserve
+    	with -write, make copies of original files
+  -w,-write
+    	write edited content to source files

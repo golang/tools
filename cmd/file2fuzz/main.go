@@ -13,7 +13,7 @@
 // output to stdout. If any position arguments are provided stdin is ignored
 // and the arguments are assumed to be input files to convert.
 //
-// The -o flag provides an path to write output files to. If only one positional
+// The -o flag provides a path to write output files to. If only one positional
 // argument is specified it may be a file path or an existing directory, if there are
 // multiple inputs specified it must be a directory. If a directory is provided
 // the name of the file will be the SHA-256 hash of its contents.
@@ -25,7 +25,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -35,7 +34,7 @@ import (
 var encVersion1 = "go test fuzz v1"
 
 func encodeByteSlice(b []byte) []byte {
-	return []byte(fmt.Sprintf("%s\n[]byte(%q)", encVersion1, b))
+	return fmt.Appendf(nil, "%s\n[]byte(%q)", encVersion1, b)
 }
 
 func usage() {
@@ -51,7 +50,7 @@ func dirWriter(dir string) func([]byte) error {
 		if err := os.MkdirAll(dir, 0777); err != nil {
 			return err
 		}
-		if err := ioutil.WriteFile(name, b, 0666); err != nil {
+		if err := os.WriteFile(name, b, 0666); err != nil {
 			os.Remove(name)
 			return err
 		}
@@ -98,14 +97,14 @@ func convert(inputArgs []string, outputArg string) error {
 				output = dirWriter(outputArg)
 			} else {
 				output = func(b []byte) error {
-					return ioutil.WriteFile(outputArg, b, 0666)
+					return os.WriteFile(outputArg, b, 0666)
 				}
 			}
 		}
 	}
 
 	for _, f := range input {
-		b, err := ioutil.ReadAll(f)
+		b, err := io.ReadAll(f)
 		if err != nil {
 			return fmt.Errorf("unable to read input: %s", err)
 		}

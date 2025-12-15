@@ -13,10 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
-	exec "golang.org/x/sys/execabs"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -66,7 +65,7 @@ func detectrepo() string {
 var googleSourceRx = regexp.MustCompile(`(?m)^(go|go-review)?\.googlesource.com\b`)
 
 func checkCLA() {
-	slurp, err := ioutil.ReadFile(cookiesFile())
+	slurp, err := os.ReadFile(cookiesFile())
 	if err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
@@ -135,7 +134,7 @@ func checkGoroot() {
 				"your GOROOT or set it to the path of your development version\n"+
 				"of Go.", v)
 		}
-		slurp, err := ioutil.ReadFile(filepath.Join(v, "VERSION"))
+		slurp, err := os.ReadFile(filepath.Join(v, "VERSION"))
 		if err == nil {
 			slurp = bytes.TrimSpace(slurp)
 			log.Fatalf("Your GOROOT environment variable is set to %q\n"+
@@ -161,44 +160,6 @@ GOPATH: %s
 		}
 		return
 	}
-
-	gopath := firstGoPath()
-	if gopath == "" {
-		log.Fatal("Your GOPATH is not set, please set it")
-	}
-
-	rightdir := filepath.Join(gopath, "src", "golang.org", "x", *repo)
-	if !strings.HasPrefix(wd, rightdir) {
-		dirExists, err := exists(rightdir)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if !dirExists {
-			log.Fatalf("The repo you want to work on is currently not on your system.\n"+
-				"Run %q to obtain this repo\n"+
-				"then go to the directory %q\n",
-				"go get -d golang.org/x/"+*repo, rightdir)
-		}
-		log.Fatalf("Your current directory is:%q\n"+
-			"Working on golang/x/%v requires you be in %q\n",
-			wd, *repo, rightdir)
-	}
-}
-
-func firstGoPath() string {
-	list := filepath.SplitList(build.Default.GOPATH)
-	if len(list) < 1 {
-		return ""
-	}
-	return list[0]
-}
-
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
 }
 
 func inGoPath(wd string) bool {
@@ -230,7 +191,7 @@ func checkGitOrigin() {
 		log.Fatalf("Error running git remote -v: %v", msg)
 	}
 	matches := 0
-	for _, line := range strings.Split(string(remotes), "\n") {
+	for line := range strings.SplitSeq(string(remotes), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "origin") {
 			continue

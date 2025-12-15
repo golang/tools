@@ -22,7 +22,7 @@ import (
 // a single Conn in a safe manner.
 type Reader interface {
 	// Read gets the next message from the stream.
-	Read(context.Context) (Message, int64, error)
+	Read(context.Context) (Message, error)
 }
 
 // Writer abstracts the transport mechanics from the JSON RPC protocol.
@@ -33,17 +33,26 @@ type Reader interface {
 // a single Conn in a safe manner.
 type Writer interface {
 	// Write sends a message to the stream.
-	Write(context.Context, Message) (int64, error)
+	Write(context.Context, Message) error
 }
 
 // Framer wraps low level byte readers and writers into jsonrpc2 message
 // readers and writers.
 // It is responsible for the framing and encoding of messages into wire form.
+//
+// TODO(rfindley): rethink the framer interface, as with JSONRPC2 batching
+// there is a need for Reader and Writer to be correlated, and while the
+// implementation of framing here allows that, it is not made explicit by the
+// interface.
+//
+// Perhaps a better interface would be
+//
+//	Frame(io.ReadWriteCloser) (Reader, Writer).
 type Framer interface {
 	// Reader wraps a byte reader into a message reader.
-	Reader(rw io.Reader) Reader
+	Reader(io.Reader) Reader
 	// Writer wraps a byte writer into a message writer.
-	Writer(rw io.Writer) Writer
+	Writer(io.Writer) Writer
 }
 
 // RawFramer returns a new Framer.
@@ -63,32 +72,32 @@ func (rawFramer) Writer(rw io.Writer) Writer {
 	return &rawWriter{out: rw}
 }
 
-func (r *rawReader) Read(ctx context.Context) (Message, int64, error) {
+func (r *rawReader) Read(ctx context.Context) (Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 	var raw json.RawMessage
 	if err := r.in.Decode(&raw); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	msg, err := DecodeMessage(raw)
-	return msg, int64(len(raw)), err
+	return msg, err
 }
 
-func (w *rawWriter) Write(ctx context.Context, msg Message) (int64, error) {
+func (w *rawWriter) Write(ctx context.Context, msg Message) error {
 	select {
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return ctx.Err()
 	default:
 	}
 	data, err := EncodeMessage(msg)
 	if err != nil {
-		return 0, fmt.Errorf("marshaling message: %v", err)
+		return fmt.Errorf("marshaling message: %v", err)
 	}
-	n, err := w.out.Write(data)
-	return int64(n), err
+	_, err = w.out.Write(data)
+	return err
 }
 
 // HeaderFramer returns a new Framer.
@@ -108,26 +117,29 @@ func (headerFramer) Writer(rw io.Writer) Writer {
 	return &headerWriter{out: rw}
 }
 
-func (r *headerReader) Read(ctx context.Context) (Message, int64, error) {
+func (r *headerReader) Read(ctx context.Context) (Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
-	var total, length int64
+
+	firstRead := true // to detect a clean EOF below
+	var contentLength int64
 	// read the header, stop on the first empty line
 	for {
 		line, err := r.in.ReadString('\n')
-		total += int64(len(line))
 		if err != nil {
 			if err == io.EOF {
-				if total == 0 {
-					return nil, 0, io.EOF
+				if firstRead && line == "" {
+					return nil, io.EOF // clean EOF
 				}
 				err = io.ErrUnexpectedEOF
 			}
-			return nil, total, fmt.Errorf("failed reading header line: %w", err)
+			return nil, fmt.Errorf("failed reading header line: %w", err)
 		}
+		firstRead = false
+
 		line = strings.TrimSpace(line)
 		// check we have a header line
 		if line == "" {
@@ -135,49 +147,46 @@ func (r *headerReader) Read(ctx context.Context) (Message, int64, error) {
 		}
 		colon := strings.IndexRune(line, ':')
 		if colon < 0 {
-			return nil, total, fmt.Errorf("invalid header line %q", line)
+			return nil, fmt.Errorf("invalid header line %q", line)
 		}
 		name, value := line[:colon], strings.TrimSpace(line[colon+1:])
 		switch name {
 		case "Content-Length":
-			if length, err = strconv.ParseInt(value, 10, 32); err != nil {
-				return nil, total, fmt.Errorf("failed parsing Content-Length: %v", value)
+			if contentLength, err = strconv.ParseInt(value, 10, 32); err != nil {
+				return nil, fmt.Errorf("failed parsing Content-Length: %v", value)
 			}
-			if length <= 0 {
-				return nil, total, fmt.Errorf("invalid Content-Length: %v", length)
+			if contentLength <= 0 {
+				return nil, fmt.Errorf("invalid Content-Length: %v", contentLength)
 			}
 		default:
 			// ignoring unknown headers
 		}
 	}
-	if length == 0 {
-		return nil, total, fmt.Errorf("missing Content-Length header")
+	if contentLength == 0 {
+		return nil, fmt.Errorf("missing Content-Length header")
 	}
-	data := make([]byte, length)
-	n, err := io.ReadFull(r.in, data)
-	total += int64(n)
+	data := make([]byte, contentLength)
+	_, err := io.ReadFull(r.in, data)
 	if err != nil {
-		return nil, total, err
+		return nil, err
 	}
 	msg, err := DecodeMessage(data)
-	return msg, total, err
+	return msg, err
 }
 
-func (w *headerWriter) Write(ctx context.Context, msg Message) (int64, error) {
+func (w *headerWriter) Write(ctx context.Context, msg Message) error {
 	select {
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return ctx.Err()
 	default:
 	}
 	data, err := EncodeMessage(msg)
 	if err != nil {
-		return 0, fmt.Errorf("marshaling message: %v", err)
+		return fmt.Errorf("marshaling message: %v", err)
 	}
-	n, err := fmt.Fprintf(w.out, "Content-Length: %v\r\n\r\n", len(data))
-	total := int64(n)
+	_, err = fmt.Fprintf(w.out, "Content-Length: %v\r\n\r\n", len(data))
 	if err == nil {
-		n, err = w.out.Write(data)
-		total += int64(n)
+		_, err = w.out.Write(data)
 	}
-	return total, err
+	return err
 }

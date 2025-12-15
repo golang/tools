@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // The copyfiles script copies the contents of the internal cmd/go robustio
 // package to the current directory, with adjustments to make it build.
@@ -53,7 +52,7 @@ func main() {
 				content = bytes.Replace(content, []byte("windows.ERROR_SHARING_VIOLATION"), []byte("ERROR_SHARING_VIOLATION"), -1)
 			}
 
-			// Replace os.ReadFile with ioutil.ReadFile (for 1.15 and older). We
+			// Replace os.ReadFile with os.ReadFile (for 1.15 and older). We
 			// attempt to match calls (via the '('), to avoid matching mentions of
 			// os.ReadFile in comments.
 			//
@@ -61,7 +60,7 @@ func main() {
 			// this and break the build.
 			if bytes.Contains(content, []byte("os.ReadFile(")) {
 				content = bytes.Replace(content, []byte("\"os\""), []byte("\"io/ioutil\"\n\t\"os\""), 1)
-				content = bytes.Replace(content, []byte("os.ReadFile("), []byte("ioutil.ReadFile("), -1)
+				content = bytes.Replace(content, []byte("os.ReadFile("), []byte("os.ReadFile("), -1)
 			}
 
 			// Add +build constraints, for 1.16.

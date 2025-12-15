@@ -83,7 +83,7 @@ func PrintfTests() {
 	fmt.Printf("%o %o", 3, i)
 	fmt.Printf("%O %O", 3, i)
 	fmt.Printf("%p", p)
-	fmt.Printf("%q %q %q %q", 3, i, 'x', r)
+	fmt.Printf("%q %q %q", byte(i), 'x', r)
 	fmt.Printf("%s %s %s", "hi", s, []byte{65})
 	fmt.Printf("%t %t", true, b)
 	fmt.Printf("%T %T", 3, i)
@@ -154,6 +154,8 @@ func PrintfTests() {
 	fmt.Println("%v", "hi")                     // want "fmt.Println call has possible Printf formatting directive %v"
 	fmt.Println("%T", "hi")                     // want "fmt.Println call has possible Printf formatting directive %T"
 	fmt.Println("%s"+" there", "hi")            // want "fmt.Println call has possible Printf formatting directive %s"
+	fmt.Println("http://foo.com?q%2Fabc")       // no diagnostic: %XX is excepted
+	fmt.Println("http://foo.com?q%2Fabc-%s")    // want"fmt.Println call has possible Printf formatting directive %s"
 	fmt.Println("0.0%")                         // correct (trailing % couldn't be a formatting directive)
 	fmt.Printf("%s", "hi", 3)                   // want "fmt.Printf call needs 1 arg but has 2 args"
 	_ = fmt.Sprintf("%"+("s"), "hi", 3)         // want "fmt.Sprintf call needs 1 arg but has 2 args"
@@ -169,6 +171,8 @@ func PrintfTests() {
 	fmt.Printf("%q %q", multi()...)             // ok
 	fmt.Printf("%#q", `blah`)                   // ok
 	fmt.Printf("%#b", 3)                        // ok
+	fmt.Printf("%q", 3)                         // ok before go1.26 (#72850)
+
 	// printf("now is the time", "buddy")          // no error "a.printf call has arguments but no formatting directives"
 	Printf("now is the time", "buddy") // want "a.Printf call has arguments but no formatting directives"
 	Printf("hi")                       // ok
@@ -212,8 +216,8 @@ func PrintfTests() {
 	// Bad argument reorderings.
 	Printf("%[xd", 3)                      // want `a.Printf format %\[xd is missing closing \]`
 	Printf("%[x]d x", 3)                   // want `a.Printf format has invalid argument index \[x\]`
-	Printf("%[3]*s x", "hi", 2)            // want `a.Printf format has invalid argument index \[3\]`
-	_ = fmt.Sprintf("%[3]d x", 2)          // want `fmt.Sprintf format has invalid argument index \[3\]`
+	Printf("%[3]*s x", "hi", 2)            // want `a.Printf format %\[3]\*s reads arg #3, but call has 2 args`
+	_ = fmt.Sprintf("%[3]d x", 2)          // want `fmt.Sprintf format %\[3]d reads arg #3, but call has 1 arg`
 	Printf("%[2]*.[1]*[3]d x", 2, "hi", 4) // want `a.Printf format %\[2]\*\.\[1\]\*\[3\]d uses non-int \x22hi\x22 as argument of \*`
 	Printf("%[0]s x", "arg1")              // want `a.Printf format has invalid argument index \[0\]`
 	Printf("%[0]d x", 1)                   // want `a.Printf format has invalid argument index \[0\]`
@@ -565,10 +569,16 @@ type recursiveStringer int
 func (s recursiveStringer) String() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringer\).String method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringer\).String method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call String
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringer\).String method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call String
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringer\).String method`
 }
 
 type recursivePtrStringer int
@@ -584,10 +594,16 @@ type recursiveError int
 func (s recursiveError) Error() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveError\).Error method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveError\).Error method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call Error
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveError\).Error method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call Error
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveError\).Error method`
 }
 
 type recursivePtrError int
@@ -603,19 +619,31 @@ type recursiveStringerAndError int
 func (s recursiveStringerAndError) String() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call String
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).String method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call String
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).String method`
 }
 
 func (s recursiveStringerAndError) Error() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call Error
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).Error method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call Error
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).Error method`
 }
 
 type recursivePtrStringerAndError int
@@ -915,4 +943,93 @@ func PointerVerbs() {
 
 	fmt.Printf("%x", map_) // want `fmt.Printf format %x has arg map_ of wrong type map\[bool\]bool`
 	fmt.Printf("%X", map_) // want `fmt.Printf format %X has arg map_ of wrong type map\[bool\]bool`
+}
+
+// Tests of calls to anonymous print{,f}-wrapper
+// functions assigned to variables (local/package/field).
+
+// Test a local assigned an anonymous function using :=.
+func _() {
+	printf := func(format string, args ...any) { // want printf:"printfWrapper"
+		println(fmt.Sprintf(format, args...))
+	}
+	printf("%s", 123)                            // want `printf format %s has arg 123 of wrong type int`
+	printf = nil                                 // this doesn't undo the variable's printf-wrapper status
+	printf = func(format string, args ...any) {} // nor does this
+	printf("%s", 123)                            // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test a global variable.
+func _() {
+	globalPrintf("%s", 123) // want `globalPrintf format %s has arg 123 of wrong type int`
+
+	// This assignment causes calls to GlobalWrapf2 to
+	// be checked as a wrapper in this package only.
+	b.GlobalWrapf2 = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	b.GlobalWrapf("%s", 123)    // want `GlobalWrapf format %s has arg 123 of wrong type int`
+	b.GlobalWrapf2("%s", 123)   // want `GlobalWrapf2 format %s has arg 123 of wrong type int`
+	b.GlobalNonWrapf("%s", 123) // nope
+}
+
+var globalPrintf = func(format string, args ...any) { // want globalPrintf:"printfWrapper"
+	println(fmt.Sprintf(format, args...))
+}
+
+// Test a non-wrapper anonymous function with a plausible signature.
+func _() {
+	notprintf := func(format string, args ...any) {}
+	notprintf("%s", 123)
+}
+
+// Test '=' assignment.
+// Even calls through the var before it is
+// assigned a printf-like value are checked.
+func _() {
+	var printf func(bogus int, format string, args ...any) // want printf:"printfWrapper"
+	printf(0, "%s", 123)                                   // want `printf format %s has arg 123 of wrong type int`
+	printf = func(bogus int, format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	printf(0, "%s", 123) // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test of literal wrapper function assigned to local variable.
+func _() {
+	var printf = func(format string, args ...any) { // want printf:"printfWrapper"
+		println(fmt.Sprintf(format, args...))
+	}
+	printf("%s", 123) // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test of literal wrapper function assigned to struct field.
+func _() {
+	var local struct {
+		printf func(format string, args ...any) // want printf:"printfWrapper"
+	}
+	local.printf = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	local.printf("%s", 123) // want `printf format %s has arg 123 of wrong type int`
+
+	// This assignment causes calls to Struct.Wrapf to
+	// be checked as a wrapper in this package only.
+	b.Struct.Wrapf2 = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	b.Struct.Wrapf("%s", 123)    // want `Wrapf format %s has arg 123 of wrong type int`
+	b.Struct.Wrapf2("%s", 123)   // want `Wrapf2 format %s has arg 123 of wrong type int`
+	b.Struct.NonWrapf("%s", 123) // nope
+
+	// variant using generic struct type.
+	{
+		type S[T any] struct {
+			printf func(x T, format string, args ...any) // want printf:"printfWrapper"
+		}
+		new(S[bool]).printf = func(_ bool, format string, args ...any) {
+			println(fmt.Sprintf(format, args...))
+		}
+		new(S[int]).printf(0, "%s", 123) // want `printf format %s has arg 123 of wrong type int`
+	}
 }

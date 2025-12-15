@@ -3,9 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !android && !ios && (unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || plan9 || windows)
-// +build !android
-// +build !ios
-// +build unix aix darwin dragonfly freebsd linux netbsd openbsd solaris plan9 windows
 
 package ssa_test
 
@@ -37,9 +34,10 @@ func main() {
 `
 
 // This program demonstrates how to run the SSA builder on a single
-// package of one or more already-parsed files.  Its dependencies are
-// loaded from compiler export data.  This is what you'd typically use
-// for a compiler; it does not depend on golang.org/x/tools/go/loader.
+// package of one or more already-parsed files. Its dependencies are
+// loaded from compiler export data. This is what you'd typically use
+// for a compiler; it does not depend on the obsolete
+// [golang.org/x/tools/go/loader].
 //
 // It shows the printed representation of packages, functions, and
 // instructions.  Within the function listing, the name of each
@@ -52,11 +50,13 @@ func main() {
 //
 // Build and run the ssadump.go program if you want a standalone tool
 // with similar functionality. It is located at
-// golang.org/x/tools/cmd/ssadump.
+// [golang.org/x/tools/cmd/ssadump].
+//
+// Use ssautil.BuildPackage only if you have parsed--but not
+// type-checked--syntax trees. Typically, clients already have typed
+// syntax, perhaps obtained from golang.org/x/tools/go/packages.
+// In that case, see the other examples for simpler approaches.
 func Example_buildPackage() {
-	// Replace interface{} with any for this test.
-	ssa.SetNormalizeAnyForTesting(true)
-	defer ssa.SetNormalizeAnyForTesting(false)
 	// Parse the source files.
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "hello.go", hello, parser.ParseComments)
@@ -100,11 +100,11 @@ func Example_buildPackage() {
 	// 0:                                                                entry P:0 S:2
 	// 	t0 = *init$guard                                                   bool
 	// 	if t0 goto 2 else 1
-	// 1:                                                           init.start P:1 S:1
+	// 1:                                                    init.start P:1 S:1 idom:0
 	// 	*init$guard = true:bool
 	// 	t1 = fmt.init()                                                      ()
 	// 	jump 2
-	// 2:                                                            init.done P:2 S:0
+	// 2:                                                     init.done P:2 S:0 idom:0
 	// 	return
 	//
 	// # Name: hello.main
@@ -122,7 +122,7 @@ func Example_buildPackage() {
 }
 
 // This example builds SSA code for a set of packages using the
-// x/tools/go/packages API. This is what you would typically use for a
+// [golang.org/x/tools/go/packages] API. This is what you would typically use for a
 // analysis capable of operating on a single package.
 func Example_loadPackages() {
 	// Load, parse, and type-check the initial packages.
@@ -152,7 +152,7 @@ func Example_loadPackages() {
 }
 
 // This example builds SSA code for a set of packages plus all their dependencies,
-// using the x/tools/go/packages API.
+// using the [golang.org/x/tools/go/packages] API.
 // This is what you'd typically use for a whole-program analysis.
 func Example_loadWholeProgram() {
 	// Load, parse, and type-check the whole program.

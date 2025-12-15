@@ -1,0 +1,31 @@
+This test checks the behavior of the 'Remove struct tags' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- removetags.go --
+package removetags
+
+type A struct {
+	x int `json:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline)
+	y int `json:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines)
+	z int `json:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct)
+}
+-- @entirestruct/removetags.go --
+@@ -4,3 +4,3 @@
+-	x int `json:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline)
+-	y int `json:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines)
+-	z int `json:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct)
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline)
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines)
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct)
+-- @singleline/removetags.go --
+@@ -4 +4 @@
+-	x int `json:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline)
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline)
+-- @twolines/removetags.go --
+@@ -5,2 +5,2 @@
+-	y int `json:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines)
+-	z int `json:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct)
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines)
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct)

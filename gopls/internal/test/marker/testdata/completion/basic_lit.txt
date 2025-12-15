@@ -1,0 +1,19 @@
+This test checks completion related to basic literals.
+
+-- flags --
+-ignore_extra_diags
+
+-- basiclit.go --
+package basiclit
+
+func _() {
+	var a int // something for lexical completions
+
+	_ = "hello." //@complete(".")
+
+	_ = 1 //@complete(" //")
+
+	_ = 1. //@complete(".")
+
+	_ = 'a' //@complete("' ")
+}

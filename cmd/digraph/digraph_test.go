@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -64,7 +65,6 @@ e e
 	}
 
 	// TODO(adonovan):
-	// - test somepath (it's nondeterministic).
 	// - test errors
 }
 
@@ -156,6 +156,33 @@ func TestAllpaths(t *testing.T) {
 			to:   "H",
 			want: "A B\nA C\nB D\nC D\nD E\nE F\nE G\nF H\nG H\n",
 		},
+		{
+			// C <--> B --> A --> D <--> E
+			//        ⋃
+			name: "non-regression test for #74842",
+			in:   "A D\nB A\nB B\nB C\nC B\nD E\nE D",
+			to:   "D",
+			want: "A D\nD E\nE D\n",
+		},
+		{
+			// A --> B --> D
+			//       ^
+			//       v
+			//       C[123]
+			name: "regression test for #74842",
+			in:   "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+			to:   "D",
+			want: "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+		},
+		{
+			// A -------> B --> D
+			//  \--> C ---^     |
+			//       ^----------+
+			name: "another regression test for #74842",
+			in:   "A B\nA C\nB D\nC B\nD C\n",
+			to:   "D",
+			want: "A B\nA C\nB D\nC B\nD C\n",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
@@ -202,6 +229,15 @@ func TestSomepath(t *testing.T) {
 			to:        "D",
 			wantAnyOf: "A B\nB D|A C\nC D",
 		},
+		{
+			name: "Printed path is minimal",
+			// A -> B1->B2->B3 -> E
+			// A -> C1->C2 -> E
+			// A -> D -> E
+			in:        "A D C1 B1\nD E\nC1 C2\nC2 E\nB1 B2\nB2 B3\nB3 E",
+			to:        "E",
+			wantAnyOf: "A D\nD E",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
@@ -216,7 +252,7 @@ func TestSomepath(t *testing.T) {
 			got = strings.Join(lines[1:], "\n")
 
 			var oneMatch bool
-			for _, want := range strings.Split(test.wantAnyOf, "|") {
+			for want := range strings.SplitSeq(test.wantAnyOf, "|") {
 				if got == want {
 					oneMatch = true
 				}
@@ -345,4 +381,28 @@ func TestFocus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToDot(t *testing.T) {
+	in := `a b c
+b "d\"\\d"
+c "d\"\\d"`
+	want := `digraph {
+	"a" -> "b";
+	"a" -> "c";
+	"b" -> "d\"\\d";
+	"c" -> "d\"\\d";
+}
+`
+	defer func(in io.Reader, out io.Writer) { stdin, stdout = in, out }(stdin, stdout)
+	stdin = strings.NewReader(in)
+	stdout = new(bytes.Buffer)
+	if err := digraph("to", []string{"dot"}); err != nil {
+		t.Fatal(err)
+	}
+	got := stdout.(fmt.Stringer).String()
+	if got != want {
+		t.Errorf("digraph(to, dot) = got %q, want %q", got, want)
+	}
+
 }

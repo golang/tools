@@ -1,0 +1,22 @@
+This test checks the quick fix to add a missing "embed" import.
+
+-- embed.txt --
+text
+-- fix_import.go --
+package embeddirective
+
+import (
+	"io"
+	"os"
+)
+
+//go:embed embed.txt //@quickfix("//go:embed", re`must import "embed"`, fix_import)
+var T string
+
+func _() {
+	_ = os.Stdin
+	_ = io.EOF
+}
+-- @fix_import/fix_import.go --
+@@ -4 +4 @@
++	_ "embed"

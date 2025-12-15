@@ -1,0 +1,54 @@
+package a
+
+import (
+	"fmt"
+	"net"
+)
+
+func direct(host string, port int, portStr string) {
+	// Dial, directly called with result of Sprintf.
+	net.Dial("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port))) // want `address format "%s:%d" does not work with IPv6`
+
+	net.Dial("tcp", net.JoinHostPort(host, portStr)) // want `address format "%s:%s" does not work with IPv6`
+}
+
+// port is a literal:
+var addr4 = net.JoinHostPort("localhost", "123") // want `address format "%s:%d" does not work with IPv6 \(passed to net.Dial at L39\)`
+
+func indirect(host string, port int) {
+	// Dial, addr is immediately preceding.
+	{
+		addr1 := net.JoinHostPort(host, fmt.Sprintf("%d", port)) // want `address format "%s:%d" does not work with IPv6.*at L22`
+		net.Dial("tcp", addr1)
+	}
+
+	// DialTimeout, addr is in ancestor block.
+	addr2 := net.JoinHostPort(host, fmt.Sprintf("%d", port)) // want `address format "%s:%d" does not work with IPv6.*at L28`
+	{
+		net.DialTimeout("tcp", addr2, 0)
+	}
+
+	// Dialer.Dial, addr is declared with var.
+	var dialer net.Dialer
+	{
+		var addr3 = net.JoinHostPort(host, fmt.Sprintf("%d", port)) // want `address format "%s:%d" does not work with IPv6.*at L35`
+		dialer.Dial("tcp", addr3)
+	}
+
+	// Dialer.Dial again, addr is declared at package level.
+	dialer.Dial("tcp", addr4)
+}
+
+// Regression tests for crashes in well-typed code that nonetheless mis-uses Sprintf:
+// too few arguments, or port is not an integer.
+var (
+	_, _ = net.Dial("tcp", fmt.Sprintf("%s:%d"))
+	_, _ = net.Dial("tcp", fmt.Sprintf("%s:%d", "host"))
+	_, _ = net.Dial("tcp", net.JoinHostPort("host", fmt.Sprintf("%d", "port"))) // want `address format "%s:%d" does not work with IPv6`
+)
+
+func _() {
+	// port is a non-constant literal
+	const port = 0x7B
+	_, _ = net.Dial("tcp", net.JoinHostPort("localhost", fmt.Sprintf("%d", port))) // want `address format "%s:%d" does not work with IPv6`
+}

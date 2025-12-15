@@ -15,7 +15,7 @@ import (
 	"go/build"
 	"go/token"
 	"go/types"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -130,13 +130,11 @@ func TestCgoOption(t *testing.T) {
 	case "darwin":
 		t.Skipf("golang/go#58493: file locations in this test are stale on darwin")
 	}
+	testenv.NeedsTool(t, "go")
 	// In nocgo builds (e.g. linux-amd64-nocgo),
 	// there is no "runtime/cgo" package,
 	// so cgo-generated Go files will have a failing import.
-	if !build.Default.CgoEnabled {
-		return
-	}
-	testenv.NeedsTool(t, "go")
+	testenv.NeedsTool(t, "cgo")
 
 	// Test that we can load cgo-using packages with
 	// CGO_ENABLED=[01], which causes go/build to select pure
@@ -190,7 +188,7 @@ func TestCgoOption(t *testing.T) {
 			}
 
 			// Load the file and check the object is declared at the right place.
-			b, err := ioutil.ReadFile(posn.Filename)
+			b, err := os.ReadFile(posn.Filename)
 			if err != nil {
 				t.Errorf("can't read %s: %s", posn.Filename, err)
 				continue

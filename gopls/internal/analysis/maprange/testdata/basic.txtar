@@ -1,0 +1,207 @@
+Test of fixing redundant calls to maps.Keys and maps.Values
+(both stdlib "maps" and "golang.org/x/exp/maps") for Go 1.24.
+
+-- go.mod --
+module maprange
+
+require golang.org/x/exp v0.0.0
+
+replace golang.org/x/exp => ./exp
+
+go 1.24
+
+-- basic.go --
+package basic
+
+import "maps"
+
+func _() {
+	m := make(map[int]int)
+
+	for range maps.Keys(m) { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for range maps.Values(m) { // want `unnecessary and inefficient call of maps.Values`
+	}
+
+	var x struct {
+		Map map[int]int
+	}
+	x.Map = make(map[int]int)
+	for x.Map[1] = range maps.Keys(m) { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for x.Map[2] = range maps.Values(m) { // want `unnecessary and inefficient call of maps.Values`
+	}
+
+	for k := range maps.Keys(m) { // want `unnecessary and inefficient call of maps.Keys`
+		_ = k
+	}
+
+	for v := range maps.Values(m) { // want `unnecessary and inefficient call of maps.Values`
+		_ = v
+	}
+
+	for range maps.Keys(x.Map) { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for /* comment */ k := range /* comment */ maps.Keys(/* comment */ m) { // want `unnecessary and inefficient call of maps.Keys`
+		_ = k
+	}
+}
+
+-- basic.go.golden --
+package basic
+
+func _() {
+	m := make(map[int]int)
+
+	for range m { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for range m { // want `unnecessary and inefficient call of maps.Values`
+	}
+
+	var x struct {
+		Map map[int]int
+	}
+	x.Map = make(map[int]int)
+	for x.Map[1] = range m { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for _, x.Map[2] = range m { // want `unnecessary and inefficient call of maps.Values`
+	}
+
+	for k := range m { // want `unnecessary and inefficient call of maps.Keys`
+		_ = k
+	}
+
+	for _, v := range m { // want `unnecessary and inefficient call of maps.Values`
+		_ = v
+	}
+
+	for range x.Map { // want `unnecessary and inefficient call of maps.Keys`
+	}
+
+	for /* comment */ k := range /* comment */ /* comment */ m { // want `unnecessary and inefficient call of maps.Keys`
+		_ = k
+	}
+}
+
+-- xmaps.go --
+package basic
+
+import "golang.org/x/exp/maps"
+
+func _() {
+	m := make(map[int]int)
+
+	for range maps.Keys(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for range maps.Values(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+
+	for i := range maps.Values(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+		_ = i
+	}
+
+	var x struct {
+		Map map[int]int
+	}
+	x.Map = make(map[int]int)
+	for _, x.Map[1] = range maps.Keys(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for _, x.Map[2] = range maps.Values(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+
+	for _, k := range maps.Keys(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+		_ = k
+	}
+
+	for _, v := range maps.Values(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+		_ = v
+	}
+
+	for range maps.Keys(x.Map) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for i, k := range maps.Keys(m) { // ok: this can't be straightforwardly rewritten
+		_, _ = i, k
+	}
+
+	for _, _ = range maps.Values(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+}
+
+-- xmaps.go.golden --
+package basic
+
+import "golang.org/x/exp/maps"
+
+func _() {
+	m := make(map[int]int)
+
+	for range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+
+	for i := range len(m) { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+		_ = i
+	}
+
+	var x struct {
+		Map map[int]int
+	}
+	x.Map = make(map[int]int)
+	for x.Map[1] = range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for _, x.Map[2] = range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+
+	for k := range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+		_ = k
+	}
+
+	for _, v := range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+		_ = v
+	}
+
+	for range x.Map { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Keys`
+	}
+
+	for i, k := range maps.Keys(m) { // ok: this can't be straightforwardly rewritten
+		_, _ = i, k
+	}
+
+	for _, _ = range m { // want `unnecessary and inefficient call of golang.org/x/exp/maps.Values`
+	}
+}
+
+-- exp/go.mod --
+module golang.org/x/exp
+
+go 1.24
+
+-- exp/maps/maps.go --
+package maps
+
+func Keys[M ~map[K]V, K comparable, V any](m M) []K {
+	r := make([]K, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	return r
+}
+
+func Values[M ~map[K]V, K comparable, V any](m M) []V {
+	r := make([]V, 0, len(m))
+	for _, v := range m {
+		r = append(r, v)
+	}
+	return r
+}

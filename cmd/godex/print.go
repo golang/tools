@@ -48,7 +48,7 @@ func (p *printer) print(s string) {
 	}
 }
 
-func (p *printer) printf(format string, args ...interface{}) {
+func (p *printer) printf(format string, args ...any) {
 	p.print(fmt.Sprintf(format, args...))
 }
 
@@ -56,7 +56,7 @@ func (p *printer) printf(format string, args ...interface{}) {
 // denoted by obj is not an interface and has methods. Otherwise it returns
 // the zero value.
 func methodsFor(obj *types.TypeName) (*types.Named, []*types.Selection) {
-	named, _ := obj.Type().(*types.Named)
+	named, _ := types.Unalias(obj.Type()).(*types.Named)
 	if named == nil {
 		// A type name's type can also be the
 		// exported basic type unsafe.Pointer.

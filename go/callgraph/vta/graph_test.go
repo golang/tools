@@ -23,19 +23,21 @@ func TestNodeInterface(t *testing.T) {
 	//   - basic type int
 	//   - struct X with two int fields a and b
 	//   - global variable "gl"
+	//   - "foo" function
 	//   - "main" function and its
 	//   - first register instruction t0 := *gl
-	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
 
 	pkg := prog.AllPackages()[0]
 	main := pkg.Func("main")
+	foo := pkg.Func("foo")
 	reg := firstRegInstr(main) // t0 := *gl
 	X := pkg.Type("X").Type()
 	gl := pkg.Var("gl")
-	glPtrType, ok := gl.Type().(*types.Pointer)
+	glPtrType, ok := types.Unalias(gl.Type()).(*types.Pointer)
 	if !ok {
 		t.Fatalf("could not cast gl variable to pointer type")
 	}
@@ -63,13 +65,14 @@ func TestNodeInterface(t *testing.T) {
 		{local{val: reg}, "Local(t0)", bint},
 		{indexedLocal{val: reg, typ: X, index: 0}, "Local(t0[0])", X},
 		{function{f: main}, "Function(main)", voidFunc},
+		{resultVar{f: foo, index: 0}, "Return(foo[r])", bint},
 		{nestedPtrInterface{typ: i}, "PtrInterface(interface{})", i},
 		{nestedPtrFunction{typ: voidFunc}, "PtrFunction(func())", voidFunc},
 		{panicArg{}, "Panic", nil},
 		{recoverReturn{}, "Recover", nil},
 	} {
-		if test.s != test.n.String() {
-			t.Errorf("want %s; got %s", test.s, test.n.String())
+		if removeModulePrefix(test.s) != removeModulePrefix(test.n.String()) {
+			t.Errorf("want %s; got %s", removeModulePrefix(test.s), removeModulePrefix(test.n.String()))
 		}
 		if test.t != test.n.Type() {
 			t.Errorf("want %s; got %s", test.t, test.n.Type())
@@ -77,9 +80,15 @@ func TestNodeInterface(t *testing.T) {
 	}
 }
 
+// removeModulePrefix removes the "x.io/" module name prefix throughout s.
+// (It is added by testProg.)
+func removeModulePrefix(s string) string {
+	return strings.ReplaceAll(s, "x.io/", "")
+}
+
 func TestVtaGraph(t *testing.T) {
 	// Get the basic type int from a real program.
-	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
@@ -101,7 +110,7 @@ func TestVtaGraph(t *testing.T) {
 	//     n3 /
 	//     | /
 	//     n4
-	g := make(vtaGraph)
+	var g vtaGraph
 	g.addEdge(n1, n3)
 	g.addEdge(n2, n3)
 	g.addEdge(n3, n4)
@@ -110,9 +119,19 @@ func TestVtaGraph(t *testing.T) {
 	g.addEdge(n1, n3)
 
 	want := vtaGraph{
-		n1: map[node]bool{n3: true},
-		n2: map[node]bool{n3: true, n4: true},
-		n3: map[node]bool{n4: true},
+		m: []map[idx]empty{
+			map[idx]empty{1: empty{}},
+			map[idx]empty{3: empty{}},
+			map[idx]empty{1: empty{}, 3: empty{}},
+			nil,
+		},
+		idx: map[node]idx{
+			n1: 0,
+			n3: 1,
+			n2: 2,
+			n4: 3,
+		},
+		node: []node{n1, n3, n2, n4},
 	}
 
 	if !reflect.DeepEqual(want, g) {
@@ -128,7 +147,11 @@ func TestVtaGraph(t *testing.T) {
 		{n3, 1},
 		{n4, 0},
 	} {
-		if sl := len(g.successors(test.n)); sl != test.l {
+		sl := 0
+		for range g.successors(g.idx[test.n]) {
+			sl++
+		}
+		if sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
 	}
@@ -138,16 +161,17 @@ func TestVtaGraph(t *testing.T) {
 // where each string represents an edge set of the format
 // node -> succ_1, ..., succ_n. succ_1, ..., succ_n are
 // sorted in alphabetical order.
-func vtaGraphStr(g vtaGraph) []string {
+func vtaGraphStr(g *vtaGraph) []string {
 	var vgs []string
-	for n, succ := range g {
+	for n := 0; n < g.numNodes(); n++ {
 		var succStr []string
-		for s := range succ {
-			succStr = append(succStr, s.String())
+		for s := range g.successors(idx(n)) {
+			succStr = append(succStr, g.node[s].String())
 		}
+
 		sort.Strings(succStr)
-		entry := fmt.Sprintf("%v -> %v", n.String(), strings.Join(succStr, ", "))
-		vgs = append(vgs, entry)
+		entry := fmt.Sprintf("%v -> %v", g.node[n].String(), strings.Join(succStr, ", "))
+		vgs = append(vgs, removeModulePrefix(entry))
 	}
 	return vgs
 }
@@ -180,6 +204,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/store_load_alias.go",
 		"testdata/src/phi_alias.go",
 		"testdata/src/channels.go",
+		"testdata/src/generic_channels.go",
 		"testdata/src/select.go",
 		"testdata/src/stores_arrays.go",
 		"testdata/src/maps.go",
@@ -192,7 +217,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/panic.go",
 	} {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(file, ssa.BuilderMode(0))
+			prog, want, err := testProg(t, file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}
@@ -200,8 +225,18 @@ func TestVTAGraphConstruction(t *testing.T) {
 				t.Fatalf("couldn't find want in `%s`", file)
 			}
 
-			g, _ := typePropGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+			fs := ssautil.AllFunctions(prog)
+
+			// First test propagation with lazy-CHA initial call graph.
+			g, _ := typePropGraph(fs, makeCalleesFunc(fs, nil))
 			got := vtaGraphStr(g)
+			if diff := setdiff(want, got); len(diff) > 0 {
+				t.Errorf("`%s`: want superset of %v;\n got %v\ndiff: %v", file, want, got, diff)
+			}
+
+			// Repeat the test with explicit CHA initial call graph.
+			g, _ = typePropGraph(fs, makeCalleesFunc(fs, cha.CallGraph(prog)))
+			got = vtaGraphStr(g)
 			if diff := setdiff(want, got); len(diff) > 0 {
 				t.Errorf("`%s`: want superset of %v;\n got %v\ndiff: %v", file, want, got, diff)
 			}

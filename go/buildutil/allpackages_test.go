@@ -5,7 +5,6 @@
 // Incomplete source tree on Android.
 
 //go:build !android
-// +build !android
 
 package buildutil_test
 
@@ -17,7 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
-	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/packagestest"
 )
 
 func TestAllPackages(t *testing.T) {

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:debug gotypesalias=1
+
 package facts_test
 
 import (
@@ -18,9 +20,10 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type myFact struct {
@@ -36,10 +39,9 @@ func init() {
 
 func TestEncodeDecode(t *testing.T) {
 	tests := []struct {
-		name       string
-		typeparams bool // requires typeparams to be enabled
-		files      map[string]string
-		plookups   []pkgLookups // see testEncodeDecode for details
+		name     string
+		files    map[string]string
+		plookups []pkgLookups // see testEncodeDecode for details
 	}{
 		{
 			name: "loading-order",
@@ -185,8 +187,7 @@ func TestEncodeDecode(t *testing.T) {
 			},
 		},
 		{
-			name:       "typeparams",
-			typeparams: true,
+			name: "typeparams",
 			files: map[string]string{
 				"a/a.go": `package a
 				  type T1 int
@@ -203,9 +204,9 @@ func TestEncodeDecode(t *testing.T) {
 				  type N3[T a.T3] func() T
 				  type N4[T a.T4|int8] func() T
 				  type N5[T interface{Bar() a.T5} ] func() T
-		
+
 				  type t5 struct{}; func (t5) Bar() a.T5 { return 0 }
-		
+
 				  var G1 N1[a.T1]
 				  var G2 func() N2[a.T2]
 				  var G3 N3[a.T3]
@@ -223,7 +224,7 @@ func TestEncodeDecode(t *testing.T) {
 					  v5 = b.G5
 					  v6 = b.F6[t6]
 				  )
-		
+
 				  type t6 struct{}; func (t6) Foo() {}
 				`,
 			},
@@ -245,22 +246,44 @@ func TestEncodeDecode(t *testing.T) {
 			},
 		},
 	}
-
-	for i := range tests {
-		test := tests[i]
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if test.typeparams && !typeparams.Enabled {
-				t.Skip("type parameters are not enabled")
-			}
 			testEncodeDecode(t, test.files, test.plookups)
 		})
 	}
 }
 
+func TestEncodeDecodeAliases(t *testing.T) {
+	testenv.NeedsGo1Point(t, 24)
+
+	files := map[string]string{
+		"a/a.go": `package a
+				  type A = int
+				`,
+		"b/b.go": `package b
+				  import "a"
+				  type B = a.A
+				`,
+		"c/c.go": `package c
+				  import "b";
+				  type N1[T int|~string] = struct{}
+
+				  var V1 = N1[b.B]{}
+				`,
+	}
+	plookups := []pkgLookups{
+		{"a", []lookup{}},
+		{"b", []lookup{}},
+		// fake objexpr for RHS of V1's type arg (see customFind hack)
+		{"c", []lookup{{"c.V1->c.N1->b.B->a.A", "myFact(a.A)"}}},
+	}
+	testEncodeDecode(t, files, plookups)
+}
+
 type lookup struct {
-	objexpr string
-	want    string
+	objexpr string // expression whose type is a named type
+	want    string // printed form of fact associated with that type (or "no fact")
 }
 
 type pkgLookups struct {
@@ -275,7 +298,7 @@ type pkgLookups struct {
 //  2. calls (*facts.Decoder).Decode to load the facts exported by its imports,
 //  3. exports a myFact Fact for all of package level objects,
 //  4. For each lookup for the current package:
-//     4.a) lookup the types.Object for an Go source expression in the curent package
+//     4.a) lookup the types.Object for a Go source expression in the current package
 //     (or confirms one is not expected want=="no object"),
 //     4.b) finds a Fact for the object (or confirms one is not expected want=="no fact"),
 //     4.c) compares the content of the Fact to want.
@@ -295,7 +318,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 	// factmap represents the passing of encoded facts from one
 	// package to another. In practice one would use the file system.
 	factmap := make(map[string][]byte)
-	read := func(imp *types.Package) ([]byte, error) { return factmap[imp.Path()], nil }
+	read := func(pkgPath string) ([]byte, error) { return factmap[pkgPath], nil }
 
 	// Analyze packages in order, look up various objects accessible within
 	// each package, and see if they have a fact.  The "analysis" exports a
@@ -349,6 +372,19 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 	}
 }
 
+// customFind allows for overriding how an object is looked up
+// by find. This is necessary for objects that are accessible through
+// the API but are not the type of any expression we can pass to types.CheckExpr.
+var customFind = map[string]func(p *types.Package) types.Object{
+	"c.V1->c.N1->b.B->a.A": func(p *types.Package) types.Object {
+		cV1 := p.Scope().Lookup("V1")
+		cN1 := cV1.Type().(*types.Alias)
+		aT1 := aliases.TypeArgs(cN1).At(0).(*types.Alias)
+		zZ1 := aliases.Rhs(aT1).(*types.Alias)
+		return zZ1.Obj()
+	},
+}
+
 func find(p *types.Package, expr string) types.Object {
 	// types.Eval only allows us to compute a TypeName object for an expression.
 	// TODO(adonovan): support other expressions that denote an object:
@@ -356,7 +392,9 @@ func find(p *types.Package, expr string) types.Object {
 	// - new(T).f for a field or method
 	// I've added CheckExpr in https://go-review.googlesource.com/c/go/+/144677.
 	// If that becomes available, use it.
-
+	if f := customFind[expr]; f != nil {
+		return f(p)
+	}
 	// Choose an arbitrary position within the (single-file) package
 	// so that we are within the scope of its import declarations.
 	somepos := p.Scope().Lookup(p.Scope().Names()[0]).Pos()
@@ -364,7 +402,7 @@ func find(p *types.Package, expr string) types.Object {
 	if err != nil {
 		return nil
 	}
-	if n, ok := tv.Type.(*types.Named); ok {
+	if n, ok := tv.Type.(typesinternal.NamedOrAlias); ok {
 		return n.Obj()
 	}
 	return nil
@@ -413,7 +451,7 @@ func TestFactFilter(t *testing.T) {
 	}
 
 	obj := pkg.Scope().Lookup("A")
-	s, err := facts.NewDecoder(pkg).Decode(func(*types.Package) ([]byte, error) { return nil, nil })
+	s, err := facts.NewDecoder(pkg).Decode(func(pkgPath string) ([]byte, error) { return nil, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +461,7 @@ func TestFactFilter(t *testing.T) {
 	s.ExportPackageFact(&otherFact{"bad package fact"})
 
 	filter := map[reflect.Type]bool{
-		reflect.TypeOf(&myFact{}): true,
+		reflect.TypeFor[*myFact](): true,
 	}
 
 	pkgFacts := s.AllPackageFacts(filter)
@@ -444,9 +482,6 @@ func TestFactFilter(t *testing.T) {
 // happen when Analyzers have RunDespiteErrors set to true. So this
 // needs to robust, e.g. no infinite loops.
 func TestMalformed(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled")
-	}
 	var findPkg func(*types.Package, string) *types.Package
 	findPkg = func(p *types.Package, name string) *types.Package {
 		if p.Name() == name {
@@ -472,6 +507,7 @@ func TestMalformed(t *testing.T) {
 		{
 			name: "initialization-cycle",
 			pkgs: []pkgTest{
+				// Notation: myFact(a.[N]) means: package a has members {N}.
 				{
 					content: `package a; type N[T any] struct { F *N[N[T]] }`,
 					err:     "instantiation cycle:",
@@ -483,7 +519,8 @@ func TestMalformed(t *testing.T) {
 				},
 				{
 					content: `package c; import "b"; var C b.B`,
-					wants:   map[string]string{"a": "myFact(a.[N])", "b": "myFact(b.[B])", "c": "myFact(c.[C])"},
+					wants:   map[string]string{"a": "no fact", "b": "myFact(b.[B])", "c": "myFact(c.[C])"},
+					// package fact myFact(a.[N]) not reexported
 				},
 			},
 		},
@@ -502,7 +539,7 @@ func TestMalformed(t *testing.T) {
 			}
 			fset := token.NewFileSet()
 			factmap := make(map[string][]byte)
-			read := func(imp *types.Package) ([]byte, error) { return factmap[imp.Path()], nil }
+			read := func(pkgPath string) ([]byte, error) { return factmap[pkgPath], nil }
 
 			// Processes the pkgs in order. For package, export a package fact,
 			// and use this fact to verify which package facts are reachable via Decode.

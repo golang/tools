@@ -1,0 +1,70 @@
+package golden
+
+import "a/internal"
+
+// Functions.
+
+func f() {
+	One()
+
+	new(T).Two()
+}
+
+type T struct{}
+
+//go:fix inline
+func One() int { return one }
+
+const one = 1
+
+//go:fix inline
+func (T) Two() int { return 2 }
+
+// Constants.
+
+const Uno = 1
+
+//go:fix inline
+const In1 = Uno // want In1: `goFixInline const "a".Uno`
+
+const (
+	no1 = one
+
+	//go:fix inline
+	In2 = one // want In2: `goFixInline const "a".one`
+)
+
+//go:fix inline
+const bad1 = 1 // want `invalid //go:fix inline directive: const value is not the name of another constant`
+
+//go:fix inline
+const in5,
+	in6,
+	bad2 = one, one,
+	one + 1 // want `invalid //go:fix inline directive: const value is not the name of another constant`
+
+// Make sure we don't crash on iota consts, but still process the whole decl.
+//
+//go:fix inline
+const (
+	a = iota // want `invalid //go:fix inline directive: const value is iota`
+	b
+	in7 = one
+)
+
+const (
+	x = 1
+	//go:fix inline
+	in8 = x
+)
+
+//go:fix inline
+const a = iota // want `invalid //go:fix inline directive: const value is iota`
+
+//go:fix inline
+type E = map[[Uno]string][]*T // want `invalid //go:fix inline directive: array types not supported`
+
+// literal array lengths are OK
+//
+//go:fix inline
+type EL = map[[2]string][]*T // want EL: `goFixInline alias`

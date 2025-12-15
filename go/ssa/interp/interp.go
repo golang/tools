@@ -48,12 +48,16 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"log"
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"sync/atomic"
+	_ "unsafe"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 type continuation int
@@ -105,7 +109,8 @@ type frame struct {
 	defers           *deferred
 	result           value
 	panicking        bool
-	panic            interface{}
+	panic            any
+	phitemps         []value // temporaries for parallel phi assignment
 }
 
 func (fr *frame) get(key ssa.Value) value {
@@ -245,7 +250,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.get(instr.Chan).(chan value) <- fr.get(instr.X)
 
 	case *ssa.Store:
-		store(deref(instr.Addr.Type()), fr.get(instr.Addr).(*value), fr.get(instr.Val))
+		store(typeparams.MustDeref(instr.Addr.Type()), fr.get(instr.Addr).(*value), fr.get(instr.Val))
 
 	case *ssa.If:
 		succ := 1
@@ -261,11 +266,15 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 
 	case *ssa.Defer:
 		fn, args := prepareCall(fr, &instr.Call)
-		fr.defers = &deferred{
+		defers := &fr.defers
+		if into := fr.get(instr.DeferStack); into != nil {
+			defers = into.(**deferred)
+		}
+		*defers = &deferred{
 			fn:    fn,
 			args:  args,
 			instr: instr,
-			tail:  fr.defers,
+			tail:  *defers,
 		}
 
 	case *ssa.Go:
@@ -289,7 +298,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 			// local
 			addr = fr.env[instr].(*value)
 		}
-		*addr = zero(deref(instr.Type()))
+		*addr = zero(typeparams.MustDeref(instr.Type()))
 
 	case *ssa.MakeSlice:
 		slice := make([]value, asInt64(fr.get(instr.Cap)))
@@ -310,7 +319,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.env[instr] = makeMap(instr.Type().Underlying().(*types.Map).Key(), reserve)
 
 	case *ssa.Range:
-		fr.env[instr] = rangeIter(fr.get(instr.X), instr.X.Type())
+		fr.env[instr] = rangeIter(fr.get(instr.X))
 
 	case *ssa.Next:
 		fr.env[instr] = fr.get(instr.Iter).(iter).next()
@@ -363,7 +372,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		}
 
 	case *ssa.TypeAssert:
-		fr.env[instr] = typeAssert(fr.i, instr, fr.get(instr.X).(iface))
+		fr.env[instr] = typeAssert(instr, fr.get(instr.X).(iface))
 
 	case *ssa.MakeClosure:
 		var bindings []value
@@ -373,12 +382,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.env[instr] = &closure{instr.Fn.(*ssa.Function), bindings}
 
 	case *ssa.Phi:
-		for i, pred := range instr.Block().Preds {
-			if fr.prevBlock == pred {
-				fr.env[instr] = fr.get(instr.Edges[i])
-				break
-			}
-		}
+		log.Fatal("unreachable") // phis are processed at block entry
 
 	case *ssa.Select:
 		var cases []reflect.SelectCase
@@ -475,7 +479,7 @@ func call(i *interpreter, caller *frame, callpos token.Pos, fn value, args []val
 	case *closure:
 		return callSSA(i, caller, callpos, fn.Fn, args, fn.Env)
 	case *ssa.Builtin:
-		return callBuiltin(caller, callpos, fn, args)
+		return callBuiltin(caller, fn, args)
 	}
 	panic(fmt.Sprintf("cannot call %T", fn))
 }
@@ -528,7 +532,7 @@ func callSSA(i *interpreter, caller *frame, callpos token.Pos, fn *ssa.Function,
 	fr.block = fn.Blocks[0]
 	fr.locals = make([]value, len(fn.Locals))
 	for i, l := range fn.Locals {
-		fr.locals[i] = zero(deref(l.Type()))
+		fr.locals[i] = zero(typeparams.MustDeref(l.Type()))
 		fr.env[l] = &fr.locals[i]
 	}
 	for i, p := range fn.Params {
@@ -583,8 +587,9 @@ func runFrame(fr *frame) {
 		if fr.i.mode&EnableTracing != 0 {
 			fmt.Fprintf(os.Stderr, ".%s:\n", fr.block)
 		}
-	block:
-		for _, instr := range fr.block.Instrs {
+
+		nonPhis := executePhis(fr)
+		for _, instr := range nonPhis {
 			if fr.i.mode&EnableTracing != 0 {
 				if v, ok := instr.(ssa.Value); ok {
 					fmt.Fprintln(os.Stderr, "\t", v.Name(), "=", instr)
@@ -592,16 +597,47 @@ func runFrame(fr *frame) {
 					fmt.Fprintln(os.Stderr, "\t", instr)
 				}
 			}
-			switch visitInstr(fr, instr) {
-			case kReturn:
+			if visitInstr(fr, instr) == kReturn {
 				return
-			case kNext:
-				// no-op
-			case kJump:
-				break block
 			}
+			// Inv: kNext (continue) or kJump (last instr)
 		}
 	}
+}
+
+// executePhis executes the phi-nodes at the start of the current
+// block and returns the non-phi instructions.
+func executePhis(fr *frame) []ssa.Instruction {
+	firstNonPhi := -1
+	for i, instr := range fr.block.Instrs {
+		if _, ok := instr.(*ssa.Phi); !ok {
+			firstNonPhi = i
+			break
+		}
+	}
+	// Inv: 0 <= firstNonPhi; every block contains a non-phi.
+
+	nonPhis := fr.block.Instrs[firstNonPhi:]
+	if firstNonPhi > 0 {
+		phis := fr.block.Instrs[:firstNonPhi]
+		// Execute parallel assignment of phis.
+		//
+		// See "the swap problem" in Briggs et al's "Practical Improvements
+		// to the Construction and Destruction of SSA Form" for discussion.
+		predIndex := slices.Index(fr.block.Preds, fr.prevBlock)
+		fr.phitemps = fr.phitemps[:0]
+		for _, phi := range phis {
+			phi := phi.(*ssa.Phi)
+			if fr.i.mode&EnableTracing != 0 {
+				fmt.Fprintln(os.Stderr, "\t", phi.Name(), "=", phi)
+			}
+			fr.phitemps = append(fr.phitemps, fr.get(phi.Edges[predIndex]))
+		}
+		for i, phi := range phis {
+			fr.env[phi.(*ssa.Phi)] = fr.phitemps[i]
+		}
+	}
+	return nonPhis
 }
 
 // doRecover implements the recover() built-in.
@@ -673,7 +709,7 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		for _, m := range pkg.Members {
 			switch v := m.(type) {
 			case *ssa.Global:
-				cell := zero(deref(v.Type()))
+				cell := zero(typeparams.MustDeref(v.Type()))
 				i.globals[v] = &cell
 			}
 		}
@@ -716,13 +752,4 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		exitCode = 1
 	}
 	return
-}
-
-// deref returns a pointer's element type; otherwise it returns typ.
-// TODO(adonovan): Import from ssa?
-func deref(typ types.Type) types.Type {
-	if p, ok := typ.Underlying().(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return typ
 }

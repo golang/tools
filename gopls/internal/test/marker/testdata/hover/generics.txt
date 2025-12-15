@@ -1,0 +1,127 @@
+This file contains tests for hovering over generic Go code.
+
+Requires go1.20+ for the new go/doc/comment package, and a change in Go 1.20
+that affected the formatting of constraint interfaces.
+
+Its size expectations assume a 64-bit machine.
+
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
+-- flags --
+-skip_goarch=386,arm
+
+-- go.mod --
+// A go.mod is require for correct pkgsite links.
+// TODO(rfindley): don't link to ad-hoc or command-line-arguments packages!
+module mod.com
+
+go 1.18
+
+-- issue68213.go --
+package generics
+
+// Hovering over an interface with empty type set must not panic.
+type empty interface { //@hover("empty", "empty", empty)
+	int
+	string
+}
+
+-- @empty --
+```go
+type empty interface { // size=16 (0x10)
+	int
+	string
+}
+```
+
+---
+
+Hovering over an interface with empty type set must not panic.
+-- generics.go --
+package generics
+
+type value[T any] struct { //@hover("lue", "value", value),hover("T", "T", valueT)
+	val T   //@hover("T", "T", valuevalT)
+	Q   int64 //@hover("Q", "Q", valueQ)
+}
+
+type Value[T any] struct { //@hover("T", "T", ValueT)
+	val T   //@hover("T", "T", ValuevalT)
+	Q   int64 //@hover("Q", "Q", ValueQ)
+}
+
+func F[P interface{ ~int | string }]() { //@hover("P", "P", Ptparam)
+	var _ P //@hover("P","P",Pvar)
+}
+
+-- @value --
+```go
+type value[T any] struct {
+	val T     //@hover("T", "T", valuevalT)
+	Q   int64 //@hover("Q", "Q", valueQ)
+}
+```
+-- @valueT --
+```go
+type parameter T any
+```
+-- @valuevalT --
+```go
+type parameter T any
+```
+-- @valueQ --
+```go
+field Q int64 // size=8
+```
+
+---
+
+@hover("Q", "Q", valueQ)
+-- @ValueT --
+```go
+type parameter T any
+```
+-- @ValuevalT --
+```go
+type parameter T any
+```
+-- @ValueQ --
+```go
+field Q int64 // size=8
+```
+
+---
+
+@hover("Q", "Q", ValueQ)
+
+
+---
+
+[`(generics.Value).Q` on pkg.go.dev](https://pkg.go.dev/mod.com#Value.Q)
+-- @Ptparam --
+```go
+type parameter P interface{~int | string}
+```
+-- @Pvar --
+```go
+type parameter P interface{~int | string}
+```
+-- inferred.go --
+package generics
+
+func app[S interface{ ~[]E }, E any](s S, e E) S {
+	return append(s, e)
+}
+
+func _() {
+	_ = app[[]int]             //@hover("app", "app", appint)
+	_ = app[[]int, int]        //@hover("app", "app", appint)
+	_ = app[[]int]([]int{}, 0) //@hover("app", "app", appint), diag("[[]int]", re"unnecessary")
+	_ = app([]int{}, 0)        //@hover("app", "app", appint)
+}
+
+-- @appint --
+```go
+func app(s []int, e int) []int // func[S interface{~[]E}, E any](s S, e E) S
+```

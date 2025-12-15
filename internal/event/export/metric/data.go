@@ -34,7 +34,7 @@ type Int64Data struct {
 	IsGauge bool
 	// Rows holds the per group values for the metric.
 	Rows []int64
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
@@ -49,7 +49,7 @@ type Float64Data struct {
 	IsGauge bool
 	// Rows holds the per group values for the metric.
 	Rows []float64
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
@@ -62,7 +62,7 @@ type HistogramInt64Data struct {
 	Info *HistogramInt64
 	// Rows holds the per group values for the metric.
 	Rows []*HistogramInt64Row
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
@@ -89,7 +89,7 @@ type HistogramFloat64Data struct {
 	Info *HistogramFloat64
 	// Rows holds the per group values for the metric.
 	Rows []*HistogramFloat64Row
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label

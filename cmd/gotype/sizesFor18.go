@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !go1.9
-// +build !go1.9
 
 // This file contains a copy of the implementation of types.SizesFor
 // since this function is not available in go/types before Go 1.9.

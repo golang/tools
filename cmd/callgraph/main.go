@@ -23,14 +23,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/build"
 	"go/token"
 	"io"
 	"os"
 	"runtime"
 	"text/template"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/callgraph/rta"
@@ -52,11 +50,9 @@ var (
 	formatFlag = flag.String("format",
 		"{{.Caller}}\t--{{.Dynamic}}-{{.Line}}:{{.Column}}-->\t{{.Callee}}",
 		"A template expression specifying how to format an edge")
-)
 
-func init() {
-	flag.Var((*buildutil.TagsFlag)(&build.Default.BuildTags), "tags", buildutil.TagsFlagDoc)
-}
+	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
+)
 
 const Usage = `callgraph: display the call graph of a Go program.
 
@@ -109,9 +105,20 @@ Flags:
 
            Caller and Callee are *ssa.Function values, which print as
            "(*sync/atomic.Mutex).Lock", but other attributes may be
-           derived from them, e.g. Caller.Pkg.Pkg.Path yields the
-           import path of the enclosing package.  Consult the go/ssa
-           API documentation for details.
+           derived from them. For example:
+
+           - {{.Caller.Pkg.Pkg.Path}} yields the import path of the
+             enclosing package; and
+
+           - {{(.Caller.Prog.Fset.Position .Caller.Pos).Filename}}
+             yields the name of the file that declares the caller.
+
+           - The 'posn' template function returns the token.Position
+             of an ssa.Function, so the previous example can be
+             reduced to {{(posn .Caller).Filename}}.
+
+           Consult the documentation for go/token, text/template, and
+           golang.org/x/tools/go/ssa for more detail.
 
 Examples:
 
@@ -141,10 +148,7 @@ func init() {
 	// If $GOMAXPROCS isn't set, use the full capacity of the machine.
 	// For small machines, use at least 4 threads.
 	if os.Getenv("GOMAXPROCS") == "" {
-		n := runtime.NumCPU()
-		if n < 4 {
-			n = 4
-		}
+		n := max(runtime.NumCPU(), 4)
 		runtime.GOMAXPROCS(n)
 	}
 }
@@ -166,9 +170,10 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 	}
 
 	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax,
-		Tests: tests,
-		Dir:   dir,
+		Mode:       packages.LoadAllSyntax,
+		BuildFlags: []string{"-tags=" + *tagsFlag},
+		Tests:      tests,
+		Dir:        dir,
 	}
 	if gopath != "" {
 		cfg.Env = append(os.Environ(), "GOPATH="+gopath) // to enable testing
@@ -215,7 +220,7 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		// NB: RTA gives us Reachable and RuntimeTypes too.
 
 	case "vta":
-		cg = vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+		cg = vta.CallGraph(ssautil.AllFunctions(prog), nil)
 
 	default:
 		return fmt.Errorf("unknown algorithm: %s", algo)
@@ -238,7 +243,12 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		format = `  {{printf "%q" .Caller}} -> {{printf "%q" .Callee}}`
 	}
 
-	tmpl, err := template.New("-format").Parse(format)
+	funcMap := template.FuncMap{
+		"posn": func(f *ssa.Function) token.Position {
+			return f.Prog.Fset.Position(f.Pos())
+		},
+	}
+	tmpl, err := template.New("-format").Funcs(funcMap).Parse(format)
 	if err != nil {
 		return fmt.Errorf("invalid -format template: %v", err)
 	}

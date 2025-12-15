@@ -18,7 +18,7 @@ func Strings(before, after string) []Edit {
 		return nil // common case
 	}
 
-	if stringIsASCII(before) && stringIsASCII(after) {
+	if isASCII(before) && isASCII(after) {
 		// TODO(adonovan): opt: specialize diffASCII for strings.
 		return diffASCII([]byte(before), []byte(after))
 	}
@@ -32,7 +32,7 @@ func Bytes(before, after []byte) []Edit {
 		return nil // common case
 	}
 
-	if bytesIsASCII(before) && bytesIsASCII(after) {
+	if isASCII(before) && isASCII(after) {
 		return diffASCII(before, after)
 	}
 	return diffRunes(runes(before), runes(after))
@@ -72,7 +72,7 @@ func diffRunes(before, after []rune) []Edit {
 func runes(bytes []byte) []rune {
 	n := utf8.RuneCount(bytes)
 	runes := make([]rune, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		r, sz := utf8.DecodeRune(bytes)
 		bytes = bytes[sz:]
 		runes[i] = r
@@ -88,18 +88,8 @@ func runesLen(runes []rune) (len int) {
 	return len
 }
 
-// stringIsASCII reports whether s contains only ASCII.
-// TODO(adonovan): combine when x/tools allows generics.
-func stringIsASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= utf8.RuneSelf {
-			return false
-		}
-	}
-	return true
-}
-
-func bytesIsASCII(s []byte) bool {
+// isASCII reports whether s contains only ASCII.
+func isASCII[S string | []byte](s S) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= utf8.RuneSelf {
 			return false

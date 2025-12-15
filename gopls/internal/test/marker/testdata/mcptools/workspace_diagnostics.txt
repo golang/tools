@@ -1,0 +1,52 @@
+This test exercises the "go_diagnostics" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/a/a.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/b/b.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go"]}`, output=diagnostics)
+
+-- main.go --
+package main
+
+import (
+	"example.com/a"
+	"example.com/b"
+)
+
+func main() int {
+	a.Print(b.B)
+	return 0
+}
+
+-- a/a.go --
+package a
+
+func Print(x string) {
+	println(x)
+}
+
+-- b/b.go --
+package b
+
+const B = 1
+
+-- b/b2.go --
+
+const B = 2
+
+-- @diagnostics --
+File `$WORKDIR/b/b2.go` has the following diagnostics:
+1:0-1:0: [Error] expected 'package', found 'const'
+
+File `$WORKDIR/main.go` has the following diagnostics:
+7:5-7:9: [Error] func main must have no arguments and no return values
+8:9-8:12: [Error] cannot use b.B (untyped int constant 1) as string value in argument to a.Print
+

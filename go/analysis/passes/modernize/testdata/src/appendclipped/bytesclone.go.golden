@@ -1,0 +1,11 @@
+package appendclipped
+
+import (
+	"bytes"
+)
+
+var _ bytes.Buffer
+
+func _(b []byte) {
+	print(bytes.Clone(b)) // want "Replace append with bytes.Clone"
+}

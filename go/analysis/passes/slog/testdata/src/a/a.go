@@ -10,6 +10,7 @@ package a
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -31,8 +32,8 @@ func F() {
 	l.With("a", 1)
 	slog.Warn("msg", slog.Int("a", 1))
 	slog.Warn("msg", slog.Int("a", 1), "k", 2)
-	l.WarnCtx(nil, "msg", "a", 1, slog.Int("b", 2), slog.Int("c", 3), "d", 4)
-	l.DebugCtx(nil, "msg", "a", 1, slog.Int("b", 2), slog.Int("c", 3), "d", 4, slog.Int("e", 5))
+	l.WarnContext(nil, "msg", "a", 1, slog.Int("b", 2), slog.Int("c", 3), "d", 4)
+	l.DebugContext(nil, "msg", "a", 1, slog.Int("b", 2), slog.Int("c", 3), "d", 4, slog.Int("e", 5))
 	r.Add("a", 1, "b", 2)
 	(*slog.Logger).Debug(l, "msg", "a", 1, "b", 2)
 
@@ -40,13 +41,13 @@ func F() {
 	r.Add(key, 1)
 
 	// bad
-	slog.Info("msg", 1)                     // want `slog.Info arg "1" should be a string or a slog.Attr`
-	l.Info("msg", 2)                        // want `slog.Logger.Info arg "2" should be a string or a slog.Attr`
-	slog.Debug("msg", "a")                  // want `call to slog.Debug missing a final value`
-	slog.Warn("msg", slog.Int("a", 1), "k") // want `call to slog.Warn missing a final value`
-	slog.ErrorCtx(nil, "msg", "a", 1, "b")  // want `call to slog.ErrorCtx missing a final value`
-	r.Add("K", "v", "k")                    // want `call to slog.Record.Add missing a final value`
-	l.With("a", "b", 2)                     // want `slog.Logger.With arg "2" should be a string or a slog.Attr`
+	slog.Info("msg", 1)                        // want `slog.Info arg "1" should be a string or a slog.Attr`
+	l.Info("msg", 2)                           // want `slog.Logger.Info arg "2" should be a string or a slog.Attr`
+	slog.Debug("msg", "a")                     // want `call to slog.Debug missing a final value`
+	slog.Warn("msg", slog.Int("a", 1), "k")    // want `call to slog.Warn missing a final value`
+	slog.ErrorContext(nil, "msg", "a", 1, "b") // want `call to slog.ErrorContext missing a final value`
+	r.Add("K", "v", "k")                       // want `call to slog.Record.Add missing a final value`
+	l.With("a", "b", 2)                        // want `slog.Logger.With arg "2" should be a string or a slog.Attr`
 
 	// Report the first problem if there are multiple bad keys.
 	slog.Debug("msg", "a", 1, 2, 3, 4) // want `slog.Debug arg "2" should be a string or a slog.Attr`
@@ -106,6 +107,18 @@ func F() {
 	slog.Debug("msg", any(nil), "a", 2)
 	slog.Debug("msg", any(nil), "a", 2, "b") // want `call to slog.Debug has a missing or misplaced value`
 	slog.Debug("msg", any(nil), 2, 3, 4)     // want "slog.Debug arg \\\"3\\\" should probably be a string or a slog.Attr \\(previous arg \\\"2\\\" cannot be a key\\)"
+
+	// In these cases, an argument in key position is an interface, but we can glean useful information about it.
+
+	// An error interface in key position is definitely invalid: it can't be a string
+	// or slog.Attr.
+	var err error
+	slog.Error("msg", err) // want `slog.Error arg "err" should be a string or a slog.Attr`
+
+	// slog.Attr implements fmt.Stringer, but string does not, so assume the arg is an Attr.
+	var stringer fmt.Stringer
+	slog.Info("msg", stringer, "a", 1)
+	slog.Info("msg", stringer, 1) // want `slog.Info arg "1" should be a string or a slog.Attr`
 }
 
 func All() {
@@ -120,10 +133,10 @@ func All() {
 	slog.Info("msg", 1, 2)  // want `slog.Info arg "1" should be a string or a slog.Attr`
 	slog.Warn("msg", 1, 2)  // want `slog.Warn arg "1" should be a string or a slog.Attr`
 
-	slog.DebugCtx(ctx, "msg", 1, 2) // want `slog.DebugCtx arg "1" should be a string or a slog.Attr`
-	slog.ErrorCtx(ctx, "msg", 1, 2) // want `slog.ErrorCtx arg "1" should be a string or a slog.Attr`
-	slog.InfoCtx(ctx, "msg", 1, 2)  // want `slog.InfoCtx arg "1" should be a string or a slog.Attr`
-	slog.WarnCtx(ctx, "msg", 1, 2)  // want `slog.WarnCtx arg "1" should be a string or a slog.Attr`
+	slog.DebugContext(ctx, "msg", 1, 2) // want `slog.DebugContext arg "1" should be a string or a slog.Attr`
+	slog.ErrorContext(ctx, "msg", 1, 2) // want `slog.ErrorContext arg "1" should be a string or a slog.Attr`
+	slog.InfoContext(ctx, "msg", 1, 2)  // want `slog.InfoContext arg "1" should be a string or a slog.Attr`
+	slog.WarnContext(ctx, "msg", 1, 2)  // want `slog.WarnContext arg "1" should be a string or a slog.Attr`
 
 	slog.Log(ctx, slog.LevelDebug, "msg", 1, 2) // want `slog.Log arg "1" should be a string or a slog.Attr`
 
@@ -132,10 +145,10 @@ func All() {
 	l.Info("msg", 1, 2)  // want `slog.Logger.Info arg "1" should be a string or a slog.Attr`
 	l.Warn("msg", 1, 2)  // want `slog.Logger.Warn arg "1" should be a string or a slog.Attr`
 
-	l.DebugCtx(ctx, "msg", 1, 2) // want `slog.Logger.DebugCtx arg "1" should be a string or a slog.Attr`
-	l.ErrorCtx(ctx, "msg", 1, 2) // want `slog.Logger.ErrorCtx arg "1" should be a string or a slog.Attr`
-	l.InfoCtx(ctx, "msg", 1, 2)  // want `slog.Logger.InfoCtx arg "1" should be a string or a slog.Attr`
-	l.WarnCtx(ctx, "msg", 1, 2)  // want `slog.Logger.WarnCtx arg "1" should be a string or a slog.Attr`
+	l.DebugContext(ctx, "msg", 1, 2) // want `slog.Logger.DebugContext arg "1" should be a string or a slog.Attr`
+	l.ErrorContext(ctx, "msg", 1, 2) // want `slog.Logger.ErrorContext arg "1" should be a string or a slog.Attr`
+	l.InfoContext(ctx, "msg", 1, 2)  // want `slog.Logger.InfoContext arg "1" should be a string or a slog.Attr`
+	l.WarnContext(ctx, "msg", 1, 2)  // want `slog.Logger.WarnContext arg "1" should be a string or a slog.Attr`
 
 	l.Log(ctx, slog.LevelDebug, "msg", 1, 2) // want `slog.Logger.Log arg "1" should be a string or a slog.Attr`
 
@@ -146,6 +159,7 @@ func All() {
 	_ = slog.Group("key", "a", 1, "b", 2)
 	_ = slog.Group("key", "a", 1, 2, 3) // want `slog.Group arg "2" should be a string or a slog.Attr`
 
+	slog.Error("foo", "err", errors.New("oops")) // regression test for #61228.
 }
 
 // Used in tests by package b.

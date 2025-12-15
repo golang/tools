@@ -51,9 +51,6 @@ Selected packages:
 
 - `go/cfg` provides a simple control-flow graph (CFG) for a Go function.
 
-- `go/expect` reads Go source files used as test inputs and interprets
-  special comments within them as queries or assertions for testing.
-
 - `go/gcexportdata` and `go/gccgoexportdata` read and write the binary
   files containing type information used by the standard and `gccgo` compilers.
 
@@ -62,12 +59,11 @@ Selected packages:
 
 Numerous other packages provide more esoteric functionality.
 
-<!-- Some that didn't make the cut: 
+<!-- Some that didn't make the cut:
 
 golang.org/x/tools/benchmark/parse
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/types/typeutil
-golang.org/x/tools/go/vcs
 golang.org/x/tools/playground
 golang.org/x/tools/present
 golang.org/x/tools/refactor/importgraph
@@ -80,10 +76,12 @@ golang.org/x/tools/txtar
 ## Contributing
 
 This repository uses Gerrit for code changes.
-To learn how to submit changes, see https://golang.org/doc/contribute.html.
+To learn how to submit changes, see https://go.dev/doc/contribute.
+
+The git repository is https://go.googlesource.com/tools.
 
 The main issue tracker for the tools repository is located at
-https://github.com/golang/go/issues. Prefix your issue with "x/tools/(your
+https://go.dev/issues. Prefix your issue with "x/tools/(your
 subdir):" in the subject line, so it is easy to find.
 
 ### JavaScript and CSS Formatting

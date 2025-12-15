@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"slices"
 	"sort"
 )
 
@@ -40,20 +41,25 @@ func (b *BasicBlock) Dominates(c *BasicBlock) bool {
 	return b.dom.pre <= c.dom.pre && c.dom.post <= b.dom.post
 }
 
-type byDomPreorder []*BasicBlock
-
-func (a byDomPreorder) Len() int           { return len(a) }
-func (a byDomPreorder) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byDomPreorder) Less(i, j int) bool { return a[i].dom.pre < a[j].dom.pre }
-
-// DomPreorder returns a new slice containing the blocks of f in
-// dominator tree preorder.
+// DomPreorder returns a new slice containing the blocks of f
+// in a preorder traversal of the dominator tree.
 func (f *Function) DomPreorder() []*BasicBlock {
-	n := len(f.Blocks)
-	order := make(byDomPreorder, n)
-	copy(order, f.Blocks)
-	sort.Sort(order)
-	return order
+	slice := slices.Clone(f.Blocks)
+	sort.Slice(slice, func(i, j int) bool {
+		return slice[i].dom.pre < slice[j].dom.pre
+	})
+	return slice
+}
+
+// DomPostorder returns a new slice containing the blocks of f
+// in a postorder traversal of the dominator tree.
+// (This is not the same as a postdominance order.)
+func (f *Function) DomPostorder() []*BasicBlock {
+	slice := slices.Clone(f.Blocks)
+	sort.Slice(slice, func(i, j int) bool {
+		return slice[i].dom.post < slice[j].dom.post
+	})
+	return slice
 }
 
 // domInfo contains a BasicBlock's dominance information.
@@ -272,8 +278,8 @@ func sanityCheckDomTree(f *Function) {
 	// Check the entire relation.  O(n^2).
 	// The Recover block (if any) must be treated specially so we skip it.
 	ok := true
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			b, c := f.Blocks[i], f.Blocks[j]
 			if c == f.Recover {
 				continue
@@ -313,6 +319,7 @@ func printDomTreeText(buf *bytes.Buffer, v *BasicBlock, indent int) {
 
 // printDomTreeDot prints the dominator tree of f in AT&T GraphViz
 // (.dot) format.
+// (unused; retained for debugging)
 func printDomTreeDot(buf *bytes.Buffer, f *Function) {
 	fmt.Fprintln(buf, "//", f)
 	fmt.Fprintln(buf, "digraph domtree {")

@@ -8,7 +8,6 @@ import (
 	"archive/zip"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/internal/gocommand"
@@ -25,6 +25,8 @@ import (
 	"golang.org/x/tools/internal/proxydir"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
+	"maps"
+	"slices"
 )
 
 // Tests that we can find packages in the stdlib.
@@ -94,7 +96,7 @@ package z
 
 	mt.assertFound("y", "y")
 
-	scan, err := scanToSlice(mt.resolver, nil)
+	scan, err := scanToSlice(mt.env.resolver, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +199,7 @@ import _ "rsc.io/quote"
 	if err := os.Chmod(filepath.Join(found.dir, "go.mod"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(found.dir, "go.mod"), []byte("module bad.com\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(found.dir, "go.mod"), []byte("module bad.com\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,15 +207,15 @@ import _ "rsc.io/quote"
 	mt.assertScanFinds("rsc.io/quote", "quote")
 
 	// Rewrite the main package so that rsc.io/quote is not in scope.
-	if err := ioutil.WriteFile(filepath.Join(mt.env.WorkingDir, "go.mod"), []byte("module x\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(mt.env.WorkingDir, "go.mod"), []byte("module x\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(mt.env.WorkingDir, "x.go"), []byte("package x\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(mt.env.WorkingDir, "x.go"), []byte("package x\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Uninitialize the go.mod dependent cached information and make sure it still finds the package.
-	mt.resolver.ClearForNewMod()
+	mt.env.ClearModuleInfo()
 	mt.assertScanFinds("rsc.io/quote", "quote")
 }
 
@@ -242,8 +244,9 @@ import _ "rsc.io/sampler"
 	}
 
 	// Clear out the resolver's cache, since we've changed the environment.
-	mt.resolver = newModuleResolver(mt.env)
 	mt.env.Env["GOFLAGS"] = "-mod=vendor"
+	mt.env.ClearModuleInfo()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }
 
@@ -266,10 +269,11 @@ import _ "rsc.io/sampler"
 		t.Fatal(err)
 	}
 
-	wantDir := `pkg.*mod.*/sampler@.*$`
-	if testenv.Go1Point() >= 14 {
-		wantDir = `/vendor/`
-	}
+	wantDir := `/vendor/`
+
+	// Clear out the resolver's module info, since we've changed the environment.
+	// (the presence of a /vendor directory affects `go list -m`).
+	mt.env.ClearModuleInfo()
 	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", wantDir)
 }
 
@@ -554,8 +558,6 @@ package v
 
 // Tests that go.work files are respected.
 func TestModWorkspace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 go 1.18
@@ -590,8 +592,6 @@ package b
 // respected and that a wildcard replace in go.work overrides a versioned replace
 // in go.mod.
 func TestModWorkspaceReplace(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 use m
@@ -649,8 +649,6 @@ func G() {
 // Tests a case where conflicting replaces are overridden by a replace
 // in the go.work file.
 func TestModWorkspaceReplaceOverride(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `-- go.work --
 use m
 use n
@@ -714,8 +712,6 @@ func G() {
 // workspaces with module pruning. This is based on the
 // cmd/go mod_prune_all script test.
 func TestModWorkspacePrune(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18)
-
 	mt := setup(t, nil, `
 -- go.work --
 go 1.18
@@ -901,7 +897,7 @@ package x
 func (t *modTest) assertFound(importPath, pkgName string) (string, *pkg) {
 	t.Helper()
 
-	names, err := t.resolver.loadPackageNames([]string{importPath}, t.env.WorkingDir)
+	names, err := t.env.resolver.loadPackageNames([]string{importPath}, t.env.WorkingDir)
 	if err != nil {
 		t.Errorf("loading package name for %v: %v", importPath, err)
 	}
@@ -910,13 +906,13 @@ func (t *modTest) assertFound(importPath, pkgName string) (string, *pkg) {
 	}
 	pkg := t.assertScanFinds(importPath, pkgName)
 
-	_, foundDir := t.resolver.findPackage(importPath)
+	_, foundDir := t.env.resolver.(*ModuleResolver).findPackage(importPath)
 	return foundDir, pkg
 }
 
 func (t *modTest) assertScanFinds(importPath, pkgName string) *pkg {
 	t.Helper()
-	scan, err := scanToSlice(t.resolver, nil)
+	scan, err := scanToSlice(t.env.resolver, nil)
 	if err != nil {
 		t.Errorf("scan failed: %v", err)
 	}
@@ -934,12 +930,7 @@ func scanToSlice(resolver Resolver, exclude []gopathwalk.RootType) ([]*pkg, erro
 	var result []*pkg
 	filter := &scanCallback{
 		rootFound: func(root gopathwalk.Root) bool {
-			for _, rt := range exclude {
-				if root.Type == rt {
-					return false
-				}
-			}
-			return true
+			return !slices.Contains(exclude, root.Type)
 		},
 		dirFound: func(pkg *pkg) bool {
 			return true
@@ -984,10 +975,9 @@ var proxyDir string
 
 type modTest struct {
 	*testing.T
-	env      *ProcessEnv
-	gopath   string
-	resolver *ModuleResolver
-	cleanup  func()
+	env     *ProcessEnv
+	gopath  string
+	cleanup func()
 }
 
 // setup builds a test environment from a txtar and supporting modules
@@ -1000,7 +990,7 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 
 	proxyOnce.Do(func() {
 		var err error
-		proxyDir, err = ioutil.TempDir("", "proxy-")
+		proxyDir, err = os.MkdirTemp("", "proxy-")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1009,7 +999,7 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		}
 	})
 
-	dir, err := ioutil.TempDir("", t.Name())
+	dir, err := os.MkdirTemp("", t.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1030,9 +1020,7 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		WorkingDir:  filepath.Join(mainDir, wd),
 		GocmdRunner: &gocommand.Runner{},
 	}
-	for k, v := range extraEnv {
-		env.Env[k] = v
-	}
+	maps.Copy(env.Env, extraEnv)
 	if *testDebug {
 		env.Logf = log.Printf
 	}
@@ -1047,16 +1035,20 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		}
 	}
 
-	resolver, err := env.GetResolver()
-	if err != nil {
+	// Ensure the resolver is set for tests that (unsafely) access env.resolver
+	// directly.
+	//
+	// TODO(rfindley): fix this after addressing the TODO in the ProcessEnv
+	// docstring.
+	if _, err := env.GetResolver(); err != nil {
 		t.Fatal(err)
 	}
+
 	return &modTest{
-		T:        t,
-		gopath:   env.Env["GOPATH"],
-		env:      env,
-		resolver: resolver.(*ModuleResolver),
-		cleanup:  func() { removeDir(dir) },
+		T:       t,
+		gopath:  env.Env["GOPATH"],
+		env:     env,
+		cleanup: func() { removeDir(dir) },
 	}
 }
 
@@ -1070,7 +1062,7 @@ func writeModule(dir, ar string) error {
 			return err
 		}
 
-		if err := ioutil.WriteFile(fpath, f.Data, 0644); err != nil {
+		if err := os.WriteFile(fpath, f.Data, 0644); err != nil {
 			return err
 		}
 	}
@@ -1080,7 +1072,7 @@ func writeModule(dir, ar string) error {
 // writeProxy writes all the txtar-formatted modules in arDir to a proxy
 // directory in dir.
 func writeProxy(dir, arDir string) error {
-	files, err := ioutil.ReadDir(arDir)
+	files, err := os.ReadDir(arDir)
 	if err != nil {
 		return err
 	}
@@ -1099,7 +1091,7 @@ func writeProxyModule(base, arPath string) error {
 	arName := filepath.Base(arPath)
 	i := strings.LastIndex(arName, "_v")
 	ver := strings.TrimSuffix(arName[i+1:], ".txt")
-	modDir := strings.Replace(arName[:i], "_", "/", -1)
+	modDir := strings.ReplaceAll(arName[:i], "_", "/")
 	modPath, err := module.UnescapePath(modDir)
 	if err != nil {
 		return err
@@ -1123,7 +1115,7 @@ func writeProxyModule(base, arPath string) error {
 	z := zip.NewWriter(f)
 	for _, f := range a.Files {
 		if f.Name[0] == '.' {
-			if err := ioutil.WriteFile(filepath.Join(dir, ver+f.Name), f.Data, 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, ver+f.Name), f.Data, 0644); err != nil {
 				return err
 			}
 		} else {
@@ -1184,7 +1176,7 @@ import _ "rsc.io/quote"
 	want := filepath.Join(mt.gopath, "pkg/mod", "rsc.io/quote@v1.5.2")
 
 	found := mt.assertScanFinds("rsc.io/quote", "quote")
-	modDir, _ := mt.resolver.modInfo(found.dir)
+	modDir, _ := mt.env.resolver.(*ModuleResolver).modInfo(found.dir)
 	if modDir != want {
 		t.Errorf("expected: %s, got: %s", want, modDir)
 	}
@@ -1194,7 +1186,7 @@ import _ "rsc.io/quote"
 func TestInvalidModCache(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 
-	dir, err := ioutil.TempDir("", t.Name())
+	dir, err := os.MkdirTemp("", t.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1204,7 +1196,7 @@ func TestInvalidModCache(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "gopath/pkg/mod/sabotage"), 0777); err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(dir, "gopath/pkg/mod/sabotage/x.go"), []byte("package foo\n"), 0777); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gopath/pkg/mod/sabotage/x.go"), []byte("package foo\n"), 0777); err != nil {
 		t.Fatal(err)
 	}
 	env := &ProcessEnv{
@@ -1289,20 +1281,82 @@ import (
 	}
 }
 
-func BenchmarkScanModCache(b *testing.B) {
+func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	env := &ProcessEnv{
 		GocmdRunner: &gocommand.Runner{},
-		Logf:        log.Printf,
+		// Uncomment for verbose logging (too verbose to enable by default).
+		// Logf:        b.Logf,
 	}
 	exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
 	resolver, err := env.GetResolver()
 	if err != nil {
 		b.Fatal(err)
 	}
+	start := time.Now()
 	scanToSlice(resolver, exclude)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	b.Logf("warming the mod cache took %v", time.Since(start))
+
+	for b.Loop() {
 		scanToSlice(resolver, exclude)
-		resolver.(*ModuleResolver).ClearForNewScan()
+		resolver = resolver.ClearForNewScan()
 	}
+}
+
+func BenchmarkModuleResolver_InitialScan(b *testing.B) {
+	for b.Loop() {
+		env := &ProcessEnv{
+			GocmdRunner: &gocommand.Runner{},
+		}
+		exclude := []gopathwalk.RootType{gopathwalk.RootGOROOT}
+		resolver, err := env.GetResolver()
+		if err != nil {
+			b.Fatal(err)
+		}
+		scanToSlice(resolver, exclude)
+	}
+}
+
+// Tests that go.work files and vendor directory are respected.
+func TestModWorkspaceVendoring(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.work --
+go 1.22
+
+use (
+	./a
+	./b
+)
+-- a/go.mod --
+module example.com/a
+
+go 1.22
+
+require rsc.io/sampler v1.3.1
+-- a/a.go --
+package a
+
+import _ "rsc.io/sampler"
+-- b/go.mod --
+module example.com/b
+
+go 1.22
+-- b/b.go --
+package b
+`, "")
+	defer mt.cleanup()
+
+	// generate vendor directory
+	if _, err := mt.env.invokeGo(context.Background(), "work", "vendor"); err != nil {
+		t.Fatal(err)
+	}
+
+	// update module resolver
+	mt.env.ClearModuleInfo()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
+
+	mt.assertModuleFoundInDir("example.com/a", "a", `main/a$`)
+	mt.assertScanFinds("example.com/a", "a")
+	mt.assertModuleFoundInDir("example.com/b", "b", `main/b$`)
+	mt.assertScanFinds("example.com/b", "b")
+	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }

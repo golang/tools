@@ -1,0 +1,41 @@
+This test checks completion related to aliases.
+
+-- flags --
+-ignore_extra_diags
+
+-- aliases.go --
+package aliases
+
+// Copied from the old builtins.go, which has been ported to the new marker tests.
+/* string */ //@item(string, "string", "", "type")
+/* int */ //@item(int, "int", "", "type")
+/* float32 */ //@item(float32, "float32", "", "type")
+/* float64 */ //@item(float64, "float64", "", "type")
+
+type p struct{}
+
+type s[a int | string] = p
+
+func _() {
+	s[]{} //@rank("]", int, float64)
+}
+
+func takesGeneric[a int | string](s[a]) {
+	"s[a]{}" //@item(tpInScopeLit, "s[a]{}", "", "var")
+	takesGeneric() //@rank(")", tpInScopeLit),snippet(")", tpInScopeLit, "s[a]{\\}")
+}
+
+func _() {
+	s[int]{} //@item(tpInstLit, "s[int]{}", "", "var")
+	takesGeneric[int]() //@rank(")", tpInstLit),snippet(")", tpInstLit, "s[int]{\\}")
+
+	"s[...]{}" //@item(tpUninstLit, "s[...]{}", "", "var")
+	takesGeneric() //@rank(")", tpUninstLit),snippet(")", tpUninstLit, "s[${1:}]{\\}")
+}
+
+
+type myType int //@item(flType, "myType", "int", "type")
+
+type myt[T int] myType //@item(aflType, "myt[T]", "int", "type")
+
+func (my myt) _() {} //@complete(") _", flType, aflType)

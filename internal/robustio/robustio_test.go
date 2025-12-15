@@ -14,6 +14,21 @@ import (
 	"golang.org/x/tools/internal/robustio"
 )
 
+func checkOSLink(t *testing.T, err error) {
+	if err == nil {
+		return
+	}
+
+	t.Helper()
+	switch runtime.GOOS {
+	case "aix", "darwin", "dragonfly", "freebsd", "illumos", "linux", "netbsd", "openbsd", "solaris":
+		// Non-mobile OS known to always support os.Symlink and os.Link.
+		t.Fatal(err)
+	default:
+		t.Skipf("skipping due to error on %v: %v", runtime.GOOS, err)
+	}
+}
+
 func TestFileInfo(t *testing.T) {
 	// A nonexistent file has no ID.
 	nonexistent := filepath.Join(t.TempDir(), "nonexistent")
@@ -51,11 +66,10 @@ func TestFileInfo(t *testing.T) {
 	}
 
 	// A symbolic link has the same ID as its target.
-	if runtime.GOOS != "plan9" {
+	t.Run("symlink", func(t *testing.T) {
 		symlink := filepath.Join(t.TempDir(), "symlink")
-		if err := os.Symlink(real, symlink); err != nil {
-			t.Fatalf("can't create symbolic link: %v", err)
-		}
+		checkOSLink(t, os.Symlink(real, symlink))
+
 		symlinkID, symlinkMtime, err := robustio.GetFileID(symlink)
 		if err != nil {
 			t.Fatalf("can't get ID of symbolic link: %v", err)
@@ -66,14 +80,13 @@ func TestFileInfo(t *testing.T) {
 		if !realMtime.Equal(symlinkMtime) {
 			t.Errorf("realMtime %v != symlinkMtime %v", realMtime, symlinkMtime)
 		}
-	}
+	})
 
 	// Two hard-linked files have the same ID.
-	if runtime.GOOS != "plan9" && runtime.GOOS != "android" {
+	t.Run("hardlink", func(t *testing.T) {
 		hardlink := filepath.Join(t.TempDir(), "hardlink")
-		if err := os.Link(real, hardlink); err != nil {
-			t.Fatal(err)
-		}
+		checkOSLink(t, os.Link(real, hardlink))
+
 		hardlinkID, hardlinkMtime, err := robustio.GetFileID(hardlink)
 		if err != nil {
 			t.Fatalf("can't get ID of hard link: %v", err)
@@ -84,5 +97,5 @@ func TestFileInfo(t *testing.T) {
 		if !realMtime.Equal(hardlinkMtime) {
 			t.Errorf("realMtime %v != hardlinkMtime %v", realMtime, hardlinkMtime)
 		}
-	}
+	})
 }

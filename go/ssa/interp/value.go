@@ -27,6 +27,7 @@ package interp
 // - iter --- iterators from 'range' over map or string.
 // - bad --- a poison pill for locals that have gone out of scope.
 // - rtype -- the interpreter's concrete implementation of reflect.Type
+// - **deferred -- the address of a frame's defer stack for a Defer._Stack.
 //
 // Note that nil is not on this list.
 //
@@ -40,14 +41,13 @@ import (
 	"io"
 	"reflect"
 	"strings"
-	"sync"
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
 )
 
-type value interface{}
+type value any
 
 type tuple []value
 
@@ -90,18 +90,12 @@ func hashString(s string) int {
 	return int(h)
 }
 
-var (
-	mu     sync.Mutex
-	hasher = typeutil.MakeHasher()
-)
+var hasher = typeutil.MakeHasher()
 
 // hashType returns a hash for t such that
 // types.Identical(x, y) => hashType(x) == hashType(y).
 func hashType(t types.Type) int {
-	mu.Lock()
-	h := int(hasher.Hash(t))
-	mu.Unlock()
-	return h
+	return int(hasher.Hash(t))
 }
 
 // usesBuiltinMap returns true if the built-in hash function and
@@ -117,7 +111,7 @@ func usesBuiltinMap(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic, *types.Chan, *types.Pointer:
 		return true
-	case *types.Named:
+	case *types.Named, *types.Alias:
 		return usesBuiltinMap(t.Underlying())
 	case *types.Interface, *types.Array, *types.Struct:
 		return false
@@ -125,7 +119,7 @@ func usesBuiltinMap(t types.Type) bool {
 	panic(fmt.Sprintf("invalid map key type: %T", t))
 }
 
-func (x array) eq(t types.Type, _y interface{}) bool {
+func (x array) eq(t types.Type, _y any) bool {
 	y := _y.(array)
 	tElt := t.Underlying().(*types.Array).Elem()
 	for i, xi := range x {
@@ -140,12 +134,12 @@ func (x array) hash(t types.Type) int {
 	h := 0
 	tElt := t.Underlying().(*types.Array).Elem()
 	for _, xi := range x {
-		h += hash(tElt, xi)
+		h += hash(t, tElt, xi)
 	}
 	return h
 }
 
-func (x structure) eq(t types.Type, _y interface{}) bool {
+func (x structure) eq(t types.Type, _y any) bool {
 	y := _y.(structure)
 	tStruct := t.Underlying().(*types.Struct)
 	for i, n := 0, tStruct.NumFields(); i < n; i++ {
@@ -163,7 +157,7 @@ func (x structure) hash(t types.Type) int {
 	h := 0
 	for i, n := 0, tStruct.NumFields(); i < n; i++ {
 		if f := tStruct.Field(i); !f.Anonymous() {
-			h += hash(f.Type(), x[i])
+			h += hash(t, f.Type(), x[i])
 		}
 	}
 	return h
@@ -177,20 +171,20 @@ func sameType(x, y types.Type) bool {
 	return y != nil && types.Identical(x, y)
 }
 
-func (x iface) eq(t types.Type, _y interface{}) bool {
+func (x iface) eq(t types.Type, _y any) bool {
 	y := _y.(iface)
 	return sameType(x.t, y.t) && (x.t == nil || equals(x.t, x.v, y.v))
 }
 
-func (x iface) hash(_ types.Type) int {
-	return hashType(x.t)*8581 + hash(x.t, x.v)
+func (x iface) hash(outer types.Type) int {
+	return hashType(x.t)*8581 + hash(outer, x.t, x.v)
 }
 
 func (x rtype) hash(_ types.Type) int {
 	return hashType(x.t)
 }
 
-func (x rtype) eq(_ types.Type, y interface{}) bool {
+func (x rtype) eq(_ types.Type, y any) bool {
 	return types.Identical(x.t, y.(rtype).t)
 }
 
@@ -255,7 +249,8 @@ func equals(t types.Type, x, y value) bool {
 }
 
 // Returns an integer hash of x such that equals(x, y) => hash(x) == hash(y).
-func hash(t types.Type, x value) int {
+// The outer type is used only for the "unhashable" panic message.
+func hash(outer, t types.Type, x value) int {
 	switch x := x.(type) {
 	case bool:
 		if x {
@@ -307,7 +302,7 @@ func hash(t types.Type, x value) int {
 	case rtype:
 		return x.hash(t)
 	}
-	panic(fmt.Sprintf("%T is unhashable", x))
+	panic(fmt.Sprintf("unhashable type %v", outer))
 }
 
 // reflect.Value struct values don't have a fixed shape, since the

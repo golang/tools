@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd
-// +build aix darwin dragonfly freebsd linux netbsd openbsd
 
 /*
 Splitdwarf uncompresses and copies the DWARF segment of a Mach-O
@@ -35,11 +34,11 @@ const (
 	pageAlign = 12 // 4096 = 1 << 12
 )
 
-func note(format string, why ...interface{}) {
+func note(format string, why ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", why...)
 }
 
-func fail(format string, why ...interface{}) {
+func fail(format string, why ...any) {
 	note(format, why...)
 	os.Exit(1)
 }
@@ -191,7 +190,7 @@ for input_exe need to allow writing.
 
 	exeNeedsUuid := uuid == nil
 	if exeNeedsUuid {
-		uuid = &macho.Uuid{macho.UuidCmd{LoadCmd: macho.LcUuid}}
+		uuid = &macho.Uuid{UuidCmd: macho.UuidCmd{LoadCmd: macho.LcUuid}}
 		uuid.Len = uuid.LoadSize(newtoc)
 		copy(uuid.Id[0:], contentuuid(&exeMacho.FileTOC)[0:16])
 		uuid.Id[6] = uuid.Id[6]&^0xf0 | 0x40 // version 4 (pseudo-random); see section 4.1.3
@@ -358,6 +357,7 @@ func CreateMmapFile(outDwarf string, size int64) (*os.File, []byte) {
 	return dwarfFile, buffer
 }
 
+// (dead code; retained for debugging)
 func describe(exem *macho.FileTOC) {
 	note("Type = %s, Flags=0x%x", exem.Type, uint32(exem.Flags))
 	for i, l := range exem.Loads {

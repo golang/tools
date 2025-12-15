@@ -76,16 +76,14 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 // flags
@@ -100,7 +98,7 @@ var (
 // seams for testing
 var (
 	stderr    io.Writer = os.Stderr
-	writeFile           = ioutil.WriteFile
+	writeFile           = os.WriteFile
 )
 
 const usage = `fiximports: rewrite import paths to use canonical package names.
@@ -177,7 +175,7 @@ func fiximports(packages ...string) bool {
 		matchPrefix bool
 	}
 	var replace []replaceItem
-	for _, pair := range strings.Split(*replaceFlag, ",") {
+	for pair := range strings.SplitSeq(*replaceFlag, ",") {
 		if pair == "" {
 			continue
 		}

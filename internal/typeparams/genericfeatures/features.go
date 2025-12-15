@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Features is a set of flags reporting which features of generic Go code a
@@ -77,24 +76,23 @@ func ForPackage(inspect *inspector.Inspector, info *types.Info) Features {
 	inspect.Preorder(nodeFilter, func(node ast.Node) {
 		switch n := node.(type) {
 		case *ast.FuncType:
-			if tparams := typeparams.ForFuncType(n); tparams != nil {
+			if tparams := n.TypeParams; tparams != nil {
 				direct |= GenericFuncDecls
 			}
 		case *ast.InterfaceType:
-			tv := info.Types[n]
-			if iface, _ := tv.Type.(*types.Interface); iface != nil && !typeparams.IsMethodSet(iface) {
+			tv := info.Types[n] // may be zero
+			if iface, _ := tv.Type.(*types.Interface); iface != nil && !iface.IsMethodSet() {
 				direct |= EmbeddedTypeSets
 			}
 		case *ast.TypeSpec:
-			if tparams := typeparams.ForTypeSpec(n); tparams != nil {
+			if tparams := n.TypeParams; tparams != nil {
 				direct |= GenericTypeDecls
 			}
 		}
 	})
 
-	instances := typeparams.GetInstances(info)
-	for _, inst := range instances {
-		switch inst.Type.(type) {
+	for _, inst := range info.Instances {
+		switch types.Unalias(inst.Type).(type) {
 		case *types.Named:
 			direct |= TypeInstantiation
 		case *types.Signature:

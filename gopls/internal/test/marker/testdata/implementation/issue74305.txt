@@ -1,0 +1,11 @@
+Regression test for a crash, #74305.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+var _ = undefined() //@ diag("undefined", re"undefined"), implementation("(", err="not a dynamic function call")

@@ -1,0 +1,155 @@
+This test exercises completion around various statements.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"usePlaceholders": true
+}
+
+-- go.mod --
+module golang.org/lsptests/statements
+
+-- append.go --
+package statements
+
+func _() {
+	type mySlice []int
+
+	var (
+		abc    []int   //@item(stmtABC, "abc", "[]int", "var")
+		abcdef mySlice //@item(stmtABCDEF, "abcdef", "mySlice", "var")
+	)
+
+	/* abcdef = append(abcdef, ) */ //@item(stmtABCDEFAssignAppend, "abcdef = append(abcdef, )", "", "func")
+
+	// don't offer "abc = append(abc, )" because "abc" isn't necessarily
+	// better than "abcdef".
+	abc //@complete(" //", stmtABC, stmtABCDEF)
+
+	abcdef //@complete(" //", stmtABCDEF, stmtABCDEFAssignAppend)
+
+	/* append(abc, ) */ //@item(stmtABCAppend, "append(abc, )", "", "func")
+
+	abc = app //@snippet(" //", stmtABCAppend, "append(abc, ${1:})")
+}
+
+func _() {
+	var s struct{ xyz []int }
+
+	/* xyz = append(s.xyz, ) */ //@item(stmtXYZAppend, "xyz = append(s.xyz, )", "", "func")
+
+	s.x //@snippet(" //", stmtXYZAppend, "xyz = append(s.xyz, ${1:})")
+
+	/* s.xyz = append(s.xyz, ) */ //@item(stmtDeepXYZAppend, "s.xyz = append(s.xyz, )", "", "func")
+
+	sx //@snippet(" //", stmtDeepXYZAppend, "s.xyz = append(s.xyz, ${1:})")
+}
+
+func _() {
+	var foo [][]int
+
+	/* append(foo[0], ) */ //@item(stmtFooAppend, "append(foo[0], )", "", "func")
+
+	foo[0] = app //@complete(" //", stmtFooAppend),snippet(" //", stmtFooAppend, "append(foo[0], ${1:})")
+}
+
+-- if_err_check_return.go --
+package statements
+
+import (
+	"bytes"
+	"io"
+	"os"
+)
+
+func one() (int, float32, io.Writer, *int, []int, bytes.Buffer, error) {
+	/* if err != nil { return err } */ //@item(stmtOneIfErrReturn, "if err != nil { return err }", "", "")
+	/* err != nil { return err } */ //@item(stmtOneErrReturn, "err != nil { return err }", "", "")
+
+	_, err := os.Open("foo")
+	//@snippet("", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	i //@snippet(" //", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	if er //@snippet(" //", stmtOneErrReturn, "err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	if //@snippet(" //", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	if //@snippet("//", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+}
+
+-- if_err_check_return2.go --
+package statements
+
+import "os"
+
+func two() error {
+	var s struct{ err error }
+
+	/* if s.err != nil { return s.err } */ //@item(stmtTwoIfErrReturn, "if s.err != nil { return s.err }", "", "")
+
+	_, s.err = os.Open("foo")
+	//@snippet("", stmtTwoIfErrReturn, "if s.err != nil {\n\treturn ${1:s.err}\n\\}")
+}
+
+-- if_err_check_return3.go --
+package statements
+
+import "os"
+
+// Check that completion logic handles an invalid return type.
+func badReturn() (NotAType, error) {
+	_, err := os.Open("foo")
+	//@snippet("", stmtOneIfErrReturn, "if err != nil {\n\treturn , ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	if er //@snippet(" //", stmtOneErrReturn, "err != nil {\n\treturn , ${1:err}\n\\}")
+}
+
+-- if_err_check_test.go --
+package statements
+
+import (
+	"os"
+	"testing"
+)
+
+func TestErr(t *testing.T) {
+	/* if err != nil { t.Fatal(err) } */ //@item(stmtOneIfErrTFatal, "if err != nil { t.Fatal(err) }", "", "")
+
+	_, err := os.Open("foo")
+	//@snippet("", stmtOneIfErrTFatal, "if err != nil {\n\tt.Fatal(err)\n\\}")
+}
+
+func BenchmarkErr(b *testing.B) {
+	/* if err != nil { b.Fatal(err) } */ //@item(stmtOneIfErrBFatal, "if err != nil { b.Fatal(err) }", "", "")
+
+	_, err := os.Open("foo")
+	//@snippet("", stmtOneIfErrBFatal, "if err != nil {\n\tb.Fatal(err)\n\\}")
+}
+
+-- return.go --
+package statements
+
+//@item(stmtReturnZeroValues, `return 0, "", nil`)
+
+func foo() (int, string, error) {
+	ret //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+}
+
+func bar() (int, string, error) {
+	return //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+}
+
+
+//@item(stmtReturnInvalidValues, `return `)
+
+func invalidReturnStatement() NotAType {
+	return //@snippet(" ", stmtReturnInvalidValues, "return ${1:}")
+}

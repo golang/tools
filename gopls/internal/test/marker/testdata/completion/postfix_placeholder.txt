@@ -1,0 +1,83 @@
+These tests check that postfix completions  when enable usePlaceholders
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"usePlaceholders": true
+}
+
+-- go.mod --
+module golang.org/lsptests/snippets
+
+go 1.18
+
+-- postfix.go --
+package snippets
+
+import (
+	"strconv"
+)
+
+func _() {
+	/* for! */ //@item(postfixFor, "for!", "range over slice by index", "snippet")
+	/* forr! */ //@item(postfixForr, "forr!", "range over slice by index and value", "snippet")
+	/* range! */ //@item(postfixRange, "range!", "range over slice", "snippet")
+	/* var! */ //@item(postfixVar, "var!", "assign to variable", "snippet")
+
+	var foo []int
+
+	foo.fo //@snippet(" //", postfixFor, "for ${1:i} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(" //", postfixForr, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(" //", postfixRange, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
+	foo.va //@snippet(" //", postfixVar, "${1:i} := foo")
+}
+
+func _() {
+	/* for! */ //@item(postfixForMap, "for!", "range over map by key", "snippet")
+	/* forr! */ //@item(postfixForrMap, "forr!", "range over map by key and value", "snippet")
+	/* range! */ //@item(postfixRangeMap, "range!", "range over map", "snippet")
+
+	var foo map[int]int
+
+	foo.fo //@snippet(" //", postfixFor, "for ${1:k} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(" //", postfixForr, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(" //", postfixRange, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
+}
+
+func _() {
+	/* for! */ //@item(postfixForChannel, "for!", "range over channel", "snippet")
+	/* range! */ //@item(postfixRangeChannel, "range!", "range over channel", "snippet")
+
+	var foo chan int
+
+	foo.fo //@snippet(" //", postfixForChannel, "for ${1:e} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(" //", postfixRangeChannel, "for ${1:e} := range foo {\n\t$0\n}")
+}
+
+type T struct {
+	Name string
+}
+
+func _() (string, T, map[string]string, error) {
+	/* iferr! */ //@item(postfixIfErr, "iferr!", "check error and return", "snippet")
+	/* variferr! */ //@item(postfixVarIfErr, "variferr!", "assign variables and check error", "snippet")
+	/* var! */ //@item(postfixVars, "var!", "assign to variables", "snippet")
+
+
+	var err error
+	err.iferr //@snippet(" //", postfixIfErr, "if err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	strconv.Atoi("32").iferr //@snippet(" //", postfixIfErr, "if _, err := strconv.Atoi(\"32\"); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	strconv.Atoi("32").variferr //@snippet(" //", postfixVarIfErr, "${1:i}, ${2:err} := strconv.Atoi(\"32\")\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
+
+	// test function return multiple errors
+	var foo func() (error, error)
+	foo().iferr //@snippet(" //", postfixIfErr, "if _, err := foo(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	foo().variferr //@snippet(" //", postfixVarIfErr, "${1:err2}, ${2:err} := foo()\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
+
+	// test function just return error
+	var bar func() error
+	bar().iferr //@snippet(" //", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	bar().variferr //@snippet(" //", postfixVarIfErr, "${1:err2} := bar()\nif ${1:err2} != nil {\n\treturn \"\", T{}, nil, ${2:${1:err2}}\n}\n")
+}

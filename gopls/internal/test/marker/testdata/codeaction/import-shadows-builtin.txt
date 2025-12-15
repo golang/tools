@@ -1,0 +1,55 @@
+This is a regression test for bug #63592 in "organize imports" whereby
+the new imports would shadow predeclared names.
+
+In the original example, the conflict was between predeclared error
+type and the unfortunately named package github.com/coreos/etcd/error,
+but this example uses a package with the ludicrous name of complex128.
+
+The new behavior is that we will not attempt to import packages
+that shadow predeclared names. (Ideally we would do that only if
+the predeclared name is actually referenced in the file, which
+complex128 happens to be in this example, but that's a trickier
+analysis than the internal/imports package is game for.)
+
+The name complex127 works as usual.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- complex128/a.go --
+package complex128
+
+var V int
+
+-- complex127/a.go --
+package complex127
+
+var V int
+
+-- main.go --
+package main
+
+import () //@codeaction("import", "source.organizeImports", result=out)
+
+func main() {
+	complex128.V() //@diag("V", re"type complex128 has no field")
+	complex127.V() //@diag("complex127", re"(undeclared|undefined)")
+}
+
+func _() {
+	var _ complex128 = 1 + 2i
+}
+-- @out/main.go --
+package main
+
+import "example.com/complex127" //@codeaction("import", "source.organizeImports", result=out)
+
+func main() {
+	complex128.V() //@diag("V", re"type complex128 has no field")
+	complex127.V() //@diag("complex127", re"(undeclared|undefined)")
+}
+
+func _() {
+	var _ complex128 = 1 + 2i
+}

@@ -7,6 +7,7 @@ package diff
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -64,7 +65,7 @@ func ApplyBytes(src []byte, edits []Edit) ([]byte, error) {
 // It may return a different slice.
 func validate(src string, edits []Edit) ([]Edit, int, error) {
 	if !sort.IsSorted(editsSort(edits)) {
-		edits = append([]Edit(nil), edits...)
+		edits = slices.Clone(edits)
 		SortEdits(edits)
 	}
 
@@ -153,7 +154,7 @@ expand:
 // expandEdit returns edit expanded to complete whole lines.
 func expandEdit(edit Edit, src string) Edit {
 	// Expand start left to start of line.
-	// (delta is the zero-based column number of of start.)
+	// (delta is the zero-based column number of start.)
 	start := edit.Start
 	if delta := start - 1 - strings.LastIndex(src[:start], "\n"); delta > 0 {
 		edit.Start -= delta

@@ -1,0 +1,32 @@
+This test exercises function snippets using generics.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"usePlaceholders": true
+}
+
+-- go.mod --
+module golang.org/lsptests/snippets
+
+go 1.18
+
+-- funcsnippets.go --
+package snippets
+
+type SyncMap[K comparable, V any] struct{}
+
+func NewSyncMap[K comparable, V any]() (result *SyncMap[K, V]) { //@item(NewSyncMap, "NewSyncMap", "", "")
+	return
+}
+
+func Identity[P ~int](p P) P { //@item(Identity, "Identity", "", "")
+	return p
+}
+
+func _() {
+	_ = NewSyncM //@snippet(" //", NewSyncMap, "NewSyncMap[${1:K comparable}, ${2:V any}]()")
+	_ = Identi //@snippet(" //", Identity, "Identity(${1:p P})")
+}

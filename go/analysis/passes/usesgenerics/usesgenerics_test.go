@@ -9,13 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/usesgenerics"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 func Test(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("type parameters are not enabled at this Go version")
-	}
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, usesgenerics.Analyzer, "a", "b", "c", "d")
 }

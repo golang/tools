@@ -1,0 +1,92 @@
+This test exercises the reference and dereference completion modifiers.
+
+TODO: remove the need to set "literalCompletions" here, as this is one of the
+few places this setting is needed.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- address/address.go --
+package address
+
+func wantsPtr(*int)            {}
+func wantsVariadicPtr(...*int) {}
+
+func wantsVariadic(...int) {}
+
+type foo struct{ c int } //@item(addrFieldC, "c", "int", "field")
+
+func _() {
+	var (
+		a string //@item(addrA, "a", "string", "var")
+		b int    //@item(addrB, "b", "int", "var")
+	)
+
+	wantsPtr()   //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
+	wantsPtr(&b) //@snippet(")", addrB, "b")
+
+	wantsVariadicPtr() //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
+
+	var s foo
+	s.c          //@item(addrDeepC, "s.c", "int", "field")
+	wantsPtr()   //@snippet(")", addrDeepC, "&s.c")
+	wantsPtr(s)  //@snippet(")", addrDeepC, "&s.c")
+	wantsPtr(&s) //@snippet(")", addrDeepC, "s.c")
+
+	// don't add "&" in item (it gets added as an additional edit)
+	wantsPtr(&s.c) //@snippet(")", addrFieldC, "c")
+
+	// check dereferencing as well
+	var c *int    //@item(addrCPtr, "c", "*int", "var")
+	var _ int = _ //@rank("_ //", addrCPtr, addrA),snippet("_ //", addrCPtr, "*c")
+
+	wantsVariadic() //@rank(")", addrCPtr, addrA),snippet(")", addrCPtr, "*c")
+
+	var d **int   //@item(addrDPtr, "d", "**int", "var")
+	var _ int = _ //@rank("_ //", addrDPtr, addrA),snippet("_ //", addrDPtr, "**d")
+
+	type namedPtr *int
+	var np namedPtr //@item(addrNamedPtr, "np", "namedPtr", "var")
+
+	var _ int = _ //@rank("_ //", addrNamedPtr, addrA)
+
+	// don't get tripped up by recursive pointer type
+	type dontMessUp *dontMessUp //@item(dontMessUp, "dontMessUp", "*dontMessUp", "type")
+	var dmu *dontMessUp //@item(addrDMU, "dmu", "*dontMessUp", "var")
+
+	var _ int = dmu //@complete(" //", addrDMU, dontMessUp)
+}
+
+func (f foo) ptr() *foo { return &f }
+
+func _() {
+	getFoo := func() foo { return foo{} }
+
+	// not addressable
+	getFoo().c //@item(addrGetFooC, "getFoo().c", "int", "field")
+
+	// addressable
+	getFoo().ptr().c //@item(addrGetFooPtrC, "getFoo().ptr().c", "int", "field")
+
+	wantsPtr()   //@snippet(")", addrGetFooPtrC, "&getFoo().ptr().c")
+	wantsPtr(&g) //@snippet(")", addrGetFooPtrC, "getFoo().ptr().c")
+}
+
+type nested struct {
+	f foo
+}
+
+func _() {
+	getNested := func() nested { return nested{} }
+
+	getNested().f.c       //@item(addrNestedC, "getNested().f.c", "int", "field")
+	getNested().f.ptr().c //@item(addrNestedPtrC, "getNested().f.ptr().c", "int", "field")
+
+	// addrNestedC is not addressable, so rank lower
+	wantsPtr(getNestedfc) //@complete(")", addrNestedPtrC, addrNestedC)
+}

@@ -23,7 +23,6 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/internal/cgo"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 var ignoreVendor build.ImportMode
@@ -216,7 +215,7 @@ func (conf *Config) fset() *token.FileSet {
 // src specifies the parser input as a string, []byte, or io.Reader, and
 // filename is its apparent name.  If src is nil, the contents of
 // filename are read from the file system.
-func (conf *Config) ParseFile(filename string, src interface{}) (*ast.File, error) {
+func (conf *Config) ParseFile(filename string, src any) (*ast.File, error) {
 	// TODO(adonovan): use conf.build() etc like parseFiles does.
 	return parser.ParseFile(conf.fset(), filename, src, conf.ParserMode)
 }
@@ -341,13 +340,7 @@ func (conf *Config) addImport(path string, tests bool) {
 func (prog *Program) PathEnclosingInterval(start, end token.Pos) (pkg *PackageInfo, path []ast.Node, exact bool) {
 	for _, info := range prog.AllPackages {
 		for _, f := range info.Files {
-			if f.Pos() == token.NoPos {
-				// This can happen if the parser saw
-				// too many errors and bailed out.
-				// (Use parser.AllErrors to prevent that.)
-				continue
-			}
-			if !tokenFileContainsPos(prog.Fset.File(f.Pos()), start) {
+			if !tokenFileContainsPos(prog.Fset.File(f.FileStart), start) {
 				continue
 			}
 			if path, exact := astutil.PathEnclosingInterval(f, start, end); path != nil {
@@ -1029,17 +1022,18 @@ func (imp *importer) newPackageInfo(path, dir string) *PackageInfo {
 	info := &PackageInfo{
 		Pkg: pkg,
 		Info: types.Info{
-			Types:      make(map[ast.Expr]types.TypeAndValue),
-			Defs:       make(map[*ast.Ident]types.Object),
-			Uses:       make(map[*ast.Ident]types.Object),
-			Implicits:  make(map[ast.Node]types.Object),
-			Scopes:     make(map[ast.Node]*types.Scope),
-			Selections: make(map[*ast.SelectorExpr]*types.Selection),
+			Types:        make(map[ast.Expr]types.TypeAndValue),
+			Defs:         make(map[*ast.Ident]types.Object),
+			Uses:         make(map[*ast.Ident]types.Object),
+			Implicits:    make(map[ast.Node]types.Object),
+			Instances:    make(map[*ast.Ident]types.Instance),
+			Scopes:       make(map[ast.Node]*types.Scope),
+			Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+			FileVersions: make(map[*ast.File]string),
 		},
 		errorFunc: imp.conf.TypeChecker.Error,
 		dir:       dir,
 	}
-	typeparams.InitInstanceInfo(&info.Info)
 
 	// Copy the types.Config so we can vary it across PackageInfos.
 	tc := imp.conf.TypeChecker

@@ -12,7 +12,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -44,19 +43,19 @@ var forcetmpcleanflag = flag.Bool("forcetmpclean", false, "[Testing only] force 
 var cleancacheflag = flag.Bool("cleancache", true, "[Testing only] don't clean the go cache")
 var raceflag = flag.Bool("race", false, "[Testing only] build generated code with -race")
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if *verbflag >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")
 	}
 }
 
-func warn(s string, a ...interface{}) {
+func warn(s string, a ...any) {
 	fmt.Fprintf(os.Stderr, s, a...)
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
-func fatal(s string, a ...interface{}) {
+func fatal(s string, a ...any) {
 	fmt.Fprintf(os.Stderr, s, a...)
 	fmt.Fprintf(os.Stderr, "\n")
 	os.Exit(1)
@@ -196,7 +195,7 @@ func (c *config) gen(singlepk int, singlefn int) {
 func (c *config) action(cmd []string, outfile string, emitout bool) int {
 	st := docmdout(cmd, c.gendir, outfile)
 	if emitout {
-		content, err := ioutil.ReadFile(outfile)
+		content, err := os.ReadFile(outfile)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -405,7 +404,7 @@ func main() {
 	}
 	verb(1, "in main, verblevel=%d", *verbflag)
 
-	tmpdir, err := ioutil.TempDir("", "fuzzrun")
+	tmpdir, err := os.MkdirTemp("", "fuzzrun")
 	if err != nil {
 		fatal("creation of tempdir failed: %v", err)
 	}

@@ -1,0 +1,155 @@
+This test checks the quick fix for undefined functions.
+
+-- channels.go --
+package missingfunction
+
+func channels(s string) {
+	undefinedChannels(c()) //@quickfix("undefinedChannels", re"(undeclared|undefined)", channels)
+}
+
+func c() (<-chan string, chan string) {
+	return make(<-chan string), make(chan string)
+}
+-- @channels/channels.go --
+@@ -7 +7,4 @@
++func undefinedChannels(ch1 <-chan string, ch2 chan string) {
++	panic("unimplemented")
++}
++
+-- consecutive.go --
+package missingfunction
+
+func consecutiveParams() {
+	var s string
+	undefinedConsecutiveParams(s, s) //@quickfix("undefinedConsecutiveParams", re"(undeclared|undefined)", consecutive)
+}
+-- @consecutive/consecutive.go --
+@@ -7 +7,4 @@
++
++func undefinedConsecutiveParams(s1, s2 string) {
++	panic("unimplemented")
++}
+-- error.go --
+package missingfunction
+
+func errorParam() {
+	var err error
+	undefinedErrorParam(err) //@quickfix("undefinedErrorParam", re"(undeclared|undefined)", error)
+}
+-- @error/error.go --
+@@ -7 +7,4 @@
++
++func undefinedErrorParam(err error) {
++	panic("unimplemented")
++}
+-- literals.go --
+package missingfunction
+
+type T struct{}
+
+func literals() {
+	undefinedLiterals("hey compiler", T{}, &T{}) //@quickfix("undefinedLiterals", re"(undeclared|undefined)", literals)
+}
+-- @literals/literals.go --
+@@ -8 +8,4 @@
++
++func undefinedLiterals(s string, t1 T, t2 *T) {
++	panic("unimplemented")
++}
+-- operation.go --
+package missingfunction
+
+import "time"
+
+func operation() {
+	undefinedOperation(10 * time.Second) //@quickfix("undefinedOperation", re"(undeclared|undefined)", operation)
+}
+-- @operation/operation.go --
+@@ -8 +8,4 @@
++
++func undefinedOperation(duration time.Duration) {
++	panic("unimplemented")
++}
+-- selector.go --
+package missingfunction
+
+func selector() {
+	m := map[int]bool{}
+	undefinedSelector(m[1]) //@quickfix("undefinedSelector", re"(undeclared|undefined)", selector)
+}
+-- @selector/selector.go --
+@@ -7 +7,4 @@
++
++func undefinedSelector(b bool) {
++	panic("unimplemented")
++}
+-- slice.go --
+package missingfunction
+
+func slice() {
+	undefinedSlice([]int{1, 2}) //@quickfix("undefinedSlice", re"(undeclared|undefined)", slice)
+}
+-- @slice/slice.go --
+@@ -6 +6,4 @@
++
++func undefinedSlice(i []int) {
++	panic("unimplemented")
++}
+-- tuple.go --
+package missingfunction
+
+func tuple() {
+	undefinedTuple(b()) //@quickfix("undefinedTuple", re"(undeclared|undefined)", tuple)
+}
+
+func b() (string, error) {
+	return "", nil
+}
+-- @tuple/tuple.go --
+@@ -7 +7,4 @@
++func undefinedTuple(s string, err error) {
++	panic("unimplemented")
++}
++
+-- unique_params.go --
+package missingfunction
+
+func uniqueArguments() {
+	var s string
+	var i int
+	undefinedUniqueArguments(s, i, s) //@quickfix("undefinedUniqueArguments", re"(undeclared|undefined)", unique)
+}
+-- @unique/unique_params.go --
+@@ -8 +8,4 @@
++
++func undefinedUniqueArguments(s1 string, i int, s2 string) {
++	panic("unimplemented")
++}
+-- param.go --
+package missingfunction
+
+func inferFromParam() {
+	f(as_param()) //@quickfix("as_param", re"undefined", infer_param)
+}
+
+func f(i int) {}
+-- @infer_param/param.go --
+@@ -7 +7,4 @@
++func as_param() int {
++	panic("unimplemented")
++}
++
+-- assign.go --
+package missingfunction
+
+func inferFromAssign() {
+	i := 42
+	i = i
+	i = assign() //@quickfix("assign", re"undefined", infer_assign)
+}
+-- @infer_assign/assign.go --
+@@ -8 +8,4 @@
++
++func assign() int {
++	panic("unimplemented")
++}

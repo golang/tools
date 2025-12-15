@@ -8,18 +8,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"testing"
 	"time"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/stack/stacktest"
-	"golang.org/x/tools/internal/testenv"
 )
 
+// needsLocalhostNet skips t if networking does not work for ports opened
+// with "localhost".
+// forked from golang.org/x/tools/internal/testenv.
+func needsLocalhostNet(t testing.TB) {
+	switch runtime.GOOS {
+	case "js", "wasip1":
+		t.Skipf(`Listening on "localhost" fails on %s; see https://go.dev/issue/59718`, runtime.GOOS)
+	}
+}
+
 func TestIdleTimeout(t *testing.T) {
-	testenv.NeedsLocalhostNet(t)
-	stacktest.NoLeak(t)
+	needsLocalhostNet(t)
 
 	// Use a panicking time.AfterFunc instead of context.WithTimeout so that we
 	// get a goroutine dump on failure. We expect the test to take on the order of
@@ -47,7 +55,7 @@ func TestIdleTimeout(t *testing.T) {
 
 		// Exercise some connection/disconnection patterns, and then assert that when
 		// our timer fires, the server exits.
-		conn1, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn1, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			if since := time.Since(idleStart); since < d {
 				t.Fatalf("conn1 failed to connect after %v: %v", since, err)
@@ -71,7 +79,7 @@ func TestIdleTimeout(t *testing.T) {
 		// Since conn1 was successfully accepted and remains open, the server is
 		// definitely non-idle. Dialing another simultaneous connection should
 		// succeed.
-		conn2, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn2, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			conn1.Close()
 			t.Fatalf("conn2 failed to connect while non-idle after %v: %v", time.Since(idleStart), err)
@@ -96,7 +104,7 @@ func TestIdleTimeout(t *testing.T) {
 			t.Fatalf("conn2.Close failed with error: %v", err)
 		}
 
-		conn3, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn3, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			if since := time.Since(idleStart); since < d {
 				t.Fatalf("conn3 failed to connect after %v: %v", since, err)
@@ -133,7 +141,7 @@ func TestIdleTimeout(t *testing.T) {
 
 	d := 1 * time.Millisecond
 	for {
-		t.Logf("testing with idle timout %v", d)
+		t.Logf("testing with idle timeout %v", d)
 		if !try(d) {
 			d *= 2
 			continue
@@ -148,7 +156,7 @@ type msg struct {
 
 type fakeHandler struct{}
 
-func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (interface{}, error) {
+func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	switch req.Method {
 	case "ping":
 		return &msg{"pong"}, nil
@@ -158,7 +166,6 @@ func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (interface
 }
 
 func TestServe(t *testing.T) {
-	stacktest.NoLeak(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -166,7 +173,7 @@ func TestServe(t *testing.T) {
 		factory func(context.Context, testing.TB) (jsonrpc2.Listener, error)
 	}{
 		{"tcp", func(ctx context.Context, t testing.TB) (jsonrpc2.Listener, error) {
-			testenv.NeedsLocalhostNet(t)
+			needsLocalhostNet(t)
 			return jsonrpc2.NetListener(ctx, "tcp", "localhost:0", jsonrpc2.NetListenOptions{})
 		}},
 		{"pipe", func(ctx context.Context, t testing.TB) (jsonrpc2.Listener, error) {
@@ -205,7 +212,7 @@ func newFake(t *testing.T, ctx context.Context, l jsonrpc2.Listener) (*jsonrpc2.
 		l.Dialer(),
 		jsonrpc2.ConnectionOptions{
 			Handler: fakeHandler{},
-		})
+		}, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +257,7 @@ func TestIdleListenerAcceptCloseRace(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() {
-			conn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+			conn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 			listener.Close()
 			if err == nil {
 				conn.Close()
@@ -296,7 +303,7 @@ func TestCloseCallRace(t *testing.T) {
 		pokec := make(chan *jsonrpc2.AsyncCall, 1)
 
 		s := jsonrpc2.NewServer(ctx, listener, jsonrpc2.BinderFunc(func(_ context.Context, srvConn *jsonrpc2.Connection) jsonrpc2.ConnectionOptions {
-			h := jsonrpc2.HandlerFunc(func(ctx context.Context, _ *jsonrpc2.Request) (interface{}, error) {
+			h := jsonrpc2.HandlerFunc(func(ctx context.Context, _ *jsonrpc2.Request) (any, error) {
 				// Start a concurrent call from the server to the client.
 				// The point of this test is to ensure this doesn't deadlock
 				// if the client shuts down the connection concurrently.
@@ -313,7 +320,7 @@ func TestCloseCallRace(t *testing.T) {
 			return jsonrpc2.ConnectionOptions{Handler: h}
 		}))
 
-		dialConn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		dialConn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			listener.Close()
 			s.Wait()

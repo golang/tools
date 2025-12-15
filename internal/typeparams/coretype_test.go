@@ -15,10 +15,6 @@ import (
 )
 
 func TestCoreType(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestCoreType requires type parameters.")
-	}
-
 	const source = `
 	package P
 
@@ -99,7 +95,7 @@ func TestCoreType(t *testing.T) {
 			got = ct.String()
 		}
 		if got != test.want {
-			t.Errorf("coreType(%s) = %v, want %v", test.expr, got, test.want)
+			t.Errorf("CoreType(%s) = %v, want %v", test.expr, got, test.want)
 		}
 	}
 }

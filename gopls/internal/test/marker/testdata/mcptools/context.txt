@@ -1,0 +1,513 @@
+This test exercises the "go_context" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- settings.json --
+{
+    "mcpTools": {
+        "go_context": true
+    }
+}
+
+-- go.mod --
+module example.com
+
+-- a/main.go --
+// File doc for main.go part 1.
+package main
+
+// File doc for main.go part 2.
+import(
+    "example.com/a/comment"
+)
+
+// File doc for main.go part 3.
+
+// doc comment for func foo.
+func foo() {//@mcptool("go_context", `{"file": "$WORKDIR/a/main.go"}`, output=withComment)
+    comment.Foo("", 0)
+}
+
+-- a/a.go --
+// File doc for a.go.
+package main
+
+// doc comment for func a.
+func a () {}
+
+// doc comment for type b.
+type b struct {}
+
+// doc comment for const c.
+const c = ""
+
+// doc comment for var d.
+var d int
+
+-- a/comment/doc.go --
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package doc for package comment.
+*/
+package comment
+
+-- a/comment/comment.go --
+// File doc for comment.go part 1.
+package comment
+
+// File doc for comment.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for comment.go part 3.
+
+// doc comment for comment.Foo
+func Foo(foo string, _ int) {
+    myfmt.Printf("%s", foo)
+}
+
+// Random comment floating around.
+
+-- @withComment --
+Current package "example.com/a" (package main):
+
+main.go (current file):
+```go
+// File doc for main.go part 1.
+package main
+
+// File doc for main.go part 2.
+import(
+    "example.com/a/comment"
+)
+
+// File doc for main.go part 3.
+
+// doc comment for func foo.
+func foo()
+
+```
+
+a.go:
+```go
+// File doc for a.go.
+package main
+
+// doc comment for func a.
+func a ()
+
+// doc comment for type b.
+type b struct {}
+// doc comment for const c.
+const c = ""
+// doc comment for var d.
+var d int
+```
+
+Current file "main.go" contains this import declaration:
+```go
+import(
+    "example.com/a/comment"
+)
+```
+
+The imported packages declare the following symbols:
+
+"example.com/a/comment" (package comment)
+comment.go:
+```go
+// File doc for comment.go part 1.
+package comment
+
+// File doc for comment.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for comment.go part 3.
+
+// doc comment for comment.Foo
+func Foo(foo string, _ int)
+
+```
+
+doc.go:
+```go
+/*
+Package doc for package comment.
+*/
+package comment
+
+```
+
+-- b/main.go --
+package main
+
+import(
+    "example.com/b/function"
+)
+
+func testFunction() {//@mcptool("go_context", `{"file":"$WORKDIR/b/main.go"}`, output=withFunction)
+    function.Foo(0, "")
+}
+
+-- b/function/function.go --
+package function
+
+func Foo(int, string) {}
+
+func foo(string, int) {}
+
+type unexported struct {}
+
+func (*unexported) unexported(int) {}
+
+func (*unexported) Exported(int) {}
+
+type Exported struct{}
+
+func (*Exported) unexported(int) {}
+
+func (*Exported) Exported(int) {}
+
+-- @withFunction --
+Current package "example.com/b" (package main):
+
+main.go (current file):
+```go
+package main
+
+import(
+    "example.com/b/function"
+)
+
+func testFunction()
+
+```
+
+Current file "main.go" contains this import declaration:
+```go
+import(
+    "example.com/b/function"
+)
+```
+
+The imported packages declare the following symbols:
+
+"example.com/b/function" (package function)
+function.go:
+```go
+package function
+
+func Foo(int, string)
+
+type Exported struct{}
+
+func (*Exported) Exported(int)
+
+```
+
+-- c/main.go --
+package main
+
+import(
+    "example.com/c/types"
+)
+
+var x types.Exported //@mcptool("go_context", `{"file":"$WORKDIR/c/main.go"}`, output=withType)
+
+-- c/types/types.go --
+package types
+
+// Doc for exported.
+type Exported struct {
+    // Doc for exported.
+    Exported string
+    // Doc for unexported.
+    unexported string
+}
+
+// Doc for types.
+type (
+    // Doc for Foo first line.
+    // Doc for Foo second line.
+    Foo struct {
+        foo string
+    }
+
+    // Doc for foo.
+    foo struct {}
+
+    // Doc for Bar.
+    Bar struct {
+        bar string
+    }
+
+    // Doc for bar.
+    bar struct {}
+)
+
+-- @withType --
+Current package "example.com/c" (package main):
+
+main.go (current file):
+```go
+package main
+
+import(
+    "example.com/c/types"
+)
+
+var x types.Exported
+```
+
+Current file "main.go" contains this import declaration:
+```go
+import(
+    "example.com/c/types"
+)
+```
+
+The imported packages declare the following symbols:
+
+"example.com/c/types" (package types)
+types.go:
+```go
+package types
+
+// Doc for exported.
+type Exported struct {
+    // Doc for exported.
+    Exported string
+    // Doc for unexported.
+    unexported string
+}
+
+// Doc for types.
+type (
+    // Doc for Foo first line.
+    // Doc for Foo second line.
+    Foo struct {
+        foo string
+    }
+    // Doc for Bar.
+    Bar struct {
+        bar string
+    }
+)
+
+```
+
+-- d/main.go --
+package main
+
+import(
+    "example.com/d/values"
+)
+
+var y values.ConstFoo //@mcptool("go_context", `{"file":"$WORKDIR/d/main.go"}`, output=withValue)
+
+-- d/values/consts.go --
+package values
+
+const (
+    // doc for ConstFoo
+    ConstFoo = "Foo" // comment for ConstFoo
+    // doc for constFoo
+    constFoo = "foo" // comment for constFoo
+    // doc for ConstBar
+    ConstBar = "Bar" // comment for ConstBar
+    // doc for constBar
+    constBar = "bar" // comment for constBar
+)
+
+// doc for ConstExported
+const ConstExported = "Exported" // comment for ConstExported
+
+// doc for constUnexported
+var constUnexported = "unexported" // comment for constUnexported
+
+-- d/values/vars.go --
+package values
+
+var (
+    // doc for VarFoo
+    VarFoo = "Foo" // comment for VarFoo
+    // doc for varFoo
+    varFoo = "foo" // comment for varFoo
+    // doc for VarBar
+    VarBar = "Bar" // comment for VarBar
+    // doc for varBar
+    varBar = "bar" // comment for varBar
+)
+
+// doc for VarExported
+var VarExported = "Exported" // comment for VarExported
+
+// doc for varUnexported
+var varUnexported = "unexported" // comment for varUnexported
+
+-- @withValue --
+Current package "example.com/d" (package main):
+
+main.go (current file):
+```go
+package main
+
+import(
+    "example.com/d/values"
+)
+
+var y values.ConstFoo
+```
+
+Current file "main.go" contains this import declaration:
+```go
+import(
+    "example.com/d/values"
+)
+```
+
+The imported packages declare the following symbols:
+
+"example.com/d/values" (package values)
+consts.go:
+```go
+package values
+
+const (
+    // doc for ConstFoo
+    ConstFoo = "Foo" // comment for ConstFoo
+    // doc for ConstBar
+    ConstBar = "Bar" // comment for ConstBar
+)
+
+// doc for ConstExported
+const ConstExported = "Exported" // comment for ConstExported
+
+```
+
+vars.go:
+```go
+package values
+
+var (
+    // doc for VarFoo
+    VarFoo = "Foo" // comment for VarFoo
+    // doc for VarBar
+    VarBar = "Bar" // comment for VarBar
+)
+
+// doc for VarExported
+var VarExported = "Exported" // comment for VarExported
+
+```
+
+-- e/main.go --
+package main
+
+func main() {} //@mcptool("go_context", `{"file":"$WORKDIR/e/main.go"}`, output=samePackage)
+
+-- e/foo.go --
+package main
+
+var (
+    foo string
+    Foo string
+)
+
+-- e/bar.go --
+package main
+
+const (
+    bar = ""
+    Bar = ""
+)
+
+-- e/baz.go --
+package main
+
+func baz(int) string {
+    return ""
+}
+
+func Baz(string) int {
+    return 0
+}
+
+-- @samePackage --
+Current package "example.com/e" (package main):
+
+main.go (current file):
+```go
+package main
+
+func main()
+
+```
+
+bar.go:
+```go
+package main
+
+const (
+    bar = ""
+    Bar = ""
+)
+```
+
+baz.go:
+```go
+package main
+
+func baz(int) string
+
+func Baz(string) int
+
+```
+
+foo.go:
+```go
+package main
+
+var (
+    foo string
+    Foo string
+)
+```
+
+-- f/main.go --
+package main
+
+import "fmt"
+
+func Foo() { //@mcptool("go_context", `{"file":"$WORKDIR/f/main.go"}`, output=withoutStdLib)
+    fmt.Println("foo")
+}
+
+-- @withoutStdLib --
+Current package "example.com/f" (package main):
+
+main.go (current file):
+```go
+package main
+
+import "fmt"
+
+func Foo()
+
+```
+
+Current file "main.go" contains this import declaration:
+```go
+import "fmt"
+```
+

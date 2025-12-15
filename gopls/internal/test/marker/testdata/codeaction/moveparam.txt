@@ -1,0 +1,178 @@
+This test checks basic functionality of the "move parameter left/right" code
+action.
+
+Note that in many of these tests, a permutation can either be expressed as
+a parameter move left or right. In these cases, the codeaction assertions
+deliberately share the same golden data.
+
+-- go.mod --
+module example.com/moveparam
+
+go 1.19
+
+-- basic/basic.go --
+package basic
+
+func Foo(a, b int) int { //@codeaction("a", "refactor.rewrite.moveParamRight", result=basic), codeaction("b", "refactor.rewrite.moveParamLeft", result=basic)
+	return a + b
+}
+
+func _() {
+	x, y := 1, 2
+	z := Foo(x, y)
+	_ = z
+}
+
+-- basic/caller/caller.go --
+package caller
+
+import "example.com/moveparam/basic"
+
+func a() int { return 1 }
+func b() int { return 2 }
+
+// Check that we can refactor a call in a toplevel var decl.
+var _ = basic.Foo(1, 2)
+
+// Check that we can refactor a call with effects in a toplevel var decl.
+var _ = basic.Foo(a(), b())
+
+func _() {
+	// check various refactorings in a function body, and comment handling.
+	_ = basic.Foo(1, 2) // with comments
+	// another comment
+	_ = basic.Foo(3, 4)
+	x := 4
+	x = basic.Foo(x /* this is an inline comment */, 5)
+}
+
+-- @basic/basic/basic.go --
+package basic
+
+func Foo(b, a int) int { //@codeaction("a", "refactor.rewrite.moveParamRight", result=basic), codeaction("b", "refactor.rewrite.moveParamLeft", result=basic)
+	return a + b
+}
+
+func _() {
+	x, y := 1, 2
+	z := Foo(y, x)
+	_ = z
+}
+-- @basic/basic/caller/caller.go --
+package caller
+
+import "example.com/moveparam/basic"
+
+func a() int { return 1 }
+func b() int { return 2 }
+
+// Check that we can refactor a call in a toplevel var decl.
+var _ = basic.Foo(2, 1)
+
+// Check that we can refactor a call with effects in a toplevel var decl.
+var _ = basic.Foo(b(), a())
+
+func _() {
+	// check various refactorings in a function body, and comment handling.
+	_ = basic.Foo(2, 1) // with comments
+	// another comment
+	_ = basic.Foo(4, 3)
+	x := 4
+	x = basic.Foo(5, x)
+}
+-- method/method.go --
+package method
+
+type T struct{}
+
+func (T) Foo(a, b int) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=method), codeaction("b", "refactor.rewrite.moveParamLeft", result=method)
+
+func _() {
+	var t T
+	t.Foo(1, 2)
+	// TODO(rfindley): test method expressions here, once they are handled.
+}
+
+-- method/caller/caller.go --
+package caller
+
+import "example.com/moveparam/method"
+
+func _() {
+	var t method.T
+	t.Foo(1, 2)
+}
+
+-- @method/method/caller/caller.go --
+package caller
+
+import "example.com/moveparam/method"
+
+func _() {
+	var t method.T
+	t.Foo(2, 1)
+}
+-- @method/method/method.go --
+package method
+
+type T struct{}
+
+func (T) Foo(b, a int) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=method), codeaction("b", "refactor.rewrite.moveParamLeft", result=method)
+
+func _() {
+	var t T
+	t.Foo(2, 1)
+	// TODO(rfindley): test method expressions here, once they are handled.
+}
+-- fieldlist/joinfield.go --
+package fieldlist
+
+func JoinField(a int, b string, c int) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=joinfield), codeaction("b", "refactor.rewrite.moveParamLeft", result=joinfield)
+
+func _() {
+	JoinField(1, "2", 3)
+}
+
+-- @joinfield/fieldlist/joinfield.go --
+package fieldlist
+
+func JoinField(b string, a, c int) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=joinfield), codeaction("b", "refactor.rewrite.moveParamLeft", result=joinfield)
+
+func _() {
+	JoinField("2", 1, 3)
+}
+-- fieldlist/splitfield.go --
+package fieldlist
+
+func SplitField(a int, b, c string) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=splitfield), codeaction("b", "refactor.rewrite.moveParamLeft", result=splitfield)
+
+func _() {
+	SplitField(1, "2", "3")
+}
+
+-- @splitfield/fieldlist/splitfield.go --
+package fieldlist
+
+func SplitField(b string, a int, c string) {} //@codeaction("a", "refactor.rewrite.moveParamRight", result=splitfield), codeaction("b", "refactor.rewrite.moveParamLeft", result=splitfield)
+
+func _() {
+	SplitField("2", 1, "3")
+}
+-- unnamed/unnamed.go --
+package unnamed
+
+func Unnamed(int, string) { //@codeaction("int", "refactor.rewrite.moveParamRight", result=unnamed)
+}
+
+func _() {
+	Unnamed(1, "hi")
+}
+-- @unnamed/unnamed/unnamed.go --
+package unnamed
+
+func Unnamed(string, int) { //@codeaction("int", "refactor.rewrite.moveParamRight", result=unnamed)
+}
+
+func _() {
+	Unnamed("hi", 1)
+}

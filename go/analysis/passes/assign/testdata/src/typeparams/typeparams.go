@@ -4,8 +4,6 @@
 
 // This file contains tests for the useless-assignment checker.
 
-//go:build go1.18
-
 package testdata
 
 import "math/rand"
@@ -17,11 +15,11 @@ type ST[T interface{ ~int }] struct {
 
 func (s *ST[T]) SetX(x T, ch chan T) {
 	// Accidental self-assignment; it should be "s.x = x"
-	x = x // want "self-assignment of x to x"
+	x = x // want "self-assignment of x"
 	// Another mistake
-	s.x = s.x // want "self-assignment of s.x to s.x"
+	s.x = s.x // want "self-assignment of s.x"
 
-	s.l[0] = s.l[0] // want "self-assignment of s.l.0. to s.l.0."
+	s.l[0] = s.l[0] // want "self-assignment of s.l.0."
 
 	// Bail on any potential side effects to avoid false positives
 	s.l[num()] = s.l[num()]

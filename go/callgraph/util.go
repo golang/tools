@@ -76,9 +76,12 @@ func PathSearch(start *Node, isEnd func(*Node) bool) []*Edge {
 }
 
 // DeleteSyntheticNodes removes from call graph g all nodes for
-// synthetic functions (except g.Root and package initializers),
-// preserving the topology.  In effect, calls to synthetic wrappers
-// are "inlined".
+// functions that do not correspond to source syntax. For historical
+// reasons, nodes for g.Root and package initializers are always
+// kept.
+//
+// As nodes are removed, edges are created to preserve the
+// reachability relation of the remaining nodes.
 func (g *Graph) DeleteSyntheticNodes() {
 	// Measurements on the standard library and go.tools show that
 	// resulting graph has ~15% fewer nodes and 4-8% fewer edges
@@ -99,7 +102,7 @@ func (g *Graph) DeleteSyntheticNodes() {
 		}
 	}
 	for fn, cgn := range g.Nodes {
-		if cgn == g.Root || fn.Synthetic == "" || isInit(cgn.Func) {
+		if cgn == g.Root || isInit(cgn.Func) || fn.Syntax() != nil {
 			continue // keep
 		}
 		for _, eIn := range cgn.In {

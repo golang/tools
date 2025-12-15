@@ -42,4 +42,31 @@
 //	if p == nil {
 //		panic(p)
 //	}
+//
+// Sometimes the control flow may be quite complex, making bugs hard
+// to spot. In the example below, the err.Error expression is
+// guaranteed to panic because, after the first return, err must be
+// nil. The intervening loop is just a distraction.
+//
+//	...
+//	err := g.Wait()
+//	if err != nil {
+//		return err
+//	}
+//	partialSuccess := false
+//	for _, err := range errs {
+//		if err == nil {
+//			partialSuccess = true
+//			break
+//		}
+//	}
+//	if partialSuccess {
+//		reportStatus(StatusMessage{
+//			Code:   code.ERROR,
+//			Detail: err.Error(), // "nil dereference in dynamic method call"
+//		})
+//		return nil
+//	}
+//
+// ...
 package nilness

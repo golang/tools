@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/callgraph/vta/internal/trie"
+	"maps"
 )
 
 // This file tests trie.Map by cross checking operations on a collection of
@@ -21,13 +22,13 @@ import (
 // mapCollection is effectively a []map[uint64]interface{}.
 // These support operations being applied to the i'th maps.
 type mapCollection interface {
-	Elements() []map[uint64]interface{}
+	Elements() []map[uint64]any
 
 	DeepEqual(l, r int) bool
-	Lookup(id int, k uint64) (interface{}, bool)
+	Lookup(id int, k uint64) (any, bool)
 
-	Insert(id int, k uint64, v interface{})
-	Update(id int, k uint64, v interface{})
+	Insert(id int, k uint64, v any)
+	Update(id int, k uint64, v any)
 	Remove(id int, k uint64)
 	Intersect(l int, r int)
 	Merge(l int, r int)
@@ -86,19 +87,19 @@ type trieCollection struct {
 	tries []trie.MutMap
 }
 
-func (c *trieCollection) Elements() []map[uint64]interface{} {
-	var maps []map[uint64]interface{}
+func (c *trieCollection) Elements() []map[uint64]any {
+	var maps []map[uint64]any
 	for _, m := range c.tries {
 		maps = append(maps, trie.Elems(m.M))
 	}
 	return maps
 }
-func (c *trieCollection) Eq(id int, m map[uint64]interface{}) bool {
+func (c *trieCollection) Eq(id int, m map[uint64]any) bool {
 	elems := trie.Elems(c.tries[id].M)
 	return !reflect.DeepEqual(elems, m)
 }
 
-func (c *trieCollection) Lookup(id int, k uint64) (interface{}, bool) {
+func (c *trieCollection) Lookup(id int, k uint64) (any, bool) {
 	return c.tries[id].M.Lookup(k)
 }
 func (c *trieCollection) DeepEqual(l, r int) bool {
@@ -109,11 +110,11 @@ func (c *trieCollection) Add() {
 	c.tries = append(c.tries, c.b.MutEmpty())
 }
 
-func (c *trieCollection) Insert(id int, k uint64, v interface{}) {
+func (c *trieCollection) Insert(id int, k uint64, v any) {
 	c.tries[id].Insert(k, v)
 }
 
-func (c *trieCollection) Update(id int, k uint64, v interface{}) {
+func (c *trieCollection) Update(id int, k uint64, v any) {
 	c.tries[id].Update(k, v)
 }
 
@@ -140,7 +141,7 @@ func (c *trieCollection) Assign(l, r int) {
 	c.tries[l] = c.tries[r]
 }
 
-func average(x interface{}, y interface{}) interface{} {
+func average(x any, y any) any {
 	if x, ok := x.(float32); ok {
 		if y, ok := y.(float32); ok {
 			return (x + y) / 2.0
@@ -149,13 +150,13 @@ func average(x interface{}, y interface{}) interface{} {
 	return x
 }
 
-type builtinCollection []map[uint64]interface{}
+type builtinCollection []map[uint64]any
 
-func (c builtinCollection) Elements() []map[uint64]interface{} {
+func (c builtinCollection) Elements() []map[uint64]any {
 	return c
 }
 
-func (c builtinCollection) Lookup(id int, k uint64) (interface{}, bool) {
+func (c builtinCollection) Lookup(id int, k uint64) (any, bool) {
 	v, ok := c[id][k]
 	return v, ok
 }
@@ -163,13 +164,13 @@ func (c builtinCollection) DeepEqual(l, r int) bool {
 	return reflect.DeepEqual(c[l], c[r])
 }
 
-func (c builtinCollection) Insert(id int, k uint64, v interface{}) {
+func (c builtinCollection) Insert(id int, k uint64, v any) {
 	if _, ok := c[id][k]; !ok {
 		c[id][k] = v
 	}
 }
 
-func (c builtinCollection) Update(id int, k uint64, v interface{}) {
+func (c builtinCollection) Update(id int, k uint64, v any) {
 	c[id][k] = v
 }
 
@@ -178,7 +179,7 @@ func (c builtinCollection) Remove(id int, k uint64) {
 }
 
 func (c builtinCollection) Intersect(l int, r int) {
-	result := map[uint64]interface{}{}
+	result := map[uint64]any{}
 	for k, v := range c[l] {
 		if _, ok := c[r][k]; ok {
 			result[k] = v
@@ -188,18 +189,14 @@ func (c builtinCollection) Intersect(l int, r int) {
 }
 
 func (c builtinCollection) Merge(l int, r int) {
-	result := map[uint64]interface{}{}
-	for k, v := range c[r] {
-		result[k] = v
-	}
-	for k, v := range c[l] {
-		result[k] = v
-	}
+	result := map[uint64]any{}
+	maps.Copy(result, c[r])
+	maps.Copy(result, c[l])
 	c[l] = result
 }
 
 func (c builtinCollection) Average(l int, r int) {
-	avg := map[uint64]interface{}{}
+	avg := map[uint64]any{}
 	for k, lv := range c[l] {
 		if rv, ok := c[r][k]; ok {
 			avg[k] = average(lv, rv)
@@ -216,15 +213,13 @@ func (c builtinCollection) Average(l int, r int) {
 }
 
 func (c builtinCollection) Assign(l, r int) {
-	m := map[uint64]interface{}{}
-	for k, v := range c[r] {
-		m[k] = v
-	}
+	m := map[uint64]any{}
+	maps.Copy(m, c[r])
 	c[l] = m
 }
 
 func (c builtinCollection) Clear(id int) {
-	c[id] = map[uint64]interface{}{}
+	c[id] = map[uint64]any{}
 }
 
 func newTriesCollection(size int) *trieCollection {
@@ -232,7 +227,7 @@ func newTriesCollection(size int) *trieCollection {
 		b:     trie.NewBuilder(),
 		tries: make([]trie.MutMap, size),
 	}
-	for i := 0; i < size; i++ {
+	for i := range size {
 		tc.tries[i] = tc.b.MutEmpty()
 	}
 	return tc
@@ -240,8 +235,8 @@ func newTriesCollection(size int) *trieCollection {
 
 func newMapsCollection(size int) *builtinCollection {
 	maps := make(builtinCollection, size)
-	for i := 0; i < size; i++ {
-		maps[i] = map[uint64]interface{}{}
+	for i := range size {
+		maps[i] = map[uint64]any{}
 	}
 	return &maps
 }
@@ -255,9 +250,9 @@ type operation struct {
 }
 
 // Apply the operation to maps.
-func (op operation) Apply(maps mapCollection) interface{} {
+func (op operation) Apply(maps mapCollection) any {
 	type lookupresult struct {
-		v  interface{}
+		v  any
 		ok bool
 	}
 	switch op.code {
@@ -290,7 +285,7 @@ func (op operation) Apply(maps mapCollection) interface{} {
 func distribution(dist map[opCode]int) []opCode {
 	var codes []opCode
 	for op, n := range dist {
-		for i := 0; i < n; i++ {
+		for range n {
 			codes = append(codes, op)
 		}
 	}
@@ -326,7 +321,7 @@ func randOperator(r *rand.Rand, opts options) operation {
 
 func randOperators(r *rand.Rand, numops int, opts options) []operation {
 	ops := make([]operation, numops)
-	for i := 0; i < numops; i++ {
+	for i := range numops {
 		ops[i] = randOperator(r, opts)
 	}
 	return ops

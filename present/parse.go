@@ -11,10 +11,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -166,7 +167,7 @@ type Elem interface {
 // renderElem implements the elem template function, used to render
 // sub-templates.
 func renderElem(t *template.Template, e Elem) (template.HTML, error) {
-	var data interface{} = e
+	var data any = e
 	if s, ok := e.(Section); ok {
 		data = struct {
 			Section
@@ -191,7 +192,7 @@ func init() {
 
 // execTemplate is a helper to execute a template and return the output as a
 // template.HTML value.
-func execTemplate(t *template.Template, name string, data interface{}) (template.HTML, error) {
+func execTemplate(t *template.Template, name string, data any) (template.HTML, error) {
 	b := new(bytes.Buffer)
 	err := t.ExecuteTemplate(b, name, data)
 	if err != nil {
@@ -342,9 +343,9 @@ func (ctx *Context) Parse(r io.Reader, name string, mode ParseMode) (*Doc, error
 }
 
 // Parse parses a document from r. Parse reads assets used by the presentation
-// from the file system using ioutil.ReadFile.
+// from the file system using os.ReadFile.
 func Parse(r io.Reader, name string, mode ParseMode) (*Doc, error) {
-	ctx := Context{ReadFile: ioutil.ReadFile}
+	ctx := Context{ReadFile: os.ReadFile}
 	return ctx.Parse(r, name, mode)
 }
 
@@ -394,7 +395,7 @@ func parseSections(ctx *Context, name, prefix string, lines *Lines, number []int
 			}
 		}
 		section := Section{
-			Number: append(append([]int{}, number...), i),
+			Number: append(slices.Clone(number), i),
 			Title:  title,
 			ID:     id,
 		}

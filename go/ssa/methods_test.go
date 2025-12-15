@@ -13,14 +13,10 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Tests that MethodValue returns the expected method.
 func TestMethodValue(t *testing.T) {
-	if !typeparams.Enabled {
-		t.Skip("TestMethodValue requires type parameters")
-	}
 	input := `
 package p
 

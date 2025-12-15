@@ -1,0 +1,46 @@
+This test verifies that we add an [os,arch] suffix to each diagnostic
+that doesn't appear in the default build (=runtime.{GOOS,GOARCH}).
+
+See golang/go#65496.
+
+The two p/*.go files below are written to trigger the same diagnostic
+(range, message, source, etc) but varying only by URI.
+
+In the q test, a single location in the common code q.go has two
+diagnostics, one of which is tagged.
+
+This test would fail on openbsd/mips64 because it will be
+the same as the default build, so we skip that platform.
+
+-- flags --
+-skip_goos=openbsd
+
+-- go.mod --
+module example.com
+
+-- p/p.go --
+package p
+
+var _ fmt.Stringer //@diag("fmt", re"unde.*: fmt$")
+
+-- p/p_openbsd_mips64.go --
+package p
+
+var _ fmt.Stringer //@diag("fmt", re"unde.*: fmt \\[openbsd,mips64\\]")
+
+-- q/q_default.go --
+//+build !openbsd && !mips64
+
+package q
+
+func f(int) int
+
+-- q/q_openbsd_mips64.go --
+package q
+
+func f(string) int
+
+-- q/q.go --
+package q
+
+var _ = f() //@ diag(")", re`.*want \(string\) \[openbsd,mips64\]`), diag(")", re`.*want \(int\)$`)

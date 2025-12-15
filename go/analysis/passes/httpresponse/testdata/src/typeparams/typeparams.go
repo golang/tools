@@ -4,8 +4,6 @@
 
 // This file contains tests for the httpresponse checker.
 
-//go:build go1.18
-
 package typeparams
 
 import (

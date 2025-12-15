@@ -1,0 +1,16 @@
+This is a regression test for #66809 (missing modifiers for
+declarations of function-type variables).
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- main.go --
+package main
+
+func main() {
+    foo := func(x string) string { return x }	//@token("foo", "variable", "definition signature")
+    _ = foo    					//@token("foo", "variable", "signature")
+    foo("hello")				//@token("foo", "variable", "signature")
+}

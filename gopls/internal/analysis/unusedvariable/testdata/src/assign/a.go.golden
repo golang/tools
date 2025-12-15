@@ -1,0 +1,73 @@
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package a
+
+import (
+	"fmt"
+	"os"
+)
+
+type A struct {
+	b int
+}
+
+func singleAssignment() {
+
+
+
+	if 1 == 1 {
+	}
+
+	panic("I should survive")
+}
+
+func noOtherStmtsInBlock() {
+}
+
+func partOfMultiAssignment() {
+	_, err := os.Open("file") // want `declared (and|but) not used`
+	panic(err)
+}
+
+func sideEffects(cBool chan bool, cInt chan int) {
+	_ = <-c            // want `declared (and|but) not used`
+	_ = fmt.Sprint("") // want `declared (and|but) not used`
+	_ = A{             // want `declared (and|but) not used`
+		b: func() int {
+			return 1
+		}(),
+	}
+	_ = A{<-cInt}          // want `declared (and|but) not used`
+	_ = fInt() + <-cInt    // want `declared (and|but) not used`
+	_ = fBool() && <-cBool // want `declared (and|but) not used`
+	_ = map[int]int{       // want `declared (and|but) not used`
+		fInt(): <-cInt,
+	}
+	_ = []int{<-cInt}       // want `declared (and|but) not used`
+
+	// (ill-typed)
+	_ = func(s string) {}() // want `declared (and|but) not used`
+}
+
+func commentAbove() {
+	// v is a variable
+}
+
+func commentBelow() {
+	// v is a variable
+}
+
+func commentSpaceBelow() {
+
+	// v is a variable
+}
+
+func fBool() bool {
+	return true
+}
+
+func fInt() int {
+	return 1
+}

@@ -1,0 +1,24 @@
+This test covers the special case of renaming a type switch var.
+
+-- p.go --
+package p
+
+func _(x any) {
+	switch y := x.(type) { //@rename("y", "z", yToZ)
+	case string:
+		print(y) //@rename("y", "z", yToZ)
+	default:
+		print(y) //@rename("y", "z", yToZ)
+	}
+}
+
+-- @yToZ/p.go --
+@@ -4 +4 @@
+-	switch y := x.(type) { //@rename("y", "z", yToZ)
++	switch z := x.(type) { //@rename("y", "z", yToZ)
+@@ -6 +6 @@
+-		print(y) //@rename("y", "z", yToZ)
++		print(z) //@rename("y", "z", yToZ)
+@@ -8 +8 @@
+-		print(y) //@rename("y", "z", yToZ)
++		print(z) //@rename("y", "z", yToZ)

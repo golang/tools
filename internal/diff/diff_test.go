@@ -61,7 +61,7 @@ func TestNEdits(t *testing.T) {
 
 func TestNRandom(t *testing.T) {
 	rand.Seed(1)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		a := randstr("abω", 16)
 		b := randstr("abωc", 16)
 		edits := diff.Strings(a, b)
@@ -123,7 +123,7 @@ func TestToUnified(t *testing.T) {
 	testenv.NeedsTool(t, "patch")
 	for _, tc := range difftest.TestCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			unified, err := diff.ToUnified(difftest.FileA, difftest.FileB, tc.In, tc.Edits)
+			unified, err := diff.ToUnified(difftest.FileA, difftest.FileB, tc.In, tc.Edits, diff.DefaultContextLines)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +200,7 @@ func TestRegressionOld002(t *testing.T) {
 func randstr(s string, n int) string {
 	src := []rune(s)
 	x := make([]rune, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x[i] = src[rand.Intn(len(src))]
 	}
 	return string(x)

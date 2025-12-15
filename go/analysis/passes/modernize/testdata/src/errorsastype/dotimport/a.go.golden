@@ -1,0 +1,12 @@
+package errorsastype
+
+import (
+	. "errors"
+	"os"
+)
+
+func _(err error) {
+	if patherr, ok := AsType[*os.PathError](err); ok { // want `errors.As can be simplified using AsType\[\*os.PathError\]`
+		print(patherr)
+	}
+}

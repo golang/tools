@@ -1,0 +1,41 @@
+
+-- flags --
+-ignore_extra_diags
+
+-- testy.go --
+package testy
+
+type tt int //@rename("tt", "testyType", ttTotestyType)
+
+func a() {
+	foo := 42 //@rename("foo", "bar", fooTobar)
+}
+-- testy_test.go --
+package testy
+
+import "testing"
+
+func TestSomething(t *testing.T) {
+	var x int //@rename("x", "testyX", xTotestyX)
+	a()       //@rename("a", "b", aTob)
+}
+-- @aTob/testy.go --
+@@ -5 +5 @@
+-func a() {
++func b() {
+-- @aTob/testy_test.go --
+@@ -7 +7 @@
+-	a()       //@rename("a", "b", aTob)
++	b()       //@rename("a", "b", aTob)
+-- @fooTobar/testy.go --
+@@ -6 +6 @@
+-	foo := 42 //@rename("foo", "bar", fooTobar)
++	bar := 42 //@rename("foo", "bar", fooTobar)
+-- @ttTotestyType/testy.go --
+@@ -3 +3 @@
+-type tt int //@rename("tt", "testyType", ttTotestyType)
++type testyType int //@rename("tt", "testyType", ttTotestyType)
+-- @xTotestyX/testy_test.go --
+@@ -6 +6 @@
+-	var x int //@rename("x", "testyX", xTotestyX)
++	var testyX int //@rename("x", "testyX", xTotestyX)

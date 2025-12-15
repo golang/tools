@@ -1,0 +1,50 @@
+This test checks the behavior of the 'remove dot import' code action.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a.go --
+package dotimport
+
+// Base case: action is OK.
+
+import (
+	. "fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
+	. "bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
+	. "time" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a3)
+)
+
+var _ = a
+
+func a() {
+	Println("hello")
+
+	buf := NewBuffer(nil)
+	buf.Grow(10)
+
+	_ = Ticker{C: nil}
+}
+
+-- @a1/a.go --
+@@ -6 +6 @@
+-	. "fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
++	"fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
+@@ -14 +14 @@
+-	Println("hello")
++	fmt.Println("hello")
+-- @a2/a.go --
+@@ -7 +7 @@
+-	. "bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
++	"bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
+@@ -16 +16 @@
+-	buf := NewBuffer(nil)
++	buf := bytes.NewBuffer(nil)
+-- @a3/a.go --
+@@ -8 +8 @@
+-	. "time" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a3)
++	"time" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a3)
+@@ -19 +19 @@
+-	_ = Ticker{C: nil}
++	_ = time.Ticker{C: nil}

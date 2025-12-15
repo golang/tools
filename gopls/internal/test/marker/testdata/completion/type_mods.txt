@@ -1,0 +1,27 @@
+This test check completion snippets with type modifiers.
+
+-- flags --
+-ignore_extra_diags
+
+-- typemods.go --
+package typemods
+
+func fooFunc() func() int {
+	return func() int {
+		return 0
+	}
+}
+
+func fooPtr() *int {
+	return nil
+}
+
+func _() {
+	var _ int = foo //@snippet(" //", "fooFunc", "fooFunc()()"),snippet(" //", "fooPtr", "*fooPtr()")
+}
+
+func _() {
+	var m map[int][]chan int
+
+	var _ int = m //@snippet(" //", "m", "<-m[${1:}][${2:}]")
+}

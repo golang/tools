@@ -1,0 +1,57 @@
+This test reproduces condition of golang/go#65217, where the inliner created an
+unnecessary eta abstraction.
+
+-- go.mod --
+module unused.mod
+
+go 1.18
+
+-- a/a.go --
+package a
+
+type S struct{}
+
+func (S) Int() int { return 0 }
+
+func _() {
+	var s S
+	_ = f(s, s.Int())
+	var j int
+	j = f(s, s.Int())
+	_ = j
+}
+
+func _() {
+	var s S
+	i := f(s, s.Int())
+	_ = i
+}
+
+func f(unused S, i int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=rewrite), diag("unused", re`unused`)
+	return i
+}
+
+-- @rewrite/a/a.go --
+package a
+
+type S struct{}
+
+func (S) Int() int { return 0 }
+
+func _() {
+	var s S
+	_ = f(s.Int())
+	var j int
+	j = f(s.Int())
+	_ = j
+}
+
+func _() {
+	var s S
+	i := f(s.Int())
+	_ = i
+}
+
+func f(i int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=rewrite), diag("unused", re`unused`)
+	return i
+}

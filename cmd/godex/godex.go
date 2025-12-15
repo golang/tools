@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/build"
 	"go/types"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +84,7 @@ func main() {
 	}
 }
 
-func logf(format string, args ...interface{}) {
+func logf(format string, args ...any) {
 	if *verbose {
 		fmt.Fprintf(os.Stderr, format, args...)
 	}
@@ -197,7 +196,7 @@ func genPrefixes(out chan string, all bool) {
 }
 
 func walkDir(dirname, prefix string, out chan string) {
-	fiList, err := ioutil.ReadDir(dirname)
+	fiList, err := os.ReadDir(dirname)
 	if err != nil {
 		return
 	}

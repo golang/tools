@@ -1,0 +1,20 @@
+This is a regression test of a crash in refactor.inline.variable.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+func _() {
+       x := func(notfree int) { _ = notfree }
+       println(x) //@codeaction("x", "refactor.inline.variable", result=out)
+}
+-- @out/a/a.go --
+package a
+
+func _() {
+       x := func(notfree int) { _ = notfree }
+       println(func(notfree int) { _ = notfree }) //@codeaction("x", "refactor.inline.variable", result=out)
+}

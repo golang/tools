@@ -1,0 +1,218 @@
+This test exercises the 'invert if condition' code action.
+
+-- p.go --
+package invertif
+
+import (
+	"fmt"
+	"os"
+)
+
+func Boolean() {
+	b := true
+	if b { //@codeaction("if b", "refactor.rewrite.invertIf", edit=boolean)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func BooleanFn() {
+	if os.IsPathSeparator('X') { //@codeaction("if os.IsPathSeparator('X')", "refactor.rewrite.invertIf", edit=boolean_fn)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+// Note that the comment here jumps to the wrong location.
+func DontRemoveParens() {
+	a := false
+	b := true
+	if !(a ||
+		b) { //@codeaction("b", "refactor.rewrite.invertIf", edit=dont_remove_parens)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func ElseIf() {
+	// No inversion expected when there's not else clause
+	if len(os.Args) > 2 {
+		fmt.Println("A")
+	}
+
+	// No inversion expected for else-if, that would become unreadable
+	if len(os.Args) > 2 {
+		fmt.Println("A")
+	} else if os.Args[0] == "X" { //@codeaction(re"if os.Args.0. == .X.", "refactor.rewrite.invertIf", edit=else_if)
+		fmt.Println("B")
+	} else {
+		fmt.Println("C")
+	}
+}
+
+func GreaterThan() {
+	if len(os.Args) > 2 { //@codeaction("i", "refactor.rewrite.invertIf", edit=greater_than)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func NotBoolean() {
+	b := true
+	if !b { //@codeaction("if !b", "refactor.rewrite.invertIf", edit=not_boolean)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func RemoveElse() {
+	if true { //@codeaction("if true", "refactor.rewrite.invertIf", edit=remove_else)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+		return
+	}
+
+	fmt.Println("C")
+}
+
+func RemoveParens() {
+	b := true
+	if !(b) { //@codeaction("if", "refactor.rewrite.invertIf", edit=remove_parens)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func Semicolon() {
+	if _, err := fmt.Println("x"); err != nil { //@codeaction("if", "refactor.rewrite.invertIf", edit=semicolon)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func SemicolonAnd() {
+	if n, err := fmt.Println("x"); err != nil && n > 0 { //@codeaction("f", "refactor.rewrite.invertIf", edit=semicolon_and)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+func SemicolonOr() {
+	if n, err := fmt.Println("x"); err != nil || n < 5 { //@codeaction(re"if n, err := fmt.Println..x..; err != nil .. n < 5", "refactor.rewrite.invertIf", edit=semicolon_or)
+		fmt.Println("A")
+	} else {
+		fmt.Println("B")
+	}
+}
+
+-- @boolean/p.go --
+@@ -10,3 +10 @@
+-	if b { //@codeaction("if b", "refactor.rewrite.invertIf", edit=boolean)
+-		fmt.Println("A")
+-	} else {
++	if !b {
+@@ -14 +12,2 @@
++	} else { //@codeaction("if b", "refactor.rewrite.invertIf", edit=boolean)
++		fmt.Println("A")
+-- @boolean_fn/p.go --
+@@ -18,3 +18 @@
+-	if os.IsPathSeparator('X') { //@codeaction("if os.IsPathSeparator('X')", "refactor.rewrite.invertIf", edit=boolean_fn)
+-		fmt.Println("A")
+-	} else {
++	if !os.IsPathSeparator('X') {
+@@ -22 +20,2 @@
++	} else { //@codeaction("if os.IsPathSeparator('X')", "refactor.rewrite.invertIf", edit=boolean_fn)
++		fmt.Println("A")
+-- @dont_remove_parens/p.go --
+@@ -29,4 +29,2 @@
+-	if !(a ||
+-		b) { //@codeaction("b", "refactor.rewrite.invertIf", edit=dont_remove_parens)
+-		fmt.Println("A")
+-	} else {
++	if (a ||
++		b) {
+@@ -34 +32,2 @@
++	} else { //@codeaction("b", "refactor.rewrite.invertIf", edit=dont_remove_parens)
++		fmt.Println("A")
+-- @else_if/p.go --
+@@ -46,3 +46 @@
+-	} else if os.Args[0] == "X" { //@codeaction(re"if os.Args.0. == .X.", "refactor.rewrite.invertIf", edit=else_if)
+-		fmt.Println("B")
+-	} else {
++	} else if os.Args[0] != "X" {
+@@ -50 +48,2 @@
++	} else { //@codeaction(re"if os.Args.0. == .X.", "refactor.rewrite.invertIf", edit=else_if)
++		fmt.Println("B")
+-- @greater_than/p.go --
+@@ -54,3 +54 @@
+-	if len(os.Args) > 2 { //@codeaction("i", "refactor.rewrite.invertIf", edit=greater_than)
+-		fmt.Println("A")
+-	} else {
++	if len(os.Args) <= 2 {
+@@ -58 +56,2 @@
++	} else { //@codeaction("i", "refactor.rewrite.invertIf", edit=greater_than)
++		fmt.Println("A")
+-- @not_boolean/p.go --
+@@ -63,3 +63 @@
+-	if !b { //@codeaction("if !b", "refactor.rewrite.invertIf", edit=not_boolean)
+-		fmt.Println("A")
+-	} else {
++	if b {
+@@ -67 +65,2 @@
++	} else { //@codeaction("if !b", "refactor.rewrite.invertIf", edit=not_boolean)
++		fmt.Println("A")
+-- @remove_else/p.go --
+@@ -71,3 +71 @@
+-	if true { //@codeaction("if true", "refactor.rewrite.invertIf", edit=remove_else)
+-		fmt.Println("A")
+-	} else {
++	if false {
+@@ -78 +76,3 @@
++	//@codeaction("if true", "refactor.rewrite.invertIf", edit=remove_else)
++	fmt.Println("A")
++
+-- @remove_parens/p.go --
+@@ -83,3 +83 @@
+-	if !(b) { //@codeaction("if", "refactor.rewrite.invertIf", edit=remove_parens)
+-		fmt.Println("A")
+-	} else {
++	if b {
+@@ -87 +85,2 @@
++	} else { //@codeaction("if", "refactor.rewrite.invertIf", edit=remove_parens)
++		fmt.Println("A")
+-- @semicolon/p.go --
+@@ -91,3 +91 @@
+-	if _, err := fmt.Println("x"); err != nil { //@codeaction("if", "refactor.rewrite.invertIf", edit=semicolon)
+-		fmt.Println("A")
+-	} else {
++	if _, err := fmt.Println("x"); err == nil {
+@@ -95 +93,2 @@
++	} else { //@codeaction("if", "refactor.rewrite.invertIf", edit=semicolon)
++		fmt.Println("A")
+-- @semicolon_and/p.go --
+@@ -99,3 +99 @@
+-	if n, err := fmt.Println("x"); err != nil && n > 0 { //@codeaction("f", "refactor.rewrite.invertIf", edit=semicolon_and)
+-		fmt.Println("A")
+-	} else {
++	if n, err := fmt.Println("x"); err == nil || n <= 0 {
+@@ -103 +101,2 @@
++	} else { //@codeaction("f", "refactor.rewrite.invertIf", edit=semicolon_and)
++		fmt.Println("A")
+-- @semicolon_or/p.go --
+@@ -107,3 +107 @@
+-	if n, err := fmt.Println("x"); err != nil || n < 5 { //@codeaction(re"if n, err := fmt.Println..x..; err != nil .. n < 5", "refactor.rewrite.invertIf", edit=semicolon_or)
+-		fmt.Println("A")
+-	} else {
++	if n, err := fmt.Println("x"); err == nil && n >= 5 {
+@@ -111 +109,2 @@
++	} else { //@codeaction(re"if n, err := fmt.Println..x..; err != nil .. n < 5", "refactor.rewrite.invertIf", edit=semicolon_or)
++		fmt.Println("A")

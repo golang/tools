@@ -1,0 +1,49 @@
+This is a test for issue 65098: a renaming in package a does not
+propagate to package b, even though the two packages are coupled via
+an assignment in c, which is renamed.
+
+     c
+    / \
+   a   b
+
+The bug (a dup of #58461) is not yet fixed, so the golden file records
+the wrong behavior (i.e. no changes to package b).
+TODO(adonovan): fix.
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- a/a.go --
+package a
+
+type I interface {
+	F() //@ rename("F", "FF", fToFF)
+}
+
+-- b/b.go --
+package b
+
+type S struct{}
+
+func (s S) F() {}
+
+-- c/c.go --
+package c
+
+import (
+	"example.com/a"
+	"example.com/b"
+)
+
+var _ a.I = b.S{}
+var _ = a.I.F
+
+-- @fToFF/a/a.go --
+@@ -4 +4 @@
+-	F() //@ rename("F", "FF", fToFF)
++	FF() //@ rename("F", "FF", fToFF)
+-- @fToFF/c/c.go --
+@@ -9 +9 @@
+-var _ = a.I.F
++var _ = a.I.FF

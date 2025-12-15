@@ -1,4 +1,6 @@
-# Running gopls as a daemon
+---
+title: "Gopls: Running as a daemon"
+---
 
 **Note: this feature is new. If you encounter bugs, please [file an
 issue](troubleshooting.md#file-an-issue).**

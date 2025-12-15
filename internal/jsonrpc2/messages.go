@@ -27,7 +27,7 @@ type Request interface {
 	Message
 	// Method is a string containing the method name to invoke.
 	Method() string
-	// Params is either a struct or an array with the parameters of the method.
+	// Params is a JSON value (object, array, null, or "") with the parameters of the method.
 	Params() json.RawMessage
 	// isJSONRPC2Request is used to make the set of request implementations closed.
 	isJSONRPC2Request()
@@ -46,7 +46,7 @@ type Notification struct {
 type Call struct {
 	// Method is a string containing the method name to invoke.
 	method string
-	// Params is either a struct or an array with the parameters of the method.
+	// Params is a JSON value (object, array, null, or "") with the parameters of the method.
 	params json.RawMessage
 	// id of this request, used to tie the Response back to the request.
 	id ID
@@ -65,7 +65,7 @@ type Response struct {
 
 // NewNotification constructs a new Notification message for the supplied
 // method and parameters.
-func NewNotification(method string, params interface{}) (*Notification, error) {
+func NewNotification(method string, params any) (*Notification, error) {
 	p, merr := marshalToRaw(params)
 	return &Notification{method: method, params: p}, merr
 }
@@ -98,7 +98,7 @@ func (n *Notification) UnmarshalJSON(data []byte) error {
 
 // NewCall constructs a new Call message for the supplied ID, method and
 // parameters.
-func NewCall(id ID, method string, params interface{}) (*Call, error) {
+func NewCall(id ID, method string, params any) (*Call, error) {
 	p, merr := marshalToRaw(params)
 	return &Call{id: id, method: method, params: p}, merr
 }
@@ -135,7 +135,7 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 
 // NewResponse constructs a new Response message that is a reply to the
 // supplied. If err is set result may be ignored.
-func NewResponse(id ID, result interface{}, err error) (*Response, error) {
+func NewResponse(id ID, result any, err error) (*Response, error) {
 	r, merr := marshalToRaw(result)
 	return &Response{id: id, result: r, err: err}, merr
 }
@@ -157,17 +157,17 @@ func (r *Response) MarshalJSON() ([]byte, error) {
 	return data, nil
 }
 
-func toWireError(err error) *wireError {
+func toWireError(err error) *WireError {
 	if err == nil {
 		// no error, the response is complete
 		return nil
 	}
-	if err, ok := err.(*wireError); ok {
+	if err, ok := err.(*WireError); ok {
 		// already a wire error, just use it
 		return err
 	}
-	result := &wireError{Message: err.Error()}
-	var wrapped *wireError
+	result := &WireError{Message: err.Error()}
+	var wrapped *WireError
 	if errors.As(err, &wrapped) {
 		// if we wrapped a wire error, keep the code from the wrapped error
 		// but the message from the outer error
@@ -229,7 +229,7 @@ func DecodeMessage(data []byte) (Message, error) {
 	return call, nil
 }
 
-func marshalToRaw(obj interface{}) (json.RawMessage, error) {
+func marshalToRaw(obj any) (json.RawMessage, error) {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return json.RawMessage{}, err

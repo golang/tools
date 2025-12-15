@@ -1,0 +1,33 @@
+This test verifies the remove of unused parameters in case of syntax errors.
+Issue golang/go#70268.
+
+-- go.mod --
+module unused.mod
+
+go 1.21
+
+-- a/a.go --
+package a
+
+func A(x, unused int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
+	return x
+}
+
+-- @a/a/a.go --
+package a
+
+func A(x int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
+	return x
+}
+
+-- b/b.go --
+package b
+
+import "unused.mod/a"
+
+func main(){
+	a.A/*dsdd*/(/*cccc*/ 1,
+
+
+	) //@diag(")", re"not enough arguments")
+}

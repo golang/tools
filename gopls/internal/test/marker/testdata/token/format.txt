@@ -1,0 +1,26 @@
+This test checks semanticTokens for format string placeholders.
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- format.go --
+package format
+
+import "fmt"
+
+func PrintfTests() {
+	var i int
+	var x float64
+	fmt.Printf("%b %d %f", 3, i, x) //@ token("%b", "string", "format"), token("%d", "string", "format"),token("%f", "string", "format"),
+	fmt.Printf("lit1%blit2%dlit3%flit4", 3, i, x) //@ token("%b", "string", "format"), token("%d", "string", "format"),token("%f", "string", "format"),token("lit1", "string", ""),token("lit2", "string", ""),token("lit3", "string", ""),
+	fmt.Printf("%% %d lit2", 3, i, x) //@ token("%d", "string", "format"),token("%%", "string", ""),token("lit2", "string", ""),
+	fmt.Printf("Hello %% \n %s, you \t%% \n have %d new m%%essages!", "Alice", 5) //@ token("%s", "string", "format"),token("%d", "string", "format")
+	fmt.Printf("%d \nss \x25[2]d", 234, 123) //@ token("%d", "string", "format"),token("\\x25[2]d", "string", "format")
+	fmt.Printf("start%[2]*.[1]*[3]dmiddle%send", 4, 5, 6) //@ token("%[2]*.[1]*[3]d", "string", "format"),token("start", "string", ""),token("%s", "string", "format"),token("middle", "string", ""),token("end", "string", "")
+}
+

@@ -1,0 +1,11 @@
+
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+func before() int { return 0 }
+func after() int  { println(); return 0 }

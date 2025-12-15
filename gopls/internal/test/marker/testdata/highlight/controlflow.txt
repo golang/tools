@@ -1,0 +1,73 @@
+This test verifies document highlighting for control flow.
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- p.go --
+package p
+
+-- issue60589.go --
+package p
+
+// This test verifies that control flow highlighting correctly
+// accounts for multi-name result parameters.
+// In golang/go#60589, it did not.
+
+func _() (foo int, bar, baz string) { //@ hiloc(func, "func", text), hiloc(foo, "foo", text), hiloc(fooint, "foo int", text), hiloc(int, "int", text), hiloc(bar, "bar", text), hiloc(beforebaz, " baz", text), hiloc(baz, "baz", text), hiloc(barbazstring, "bar, baz string", text), hiloc(beforestring, re`() string`, text), hiloc(string, "string", text)
+	return 0, "1", "2" //@ hiloc(return, `return 0, "1", "2"`, text), hiloc(l0, "0", text), hiloc(l1, `"1"`, text), hiloc(l2, `"2"`, text)
+}
+
+// Assertions, expressed here to avoid clutter above.
+// Note that when the cursor is over the field type, there is some
+// (likely harmless) redundancy.
+
+//@ highlight(func, func, return)
+//@ highlight(foo, foo, l0)
+//@ highlight(int, fooint, int, l0)
+//@ highlight(bar, bar, l1)
+//@ highlight(beforebaz)
+//@ highlight(baz, baz, l2)
+//@ highlight(beforestring, baz, l2)
+//@ highlight(string, barbazstring, string, l1, l2)
+//@ highlight(l0, foo, l0)
+//@ highlight(l1, bar, l1)
+//@ highlight(l2, baz, l2)
+
+// Check that duplicate result names do not cause
+// inaccurate highlighting.
+
+func _() (x, x int32) { //@ loc(locx1, re`\((x)`), loc(locx2, re`(x) int`), hiloc(x1, re`\((x)`, text), hiloc(x2, re`(x) int`, text), diag(locx1, re"redeclared"), diag(locx2, re"redeclared")
+	return 1, 2 //@ hiloc(one, "1", text), hiloc(two, "2", text)
+}
+
+//@ highlight(one, one, x1)
+//@ highlight(two, two, x2)
+//@ highlight(x1, x1, one)
+//@ highlight(x2, x2, two)
+
+-- issue65516.go --
+package p
+
+// This test checks that gopls doesn't crash while highlighting
+// functions with no body (golang/go#65516).
+
+func Foo() (int, string) //@hiloc(noBodyInt, "int", text), hiloc(noBodyFunc, "func", text)
+//@highlight(noBodyInt, noBodyInt), highlight(noBodyFunc, noBodyFunc)
+
+-- issue65952.go --
+package p
+
+// This test checks  that gopls doesn't crash while highlighting
+// return values in functions with no results.
+
+func _() {
+	return 0 //@hiloc(ret1, "0", text), diag("0", re"too many return")
+	//@highlight(ret1, ret1)
+}
+
+func _() () {
+	return 0 //@hiloc(ret2, "0", text), diag("0", re"too many return")
+	//@highlight(ret2, ret2)
+}

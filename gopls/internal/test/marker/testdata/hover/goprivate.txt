@@ -1,0 +1,32 @@
+This test checks that links in hover obey GOPRIVATE.
+
+-- env --
+GOPRIVATE=mod.com
+-- go.mod --
+module mod.com
+-- p.go --
+package p
+
+// T should not be linked, as it is private.
+type T struct{} //@hover("T", "T", T)
+-- lib/lib.go --
+package lib
+
+// GOPRIVATE should also match nested packages.
+type L struct{} //@hover("L", "L", L)
+-- @L --
+```go
+type L struct{} // size=0
+```
+
+---
+
+GOPRIVATE should also match nested packages.
+-- @T --
+```go
+type T struct{} // size=0
+```
+
+---
+
+T should not be linked, as it is private.

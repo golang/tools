@@ -1,0 +1,33 @@
+This test checks that the complete struct field is
+shown on hover (including struct tags and comments).
+
+-- go.mod --
+module example.com
+
+-- lib/lib.go --
+package lib
+
+type Something struct {
+    // Field with a tag
+    Field int `json:"field"`
+}
+
+func DoSomething() Something {
+    var s Something
+    s.Field = 42  //@hover("i", "Field", field)
+    return s
+}
+
+-- @field --
+```go
+field Field int `json:"field"`
+```
+
+---
+
+Field with a tag
+
+
+---
+
+[`(lib.Something).Field` on pkg.go.dev](https://pkg.go.dev/example.com/lib#Something.Field)

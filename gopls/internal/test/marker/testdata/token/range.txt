@@ -1,0 +1,29 @@
+This test checks the output of textDocument/semanticTokens/range.
+
+TODO: add more assertions.
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- a.go --
+package p //@token("package", "keyword", "")
+
+const C = 42 //@token("C", "variable", "definition readonly number")
+
+func F() { //@token("F", "function", "definition signature")
+	x := 2 + 3//@token("x", "variable", "definition number"),token("2", "number", ""),token("+", "operator", "")
+	_ = x //@token("x", "variable", "number")
+	_ = F //@token("F", "function", "signature")
+}
+
+func _() {
+	// A goto's label cannot be found by ascending the syntax tree.
+	goto loop //@ token("goto", "keyword", ""), token("loop", "label", "")
+
+loop: //@token("loop", "label", "definition")
+	for {
+		continue loop //@ token("continue", "keyword", ""), token("loop", "label", "")
+	}
+}

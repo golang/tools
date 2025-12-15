@@ -1,0 +1,86 @@
+list or execute code actions
+
+Usage:
+  gopls [flags] codeaction [codeaction-flags] filename[:line[:col]]
+
+
+The codeaction command lists or executes code actions for the
+specified file or range of a file. Each code action contains
+either an edit to be directly applied to the file, or a command
+to be executed by the server, which may have an effect such as:
+- requesting that the client apply an edit;
+- changing the state of the server; or
+- requesting that the client open a document.
+
+The -kind and and -title flags filter the list of actions.
+
+The -kind flag specifies a comma-separated list of LSP CodeAction kinds.
+Only actions of these kinds will be requested from the server.
+Valid kinds include:
+
+	gopls.doc.features
+	quickfix
+	refactor
+	refactor.extract
+	refactor.extract.constant
+	refactor.extract.function
+	refactor.extract.method
+	refactor.extract.toNewFile
+	refactor.extract.variable
+	refactor.inline
+	refactor.inline.call
+	refactor.rewrite
+	refactor.rewrite.changeQuote
+	refactor.rewrite.fillStruct
+	refactor.rewrite.fillSwitch
+	refactor.rewrite.invertIf
+	refactor.rewrite.joinLines
+	refactor.rewrite.removeUnusedParam
+	refactor.rewrite.splitLines
+	source
+	source.assembly
+	source.doc
+	source.fixAll
+	source.freesymbols
+	source.organizeImports
+	source.test
+
+Kinds are hierarchical, so "refactor" includes "refactor.inline".
+(Note: actions of kind "source.test" are not returned unless explicitly
+requested.)
+
+The -title flag specifies a regular expression that must match the
+action's title. (Ideally kinds would be specific enough that this
+isn't necessary; we really need to subdivide refactor.rewrite; see
+gopls/internal/settings/codeactionkind.go.)
+
+The -exec flag causes the first matching code action to be executed.
+Without the flag, the matching actions are merely listed.
+
+It is not currently possible to execute more than one action,
+as that requires a way to detect and resolve conflicts.
+TODO(adonovan): support it when golang/go#67049 is resolved.
+
+If executing an action causes the server to send a patch to the
+client, the usual -write, -preserve, -diff, and -list flags govern how
+the client deals with the patch.
+
+Example: execute the first "quick fix" in the specified file and show the diff:
+
+	$ gopls codeaction -kind=quickfix -exec -diff ./gopls/main.go
+
+codeaction-flags:
+  -d,-diff
+    	display diffs instead of edited file content
+  -exec
+    	execute the first matching code action
+  -kind=string
+    	comma-separated list of code action kinds to filter
+  -l,-list
+    	display names of edited files
+  -preserve
+    	with -write, make copies of original files
+  -title=string
+    	regular expression to match title
+  -w,-write
+    	write edited content to source files

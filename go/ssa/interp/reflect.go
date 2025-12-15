@@ -119,7 +119,7 @@ func ext۰reflect۰rtype۰NumField(fr *frame, args []value) value {
 
 func ext۰reflect۰rtype۰NumIn(fr *frame, args []value) value {
 	// Signature: func (t reflect.rtype) int
-	return args[0].(rtype).t.(*types.Signature).Params().Len()
+	return args[0].(rtype).t.Underlying().(*types.Signature).Params().Len()
 }
 
 func ext۰reflect۰rtype۰NumMethod(fr *frame, args []value) value {
@@ -129,13 +129,13 @@ func ext۰reflect۰rtype۰NumMethod(fr *frame, args []value) value {
 
 func ext۰reflect۰rtype۰NumOut(fr *frame, args []value) value {
 	// Signature: func (t reflect.rtype) int
-	return args[0].(rtype).t.(*types.Signature).Results().Len()
+	return args[0].(rtype).t.Underlying().(*types.Signature).Results().Len()
 }
 
 func ext۰reflect۰rtype۰Out(fr *frame, args []value) value {
 	// Signature: func (t reflect.rtype, i int) int
 	i := args[1].(int)
-	return makeReflectType(rtype{args[0].(rtype).t.(*types.Signature).Results().At(i).Type()})
+	return makeReflectType(rtype{args[0].(rtype).t.Underlying().(*types.Signature).Results().At(i).Type()})
 }
 
 func ext۰reflect۰rtype۰Size(fr *frame, args []value) value {
@@ -179,7 +179,7 @@ func ext۰reflect۰Zero(fr *frame, args []value) value {
 
 func reflectKind(t types.Type) reflect.Kind {
 	switch t := t.(type) {
-	case *types.Named:
+	case *types.Named, *types.Alias:
 		return reflectKind(t.Underlying())
 	case *types.Basic:
 		switch t.Kind() {
@@ -231,7 +231,7 @@ func reflectKind(t types.Type) reflect.Kind {
 	case *types.Map:
 		return reflect.Map
 	case *types.Pointer:
-		return reflect.Ptr
+		return reflect.Pointer
 	case *types.Slice:
 		return reflect.Slice
 	case *types.Struct:
@@ -437,7 +437,7 @@ func ext۰reflect۰Value۰Float(fr *frame, args []value) value {
 
 func ext۰reflect۰Value۰Interface(fr *frame, args []value) value {
 	// Signature: func (v reflect.Value) interface{}
-	return ext۰reflect۰valueInterface(fr, args)
+	return ext۰reflect۰valueInterface(args)
 }
 
 func ext۰reflect۰Value۰Int(fr *frame, args []value) value {
@@ -494,7 +494,7 @@ func ext۰reflect۰Value۰Set(fr *frame, args []value) value {
 	return nil
 }
 
-func ext۰reflect۰valueInterface(fr *frame, args []value) value {
+func ext۰reflect۰valueInterface(args []value) value {
 	// Signature: func (v reflect.Value, safe bool) interface{}
 	v := args[0].(structure)
 	return iface{rV2T(v).t, rV2V(v)}
@@ -510,7 +510,7 @@ func newMethod(pkg *ssa.Package, recvType types.Type, name string) *ssa.Function
 	// that is needed is the "pointerness" of Recv.Type, and for
 	// now, we'll set it to always be false since we're only
 	// concerned with rtype.  Encapsulate this better.
-	sig := types.NewSignature(types.NewVar(token.NoPos, nil, "recv", recvType), nil, nil, false)
+	sig := types.NewSignatureType(types.NewParam(token.NoPos, nil, "recv", recvType), nil, nil, nil, nil, false)
 	fn := pkg.Prog.NewFunction(name, sig, "fake reflect method")
 	fn.Pkg = pkg
 	return fn
@@ -542,8 +542,8 @@ func initReflect(i *interpreter) {
 
 		// delete bodies of the old methods
 		mset := i.prog.MethodSets.MethodSet(rV)
-		for j := 0; j < mset.Len(); j++ {
-			i.prog.MethodValue(mset.At(j)).Blocks = nil
+		for method := range mset.Methods() {
+			i.prog.MethodValue(method).Blocks = nil
 		}
 
 		tEface := types.NewInterface(nil, nil).Complete()

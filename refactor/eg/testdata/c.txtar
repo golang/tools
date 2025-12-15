@@ -1,0 +1,60 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+// Test of repeated use of wildcard in pattern.
+
+// NB: multiple patterns would be required to handle variants such as
+// s[:len(s)], s[x:len(s)], etc, since a wildcard can't match nothing at all.
+// TODO(adonovan): support multiple templates in a single pass.
+
+func before(s string) string { return s[:len(s)] }
+func after(s string) string  { return s }
+
+-- in/c1/c1.go --
+package C1
+
+import "strings"
+
+func example() {
+	x := "foo"
+	println(x[:len(x)])
+
+	// Match, but the transformation is not sound w.r.t. possible side effects.
+	println(strings.Repeat("*", 3)[:len(strings.Repeat("*", 3))])
+
+	// No match, since second use of wildcard doesn't match first.
+	println(strings.Repeat("*", 3)[:len(strings.Repeat("*", 2))])
+
+	// Recursive match demonstrating bottom-up rewrite:
+	// only after the inner replacement occurs does the outer syntax match.
+	println((x[:len(x)])[:len(x[:len(x)])])
+	// -> (x[:len(x)])
+	// -> x
+}
+
+-- out/c1/c1.go --
+package C1
+
+import "strings"
+
+func example() {
+	x := "foo"
+	println(x)
+
+	// Match, but the transformation is not sound w.r.t. possible side effects.
+	println(strings.Repeat("*", 3))
+
+	// No match, since second use of wildcard doesn't match first.
+	println(strings.Repeat("*", 3)[:len(strings.Repeat("*", 2))])
+
+	// Recursive match demonstrating bottom-up rewrite:
+	// only after the inner replacement occurs does the outer syntax match.
+	println(x)
+	// -> (x[:len(x)])
+	// -> x
+}

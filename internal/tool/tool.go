@@ -29,7 +29,7 @@ import (
 //       (&Application{}).Main("myapp", "non-flag-command-line-arg-help", os.Args[1:])
 //     }
 // It recursively scans the application object for fields with a tag containing
-//     `flag:"flagnames" help:"short help text"``
+//     `flag:"flagnames" help:"short help text"`
 // uses all those fields to build command line flags. It will split flagnames on
 // commas and add a flag per name.
 // It expects the Application type to have a method
@@ -45,6 +45,7 @@ type Profile struct {
 	Memory string `flag:"profile.mem" help:"write memory profile to this file"`
 	Alloc  string `flag:"profile.alloc" help:"write alloc profile to this file"`
 	Trace  string `flag:"profile.trace" help:"write trace log to this file"`
+	Block  string `flag:"profile.block" help:"write block profile to this file"`
 }
 
 // Application is the interface that must be satisfied by an object passed to Main.
@@ -80,7 +81,7 @@ func (e commandLineError) Error() string { return string(e) }
 // CommandLineErrorf is like fmt.Errorf except that it returns a value that
 // triggers printing of the command line help.
 // In general you should use this when generating command line validation errors.
-func CommandLineErrorf(message string, args ...interface{}) error {
+func CommandLineErrorf(message string, args ...any) error {
 	return commandLineError(fmt.Sprintf(message, args...))
 }
 
@@ -106,7 +107,7 @@ func Main(ctx context.Context, app Application, args []string) {
 // Run is the inner loop for Main; invoked by Main, recursively by
 // Run, and by various tests.  It runs the application and returns an
 // error.
-func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) error {
+func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (resultErr error) {
 	s.Usage = func() {
 		if app.ShortHelp() != "" {
 			fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
@@ -133,9 +134,15 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) e
 			return err
 		}
 		if err := pprof.StartCPUProfile(f); err != nil {
+			f.Close() // ignore error
 			return err
 		}
-		defer pprof.StopCPUProfile()
+		defer func() {
+			pprof.StopCPUProfile()
+			if closeErr := f.Close(); resultErr == nil {
+				resultErr = closeErr
+			}
+		}()
 	}
 
 	if p != nil && p.Trace != "" {
@@ -144,10 +151,14 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) e
 			return err
 		}
 		if err := trace.Start(f); err != nil {
+			f.Close() // ignore error
 			return err
 		}
 		defer func() {
 			trace.Stop()
+			if closeErr := f.Close(); resultErr == nil {
+				resultErr = closeErr
+			}
 			log.Printf("To view the trace, run:\n$ go tool trace view %s", p.Trace)
 		}()
 	}
@@ -162,7 +173,9 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) e
 			if err := pprof.WriteHeapProfile(f); err != nil {
 				log.Printf("Writing memory profile: %v", err)
 			}
-			f.Close()
+			if err := f.Close(); err != nil {
+				log.Printf("Closing memory profile: %v", err)
+			}
 		}()
 	}
 
@@ -175,7 +188,25 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) e
 			if err := pprof.Lookup("allocs").WriteTo(f, 0); err != nil {
 				log.Printf("Writing alloc profile: %v", err)
 			}
-			f.Close()
+			if err := f.Close(); err != nil {
+				log.Printf("Closing alloc profile: %v", err)
+			}
+		}()
+	}
+
+	if p != nil && p.Block != "" {
+		f, err := os.Create(p.Block)
+		if err != nil {
+			return err
+		}
+		runtime.SetBlockProfileRate(1) // record all blocking events
+		defer func() {
+			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+				log.Printf("Writing block profile: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Closing block profile: %v", err)
+			}
 		}()
 	}
 
@@ -210,13 +241,16 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 	if value.Kind() != reflect.Struct {
 		return nil
 	}
+
+	// TODO(adonovan): there's no need for this special treatment of Profile:
+	// The caller can use f.Lookup("profile.cpu") etc instead.
 	p, _ := value.Addr().Interface().(*Profile)
 	// go through all the fields of the struct
 	for i := 0; i < value.Type().NumField(); i++ {
 		child := value.Type().Field(i)
 		v := value.Field(i)
 		// make sure we have a pointer
-		if v.Kind() != reflect.Ptr {
+		if v.Kind() != reflect.Pointer {
 			v = v.Addr()
 		}
 		// check if that field is a flag or contains flags
@@ -248,14 +282,14 @@ func addFlag(f *flag.FlagSet, value reflect.Value, flagName string, help string)
 	case *uint64:
 		f.Uint64Var(v, flagName, *v, help)
 	default:
-		log.Fatalf("Cannot understand flag of type %T", v)
+		log.Fatalf("field %q of type %T is not assignable to flag.Value", flagName, v)
 	}
 }
 
 func resolve(v reflect.Value) reflect.Value {
 	for {
 		switch v.Kind() {
-		case reflect.Interface, reflect.Ptr:
+		case reflect.Interface, reflect.Pointer:
 			v = v.Elem()
 		default:
 			return v

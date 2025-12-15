@@ -5,7 +5,6 @@
 // No testdata on Android.
 
 //go:build !android && go1.11
-// +build !android,go1.11
 
 package main
 
@@ -15,7 +14,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -35,10 +33,6 @@ func init() {
 }
 
 func TestCallgraph(t *testing.T) {
-	if runtime.GOOS == "windows" && runtime.GOARCH == "arm64" {
-		t.Skipf("skipping due to suspected file corruption bug on windows/arm64 (https://go.dev/issue/50706)")
-	}
-
 	testenv.NeedsTool(t, "go")
 
 	gopath, err := filepath.Abs("testdata")

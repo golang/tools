@@ -8,9 +8,6 @@ presents slide and article files from the current directory.
 
 It may be run as a stand-alone command or an App Engine app.
 
-The setup of the Go version of NaCl is documented at:
-https://golang.org/wiki/NativeClient
-
 To use with App Engine, copy the files in the tools/cmd/present directory to the
 root of your application and create an app.yaml file similar to this:
 

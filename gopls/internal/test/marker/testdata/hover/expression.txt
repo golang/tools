@@ -1,0 +1,67 @@
+This test checks that hovering over a range reveals the expression type.
+
+-- a.go --
+package a
+
+import "time"
+
+const (
+    _ = 'a' + 2//@hover("'a' + 2", "'a' + 2", "99")
+
+    _ = "A" + "B"//@hover("\"A\" + \"B\"", "\"A\" + \"B\"", "AB")
+
+    _ = 2 * 3 * 4//@hover("3 * 4", "2 * 3 * 4", "24")
+
+    _ = (1 < 2)//@hover("1 < 2", "1 < 2", "true")
+
+    _ = (1 + 2i) * (3 + 4i)//@hover("(1 + 2i) * (3 + 4i)", "(1 + 2i) * (3 + 4i)", "(-5 + 10i)")
+)
+
+type Foo struct {
+    foo string
+}
+
+func _() {
+    // type of slice expression.
+    ints := []int{}
+    _ = ints[1:2]//@hover("ints[1:2]", "ints[1:2]", "[]int")
+
+    foos := []Foo{}
+    _ = foos[1:2]//@hover("foos[1:2]", "foos[1:2]", "[]Foo")
+
+    // type of map expression
+    m := map[string]int{"one": 1}
+    _ = m["one"]//@hover("m[\"one\"]", "m[\"one\"]", "int")
+
+    // type of channel expression
+    ch := make(chan bool)
+    _ = <-ch//@hover("<-ch", "<-ch", "bool")
+
+    // type of pointer expression
+    ptr := &ch//@hover("&ch", "&ch", "*chan bool")
+    _ = *ptr//@hover("*ptr", "*ptr", "chan bool")
+
+    // type of unary
+    _ = -ints[0]//@hover("-ints[0]", "-ints[0]", "int")
+
+    // type of type assertion
+    var x any
+
+    _ = x.(*Foo)//@hover("x.(*Foo)", "x.(*Foo)", "*Foo"),diag(re"x.()", re"nil dereference in type assertion")
+
+    // Expression inside of switch statement does not have a type. 
+    switch x := x.(type) {//@hover("x.(type)",_, _)
+    default:
+        _ = x
+    }
+
+    // type of function/method return value.
+    _ = time.Now().UTC().Add(10 * time.Minute)//@hover("time.Now().UTC()", "time.Now().UTC()", "time.Time")
+
+    // type of function/method signature.
+    _ = time.Now().UTC().Add(10 * time.Minute)//@hover("time.Now().UTC", "time.Now().UTC", "func() time.Time")
+
+    // type of field
+    var t time.Timer
+    _ = <-t.C//@hover("t.C", "t.C", "<-chan time.Time"),hover("<-t.C", "<-t.C", "time.Time")
+}

@@ -14,16 +14,19 @@ import (
 	"flag"
 	"fmt"
 	"go/types"
+	"log"
 	"os"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/tool"
 )
 
 func main() {
+	drivertest.RunIfChild()
 	tool.Main(context.Background(), &application{Mode: "imports"}, os.Args[1:])
 }
 
@@ -34,9 +37,11 @@ type application struct {
 	Deps       bool            `flag:"deps" help:"show dependencies too"`
 	Test       bool            `flag:"test" help:"include any tests implied by the patterns"`
 	Mode       string          `flag:"mode" help:"mode (one of files, imports, types, syntax, allsyntax)"`
-	Private    bool            `flag:"private" help:"show non-exported declarations too"`
+	Tags       string          `flag:"tags" help:"comma-separated list of extra build tags (see: go help buildconstraint)"`
+	Private    bool            `flag:"private" help:"show non-exported declarations too (if -mode=syntax)"`
 	PrintJSON  bool            `flag:"json" help:"print package in JSON form"`
 	BuildFlags stringListValue `flag:"buildflag" help:"pass argument to underlying build system (may be repeated)"`
+	Driver     bool            `flag:"driver" help:"use golist passthrough driver (for debugging driver issues)"`
 }
 
 // Name implements tool.Application returning the binary name.
@@ -56,6 +61,21 @@ func (app *application) DetailedHelp(f *flag.FlagSet) {
 Packages are specified using the notation of "go list",
 or other underlying build system.
 
+The mode flag determines how much information is computed and printed
+for the specified packages. In order of increasing computational cost,
+the legal values are:
+
+ -mode=files     shows only the names of the packages' files.
+ -mode=imports   also shows the imports. (This is the default.)
+ -mode=types     loads the compiler's export data and displays the
+                 type of each exported declaration.
+ -mode=syntax    parses and type checks syntax trees for the initial
+                 packages. (With the -private flag, the types of
+                 non-exported declarations are shown too.)
+                 Type information for dependencies is obtained from
+                 compiler export data.
+ -mode=allsyntax is like -mode=syntax but applied to all dependencies.
+
 Flags:
 `)
 	f.PrintDefaults()
@@ -67,11 +87,17 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("not enough arguments")
 	}
 
+	env := os.Environ()
+	if app.Driver {
+		env = append(env, drivertest.Env(log.Default())...)
+	}
+
 	// Load, parse, and type-check the packages named on the command line.
 	cfg := &packages.Config{
 		Mode:       packages.LoadSyntax,
 		Tests:      app.Test,
-		BuildFlags: app.BuildFlags,
+		BuildFlags: append([]string{"-tags=" + app.Tags}, app.BuildFlags...),
+		Env:        env,
 	}
 
 	// -mode flag
@@ -89,6 +115,7 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	default:
 		return tool.CommandLineErrorf("invalid mode: %s", app.Mode)
 	}
+	cfg.Mode |= packages.NeedModule
 
 	lpkgs, err := packages.Load(cfg, args...)
 	if err != nil {
@@ -147,6 +174,9 @@ func (app *application) print(lpkg *packages.Package) {
 		kind += "package"
 	}
 	fmt.Printf("Go %s %q:\n", kind, lpkg.ID) // unique ID
+	if mod := lpkg.Module; mod != nil {
+		fmt.Printf("\tmodule %s@%s\n", mod.Path, mod.Version)
+	}
 	fmt.Printf("\tpackage %s\n", lpkg.Name)
 
 	// characterize type info
@@ -189,7 +219,7 @@ func (app *application) print(lpkg *packages.Package) {
 		fmt.Printf("\t%s\n", err)
 	}
 
-	// package members (TypeCheck or WholeProgram mode)
+	// types of package members
 	if lpkg.Types != nil {
 		qual := types.RelativeTo(lpkg.Types)
 		scope := lpkg.Types.Scope()
@@ -218,12 +248,7 @@ func (app *application) print(lpkg *packages.Package) {
 // e.g. --flag=one --flag=two would produce []string{"one", "two"}.
 type stringListValue []string
 
-func newStringListValue(val []string, p *[]string) *stringListValue {
-	*p = val
-	return (*stringListValue)(p)
-}
-
-func (ss *stringListValue) Get() interface{} { return []string(*ss) }
+func (ss *stringListValue) Get() any { return []string(*ss) }
 
 func (ss *stringListValue) String() string { return fmt.Sprintf("%q", *ss) }
 

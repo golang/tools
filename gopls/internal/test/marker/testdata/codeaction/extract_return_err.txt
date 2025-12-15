@@ -1,0 +1,140 @@
+This test verifies various behaviors of function extraction when every return statement in the extracted block is an error handling return.
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- errhandling.go --
+package err_handling
+import (
+    "encoding/json"
+    "fmt"
+)
+
+//@codeaction(errHandlingBlk1, "refactor.extract.function", edit=err_handling_1)
+//@codeaction(errHandlingBlk2, "refactor.extract.function", edit=err_handling_2)
+//@codeaction(errHandlingBlk3, "refactor.extract.function", edit=err_handling_3)
+//@codeaction(errHandlingBlk4, "refactor.extract.function", edit=err_handling_4)
+//@codeaction(errHandlingBlk5, "refactor.extract.function", edit=err_handling_5)
+
+func Func() error {
+	a, err := json.Marshal(0) //@loc(errHandlingBlk1, re`(?s)a.*err1....`)
+	if err != nil {
+		return fmt.Errorf("1: %w", err)
+	}
+	b, err1 := json.Marshal(0)
+	if err1 != nil {
+		return fmt.Errorf("2: %w", err1)
+	}
+	fmt.Println(string(a), string(b))
+	return nil
+}
+
+func FuncReturnsInt() (int, error) {
+	a, err := json.Marshal(0) //@loc(errHandlingBlk2, re`(?s)a.*err2....`)
+	if err != nil {
+		return 0, fmt.Errorf("1: %w", err)
+	}
+	b, err2 := json.Marshal(0)
+	if err2 != nil {
+		return 1, fmt.Errorf("2: %w", err2)
+	}
+	fmt.Println(string(a), string(b))
+	return 3, nil
+}
+
+func FuncHasNilReturns() error {
+	if _, err := json.Marshal(0); err != nil { //@loc(errHandlingBlk3, re`(?s)if.*return.nil`)
+		return err
+	}
+	if _, err := json.Marshal(1); err != nil {
+		return err
+	}
+	return nil
+}
+
+func FuncHasOtherReturns() ([]byte, error) {
+	if a, err := json.Marshal(0); err != nil { //@loc(errHandlingBlk4, re`(?s)if.*Marshal.1.`)
+		return a, err
+	}
+	return json.Marshal(1)
+}
+
+func FuncErrNameAlreadyExists(err error) ([]byte, error) {
+	if a, err := json.Marshal(0); err != nil { //@loc(errHandlingBlk5, re`(?s)if.*a,.err...`)
+		return a, err
+	}
+	if a, err := json.Marshal(3); err != nil {
+		return a, err
+	}
+	return []byte{}, nil
+}
+
+-- @err_handling_1/errhandling.go --
+@@ -14 +14,9 @@
++	a, b, err := newFunction()
++	if err != nil {
++		return err
++	}
++	fmt.Println(string(a), string(b))
++	return nil
++}
++
++func newFunction() ([]byte, []byte, error) {
+@@ -16 +25 @@
+-		return fmt.Errorf("1: %w", err)
++		return nil, nil, fmt.Errorf("1: %w", err)
+@@ -20 +29 @@
+-		return fmt.Errorf("2: %w", err1)
++		return nil, nil, fmt.Errorf("2: %w", err1)
+@@ -22,2 +31 @@
+-	fmt.Println(string(a), string(b))
+-	return nil
++	return a, b, nil
+-- @err_handling_2/errhandling.go --
+@@ -27 +27,9 @@
++	a, b, i, err := newFunction()
++	if err != nil {
++		return i, err
++	}
++	fmt.Println(string(a), string(b))
++	return 3, nil
++}
++
++func newFunction() ([]byte, []byte, int, error) {
+@@ -29 +38 @@
+-		return 0, fmt.Errorf("1: %w", err)
++		return nil, nil, 0, fmt.Errorf("1: %w", err)
+@@ -33 +42 @@
+-		return 1, fmt.Errorf("2: %w", err2)
++		return nil, nil, 1, fmt.Errorf("2: %w", err2)
+@@ -35,2 +44 @@
+-	fmt.Println(string(a), string(b))
+-	return 3, nil
++	return a, b, 0, nil
+-- @err_handling_3/errhandling.go --
+@@ -40 +40,4 @@
++	return newFunction()
++}
++
++func newFunction() error {
+-- @err_handling_4/errhandling.go --
+@@ -50 +50,4 @@
++	return newFunction()
++}
++
++func newFunction() ([]byte, error) {
+-- @err_handling_5/errhandling.go --
+@@ -57 +57,8 @@
++	result, err1 := newFunction()
++	if err1 != nil {
++		return result, err1
++	}
++	return []byte{}, nil
++}
++
++func newFunction() ([]byte, error) {
+@@ -63 +71 @@
+-	return []byte{}, nil
++	return nil, nil

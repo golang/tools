@@ -1,0 +1,190 @@
+This test exercises various renaming features on generic code.
+
+Fixed bugs:
+
+- golang/go#61614: renaming a method of a type in a package that uses type
+  parameter composite lits used to panic, because previous iterations of the
+  satisfy analysis did not account for this language feature.
+
+- golang/go#61635: renaming type parameters did not work when they were
+  capitalized and the package was imported by another package.
+
+-- go.mod --
+module example.com
+go 1.20
+
+-- a.go --
+package a
+
+type I int
+
+func (I) m() {} //@rename("m", "M", mToM)
+
+func _[P ~[]int]() {
+	_ = P{}
+}
+
+var _ = I.m
+
+-- @mToM/a.go --
+@@ -5 +5 @@
+-func (I) m() {} //@rename("m", "M", mToM)
++func (I) M() {} //@rename("m", "M", mToM)
+@@ -11 +11 @@
+-var _ = I.m
++var _ = I.M
+-- g.go --
+package a
+
+type S[P any] struct { //@rename("P", "Q", PToQ)
+	P P
+	F func(P) P
+}
+
+func F[R any](r R) {
+	var _ R //@rename("R", "S", RToS)
+}
+
+-- @PToQ/g.go --
+@@ -3,3 +3,3 @@
+-type S[P any] struct { //@rename("P", "Q", PToQ)
+-	P P
+-	F func(P) P
++type S[Q any] struct { //@rename("P", "Q", PToQ)
++	P Q
++	F func(Q) Q
+-- @RToS/g.go --
+@@ -8,2 +8,2 @@
+-func F[R any](r R) {
+-	var _ R //@rename("R", "S", RToS)
++func F[S any](r S) {
++	var _ S //@rename("R", "S", RToS)
+-- issue61635/p.go --
+package issue61635
+
+type builder[S ~[]F, F ~string] struct { //@rename("S", "T", SToT)
+	name string
+	elements S
+	elemData map[F][]ElemData[F]
+	// other fields...
+}
+
+type ElemData[F ~string] struct {
+  Name F
+  // other fields...
+}
+
+type BuilderImpl[S ~[]F, F ~string] struct{ builder[S, F] }
+
+-- importer/i.go --
+package importer
+
+import "example.com/issue61635" // importing is necessary to repro golang/go#61635
+
+var _ issue61635.ElemData[string]
+
+-- @SToT/issue61635/p.go --
+@@ -3 +3 @@
+-type builder[S ~[]F, F ~string] struct { //@rename("S", "T", SToT)
++type builder[T ~[]F, F ~string] struct { //@rename("S", "T", SToT)
+@@ -5 +5 @@
+-	elements S
++	elements T
+-- instances/type.go --
+package instances
+
+type R[P any] struct { //@rename("R", "u", Rtou)
+	Next *R[P] //@rename("R", "s", RTos)
+}
+
+func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+	var x R[P]
+	return rv.Do(x) //@rename("Do", "Do2", DoToDo2)
+}
+
+func _() {
+	var x R[int] //@rename("R", "r", RTor)
+	x = x.Do(x)
+}
+
+-- @RTos/instances/type.go --
+@@ -3,2 +3,2 @@
+-type R[P any] struct { //@rename("R", "u", Rtou)
+-	Next *R[P] //@rename("R", "s", RTos)
++type s[P any] struct { //@rename("R", "u", Rtou)
++	Next *s[P] //@rename("R", "s", RTos)
+@@ -7,2 +7,2 @@
+-func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+-	var x R[P]
++func (rv s[P]) Do(s[P]) s[P] { //@rename("Do", "Do1", DoToDo1)
++	var x s[P]
+@@ -13 +13 @@
+-	var x R[int] //@rename("R", "r", RTor)
++	var x s[int] //@rename("R", "r", RTor)
+-- @Rtou/instances/type.go --
+@@ -3,2 +3,2 @@
+-type R[P any] struct { //@rename("R", "u", Rtou)
+-	Next *R[P] //@rename("R", "s", RTos)
++type u[P any] struct { //@rename("R", "u", Rtou)
++	Next *u[P] //@rename("R", "s", RTos)
+@@ -7,2 +7,2 @@
+-func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+-	var x R[P]
++func (rv u[P]) Do(u[P]) u[P] { //@rename("Do", "Do1", DoToDo1)
++	var x u[P]
+@@ -13 +13 @@
+-	var x R[int] //@rename("R", "r", RTor)
++	var x u[int] //@rename("R", "r", RTor)
+-- @DoToDo1/instances/type.go --
+@@ -7 +7 @@
+-func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
++func (rv R[P]) Do1(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+@@ -9 +9 @@
+-	return rv.Do(x) //@rename("Do", "Do2", DoToDo2)
++	return rv.Do1(x) //@rename("Do", "Do2", DoToDo2)
+@@ -14 +14 @@
+-	x = x.Do(x)
++	x = x.Do1(x)
+-- @DoToDo2/instances/type.go --
+@@ -7 +7 @@
+-func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
++func (rv R[P]) Do2(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+@@ -9 +9 @@
+-	return rv.Do(x) //@rename("Do", "Do2", DoToDo2)
++	return rv.Do2(x) //@rename("Do", "Do2", DoToDo2)
+@@ -14 +14 @@
+-	x = x.Do(x)
++	x = x.Do2(x)
+-- instances/func.go --
+package instances
+
+func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
+	Foo(p) //@rename("Foo", "Baz", FooToBaz)
+}
+
+-- @FooToBar/instances/func.go --
+@@ -3,2 +3,2 @@
+-func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
+-	Foo(p) //@rename("Foo", "Baz", FooToBaz)
++func Bar[P any](p P) { //@rename("Foo", "Bar", FooToBar)
++	Bar(p) //@rename("Foo", "Baz", FooToBaz)
+-- @FooToBaz/instances/func.go --
+@@ -3,2 +3,2 @@
+-func Foo[P any](p P) { //@rename("Foo", "Bar", FooToBar)
+-	Foo(p) //@rename("Foo", "Baz", FooToBaz)
++func Baz[P any](p P) { //@rename("Foo", "Bar", FooToBar)
++	Baz(p) //@rename("Foo", "Baz", FooToBaz)
+-- @RTor/instances/type.go --
+@@ -3,2 +3,2 @@
+-type R[P any] struct { //@rename("R", "u", Rtou)
+-	Next *R[P] //@rename("R", "s", RTos)
++type r[P any] struct { //@rename("R", "u", Rtou)
++	Next *r[P] //@rename("R", "s", RTos)
+@@ -7,2 +7,2 @@
+-func (rv R[P]) Do(R[P]) R[P] { //@rename("Do", "Do1", DoToDo1)
+-	var x R[P]
++func (rv r[P]) Do(r[P]) r[P] { //@rename("Do", "Do1", DoToDo1)
++	var x r[P]
+@@ -13 +13 @@
+-	var x R[int] //@rename("R", "r", RTor)
++	var x r[int] //@rename("R", "r", RTor)

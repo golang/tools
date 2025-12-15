@@ -1,0 +1,43 @@
+# Test of marker suppression functionality.
+# Deadcode should not identify marker interface methods as unreachable
+
+ deadcode -filter= example.com
+!want "T.isMarker"
+want "R.isNotMarker"
+!want "P.greet"
+want "Q.greet"
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- main.go --
+package main
+import "fmt"
+
+// Marker method: implements interface, unexported, no params, no results, empty body
+type Marker interface {
+    isMarker()
+}
+type T struct{}
+
+func (t *T) isMarker() {}
+
+// Not marker method: does not implement interface
+type R struct {}
+func (r *R) isNotMarker() {}
+
+// Ensure that it still reports valid interface methods
+// when unused
+type Greeter interface {
+    greet()
+}
+type P struct {}
+func (p *P) greet() {fmt.Println("P: hello")}
+type Q struct {}
+func (q *Q) greet() {fmt.Println("Q: hello")} // this method should be reported
+
+func main () {
+    var p P
+    p.greet()
+}

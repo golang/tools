@@ -1,0 +1,54 @@
+
+This test renames a receiver, type parameter, parameter or result var
+whose name matches a package-level decl. Prior to go1.22, this used to
+cause a spurious shadowing error because of an edge case in the
+behavior of types.Scope for function parameters and results.
+
+This is a regression test for issue #60752, a bug in the type checker.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/type.go --
+package a
+
+type t int
+
+-- a/recv.go --
+package a
+
+func (v t) _() {} //@ rename("v", "t", recv)
+
+-- a/param.go --
+package a
+
+func _(v t) {} //@ rename("v", "t", param)
+
+-- a/result.go --
+package a
+
+func _() (v t) { return } //@ rename("v", "t", result)
+
+-- a/typeparam.go --
+package a
+
+func _[v t]() {} //@ renameerr("v", "t", re"would shadow (.|\n)*type.go:3:6")
+
+-- b/b.go --
+package b
+
+import _ "example.com/a"
+
+-- @param/a/param.go --
+@@ -3 +3 @@
+-func _(v t) {} //@ rename("v", "t", param)
++func _(t t) {} //@ rename("v", "t", param)
+-- @recv/a/recv.go --
+@@ -3 +3 @@
+-func (v t) _() {} //@ rename("v", "t", recv)
++func (t t) _() {} //@ rename("v", "t", recv)
+-- @result/a/result.go --
+@@ -3 +3 @@
+-func _() (v t) { return } //@ rename("v", "t", result)
++func _() (t t) { return } //@ rename("v", "t", result)

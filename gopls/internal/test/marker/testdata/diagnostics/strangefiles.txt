@@ -1,0 +1,22 @@
+This test checks diagnostics on files that are strange for one reason or
+another.
+
+Note(rfindley): ported from the old marker tests. I'm not sure why these were
+written originally.
+
+-ignore_extra_diags is required because the marker framework fails for
+noparse.go, and we therefore can't match the EOF error.
+
+-- flags --
+-ignore_extra_diags
+-errors_ok
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+-- %percent/perc%ent.go --
+package percent //@diag("percent", re"No packages")
+
+-- noparse/noparse.go --
+

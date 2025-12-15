@@ -1,0 +1,176 @@
+This test checks definition operations in branch statements break, goto and continue.
+
+We suppress staticheck since it also gives a diagnostic
+about the break being ineffective.
+
+-- settings.json --
+{
+	"staticcheck": false
+}
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+import "log"
+
+func BreakLoop() {
+	for i := 0; i < 10; i++ {
+		if i > 6 {
+			break //@def("break", rbrace1)
+		}
+	} //@loc(rbrace1, `}`)
+}
+
+func BreakNestedLoop() {
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 5; j++ {
+			if j > 1 {
+				break //@def("break", rbrace2)
+			}
+		} //@loc(rbrace2, `}`)
+	}
+}
+
+func BreakNestedLoopWithLabel() {
+	Outer:
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 5; j++ {
+			if j > 1 {
+				break Outer//@def("break", outerparen)
+			}
+		}
+	} //@loc(outerparen, `}`)
+}
+
+func BreakSwitch(i int) {
+	switch i {
+		case 1:
+			break //@def("break", rbrace4)
+		case 2:
+			log.Printf("2")
+		case 3:
+			log.Printf("3")
+	} //@loc(rbrace4, `}`)
+}
+
+func BreakSwitchLabel(i int) {
+loop:
+	for {
+		switch i {
+		case 1:
+			break loop //@def("break", loopparen)
+		case 2:
+			log.Printf("2")
+		case 3:
+			continue loop
+		}
+	} //@loc(loopparen, `}`)
+}
+
+func BreakSelect(c, quit chan int) {
+	x, y := 0, 1
+	for {
+		select {
+		case c <- x:
+			x, y = y, x+y
+		break //@def("break", rbrace5)
+		case <-quit:
+			log.Println("quit")
+			return
+		} //@loc(rbrace5, `}`)
+	}
+}
+
+func BreakWithContinue() {
+	for j := 0; j < 5; j++ {
+		if (j < 4) {
+			continue
+		}
+		break //@def("break", rbrace6)
+	} //@loc(rbrace6, `}`)
+}
+
+func GotoNestedLoop() {
+	Outer: //@loc(outer, "Outer")
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 5; j++ {
+			if (j > 1) {
+				goto Outer//@def("goto", outer)
+			}
+		}
+	}
+}
+
+func ContinueLoop() {
+	for j := 0; j < 5; j++ { //@loc(for3, `for`)
+		if (j < 4) {
+			continue //@def("continue", for3)
+		}
+		break
+	}
+}
+
+func ContinueDoubleLoop() {
+	for i := 0; i < 10; i++ { //@loc(for4, `for`)
+		for j := 0; j < 5; j++ {
+			if (j > 1) {
+				break
+			}
+		}
+		if (i > 7) {
+			continue//@def("continue", for4)
+		}
+	}
+}
+
+func BreakInBlockStmt() {
+	for {
+		if 0 < 10 {
+			{
+				break //@def("break", rbrace9)
+			}
+		}
+	} //@loc(rbrace9, `}`)
+}
+
+func BreakInLabeledStmt() {
+	outer:
+	for {
+		goto inner
+	inner:
+		break outer //@def("break", for5)
+	} //@loc(for5, `}`)
+}
+
+func BreakToLabel(n int) {
+	outer1:
+		switch n {
+			case 1:
+				print("1")
+				for i := 0; i < 10; i++ {
+				if i > 3 {
+					break outer1 //@def("break", outer1)
+				}
+			}
+		} //@loc(outer1, "}")
+}
+
+func ContinueToLabel(n int) {
+	outer1:
+		for { //@loc(outer2, "for")
+			switch n {
+			case 1:
+				print("1")
+				for i := 0; i < 10; i++ {
+					if i > 3 {
+						continue outer1 //@def("continue", outer2)
+					}
+				}
+			}
+		}
+}

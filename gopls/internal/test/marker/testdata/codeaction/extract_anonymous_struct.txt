@@ -1,0 +1,222 @@
+This test checks of the behavior of extract function when the extracted block includes anonymous structs.
+-- go.mod --
+module mod.com
+
+go 1.12
+-- a/a.go --
+package a
+
+func _() {
+	var x struct{ y int } //@codeaction("var", "refactor.extract.function", end=endA, result=anonA)
+	println(x.y) //@loc(endA, ")")
+}
+
+-- b/b.go --
+package b
+
+func _() {
+	type T struct {
+		y int
+	}
+	var x T //@codeaction("var", "refactor.extract.function", end=endB, err="the code refers to a local type")
+	println(x.y) //@loc(endB, ")")
+}
+
+-- @anonA/a/a.go --
+package a
+
+func _() {
+	newFunction() //@loc(endA, ")")
+}
+
+func newFunction() {
+	var x struct{ y int } //@codeaction("var", "refactor.extract.function", end=endA, result=anonA)
+	println(x.y)
+}
+
+-- d/d.go --
+package d
+
+func _() {
+	s := []struct{ y int }{
+		{y: 1},
+		{y: 2},
+	}
+	for _, v := range s { //@codeaction("for", "refactor.extract.function", end=endD, result=anonD)
+		println(v.y)
+	} //@loc(endD, "}")
+}
+
+-- @anonD/d/d.go --
+package d
+
+func _() {
+	s := []struct{ y int }{
+		{y: 1},
+		{y: 2},
+	}
+	newFunction(s) //@loc(endD, "}")
+}
+
+func newFunction(s []struct{y int}) {
+	for _, v := range s { //@codeaction("for", "refactor.extract.function", end=endD, result=anonD)
+		println(v.y)
+	}
+}
+
+-- e/e.go --
+package e
+
+func _() {
+	var x int
+	s := []struct { //@codeaction("s", "refactor.extract.function", end=endE, result=anonE)
+		y int
+	}{
+		{y: 1},
+		{y: 2},
+	}
+	x = s[0].y //@loc(endE, "x = s[0].y")
+	println(x)
+}
+
+-- @anonE/e/e.go --
+package e
+
+func _() {
+	var x int
+	x = newFunction(x) //@loc(endE, "x = s[0].y")
+	println(x)
+}
+
+func newFunction(x int) int {
+	s := []struct { //@codeaction("s", "refactor.extract.function", end=endE, result=anonE)
+		y int
+	}{
+		{y: 1},
+		{y: 2},
+	}
+	x = s[0].y
+	return x
+}
+
+-- f/f.go --
+package f
+func _() int {
+	x := struct{ y int } { y: 1 } //@codeaction("x", "refactor.extract.function", end=endF, result=anonF)
+	return x.y //@loc(endF, "y")
+}
+
+-- @anonF/f/f.go --
+package f
+func _() int {
+	return newFunction() //@loc(endF, "y")
+}
+
+func newFunction() int {
+	x := struct{ y int }{y: 1} //@codeaction("x", "refactor.extract.function", end=endF, result=anonF)
+	return x.y
+}
+
+-- g/g.go --
+package g
+
+import "fmt"
+
+func _() error {
+	x := struct{ y error }{fmt.Errorf("test error")}
+	return x.y //@ loc(endG, "y"), codeaction("return", "refactor.extract.function", end=endG, result=anonG)
+}
+
+-- @anonG/g/g.go --
+package g
+
+import "fmt"
+
+func _() error {
+	x := struct{ y error }{fmt.Errorf("test error")}
+	return newFunction(x) //@ loc(endG, "y"), codeaction("return", "refactor.extract.function", end=endG, result=anonG)
+}
+
+func newFunction(x struct{y error}) error {
+	return x.y
+}
+
+-- h/h.go --
+package h
+
+import "fmt"
+
+func _() string {
+	type A error
+	type B struct {
+		A
+	}
+	a := B{A: fmt.Errorf("test error")} //@codeaction("a", "refactor.extract.function", end=endH, err="the code refers to a local type")
+	return a.Error() //@loc(endH, "Error()")
+}
+
+-- i/i.go --
+package i
+
+import "fmt"
+
+func _() string {
+	var a struct{ e error } //@codeaction("var", "refactor.extract.function", end=endI, result=anonI)
+	a.e = fmt.Errorf("test error")
+	return a.e.Error() //@loc(endI, "Error()")
+}
+
+-- @anonI/i/i.go --
+package i
+
+import "fmt"
+
+func _() string {
+	return newFunction() //@loc(endI, "Error()")
+}
+
+func newFunction() string {
+	var a struct{ e error } //@codeaction("var", "refactor.extract.function", end=endI, result=anonI)
+	a.e = fmt.Errorf("test error")
+	return a.e.Error()
+}
+
+-- j/j.go --
+package j
+
+import "unsafe"
+
+func _() uintptr {
+	var x struct{ p unsafe.Pointer }
+	y := uintptr(x.p) //@codeaction("y", "refactor.extract.function", end=endJ, result=anonJ)
+	return y //@loc(endJ, "y")
+}
+
+-- @anonJ/j/j.go --
+package j
+
+import "unsafe"
+
+func _() uintptr {
+	var x struct{ p unsafe.Pointer }
+	return newFunction(x) //@loc(endJ, "y")
+}
+
+func newFunction(x struct{p unsafe.Pointer}) uintptr {
+	y := uintptr(x.p) //@codeaction("y", "refactor.extract.function", end=endJ, result=anonJ)
+	return y
+}
+
+-- k/k.go --
+package k
+
+import "unsafe"
+
+func _(x int) unsafe.Pointer {
+	type A struct {
+		p unsafe.Pointer
+	}
+	c := A{p: unsafe.Pointer(&x)} //@codeaction("c", "refactor.extract.function", end=endK, err="the code refers to a local type")
+	return c.p //@loc(endK, "c.p")
+}
+

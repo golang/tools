@@ -158,12 +158,12 @@ var (
 	objectPtrNil = reflect.ValueOf((*ast.Object)(nil))
 	scopePtrNil  = reflect.ValueOf((*ast.Scope)(nil))
 
-	identType        = reflect.TypeOf((*ast.Ident)(nil))
-	selectorExprType = reflect.TypeOf((*ast.SelectorExpr)(nil))
-	objectPtrType    = reflect.TypeOf((*ast.Object)(nil))
-	statementType    = reflect.TypeOf((*ast.Stmt)(nil)).Elem()
-	positionType     = reflect.TypeOf(token.NoPos)
-	scopePtrType     = reflect.TypeOf((*ast.Scope)(nil))
+	identType        = reflect.TypeFor[*ast.Ident]()
+	selectorExprType = reflect.TypeFor[*ast.SelectorExpr]()
+	objectPtrType    = reflect.TypeFor[*ast.Object]()
+	statementType    = reflect.TypeFor[ast.Stmt]()
+	positionType     = reflect.TypeFor[token.Pos]()
+	scopePtrType     = reflect.TypeFor[*ast.Scope]()
 )
 
 // apply replaces each AST field x in val with f(x), returning val.
@@ -250,7 +250,7 @@ func (tr *Transformer) apply(f func(reflect.Value) (reflect.Value, bool, map[str
 
 // subst returns a copy of (replacement) pattern with values from env
 // substituted in place of wildcards and pos used as the position of
-// tokens from the pattern.  if env == nil, subst returns a copy of
+// tokens from the pattern. If env == nil, subst returns a copy of
 // pattern and doesn't change the line number information.
 func (tr *Transformer) subst(env map[string]ast.Expr, pattern, pos reflect.Value) reflect.Value {
 	if !pattern.IsValid() {
@@ -338,7 +338,7 @@ func (tr *Transformer) subst(env map[string]ast.Expr, pattern, pos reflect.Value
 		}
 		return v
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		v := reflect.New(p.Type()).Elem()
 		if elem := p.Elem(); elem.IsValid() {
 			v.Set(tr.subst(env, elem, pos).Addr())

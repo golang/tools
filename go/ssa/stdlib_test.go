@@ -5,7 +5,6 @@
 // Incomplete source tree on Android.
 
 //go:build !android
-// +build !android
 
 package ssa_test
 
@@ -17,6 +16,7 @@ package ssa_test
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"runtime"
 	"testing"
 	"time"
@@ -34,7 +34,41 @@ func bytesAllocated() uint64 {
 	return stats.Alloc
 }
 
+// TestStdlib loads the entire standard library and its tools and all
+// their dependencies.
+//
+// (As of go1.23, std is transitively closed, so adding the -deps flag
+// doesn't increase its result set. The cmd pseudomodule of course
+// depends on a good chunk of std, but the std+cmd set is also
+// transitively closed, so long as -pgo=off.)
+//
+// Apart from a small number of internal packages that are not
+// returned by the 'std' query, the set is essentially transitively
+// closed, so marginal per-dependency costs are invisible.
 func TestStdlib(t *testing.T) {
+	testLoad(t, 500, "std", "cmd")
+}
+
+// TestNetHTTP builds a single SSA package but not its dependencies.
+// It may help reveal costs related to dependencies (e.g. unnecessary building).
+func TestNetHTTP(t *testing.T) {
+	testLoad(t, 120, "net/http")
+}
+
+// TestCycles loads two standard libraries that depend on the same
+// generic instantiations.
+// internal/trace/testtrace and net/http both depend on
+// slices.Contains[[]string string] and slices.Index[[]string string]
+// This can under some schedules create a cycle of dependencies
+// where both need to wait on the other to finish building.
+func TestCycles(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23) // internal/trace/testtrace was added in 1.23.
+	testLoad(t, 120, "net/http", "internal/trace/testtrace")
+}
+
+func testLoad(t *testing.T, minPkgs int, patterns ...string) {
+	// Note: most of the commentary below applies to TestStdlib.
+
 	if testing.Short() {
 		t.Skip("skipping in short mode; too slow (https://golang.org/issue/14113)") // ~5s
 	}
@@ -45,9 +79,12 @@ func TestStdlib(t *testing.T) {
 	alloc0 := bytesAllocated()
 
 	cfg := &packages.Config{Mode: packages.LoadSyntax}
-	pkgs, err := packages.Load(cfg, "std", "cmd")
+	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		t.Fatal("there were errors loading the packages")
 	}
 
 	t1 := time.Now()
@@ -69,9 +106,10 @@ func TestStdlib(t *testing.T) {
 	t3 := time.Now()
 	alloc3 := bytesAllocated()
 
+	// Sanity check to ensure we haven't dropped large numbers of packages.
 	numPkgs := len(prog.AllPackages())
-	if want := 140; numPkgs < want {
-		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, want)
+	if numPkgs < minPkgs {
+		t.Errorf("Loaded only %d packages, want at least %d", numPkgs, minPkgs)
 	}
 
 	// Keep pkgs reachable until after we've measured memory usage.
@@ -79,6 +117,7 @@ func TestStdlib(t *testing.T) {
 		panic("unreachable")
 	}
 
+	srcFuncs := srcFunctions(prog, pkgs)
 	allFuncs := ssautil.AllFunctions(prog)
 
 	// The assertion below is not valid if the program contains
@@ -138,8 +177,42 @@ func TestStdlib(t *testing.T) {
 
 	// SSA stats:
 	t.Log("#Packages:            ", numPkgs)
-	t.Log("#Functions:           ", len(allFuncs))
+	t.Log("#SrcFunctions:        ", len(srcFuncs))
+	t.Log("#AllFunctions:        ", len(allFuncs))
 	t.Log("#Instructions:        ", numInstrs)
 	t.Log("#MB AST+types:        ", int64(alloc1-alloc0)/1e6)
 	t.Log("#MB SSA:              ", int64(alloc3-alloc1)/1e6)
+}
+
+// srcFunctions gathers all ssa.Functions corresponding to syntax.
+// (Includes generics but excludes instances and all wrappers.)
+//
+// This is essentially identical to the SrcFunctions logic in
+// go/analysis/passes/buildssa.
+func srcFunctions(prog *ssa.Program, pkgs []*packages.Package) (res []*ssa.Function) {
+	var addSrcFunc func(fn *ssa.Function)
+	addSrcFunc = func(fn *ssa.Function) {
+		res = append(res, fn)
+		for _, anon := range fn.AnonFuncs {
+			addSrcFunc(anon)
+		}
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			for _, decl := range file.Decls {
+				if decl, ok := decl.(*ast.FuncDecl); ok {
+					obj := pkg.TypesInfo.Defs[decl.Name].(*types.Func)
+					if obj == nil {
+						panic("nil *types.Func: " + decl.Name.Name)
+					}
+					fn := prog.FuncValue(obj)
+					if fn == nil {
+						panic("nil *ssa.Function: " + obj.String())
+					}
+					addSrcFunc(fn)
+				}
+			}
+		}
+	}
+	return res
 }

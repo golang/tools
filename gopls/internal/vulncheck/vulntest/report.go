@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.18
-// +build go1.18
-
 package vulntest
 
 import (
@@ -15,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,9 +34,14 @@ func readReport(in io.Reader) (*Report, error) {
 }
 
 // Report represents a vulnerability report in the vulndb.
-// Remember to update doc/format.md when this structure changes.
+// See https://go.googlesource.com/vulndb/+/refs/heads/master/doc/format.md
 type Report struct {
+	ID string `yaml:",omitempty"`
+
 	Modules []*Module `yaml:",omitempty"`
+
+	// Summary is a short phrase describing the vulnerability.
+	Summary string `yaml:",omitempty"`
 
 	// Description is the CVE description from an existing CVE. If we are
 	// assigning a CVE ID ourselves, use CVEMetadata.Description instead.
@@ -101,7 +104,7 @@ type Package struct {
 	DerivedSymbols []string `yaml:"derived_symbols,omitempty"`
 }
 
-// Version is an SemVer 2.0.0 semantic version with no leading "v" prefix,
+// Version is a SemVer 2.0.0 semantic version with no leading "v" prefix,
 // as used by OSV.
 type Version string
 
@@ -125,40 +128,13 @@ func (v Version) Canonical() string {
 	return strings.TrimPrefix(semver.Canonical(v.V()), "v")
 }
 
-// Reference type is a reference (link) type.
-type ReferenceType string
-
-const (
-	ReferenceTypeAdvisory = ReferenceType("ADVISORY")
-	ReferenceTypeArticle  = ReferenceType("ARTICLE")
-	ReferenceTypeReport   = ReferenceType("REPORT")
-	ReferenceTypeFix      = ReferenceType("FIX")
-	ReferenceTypePackage  = ReferenceType("PACKAGE")
-	ReferenceTypeEvidence = ReferenceType("EVIDENCE")
-	ReferenceTypeWeb      = ReferenceType("WEB")
-)
-
-// ReferenceTypes is the set of reference types defined in OSV.
-var ReferenceTypes = []ReferenceType{
-	ReferenceTypeAdvisory,
-	ReferenceTypeArticle,
-	ReferenceTypeReport,
-	ReferenceTypeFix,
-	ReferenceTypePackage,
-	ReferenceTypeEvidence,
-	ReferenceTypeWeb,
-}
-
 // A Reference is a link to some external resource.
 //
 // For ease of typing, References are represented in the YAML as a
 // single-element mapping of type to URL.
-type Reference struct {
-	Type ReferenceType `json:"type,omitempty"`
-	URL  string        `json:"url,omitempty"`
-}
+type Reference osv.Reference
 
-func (r *Reference) MarshalYAML() (interface{}, error) {
+func (r *Reference) MarshalYAML() (any, error) {
 	return map[string]string{
 		strings.ToLower(string(r.Type)): r.URL,
 	}, nil
@@ -170,7 +146,7 @@ func (r *Reference) UnmarshalYAML(n *yaml.Node) (err error) {
 			fmt.Sprintf("line %d: report.Reference must contain a mapping with one value", n.Line),
 		}}
 	}
-	r.Type = ReferenceType(strings.ToUpper(n.Content[0].Value))
+	r.Type = osv.ReferenceType(strings.ToUpper(n.Content[0].Value))
 	r.URL = n.Content[1].Value
 	return nil
 }

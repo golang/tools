@@ -5,37 +5,32 @@
 // No testdata on Android.
 
 //go:build !android
-// +build !android
 
 package ssautil_test
 
 import (
-	"go/parser"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func TestSwitches(t *testing.T) {
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	f, err := conf.ParseFile("testdata/switches.go", nil)
+	archive, err := txtar.ParseFile("testdata/switches.txtar")
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
-
-	conf.CreateFromFiles("main", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
+	ppkgs := testfiles.LoadPackages(t, archive, ".")
+	if len(ppkgs) != 1 {
+		t.Fatalf("Expected to load one package but got %d", len(ppkgs))
 	}
+	f := ppkgs[0].Syntax[0]
 
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	mainPkg := prog.Package(iprog.Created[0].Pkg)
+	prog, _ := ssautil.Packages(ppkgs, ssa.BuilderMode(0))
+	mainPkg := prog.Package(ppkgs[0].Types)
 	mainPkg.Build()
 
 	for _, mem := range mainPkg.Members {

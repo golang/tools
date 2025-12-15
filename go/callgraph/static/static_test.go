@@ -6,20 +6,27 @@ package static_test
 
 import (
 	"fmt"
-	"go/parser"
 	"reflect"
 	"sort"
 	"testing"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/static"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
-const input = `package P
+const input = `
+
+-- go.mod --
+module x.io
+
+go 1.22
+
+-- p/p.go --
+package main
 
 type C int
 func (C) f()
@@ -47,9 +54,20 @@ func g() {
 func h()
 
 var unknown bool
+
+func main() {
+}
 `
 
-const genericsInput = `package P
+const genericsInput = `
+
+-- go.mod --
+module x.io
+
+go 1.22
+
+-- p/p.go --
+package p
 
 type I interface {
 	F()
@@ -81,56 +99,34 @@ func TestStatic(t *testing.T) {
 	for _, e := range []struct {
 		input string
 		want  []string
-		// typeparams must be true if input uses type parameters
-		typeparams bool
 	}{
 		{input, []string{
 			"(*C).f -> (C).f",
 			"f -> (C).f",
 			"f -> f$1",
 			"f -> g",
-		}, false},
+		}},
 		{genericsInput, []string{
 			"(*A).F -> (A).F",
 			"(*B).F -> (B).F",
-			"f -> instantiated[P.A]",
-			"f -> instantiated[P.B]",
-			"instantiated[P.A] -> (A).F",
-			"instantiated[P.B] -> (B).F",
-		}, true},
+			"f -> instantiated[x.io/p.A]",
+			"f -> instantiated[x.io/p.B]",
+			"instantiated[x.io/p.A] -> (A).F",
+			"instantiated[x.io/p.B] -> (B).F",
+		}},
 	} {
-		if e.typeparams && !typeparams.Enabled {
-			// Skip tests with type parameters when the build
-			// environment is not supporting any.
-			continue
-		}
-
-		conf := loader.Config{ParserMode: parser.ParseComments}
-		f, err := conf.ParseFile("P.go", e.input)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-
-		conf.CreateFromFiles("P", f)
-		iprog, err := conf.Load()
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-
-		P := iprog.Created[0].Pkg
-
-		prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
+		pkgs := testfiles.LoadPackages(t, txtar.Parse([]byte(e.input)), "./p")
+		prog, _ := ssautil.Packages(pkgs, ssa.InstantiateGenerics)
 		prog.Build()
+		p := pkgs[0].Types
 
 		cg := static.CallGraph(prog)
 
 		var edges []string
 		callgraph.GraphVisitEdges(cg, func(e *callgraph.Edge) error {
 			edges = append(edges, fmt.Sprintf("%s -> %s",
-				e.Caller.Func.RelString(P),
-				e.Callee.Func.RelString(P)))
+				e.Caller.Func.RelString(p),
+				e.Callee.Func.RelString(p)))
 			return nil
 		})
 		sort.Strings(edges)

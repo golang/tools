@@ -1,0 +1,259 @@
+This test verifies various behaviors of function extraction involving free control statements.
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- freecontrol.go --
+package extract
+
+//@codeaction(ifCondContinue, "refactor.extract.function", edit=freeControl1)
+//@codeaction(ifCondGotoLabel, "refactor.extract.function", edit=freeControl2)
+//@codeaction(ifCondGotoLabelWithLabel, "refactor.extract.function", edit=freeControl3)
+//@codeaction(multipleCtrl, "refactor.extract.function", edit=freeControl4)
+//@codeaction(multipleCtrlNotAllSelected, "refactor.extract.function", edit=freeControl5)
+//@codeaction(ctrlVarExists, "refactor.extract.function", edit=freeControl6)
+//@codeaction(twoReturns, "refactor.extract.function", edit=freeControl7)
+//@codeaction(forWithLabel, "refactor.extract.function", edit=freeControl8)
+
+func FuncContinue(cond bool) {
+	for range "abc" {
+		if cond { //@ loc(ifCondContinue, re`(?s)if.*println.0.`)
+			continue
+		}
+		println(0)
+	}
+}
+
+func FuncGoTo(cond bool) {
+	for range "abc" {
+		if cond { //@ loc(ifCondGotoLabel, re`(?s)if.*println.1.`), loc(ifCondGotoLabelWithLabel, re`(?s)if.*goto.label1....`)
+			goto label1
+		}
+	label1:
+		println(1)
+	}
+}
+
+func FuncMultipleCtrl(x int) {
+	for range "abc" {
+		if x < 10 { //@ loc(multipleCtrl, re`(?s)if.x.*return...next1....`), loc(multipleCtrlNotAllSelected, re`(?s)if.x.*break....`)
+			continue
+		}
+		if x > 2 {
+			break
+		}
+		if x == 1 {
+			return //next1
+		}
+	}
+}
+
+func FuncCtrlVarExists(x int) {
+	ctrl := "abc"
+	for range ctrl {
+		if x < 10 { //@ loc(ctrlVarExists, re`(?s)if.x.*continue...next2....`)
+			continue //next2
+		}
+	}
+}
+
+func FuncTwoReturns(x int) int {
+ outer:
+	for range "abc" {
+		if x < 10 { //@ loc(twoReturns, re`(?s)if.x.*return.1....`)
+			return 0
+		}
+		test := x - 4
+		if test > 2 {
+			continue
+		}
+		if test == 10 {
+			return 1
+		}
+
+		for range "def" { //@ loc(forWithLabel, re`(?s)for.*outer.........`)
+			if x < 2 {
+				continue
+			}
+			if x > 10 {
+				continue outer
+			}
+		}
+	}
+	return 0
+}
+-- @freeControl1/freecontrol.go --
+@@ -14 +14,3 @@
+-		if cond { //@ loc(ifCondContinue, re`(?s)if.*println.0.`)
++		ctrl := newFunction(cond)
++		switch ctrl {
++		case 1:
+@@ -17 +19 @@
+-		println(0)
+@@ -21 +22,8 @@
++func newFunction(cond bool) int {
++	if cond { //@ loc(ifCondContinue, re`(?s)if.*println.0.`)
++		return 1
++	}
++	println(0)
++	return 0
++}
++
+-- @freeControl2/freecontrol.go --
+@@ -23,5 +23 @@
+-		if cond { //@ loc(ifCondGotoLabel, re`(?s)if.*println.1.`), loc(ifCondGotoLabelWithLabel, re`(?s)if.*goto.label1....`)
+-			goto label1
+-		}
+-	label1:
+-		println(1)
++		newFunction(cond)
+@@ -31 +27,8 @@
++func newFunction(cond bool) {
++	if cond { //@ loc(ifCondGotoLabel, re`(?s)if.*println.1.`), loc(ifCondGotoLabelWithLabel, re`(?s)if.*goto.label1....`)
++		goto label1
++	}
++label1:
++	println(1)
++}
++
+-- @freeControl3/freecontrol.go --
+@@ -23 +23,3 @@
+-		if cond { //@ loc(ifCondGotoLabel, re`(?s)if.*println.1.`), loc(ifCondGotoLabelWithLabel, re`(?s)if.*goto.label1....`)
++		ctrl := newFunction(cond)
++		switch ctrl {
++		case 1:
+@@ -31 +33,7 @@
++func newFunction(cond bool) int {
++	if cond { //@ loc(ifCondGotoLabel, re`(?s)if.*println.1.`), loc(ifCondGotoLabelWithLabel, re`(?s)if.*goto.label1....`)
++		return 1
++	}
++	return 0
++}
++
+-- @freeControl4/freecontrol.go --
+@@ -33,2 +33,3 @@
+-		if x < 10 { //@ loc(multipleCtrl, re`(?s)if.x.*return...next1....`), loc(multipleCtrlNotAllSelected, re`(?s)if.x.*break....`)
+-			continue
++		shouldReturn, ctrl := newFunction(x)
++		if shouldReturn {
++			return
+@@ -36 +37,4 @@
+-		if x > 2 {
++		switch ctrl {
++		case 1:
++			continue
++		case 2:
+@@ -39,3 +43 @@
+-		if x == 1 {
+-			return //next1
+-		}
+@@ -45 +46,14 @@
++func newFunction(x int) (bool, int) {
++	if x < 10 { //@ loc(multipleCtrl, re`(?s)if.x.*return...next1....`), loc(multipleCtrlNotAllSelected, re`(?s)if.x.*break....`)
++		return false, 1
++	}
++	if x > 2 {
++		return false, 2
++	}
++	if x == 1 {
++		return true, //next1
++		0
++	}
++	return false, 0
++}
++
+-- @freeControl5/freecontrol.go --
+@@ -33 +33,3 @@
+-		if x < 10 { //@ loc(multipleCtrl, re`(?s)if.x.*return...next1....`), loc(multipleCtrlNotAllSelected, re`(?s)if.x.*break....`)
++		ctrl := newFunction(x)
++		switch ctrl {
++		case 1:
+@@ -35,2 +37 @@
+-		}
+-		if x > 2 {
++		case 2:
+@@ -45 +46,10 @@
++func newFunction(x int) int {
++	if x < 10 { //@ loc(multipleCtrl, re`(?s)if.x.*return...next1....`), loc(multipleCtrlNotAllSelected, re`(?s)if.x.*break....`)
++		return 1
++	}
++	if x > 2 {
++		return 2
++	}
++	return 0
++}
++
+-- @freeControl6/freecontrol.go --
+@@ -48,2 +48,4 @@
+-		if x < 10 { //@ loc(ctrlVarExists, re`(?s)if.x.*continue...next2....`)
+-			continue //next2
++		ctrl1 := newFunction(x)
++		switch ctrl1 {
++		case 1:
++			continue
+@@ -54 +56,7 @@
++func newFunction(x int) int {
++	if x < 10 { //@ loc(ctrlVarExists, re`(?s)if.x.*continue...next2....`)
++		return 1 //next2
++	}
++	return 0
++}
++
+-- @freeControl7/freecontrol.go --
+@@ -57,2 +57,3 @@
+-		if x < 10 { //@ loc(twoReturns, re`(?s)if.x.*return.1....`)
+-			return 0
++		i, shouldReturn, ctrl := newFunction(x)
++		if shouldReturn {
++			return i
+@@ -60,2 +61,2 @@
+-		test := x - 4
+-		if test > 2 {
++		switch ctrl {
++		case 1:
+@@ -64,3 +65 @@
+-		if test == 10 {
+-			return 1
+-		}
+@@ -79 +77,14 @@
++
++func newFunction(x int) (int, bool, int) {
++	if x < 10 { //@ loc(twoReturns, re`(?s)if.x.*return.1....`)
++		return 0, true, 0
++	}
++	test := x - 4
++	if test > 2 {
++		return 0, false, 1
++	}
++	if test == 10 {
++		return 1, true, 0
++	}
++	return 0, false, 0
++}
+-- @freeControl8/freecontrol.go --
+@@ -68,5 +68,3 @@
+-		for range "def" { //@ loc(forWithLabel, re`(?s)for.*outer.........`)
+-			if x < 2 {
+-				continue
+-			}
+-			if x > 10 {
++		ctrl := newFunction(x)
++		switch ctrl {
++		case 1:
+@@ -74 +72 @@
+-			}
+@@ -79 +76,12 @@
++
++func newFunction(x int) int {
++	for range "def" { //@ loc(forWithLabel, re`(?s)for.*outer.........`)
++		if x < 2 {
++			continue
++		}
++		if x > 10 {
++			return 1
++		}
++	}
++	return 0
++}

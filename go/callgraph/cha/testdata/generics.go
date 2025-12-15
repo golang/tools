@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 // Test of generic function calls.
@@ -38,12 +35,12 @@ func f(h func(), g func(I), k func(A), a A, b B) {
 //   (*A).Foo --> (A).Foo
 //   (*B).Foo --> (B).Foo
 //   f --> Bar
-//   f --> instantiated[main.A]
-//   f --> instantiated[main.A]
-//   f --> instantiated[main.B]
+//   f --> instantiated[x.io/main.A]
+//   f --> instantiated[x.io/main.A]
+//   f --> instantiated[x.io/main.B]
 //   instantiated --> (*A).Foo
 //   instantiated --> (*B).Foo
 //   instantiated --> (A).Foo
 //   instantiated --> (B).Foo
-//   instantiated[main.A] --> (A).Foo
-//   instantiated[main.B] --> (B).Foo
+//   instantiated[x.io/main.A] --> (A).Foo
+//   instantiated[x.io/main.B] --> (B).Foo

@@ -16,15 +16,15 @@ import (
 
 	"golang.org/x/tools/internal/event/export/eventtest"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/stack/stacktest"
+	"golang.org/x/tools/internal/jsonrpc2/stack/stacktest"
 )
 
 var logRPC = flag.Bool("logrpc", false, "Enable jsonrpc2 communication logging")
 
 type callTest struct {
 	method string
-	params interface{}
-	expect interface{}
+	params any
+	expect any
 }
 
 var callTests = []callTest{
@@ -35,10 +35,10 @@ var callTests = []callTest{
 	//TODO: expand the test cases
 }
 
-func (test *callTest) newResults() interface{} {
+func (test *callTest) newResults() any {
 	switch e := test.expect.(type) {
-	case []interface{}:
-		var r []interface{}
+	case []any:
+		var r []any
 		for _, v := range e {
 			r = append(r, reflect.New(reflect.TypeOf(v)).Interface())
 		}
@@ -50,7 +50,7 @@ func (test *callTest) newResults() interface{} {
 	}
 }
 
-func (test *callTest) verifyResults(t *testing.T, results interface{}) {
+func (test *callTest) verifyResults(t *testing.T, results any) {
 	if results == nil {
 		return
 	}
@@ -70,7 +70,7 @@ func TestCall(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := eventtest.NewContext(ctx, t)
-			a, b, done := prepare(ctx, t, headers)
+			a, b, done := prepare(ctx, headers)
 			defer done()
 			for _, test := range callTests {
 				t.Run(test.method, func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestCall(t *testing.T) {
 	}
 }
 
-func prepare(ctx context.Context, t *testing.T, withHeaders bool) (jsonrpc2.Conn, jsonrpc2.Conn, func()) {
+func prepare(ctx context.Context, withHeaders bool) (jsonrpc2.Conn, jsonrpc2.Conn, func()) {
 	// make a wait group that can be used to wait for the system to shut down
 	aPipe, bPipe := net.Pipe()
 	a := run(ctx, withHeaders, aPipe)
@@ -111,11 +111,11 @@ func run(ctx context.Context, withHeaders bool, nc net.Conn) jsonrpc2.Conn {
 		stream = jsonrpc2.NewRawStream(nc)
 	}
 	conn := jsonrpc2.NewConn(stream)
-	conn.Go(ctx, testHandler(*logRPC))
+	conn.Go(ctx, testHandler())
 	return conn
 }
 
-func testHandler(log bool) jsonrpc2.Handler {
+func testHandler() jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		switch req.Method() {
 		case "no_args":

@@ -5,20 +5,33 @@
 package printf_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/printf"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 
-	tests := []string{"a", "b", "nofmt"}
-	if typeparams.Enabled {
-		tests = append(tests, "typeparams")
-	}
-	analysistest.Run(t, testdata, printf.Analyzer, tests...)
+	analysistest.Run(t, testdata, printf.Analyzer,
+		"a", "b", "nofmt", "nonconst", "typeparams", "issue68744", "issue70572", "issue72850", "issue76616")
+}
+
+func TestNonConstantFmtString_Go123(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23)
+
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "nonconst_go123.txtar"))
+	analysistest.RunWithSuggestedFixes(t, dir, printf.Analyzer, "example.com/nonconst")
+}
+
+func TestNonConstantFmtString_Go124(t *testing.T) {
+	testenv.NeedsGo1Point(t, 24)
+
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "nonconst_go124.txtar"))
+	analysistest.RunWithSuggestedFixes(t, dir, printf.Analyzer, "example.com/nonconst")
 }

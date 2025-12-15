@@ -1,9 +1,0 @@
--- AliasMap(a map[*sig.Alias]sig.StringAlias) (b map[*sig.Alias]sig.StringAlias, c map[*sig.Alias]sig.StringAlias)-signature --
-AliasMap(a map[*sig.Alias]sig.StringAlias) (b map[*sig.Alias]sig.StringAlias, c map[*sig.Alias]sig.StringAlias)
-
--- AliasSlice(a []*sig.Alias) (b sig.Alias)-signature --
-AliasSlice(a []*sig.Alias) (b sig.Alias)
-
--- OtherAliasMap(a map[sig.Alias]sig.OtherAlias, b map[sig.Alias]sig.OtherAlias) map[sig.Alias]sig.OtherAlias-signature --
-OtherAliasMap(a map[sig.Alias]sig.OtherAlias, b map[sig.Alias]sig.OtherAlias) map[sig.Alias]sig.OtherAlias
-

@@ -6,12 +6,13 @@ package checker_test
 
 import (
 	"go/ast"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
+	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/go/analysis/internal/checker"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
@@ -22,6 +23,7 @@ import (
 // of the file takes effect.
 func TestStartFixes(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	testenv.RedirectStderr(t) // associated checker.Run output with this test
 
 	files := map[string]string{
 		"comment/doc.go": `/* Package comment */
@@ -37,10 +39,11 @@ package comment
 		t.Fatal(err)
 	}
 	path := filepath.Join(testdata, "src/comment/doc.go")
-	checker.Fix = true
+	analysisflags.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{commentAnalyzer})
+	analysisflags.Fix = false
 
-	contents, err := ioutil.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,11 +58,12 @@ package comment
 
 var commentAnalyzer = &analysis.Analyzer{
 	Name:     "comment",
+	Doc:      "comment",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      commentRun,
 }
 
-func commentRun(pass *analysis.Pass) (interface{}, error) {
+func commentRun(pass *analysis.Pass) (any, error) {
 	const (
 		from = "/* Package comment */"
 		to   = "// Package comment"

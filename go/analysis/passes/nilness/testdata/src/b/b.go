@@ -30,3 +30,12 @@ func i(x []int) {
 		_ = *a
 	}
 }
+
+func _(err error) {
+	if err == nil {
+		err.Error() // want "nil dereference in dynamic method call"
+
+		// SSA uses TypeAssert for the nil check in a method value:
+		_ = err.Error // want "nil dereference in type assertion"
+	}
+}

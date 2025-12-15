@@ -44,6 +44,14 @@ some content
 				},
 			},
 		},
+		{
+			name: "crlf",
+			text: "comment\r\n-- file --\r\ndata\r\n",
+			parsed: &Archive{
+				Comment: []byte("comment\r\n"),
+				Files:   []File{{"file", []byte("data\r\n")}},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

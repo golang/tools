@@ -1,0 +1,101 @@
+We should not offer a code action to inline 'v' where it appears on the
+left-hand side of an assignment: method with pointer receiver.
+
+Regression test for issue #75200.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- c/c.go --
+package c
+
+import "fmt"
+
+type V int
+
+func (V) Method() { }
+
+func (*V) PointerMethod() { }
+
+func _() {
+    var v V = V(123)
+    v = V(13)
+    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
+    v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    var vptr *V = &v
+    vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
+    (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
+    fmt.Println(v, vptr)
+}
+
+-- @inlineV/c/c.go --
+package c
+
+import "fmt"
+
+type V int
+
+func (V) Method() { }
+
+func (*V) PointerMethod() { }
+
+func _() {
+    var v V = V(123)
+    v = V(13)
+    V(123).Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
+    v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    var vptr *V = &v
+    vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
+    (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
+    fmt.Println(v, vptr)
+}
+
+-- @inlintVptr/c/c.go --
+package c
+
+import "fmt"
+
+type V int
+
+func (V) Method() { }
+
+func (*V) PointerMethod() { }
+
+func _() {
+    var v V = V(123)
+    v = V(13)
+    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
+    v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    var vptr *V = &v
+    &v.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
+    (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
+    fmt.Println(v, vptr)
+}
+
+-- @inlintVptrpar/c/c.go --
+package c
+
+import "fmt"
+
+type V int
+
+func (V) Method() { }
+
+func (*V) PointerMethod() { }
+
+func _() {
+    var v V = V(123)
+    v = V(13)
+    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
+    v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    var vptr *V = &v
+    vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
+    (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
+    fmt.Println(v, vptr)
+}
+

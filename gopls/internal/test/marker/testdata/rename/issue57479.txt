@@ -1,0 +1,34 @@
+Test renaming a parameter to the name of an imported package
+referenced by one of the function parameters.
+
+See golang/go#57479
+
+-- go.mod --
+module golang.org/lsptests/rename
+
+go 1.18
+-- a/a.go --
+package a
+
+import (
+    "fmt"
+    "math"
+)
+
+func _(x fmt.Stringer) {} //@rename("x", "fmt", xToFmt)
+
+func _(x int, y fmt.Stringer) {} //@rename("x", "fmt", xyToFmt)
+
+func _(x [math.MaxInt]bool) {} //@rename("x", "math", xToMath)
+-- @xToFmt/a/a.go --
+@@ -8 +8 @@
+-func _(x fmt.Stringer) {} //@rename("x", "fmt", xToFmt)
++func _(fmt fmt.Stringer) {} //@rename("x", "fmt", xToFmt)
+-- @xToMath/a/a.go --
+@@ -12 +12 @@
+-func _(x [math.MaxInt]bool) {} //@rename("x", "math", xToMath)
++func _(math [math.MaxInt]bool) {} //@rename("x", "math", xToMath)
+-- @xyToFmt/a/a.go --
+@@ -10 +10 @@
+-func _(x int, y fmt.Stringer) {} //@rename("x", "fmt", xyToFmt)
++func _(fmt int, y fmt.Stringer) {} //@rename("x", "fmt", xyToFmt)
