@@ -31,10 +31,7 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if err != nil {
 		return nil, err
 	}
-	cur, ok := pgf.Cursor().FindByPos(start, end)
-	if !ok {
-		return nil, fmt.Errorf("no enclosing syntax") // can't happen
-	}
+	cur, _, _, _ := astutil.Select(pgf.Cursor(), start, end) // can't fail (start, end are within File)
 
 	// Find innermost enclosing expression that has a type.
 	// It needn't be an identifier.
