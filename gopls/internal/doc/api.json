@@ -1623,6 +1623,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"scannererr\"",
+							"Doc": "scannererr: report failure to check bufio.Scanner.Err\n\nThis analyzer reports uses of bufio.Scanner in which the result of\nNewScanner is assigned to a local variable that is then used in a loop\nthat calls Scanner.Scan, but lacks a final check of Scanner.Err,\nwhich is how I/O errors are reported.\n\nFor example:\n\n\tsc := bufio.NewScanner(os.Stdin) // error: \"bufio.Scanner sc is used in Scan loop without final check of sc.Err()\"\n\tfor sc.Scan() {\n\t\tline := sc.Text()\n\t\tuse(line)\n\t}\n\t/* ...no use of sc.Err()... */\n\nTo avoid false positives, the analyzer is silent if the scanner is\npassed into or out of the function or assigned somewhere other than a\nlocal variable.\n\nIt is not this analyzer's goal to ensure proper handling of errors in\nall cases, but merely the simple mistakes where the user may have been\noblivious to the existence of the Scanner.Err method.\n\nThe analyzer ignores calls to bufio.NewScanner whose argument is an\ninfallible memory-backed io.Reader such as strings.Reader or bytes.Buffer.\n(In such cases, Scan may yet fail if a token or line is too long for the\nscanner's internal buffer, but this is rare.)\n\nIf you know that errors are impossible for a given scanner, you can\nsuppress the diagnostic thus:\n\n\t_ = sc.Err() // ignore error; neither reading nor scanning can fail\n\n",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"shadow\"",
 							"Doc": "check for possible unintended shadowing of variables\n\nThis analyzer check for shadowed variables.\nA shadowed variable is a variable declared in an inner scope\nwith the same name and type as a variable in an outer scope,\nand where the outer variable is mentioned after the inner one\nis declared.\n\n(This definition can be refined; the module generates too many\nfalse positives and is not yet enabled by default.)\n\nFor example:\n\n\tfunc BadRead(f *os.File, buf []byte) error {\n\t\tvar err error\n\t\tfor {\n\t\t\tn, err := f.Read(buf) // shadows the function variable 'err'\n\t\t\tif err != nil {\n\t\t\t\tbreak // causes return of wrong value\n\t\t\t}\n\t\t\tfoo(buf)\n\t\t}\n\t\treturn err\n\t}",
 							"Default": "false",
@@ -3561,6 +3567,12 @@
 			"Name": "reflecttypefor",
 			"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the constructions below, which use\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nor:\n\n\treflect.TypeOf([]io.Reader(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypefor",
+			"Default": true
+		},
+		{
+			"Name": "scannererr",
+			"Doc": "scannererr: report failure to check bufio.Scanner.Err\n\nThis analyzer reports uses of bufio.Scanner in which the result of\nNewScanner is assigned to a local variable that is then used in a loop\nthat calls Scanner.Scan, but lacks a final check of Scanner.Err,\nwhich is how I/O errors are reported.\n\nFor example:\n\n\tsc := bufio.NewScanner(os.Stdin) // error: \"bufio.Scanner sc is used in Scan loop without final check of sc.Err()\"\n\tfor sc.Scan() {\n\t\tline := sc.Text()\n\t\tuse(line)\n\t}\n\t/* ...no use of sc.Err()... */\n\nTo avoid false positives, the analyzer is silent if the scanner is\npassed into or out of the function or assigned somewhere other than a\nlocal variable.\n\nIt is not this analyzer's goal to ensure proper handling of errors in\nall cases, but merely the simple mistakes where the user may have been\noblivious to the existence of the Scanner.Err method.\n\nThe analyzer ignores calls to bufio.NewScanner whose argument is an\ninfallible memory-backed io.Reader such as strings.Reader or bytes.Buffer.\n(In such cases, Scan may yet fail if a token or line is too long for the\nscanner's internal buffer, but this is rare.)\n\nIf you know that errors are impossible for a given scanner, you can\nsuppress the diagnostic thus:\n\n\t_ = sc.Err() // ignore error; neither reading nor scanning can fail\n\n",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/scannererr",
 			"Default": true
 		},
 		{

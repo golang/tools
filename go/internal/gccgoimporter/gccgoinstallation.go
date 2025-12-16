@@ -59,6 +59,9 @@ func (inst *GccgoInstallation) InitFromDriver(gccgoPath string, args ...string) 
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
 
 	argv = append([]string{"-dumpversion"}, args...)
 	stdout, err := exec.Command(gccgoPath, argv...).Output()

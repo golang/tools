@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/nilfunc"
 	"golang.org/x/tools/go/analysis/passes/nilness"
 	"golang.org/x/tools/go/analysis/passes/printf"
+	"golang.org/x/tools/go/analysis/passes/scannererr"
 	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/shift"
 	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
@@ -213,6 +214,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: yield.Analyzer},   // uses go/ssa
 	{analyzer: sortslice.Analyzer},
 	{analyzer: embeddirective.Analyzer},
+	{analyzer: scannererr.Analyzer},    // to appear in cmd/vet@go1.27
 	{analyzer: waitgroup.Analyzer},     // to appear in cmd/vet@go1.25
 	{analyzer: hostport.Analyzer},      // to appear in cmd/vet@go1.25
 	{analyzer: recursiveiter.Analyzer}, // under evaluation
