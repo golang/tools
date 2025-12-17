@@ -30,10 +30,11 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -121,7 +122,7 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	endPos := tokFile.Pos(endOffset)
 
 	// Syntax information
-	path, exact := astutil.PathEnclosingInterval(file, startPos, endPos)
+	path, exact := goastutil.PathEnclosingInterval(file, startPos, endPos)
 	fmt.Fprintf(out, "Path enclosing interval #%d-%d [exact=%t]:\n",
 		startOffset, endOffset, exact)
 	var innermostExpr ast.Expr
@@ -163,15 +164,25 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 			innermostExpr = e
 		}
 	}
-	// Show the cursor stack too.
+	// Show the Cursor.Enclosing stack too.
 	// It's usually the same, but may differ in edge
 	// cases (e.g. around FuncType.Func).
-	inspect := inspector.New([]*ast.File{file})
-	if cur, ok := inspect.Root().FindByPos(startPos, endPos); ok {
-		fmt.Fprintf(out, "Cursor.FindPos().Enclosing() = %v\n",
+	curFile, _ := inspector.New([]*ast.File{file}).Root().FirstChild()
+	if cur, ok := curFile.FindByPos(startPos, endPos); ok {
+		fmt.Fprintf(out, "Cursor.FindByPos().Enclosing() = %v\n",
 			slices.Collect(cur.Enclosing()))
 	} else {
 		fmt.Fprintf(out, "Cursor.FindPos() failed\n")
+	}
+	// And show the astutil.Select result (enclosing, leftmost & rightmost enclosed).
+	if curEnclosing, curStart, curEnd, err := astutil.Select(curFile, startPos, endPos); err == nil {
+		format := func(cur inspector.Cursor) string {
+			return fmt.Sprintf("%T@%v", cur.Node(), fset.Position(cur.Node().Pos()))
+		}
+		fmt.Fprintf(out, "astutil.Select() = (%s, %s, %s)\n",
+			format(curEnclosing), format(curStart), format(curEnd))
+	} else {
+		fmt.Fprintf(out, "astutil.Select() = %v", err)
 	}
 	fmt.Fprintf(out, "\n")
 
@@ -266,7 +277,7 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 
 	// Show inventory of all objects, including addresses to disambiguate.
 	fmt.Fprintf(out, "Objects:\n")
-	for curId := range inspect.Root().Preorder((*ast.Ident)(nil)) {
+	for curId := range curFile.Preorder((*ast.Ident)(nil)) {
 		id := curId.Node().(*ast.Ident)
 		if obj := pkg.TypesInfo.Defs[id]; obj != nil {
 			fmt.Fprintf(out, "%s: def %v (%p)\n", fset.Position(id.Pos()), obj, obj)
