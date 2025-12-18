@@ -262,6 +262,13 @@ func issue75289() {
 	}()
 }
 
+// See go.dev/issue/76880.
+func _() (i int) {
+	for i = 0; i < 3; i++ { // nope: i is implicitly accessed after the loop
+	}
+	return
+}
+
 func issue74687() {
 	for i := a.ID(0); i < 10; i++ { // want "for loop can be modernized using range over int"
 		println(i)

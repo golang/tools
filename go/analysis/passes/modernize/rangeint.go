@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -133,6 +134,14 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						if typesinternal.IsPackageLevel(v) {
 							continue nextLoop
 						}
+
+						// If v is a named result, it is implicitly
+						// used after the loop (go.dev/issue/76880).
+						// TODO(adonovan): use go1.25 v.Kind() == types.ResultVar.
+						if moreiters.Contains(enclosingSignature(curLoop, info).Results().Variables(), v) {
+							continue nextLoop
+						}
+
 						used := false
 						for curId := range curLoop.Child(loop.Body).Preorder((*ast.Ident)(nil)) {
 							id := curId.Node().(*ast.Ident)
@@ -319,4 +328,25 @@ func isScalarLvalue(info *types.Info, curId inspector.Cursor) bool {
 		}
 	}
 	return false
+}
+
+// enclosingSignature returns the signature of the innermost
+// function enclosing the syntax node denoted by cur
+// or nil if the node is not within a function.
+//
+// TODO(adonovan): factor with gopls/internal/util/typesutil.EnclosingSignature.
+func enclosingSignature(cur inspector.Cursor, info *types.Info) *types.Signature {
+	if c, ok := enclosingFunc(cur); ok {
+		switch n := c.Node().(type) {
+		case *ast.FuncDecl:
+			if f, ok := info.Defs[n.Name]; ok {
+				return f.Type().(*types.Signature)
+			}
+		case *ast.FuncLit:
+			if f, ok := info.Types[n]; ok {
+				return f.Type.(*types.Signature)
+			}
+		}
+	}
+	return nil
 }
