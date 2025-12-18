@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestComputeGoModHash(t *testing.T) {
@@ -111,6 +112,7 @@ func (c *mockClient) Close() error {
 }
 
 func TestCheckGoModDeps(t *testing.T) {
+	testenv.NeedsExec(t)
 	const (
 		yes    = "Yes"
 		no     = "No"
