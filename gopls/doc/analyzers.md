@@ -3487,7 +3487,7 @@ Wrapper functions such as varOf are common when working with Go serialization pa
 
 Default: on.
 
-Package documentation: [newexpr](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#newexpr)
+Package documentation: [newexpr](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#newexpr)
 
 <a id='nilfunc'></a>
 ## `nilfunc`: check for useless comparisons between functions and nil
@@ -4086,7 +4086,7 @@ Fixes are offered only in cases in which there are no potential modifications of
 
 Default: on.
 
-Package documentation: [stringscut](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscut)
+Package documentation: [stringscut](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscut)
 
 <a id='stringscutprefix'></a>
 ## `stringscutprefix`: replace HasPrefix/TrimPrefix with CutPrefix
