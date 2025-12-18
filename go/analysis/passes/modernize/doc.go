@@ -467,6 +467,25 @@ The sole use of the finished string must be the last reference to the
 variable s. (It may appear within an intervening loop or function literal,
 since even s.String() is called repeatedly, it does not allocate memory.)
 
+Often the addend is a call to fmt.Sprintf, as in this example:
+
+	var s string
+	for x := range seq {
+		s += fmt.Sprintf("%v", x)
+	}
+
+which, once the suggested fix is applied, becomes:
+
+	var s strings.Builder
+	for x := range seq {
+		s.WriteString(fmt.Sprintf("%v", x))
+	}
+
+The WriteString call can be further simplified to the more efficient
+fmt.Fprintf(&s, "%v", x), avoiding the allocation of an intermediary.
+However, stringsbuilder does not perform this simplification;
+it requires staticcheck analyzer QF1012. (See https://go.dev/issue/76918.)
+
 # Analyzer testingcontext
 
 testingcontext: replace context.WithCancel with t.Context in tests
