@@ -17,13 +17,15 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // Index constructs a serializable index of outbound cross-references
 // for the specified type-checked package.
-func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
+func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles []*asm.File) []byte {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -112,6 +114,44 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 		}
 	}
 
+	// For each asm file, record references to identifiers.
+	for fileIndex, af := range asmFiles {
+		for _, id := range af.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
+				continue
+			}
+			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			if pkgpath != pkg.Path() {
+				// Reference to symbol in another package.
+				// TODO(grootguo): implement this case. See similar logic in
+				// golang.lookupDocLinkSymbol, which also does not yet handle this case.
+				// See also goasm.Definitions, which loads a package by path from the
+				// forward transitive closure.
+				continue
+			}
+			obj := pkg.Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			objects := getObjects(pkg)
+			gobObj, ok := objects[obj]
+			if !ok {
+				// obj is a package-level symbol, so its objectpath is just its name.
+				gobObj = &gobObject{Path: objectpath.Path(obj.Name())}
+				objects[obj] = gobObj
+			}
+			if rng, err := af.IdentRange(id); err == nil {
+				gobObj.Refs = append(gobObj.Refs, gobRef{
+					FileIndex: fileIndex,
+					Range:     rng,
+				})
+			}
+		}
+	}
+
 	// Flatten the maps into slices, and sort for determinism.
 	var packages []*gobPackage
 	for p := range pkgObjects {
@@ -147,7 +187,12 @@ func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := mp.CompiledGoFiles[ref.FileIndex]
+						var uri protocol.DocumentURI
+						if asmIndex := ref.FileIndex - len(mp.CompiledGoFiles); asmIndex < 0 {
+							uri = mp.CompiledGoFiles[ref.FileIndex]
+						} else {
+							uri = mp.AsmFiles[asmIndex]
+						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,
@@ -189,6 +234,6 @@ type gobObject struct {
 }
 
 type gobRef struct {
-	FileIndex int            // index of enclosing file within P's CompiledGoFiles
+	FileIndex int            // index of enclosing file within P's CompiledGoFiles + AsmFiles
 	Range     protocol.Range // source range of reference
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/goasm"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -35,6 +36,8 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 		return template.References(ctx, snapshot, fh, params)
 	case file.Go:
 		return golang.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
+	case file.Asm:
+		return goasm.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	}
 	return nil, nil // empty result
 }
