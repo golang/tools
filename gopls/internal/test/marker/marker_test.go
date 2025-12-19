@@ -889,10 +889,13 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		}
 	}
 
-	// Parse flags after loading files, as they may have been set by the "flags"
-	// file.
-	if err := test.flagSet().Parse(test.flags); err != nil {
+	// Parse flags after loading files, as they may have been set by the "flags" file.
+	set := test.flagSet()
+	if err := set.Parse(test.flags); err != nil {
 		return nil, fmt.Errorf("parsing flags: %v", err)
+	}
+	if set.NArg() > 0 {
+		return nil, fmt.Errorf("surplus arguments after flags: %q", set.Args())
 	}
 
 	return test, nil

@@ -1,0 +1,26 @@
+This test verifies that "too new" diagnostics from the stdversion analyzer
+are suppressed for synctest when the go version is go1.24 or later.
+See golang/go#75367
+
+Set max to go1.25 since the synctest experiment was removed in go1.26.
+
+-- env --
+GOEXPERIMENT=synctest
+-- flags --
+-min_go_command=go1.24
+-max_go_command=go1.25
+
+-- go.mod --
+module example.com
+
+go 1.24
+
+-- a/a.go --
+//go:build goexperiment.synctest || go1.25
+package a
+
+import "testing/synctest"
+
+func _() {
+	synctest.Wait() // no diagnostic, see golang/go#75367
+}
