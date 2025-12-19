@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/mcp"
 )
 
 // Env holds the building blocks of an editor testing environment, providing

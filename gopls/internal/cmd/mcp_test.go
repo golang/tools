@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	internal_mcp "golang.org/x/tools/gopls/internal/mcp"
+	goplsmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/vulncheck/vulntest"
 	"golang.org/x/tools/internal/testenv"
@@ -359,7 +359,7 @@ func main() {
 		t.Fatal(err)
 	}
 
-	var result internal_mcp.VulncheckResultOutput
+	var result goplsmcp.VulncheckResultOutput
 	if err := json.Unmarshal(jsonBytes, &result); err != nil {
 		t.Fatal(err)
 	}

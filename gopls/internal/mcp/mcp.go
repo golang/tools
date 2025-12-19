@@ -15,6 +15,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -299,6 +300,10 @@ does the same for a symbol in the imported package "lib".
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_workspace",
 			Description: "Summarize the Go programming language workspace",
+			InputSchema: &jsonschema.Schema{
+				Type:       "object",
+				Properties: map[string]*jsonschema.Schema{},
+			},
 		}, h.workspaceHandler)
 	case "go_vulncheck":
 		mcp.AddTool(mcpServer, &mcp.Tool{

@@ -6,8 +6,9 @@ require (
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/go-cmp v0.7.0
+	github.com/google/jsonschema-go v0.4.2
 	github.com/jba/templatecheck v0.7.1
-	github.com/modelcontextprotocol/go-sdk v1.1.0
+	github.com/modelcontextprotocol/go-sdk v1.2.0
 	golang.org/x/mod v0.32.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/telemetry v0.0.0-20260109210033-bd525da824e2
@@ -24,7 +25,6 @@ require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
-	github.com/google/jsonschema-go v0.3.0 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20251219203646-944ab1f22d93 // indirect

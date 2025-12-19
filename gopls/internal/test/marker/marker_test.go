@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsprpc"
@@ -46,7 +47,6 @@ import (
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/mcp"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
@@ -1050,8 +1050,8 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 
 	var mcpSession *mcp.ClientSession
 	if enableMCP {
-		client := mcp.NewClient("test", "v1.0.0", nil)
-		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport(mcpServer.URL, nil))
+		client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1.0.0"}, nil)
+		mcpSession, err = client.Connect(ctx, &mcp.SSEClientTransport{Endpoint: mcpServer.URL}, nil)
 		if err != nil {
 			t.Fatalf("fail to connect to mcp server: %v", err)
 		}
@@ -2658,11 +2658,12 @@ func mcpToolMarker(mark marker, tool string, rawArgs string) {
 
 	var buf bytes.Buffer
 	for i, c := range res.Content {
-		if c.Type != "text" {
-			mark.errorf("unsupported return content[%v] type: %s", i, c.Type)
+		text, ok := c.(*mcp.TextContent)
+		if !ok {
+			mark.errorf("unsupported return content[%v] type: %T", i, c)
 			continue
 		}
-		buf.WriteString(c.Text)
+		buf.WriteString(text.Text)
 	}
 	if !bytes.HasSuffix(buf.Bytes(), []byte{'\n'}) {
 		buf.WriteString("\n") // all golden content is newline terminated
