@@ -9,5 +9,5 @@ package issues
 
 func _() {
 	var e *error
-	e.x //@complete(" //")
+	e.x //@complete(re"() \\/\\/")
 }

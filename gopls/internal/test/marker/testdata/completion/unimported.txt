@@ -40,12 +40,12 @@ var FooStruct f.StructFoo
 package unimported
 
 func _() {
-	http //@complete("p", http, httptest, httptrace, httputil)
+	http //@complete(re"()p", http, httptest, httptrace, httputil)
 	// container/ring is extremely unlikely to be imported by anything, so shouldn't have type information.
 	ring.Ring     //@complete(re"R()ing", ringring)
-	signature.Foo //@complete("Foo", signaturefoo)
+	signature.Foo //@complete(re"()Foo", signaturefoo)
 
-	context.Bac //@complete(" //", contextBackground)
+	context.Bac //@complete(re"() \\/\\/", contextBackground)
 }
 
 // Create markers for unimported std lib packages. Only for use by this test.
@@ -78,7 +78,7 @@ func _() {
 
 	// We get the literal completion for "foo.StructFoo{}" even though we haven't
 	// imported "foo" yet.
-	baz.FooStruct = f //@snippet(" //", litFooStructFoo, "foo.StructFoo{$0\\}")
+	baz.FooStruct = f //@snippet(re"() \\/\\/", litFooStructFoo, "foo.StructFoo{$0\\}")
 }
 
 -- unimported/x_test.go --
@@ -89,5 +89,5 @@ import (
 )
 
 func TestSomething(t *testing.T) {
-	_ = unimported.TestExport //@complete("TestExport", testexport)
+	_ = unimported.TestExport //@complete(re"()TestExport", testexport)
 }

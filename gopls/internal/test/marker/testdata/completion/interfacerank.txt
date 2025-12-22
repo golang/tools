@@ -29,8 +29,8 @@ func _() {
 		ab *fooImpl //@item(irAB, "ab", "*fooImpl", "var")
 	)
 
-	wantsFoo(a) //@complete(")", irAB, irAA)
+	wantsFoo(a) //@complete(re"()\\)", irAB, irAA)
 
 	var ac fooImpl //@item(irAC, "ac", "fooImpl", "var")
-	wantsFoo(&a)   //@complete(")", irAC, irAA, irAB)
+	wantsFoo(&a)   //@complete(re"()\\)", irAC, irAA, irAB)
 }

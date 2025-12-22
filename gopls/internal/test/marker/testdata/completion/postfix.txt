@@ -19,22 +19,22 @@ import (
 
 func _() {
 	var foo []int
-	foo.append //@rank(" //", postfixAppend)
+	foo.append //@rank(re"() \\/\\/", postfixAppend)
 
-	[]int{}.append //@complete(" //")
+	[]int{}.append //@complete(re"() \\/\\/")
 
-	[]int{}.last //@complete(" //")
+	[]int{}.last //@complete(re"() \\/\\/")
 
 
-	foo.copy //@rank(" //", postfixCopy)
+	foo.copy //@rank(re"() \\/\\/", postfixCopy)
 
 	var s struct{ i []int }
-	s.i.copy //@rank(" //", postfixCopy)
+	s.i.copy //@rank(re"() \\/\\/", postfixCopy)
 
-	var _ []int = s.i.copy //@complete(" //")
+	var _ []int = s.i.copy //@complete(re"() \\/\\/")
 
 	var blah func() []int
-	blah().append //@complete(" //")
+	blah().append //@complete(re"() \\/\\/")
 }
 
 func _() {
@@ -52,21 +52,21 @@ func _() {
 	/* ifnotnil! */ //@item(postfixIfNotNil, "ifnotnil!", "if expr != nil", "snippet")
 
 	var foo []int
-	foo. //@complete(" //", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixVar)
+	foo. //@complete(re"() \\/\\/", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixVar)
 	foo = nil
 
-	foo.append //@snippet(" //", postfixAppend, "foo = append(foo, $0)")
-	foo.copy //snippet(" //", postfixCopy, "fooCopy := make([]int, len(foo))\ncopy($fooCopy, foo)\n")
-	foo.fo //@snippet(" //", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
-	foo.forr //@snippet(" //", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.last //@snippet(" //", postfixLast, "foo[len(foo)-1]")
-	foo.len //@snippet(" //", postfixLen, "len(foo)")
-	foo.print //@snippet(" //", postfixPrint, `fmt.Printf("foo: %v\n", foo)`)
-	foo.rang //@snippet(" //", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.reverse //@snippet(" //", postfixReverse, "slices.Reverse(foo)")
-	foo.sort //@snippet(" //", postfixSort, "sort.Slice(foo, func(i, j int) bool {\n\t$0\n})")
-	foo.va //@snippet(" //", postfixVar, "${1:} := foo")
-	foo.ifnotnil //@snippet(" //", postfixIfNotNil, "if foo != nil {\n\t$0\n}")
+	foo.append //@snippet(re"() \\/\\/", postfixAppend, "foo = append(foo, $0)")
+	foo.copy //snippet(re"() \\/\\/", postfixCopy, "fooCopy := make([]int, len(foo))\ncopy($fooCopy, foo)\n")
+	foo.fo //@snippet(re"() \\/\\/", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(re"() \\/\\/", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
+	foo.last //@snippet(re"() \\/\\/", postfixLast, "foo[len(foo)-1]")
+	foo.len //@snippet(re"() \\/\\/", postfixLen, "len(foo)")
+	foo.print //@snippet(re"() \\/\\/", postfixPrint, `fmt.Printf("foo: %v\n", foo)`)
+	foo.rang //@snippet(re"() \\/\\/", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
+	foo.reverse //@snippet(re"() \\/\\/", postfixReverse, "slices.Reverse(foo)")
+	foo.sort //@snippet(re"() \\/\\/", postfixSort, "sort.Slice(foo, func(i, j int) bool {\n\t$0\n})")
+	foo.va //@snippet(re"() \\/\\/", postfixVar, "${1:} := foo")
+	foo.ifnotnil //@snippet(re"() \\/\\/", postfixIfNotNil, "if foo != nil {\n\t$0\n}")
 }
 
 func _() {
@@ -77,15 +77,15 @@ func _() {
 	/* keys! */ //@item(postfixKeys, "keys!", "create slice of keys", "snippet")
 
 	var foo map[int]int
-	foo. //@complete(" //", postfixClear, postfixForMap, postfixForrMap, postfixIfNotNil, postfixKeys, postfixLen, postfixPrint, postfixRangeMap, postfixVar)
+	foo. //@complete(re"() \\/\\/", postfixClear, postfixForMap, postfixForrMap, postfixIfNotNil, postfixKeys, postfixLen, postfixPrint, postfixRangeMap, postfixVar)
 
 	foo = nil
 
-	foo.fo //@snippet(" //", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
-	foo.forr //@snippet(" //", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.rang //@snippet(" //", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.clear //@snippet(" //", postfixClear, "for k := range foo {\n\tdelete(foo, k)\n}\n")
-	foo.keys //@snippet(" //", postfixKeys, "keys := make([]int, 0, len(foo))\nfor k := range foo {\n\tkeys = append(keys, k)\n}\n")
+	foo.fo //@snippet(re"() \\/\\/", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(re"() \\/\\/", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(re"() \\/\\/", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
+	foo.clear //@snippet(re"() \\/\\/", postfixClear, "for k := range foo {\n\tdelete(foo, k)\n}\n")
+	foo.keys //@snippet(re"() \\/\\/", postfixKeys, "keys := make([]int, 0, len(foo))\nfor k := range foo {\n\tkeys = append(keys, k)\n}\n")
 }
 
 func _() {
@@ -93,12 +93,12 @@ func _() {
 	/* range! */ //@item(postfixRangeChannel, "range!", "range over channel", "snippet")
 
 	var foo chan int
-	foo. //@complete(" //", postfixForChannel, postfixIfNotNil, postfixLen, postfixPrint, postfixRangeChannel, postfixVar)
+	foo. //@complete(re"() \\/\\/", postfixForChannel, postfixIfNotNil, postfixLen, postfixPrint, postfixRangeChannel, postfixVar)
 
 	foo = nil
 
-	foo.fo //@snippet(" //", postfixForChannel, "for ${1:} := range foo {\n\t$0\n}")
-	foo.rang //@snippet(" //", postfixRangeChannel, "for ${1:} := range foo {\n\t$0\n}")
+	foo.fo //@snippet(re"() \\/\\/", postfixForChannel, "for ${1:} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(re"() \\/\\/", postfixRangeChannel, "for ${1:} := range foo {\n\t$0\n}")
 }
 
 type T struct {
@@ -110,40 +110,40 @@ func _() (string, T, map[string]string, error) {
 	/* variferr! */ //@item(postfixVarIfErr, "variferr!", "assign variables and check error", "snippet")
 	/* var! */ //@item(postfixVars, "var!", "assign to variables", "snippet")
 
-	strconv.Atoi("32"). //@complete(" //", postfixIfErr, postfixPrint, postfixVars, postfixVarIfErr)
+	strconv.Atoi("32"). //@complete(re"() \\/\\/", postfixIfErr, postfixPrint, postfixVars, postfixVarIfErr)
 
 	var err error
-	err.iferr //@snippet(" //", postfixIfErr, "if err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
+	err.iferr //@snippet(re"() \\/\\/", postfixIfErr, "if err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
 
-	strconv.Atoi("32").iferr //@snippet(" //", postfixIfErr, "if _, err := strconv.Atoi(\"32\"); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
+	strconv.Atoi("32").iferr //@snippet(re"() \\/\\/", postfixIfErr, "if _, err := strconv.Atoi(\"32\"); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
 
-	strconv.Atoi("32").variferr //@snippet(" //", postfixVarIfErr, "${1:}, ${2:} := strconv.Atoi(\"32\")\nif ${2:} != nil {\n\treturn \"\", T{}, nil, ${3:}\n}\n")
+	strconv.Atoi("32").variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:}, ${2:} := strconv.Atoi(\"32\")\nif ${2:} != nil {\n\treturn \"\", T{}, nil, ${3:}\n}\n")
 
 	// test function return multiple errors
 	var foo func() (error, error)
-	foo().iferr //@snippet(" //", postfixIfErr, "if _, err := foo(); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
-	foo().variferr //@snippet(" //", postfixVarIfErr, "${1:}, ${2:} := foo()\nif ${2:} != nil {\n\treturn \"\", T{}, nil, ${3:}\n}\n")
+	foo().iferr //@snippet(re"() \\/\\/", postfixIfErr, "if _, err := foo(); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
+	foo().variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:}, ${2:} := foo()\nif ${2:} != nil {\n\treturn \"\", T{}, nil, ${3:}\n}\n")
 
 	// test function just return error
 	var bar func() error
-	bar().iferr //@snippet(" //", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
-	bar().variferr //@snippet(" //", postfixVarIfErr, "${1:} := bar()\nif ${1:} != nil {\n\treturn \"\", T{}, nil, ${2:}\n}\n")
+	bar().iferr //@snippet(re"() \\/\\/", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
+	bar().variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:} := bar()\nif ${1:} != nil {\n\treturn \"\", T{}, nil, ${2:}\n}\n")
 }
 
 func _(){
 	/* tostring! */ //@item(postfixToString, "tostring!", "[]byte to string", "snippet")
 	var bs []byte
-	bs. //@complete(" //", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixToString, postfixVar)
+	bs. //@complete(re"() \\/\\/", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixToString, postfixVar)
 	bs = nil
 
 	/* tobytes! */ //@item(postfixToBytes, "tobytes!", "string to []byte", "snippet")
 	/* split! */ //@item(postfixSplit, "split!", "split string", "snippet")
 	var s string
-	s. //@complete(" //", postfixPrint, postfixSplit, postfixToBytes, postfixVar)
+	s. //@complete(re"() \\/\\/", postfixPrint, postfixSplit, postfixToBytes, postfixVar)
 	s = ""
 
 	/* tostring! */ //@item(postfixIntToString, "tostring!", "int to string", "snippet")
 	var i int
-	i. //@complete(" //", postfixPrint, postfixIntToString, postfixVar)
+	i. //@complete(re"() \\/\\/", postfixPrint, postfixIntToString, postfixVar)
 	i = 0
 }

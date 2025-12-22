@@ -100,17 +100,16 @@ func FuzzHex(f *testing.F) {
 ` + part0 + part1 + part2
 
 	tests := []struct {
-		file   string
-		pat    string
-		offset uint32 // UTF16 length from the beginning of pat to what the user just typed
-		want   []string
+		file string
+		pat  string
+		want []string
 	}{
 		// To avoid breaking these assertions as the "testing" package evolves,
 		// use an optional (?) suffix for newer symbols.
-		{"a_test.go", "f.Ad", 3, []string{"Add", "ArtifactDir?", "Attr"}}, // Attr is 1.25, Artifact is 1.26
-		{"c_test.go", " f.F", 4, []string{"Failed"}},
-		{"c_test.go", "f.N", 3, []string{"Name"}},
-		{"b_test.go", "f.F", 3, []string{"Fuzz(func(t *testing.T, a []byte)", "Fail", "FailNow",
+		{"a_test.go", "f.A()d", []string{"Add", "ArtifactDir?", "Attr"}}, // Attr is 1.25, Artifact is 1.26
+		{"c_test.go", " f.F()", []string{"Failed"}},
+		{"c_test.go", "f.N()", []string{"Name"}},
+		{"b_test.go", "f.F()", []string{"Fuzz(func(t *testing.T, a []byte)", "Fail", "FailNow",
 			"Failed", "Fatal", "Fatalf"}},
 	}
 	Run(t, data, func(t *testing.T, env *Env) {
@@ -118,7 +117,6 @@ func FuzzHex(f *testing.F) {
 			env.OpenFile(test.file)
 			env.Await(env.DoneWithOpen())
 			loc := env.RegexpSearch(test.file, test.pat)
-			loc.Range.Start.Character += test.offset // character user just typed? will type?
 			completions := env.Completion(loc)
 			result := compareCompletionLabels(test.want, completions.Items)
 			if result != "" {

@@ -21,8 +21,8 @@ import (
 )
 
 func _() {
-	bob.Bob() //@complete(".")
-	types.b //@complete(" //", Bob_interface)
+	bob.Bob() //@complete(re"()\\.")
+	types.b //@complete(re"() \\/\\/", Bob_interface)
 }
 
 -- types/types.go --

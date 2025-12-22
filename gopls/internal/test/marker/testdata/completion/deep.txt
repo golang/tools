@@ -31,9 +31,9 @@ func wantsDeepB(deepB) {}
 func _() {
 	var a deepA   //@item(deepAVar, "a", "deepA", "var")
 	a.b           //@item(deepABField, "a.b", "deepB", "field")
-	wantsDeepB(a) //@complete(")", deepABField, deepAVar)
+	wantsDeepB(a) //@complete(re"()\\)", deepABField, deepAVar)
 
-	deepA{a} //@snippet("}", deepABField, "a.b")
+	deepA{a} //@snippet(re"()}", deepABField, "a.b")
 }
 
 func wantsContext(context.Context) {}
@@ -42,14 +42,14 @@ func _() {
 	context.Background() //@item(ctxBackground, "context.Background", "func() context.Context", "func", "Background returns a non-nil, empty Context.")
 	context.TODO()       //@item(ctxTODO, "context.TODO", "func() context.Context", "func", "TODO returns a non-nil, empty Context.")
 
-	wantsContext(c) //@rank(")", ctxBackground),rank(")", ctxTODO)
+	wantsContext(c) //@rank(re"()\\)", ctxBackground),rank(re"()\\)", ctxTODO)
 }
 
 func _() {
 	var cork struct{ err error }
 	cork.err         //@item(deepCorkErr, "cork.err", "error", "field")
 	context          //@item(deepContextPkg, "context", "\"context\"", "package")
-	var _ error = co // rank(" //", deepCorkErr, deepContextPkg)
+	var _ error = co // rank(re"() \\/\\/", deepCorkErr, deepContextPkg)
 }
 
 func _() {
@@ -59,7 +59,7 @@ func _() {
 	}
 	var circle deepCircle   //@item(deepCircle, "circle", "deepCircle", "var")
 	circle.deepCircle       //@item(deepCircleField, "circle.deepCircle", "*deepCircle", "field")
-	var _ deepCircle = circ //@complete(" //", deepCircle, deepCircleField),snippet(" //", deepCircleField, "*circle.deepCircle")
+	var _ deepCircle = circ //@complete(re"() \\/\\/", deepCircle, deepCircleField),snippet(re"() \\/\\/", deepCircleField, "*circle.deepCircle")
 }
 
 func _() {
@@ -77,7 +77,7 @@ func _() {
 	var a deepEmbedA //@item(deepEmbedA, "a", "deepEmbedA", "var")
 	a.deepEmbedB     //@item(deepEmbedB, "a.deepEmbedB", "deepEmbedB", "field")
 	a.deepEmbedC     //@item(deepEmbedC, "a.deepEmbedC", "deepEmbedC", "field")
-	wantsC(a)        //@complete(")", deepEmbedC, deepEmbedA, deepEmbedB)
+	wantsC(a)        //@complete(re"()\\)", deepEmbedC, deepEmbedA, deepEmbedB)
 }
 
 func _() {
@@ -87,7 +87,7 @@ func _() {
 	}
 
 	nested{
-		a: 123, //@complete(" //", deepNestedField)
+		a: 123, //@complete(re"() \\/\\/", deepNestedField)
 	}
 }
 
@@ -106,5 +106,5 @@ func _() {
 
 	// "a.d" should be ranked above the deeper "a.b.c"
 	var i int
-	i = a //@complete(" //", deepAD, deepABC, deepA, deepAB)
+	i = a //@complete(re"() \\/\\/", deepAD, deepABC, deepA, deepAB)
 }

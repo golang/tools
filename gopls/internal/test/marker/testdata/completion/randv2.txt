@@ -14,7 +14,7 @@ go 1.22
 
 -- main.go --
 package main
-var _ = rand.Int64 //@complete(re"Int64", Int64, Int64N, x64, Uint64, Uint64N), diag("rand", re"undefined: rand")
+var _ = rand.Int64 //@complete(re"()Int64", Int64, Int64N, x64, Uint64, Uint64N), diag("rand", re"undefined: rand")
 // ordering of these requires completion order be deterministic
 // for now, we do not know the types. Awaiting CL 665335
 //@item(Int64, "Int64", "func (from \"math/rand/v2\")", "func")

@@ -26,10 +26,10 @@ var _ = fooType() //@item(fvFooTypeCall, "fooType", "func() int", "var")
 
 func _() {
 	var f func() int
-	f = foo //@complete(" //", fvFooFunc, fvFooType, fvFooVar)
+	f = foo //@complete(re"() \\/\\/", fvFooFunc, fvFooType, fvFooVar)
 
 	var i int
-	i = foo //@complete(" //", fvFooFuncCall, fvFooTypeCall, fvFooVarCall)
+	i = foo //@complete(re"() \\/\\/", fvFooFuncCall, fvFooTypeCall, fvFooVarCall)
 }
 
 -- generic/func_value.go --
@@ -57,5 +57,5 @@ func _() {
 	Bar[T].Num //@item(bar, "Bar[T]().Num", "func() int", "method")
 	Bar[T].Bar2().Num //@item(bar2, "Bar[T]().Bar2().Num", "func() int", "method")
 	var i int
-	i = Num //@complete(" //", bar, bar2)
+	i = Num //@complete(re"() \\/\\/", bar, bar2)
 }

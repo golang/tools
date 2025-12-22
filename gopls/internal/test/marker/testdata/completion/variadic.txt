@@ -20,27 +20,27 @@ func _() {
 		v any //@item(vIntf, "v", "any", "var")
 	)
 
-	foo()           //@rank(")", vInt, vStr),rank(")", vInt, vStrSlice)
-	foo(123, )      //@rank(")", vStr, vInt),rank(")", vStrSlice, vInt)
-	foo(123, "", )  //@rank(")", vStr, vInt),rank(")", vStr, vStrSlice)
-	foo(123, s, "") //@rank(", \"", vStr, vStrSlice)
+	foo()           //@rank(re"()\\)", vInt, vStr),rank(re"()\\)", vInt, vStrSlice)
+	foo(123, )      //@rank(re"()\\)", vStr, vInt),rank(re"()\\)", vStrSlice, vInt)
+	foo(123, "", )  //@rank(re"()\\)", vStr, vInt),rank(re"()\\)", vStr, vStrSlice)
+	foo(123, s, "") //@rank(re"(), \"", vStr, vStrSlice)
 
   // snippet will add the "..." for you
-	foo(123, ) //@snippet(")", vStrSlice, "ss..."),snippet(")", vFunc, "bar()..."),snippet(")", vStr, "s")
+	foo(123, ) //@snippet(re"()\\)", vStrSlice, "ss..."),snippet(re"()\\)", vFunc, "bar()..."),snippet(re"()\\)", vStr, "s")
 
 	// don't add "..." for any
-	foo(123, ) //@snippet(")", vIntf, "v")
+	foo(123, ) //@snippet(re"()\\)", vIntf, "v")
 }
 
 func qux(...func()) {}
 func f()            {} //@item(vVarArg, "f", "func()", "func")
 
 func _() {
-	qux(f) //@snippet(")", vVarArg, "f")
+	qux(f) //@snippet(re"()\\)", vVarArg, "f")
 }
 
 func _() {
-	foo(0, []string{}...) //@complete(")")
+	foo(0, []string{}...) //@complete(re"()\\)")
 }
 
 -- variadic_intf.go --
@@ -63,5 +63,5 @@ func _() {
 		bazes []baz     //@item(vIntfSlice, "bazes", "[]baz", "var")
 	)
 
-	wantsBaz() //@rank(")", vImpl, vImplSlice),rank(")", vIntfSlice, vImplSlice)
+	wantsBaz() //@rank(re"()\\)", vImpl, vImplSlice),rank(re"()\\)", vIntfSlice, vImplSlice)
 }

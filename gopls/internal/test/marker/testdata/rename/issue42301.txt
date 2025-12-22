@@ -8,7 +8,7 @@ go 1.21
 -- a/a.go --
 package a
 
-// Foo doesn't do anything, Foo is just an empty function. //@rename("Foo", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
+// Foo doesn't do anything, Foo is just an empty function. //@rename(re"()Foo", "Bar", fooToBar), renameerr(re"()anything", "Bar", "no identifier found")
 func Foo() {}
 
 func _() {
@@ -27,32 +27,32 @@ func _() {
 -- c/c.go --
 package c
 
-// A is an empty struct. //@rename("A", "B", aToB)
+// A is an empty struct. //@rename(re"()A", "B", aToB)
 type A struct {}
 
 -- d/d.go --
 package d
 
-// Bar doesn't do anything, Bar is just an empty function. //@loc(Bar, re`^.*?\bBar\b.*?\b(Bar)\b.*`), rename(Bar, "Foo", barToFoo)
+// Bar doesn't do anything, Bar is just an empty function. //@rename(re", ()Bar", "Foo", barToFoo)
 func Bar() {}
 
 -- @aToB/c/c.go --
 @@ -3,2 +3,2 @@
--// A is an empty struct. //@rename("A", "B", aToB)
+-// A is an empty struct. //@rename(re"()A", "B", aToB)
 -type A struct {}
-+// B is an empty struct. //@rename("B", "B", aToB)
++// B is an empty struct. //@rename(re"()B", "B", aToB)
 +type B struct {}
 -- @barToFoo/d/d.go --
 @@ -3,2 +3,2 @@
--// Bar doesn't do anything, Bar is just an empty function. //@loc(Bar, re`^.*?\bBar\b.*?\b(Bar)\b.*`), rename(Bar, "Foo", barToFoo)
+-// Bar doesn't do anything, Bar is just an empty function. //@rename(re", ()Bar", "Foo", barToFoo)
 -func Bar() {}
-+// Foo doesn't do anything, Foo is just an empty function. //@loc(Foo, re`^.*?\bBar\b.*?\b(Foo)\b.*`), rename(Foo, "Foo", barToFoo)
++// Foo doesn't do anything, Foo is just an empty function. //@rename(re", ()Foo", "Foo", barToFoo)
 +func Foo() {}
 -- @fooToBar/a/a.go --
 @@ -3,2 +3,2 @@
--// Foo doesn't do anything, Foo is just an empty function. //@rename("Foo", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
+-// Foo doesn't do anything, Foo is just an empty function. //@rename(re"()Foo", "Bar", fooToBar), renameerr(re"()anything", "Bar", "no identifier found")
 -func Foo() {}
-+// Bar doesn't do anything, Bar is just an empty function. //@rename("Bar", "Bar", fooToBar), renameerr("anything", "Bar", "no identifier found")
++// Bar doesn't do anything, Bar is just an empty function. //@rename(re"()Bar", "Bar", fooToBar), renameerr(re"()anything", "Bar", "no identifier found")
 +func Bar() {}
 @@ -7 +7 @@
 -	Foo()

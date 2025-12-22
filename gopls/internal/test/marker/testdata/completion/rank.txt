@@ -24,7 +24,7 @@ type foo struct {
 }
 
 func f() {
-	foo := foo{} //@rank("}", c_rank, b_rank, a_rank)
+	foo := foo{} //@rank(re"()}", c_rank, b_rank, a_rank)
 }
 
 -- assign_rank.go --
@@ -42,24 +42,24 @@ var (
 func _() {
 	orange := 1      //@item(orange, "orange", "int", "var")
 	grape := "hello" //@item(grape, "grape", "string", "var")
-	orange, grape = 2, "hello"  //@complete(" \"", grape, pear, string, orange, apple)
+	orange, grape = 2, "hello"  //@complete(re"() \"", grape, pear, string, orange, apple)
 }
 
 func _() {
 	var pineapple int //@item(pineapple, "pineapple", "int", "var")
-	pineapple = 1    //@complete(" 1", pineapple, apple, int, pear)
+	pineapple = 1    //@complete(re"() 1", pineapple, apple, int, pear)
 
-	y := //@complete(" /", pineapple, apple, pear)
+	y := //@complete(re"() \\/", pineapple, apple, pear)
 }
 
 -- binexpr_rank.go --
 package rank
 
 func _() {
-  _ = 5 +  ; //@complete(" ;", apple, pear)
-  y :=  + 5; //@complete(" +", apple, pear)
+  _ = 5 +  ; //@complete(re"() ;", apple, pear)
+  y :=  + 5; //@complete(re"() +", apple, pear)
 
-  if 6 ==  {} //@complete(" {", apple, pear)
+  if 6 ==  {} //@complete(re"() {", apple, pear)
 }
 
 -- boolexpr_rank.go --
@@ -71,7 +71,7 @@ func _() {
 	}
 
 	var foo, bar int     //@item(boolExprBar, "bar", "int", "var")
-	if foo == 123 && b { //@rank(" {", boolExprBar, boolExprFunc)
+	if foo == 123 && b { //@rank(re"() {", boolExprBar, boolExprFunc)
 	}
 }
 
@@ -91,7 +91,7 @@ func _() {
 		convA string   //@item(convertA, "convA", "string", "var")
 		convB []string //@item(convertB, "convB", "[]string", "var")
 	)
-	wantsStrList(strList(conv)) //@complete("))", convertB, convertA)
+	wantsStrList(strList(conv)) //@complete(re"()\\)\\)", convertB, convertA)
 }
 
 func _() {
@@ -106,32 +106,32 @@ func _() {
 	)
 
 	var foo int
-	foo = conv //@rank(" //", convertE, convertD)
+	foo = conv //@rank(re"() \\/\\/", convertE, convertD)
 
 	var mi myInt
-	mi = conv //@rank(" //", convertG, convertD, convertE)
-	mi + conv //@rank(" //", convertG, convertD, convertE)
+	mi = conv //@rank(re"() \\/\\/", convertG, convertD, convertE)
+	mi + conv //@rank(re"() \\/\\/", convertG, convertD, convertE)
 
-	1 + conv //@rank(" //", convertD, convertC),rank(" //", convertE, convertC),rank(" //", convertG, convertC)
+	1 + conv //@rank(re"() \\/\\/", convertD, convertC),rank(re"() \\/\\/", convertE, convertC),rank(re"() \\/\\/", convertG, convertC)
 
 	type myString string
 	var ms myString
-	ms = conv //@rank(" //", convertC, convertF)
+	ms = conv //@rank(re"() \\/\\/", convertC, convertF)
 
 	type myUint uint32
 	var mu myUint
-	mu = conv //@rank(" //", convertD, convertE)
+	mu = conv //@rank(re"() \\/\\/", convertD, convertE)
 
 	// don't downrank constants when assigning to any
-	var _ any = c //@rank(" //", convertD, complex)
+	var _ any = c //@rank(re"() \\/\\/", convertD, complex)
 
-	var _ time.Duration = conv //@rank(" //", convertD, convertE),snippet(" //", convertE, "time.Duration(convE)")
+	var _ time.Duration = conv //@rank(re"() \\/\\/", convertD, convertE),snippet(re"() \\/\\/", convertE, "time.Duration(convE)")
 
 	var convP myInt   //@item(convertP, "convP", "myInt", "var")
-	var _ *int = conv //@snippet(" //", convertP, "(*int)(&convP)")
+	var _ *int = conv //@snippet(re"() \\/\\/", convertP, "(*int)(&convP)")
 
 	var ff float64 //@item(convertFloat, "ff", "float64", "var")
-	f == convD     //@snippet(" =", convertFloat, "ff")
+	f == convD     //@snippet(re"() =", convertFloat, "ff")
 }
 
 -- switch_rank.go --
@@ -141,7 +141,7 @@ import "time"
 
 func _() {
 	switch pear {
-	case _: //@rank("_", pear, apple)
+	case _: //@rank(re"()_", pear, apple)
 	}
 
 	time.Monday //@item(timeMonday, "time.Monday", "time.Weekday", "const"),item(monday ,"Monday", "time.Weekday", "const")
@@ -159,11 +159,11 @@ func _() {
 	case time.Saturday, time.Sunday:
 	// TODO: these tests were disabled because they require deep completion
 	// (which would break other tests)
-	case t: // rank(":", timeFriday, timeMonday)
-	case time.: //@rank(":", friday, monday)
+	case t: // rank(re"():", timeFriday, timeMonday)
+	case time.: //@rank(re"():", friday, monday)
 
 	case now.Weekday():
-	case week: // rank(":", thenWeekday, nowWeekday)
+	case week: // rank(re"():", thenWeekday, nowWeekday)
 	}
 }
 
@@ -174,7 +174,7 @@ func _() {
 	type flower int //@item(flower, "flower", "int", "type")
 	var fig string  //@item(fig, "fig", "string", "var")
 
-	_ = interface{}(nil).(f) //@complete(") //", flower)
+	_ = interface{}(nil).(f) //@complete(re"()\\) \\/\\/", flower)
 }
 
 -- type_switch_rank.go --
@@ -190,8 +190,8 @@ func _() {
 	var banana string //@item(banana, "banana", "string", "var")
 
 	switch interface{}(pear).(type) {
-	case b: //@complete(":", basket)
-		b //@complete(" //", banana, basket)
+	case b: //@complete(re"():", basket)
+		b //@complete(re"() \\/\\/", banana, basket)
 	}
 
 	Ident  //@item(astIdent, "Ident", "struct{...}", "struct")
@@ -199,14 +199,14 @@ func _() {
 
 	switch ast.Node(nil).(type) {
 	case *ast.Ident:
-	case *ast.I: //@rank(":", astIfStmt, astIdent)
+	case *ast.I: //@rank(re"():", astIfStmt, astIdent)
 	}
 
 	Stringer   //@item(fmtStringer, "Stringer", "interface{...}", "interface")
 	GoStringer //@item(fmtGoStringer, "GoStringer", "interface{...}", "interface")
 
 	switch interface{}(nil).(type) {
-	case fmt.Stringer: //@rank(":", fmtStringer, fmtGoStringer)
+	case fmt.Stringer: //@rank(re"():", fmtStringer, fmtGoStringer)
 	}
 }
 

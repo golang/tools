@@ -25,47 +25,47 @@ func _() {
 		aMapType   map[string]int //@item(builtinMapType, "aMapType", "map[string]int", "type")
 	)
 
-	close() //@rank(")", builtinChan, builtinSlice)
+	close() //@rank(re"()\\)", builtinChan, builtinSlice)
 
-	append() //@rank(")", builtinSlice, builtinChan)
+	append() //@rank(re"()\\)", builtinSlice, builtinChan)
 
-	var _ []byte = append([]byte(nil), ""...) //@rank(") //")
+	var _ []byte = append([]byte(nil), ""...) //@rank(re"()\\) \\/\\/")
 
-	copy()           //@rank(")", builtinSlice, builtinChan)
-	copy(aSlice, aS) //@rank(")", builtinSlice, builtinString)
-	copy(aS, aSlice) //@rank(",", builtinSlice, builtinString)
+	copy()           //@rank(re"()\\)", builtinSlice, builtinChan)
+	copy(aSlice, aS) //@rank(re"()\\)", builtinSlice, builtinString)
+	copy(aS, aSlice) //@rank(re"(),", builtinSlice, builtinString)
 
-	delete()         //@rank(")", builtinMap, builtinChan)
-	delete(aMap, aS) //@rank(")", builtinString, builtinSlice)
+	delete()         //@rank(re"()\\)", builtinMap, builtinChan)
+	delete(aMap, aS) //@rank(re"()\\)", builtinString, builtinSlice)
 
 	aMapFunc := func() map[int]int { //@item(builtinMapFunc, "aMapFunc", "func() map[int]int", "var")
 		return nil
 	}
-	delete() //@rank(")", builtinMapFunc, builtinSlice)
+	delete() //@rank(re"()\\)", builtinMapFunc, builtinSlice)
 
-	len() //@rank(")", builtinSlice, builtinInt),rank(")", builtinMap, builtinInt),rank(")", builtinString, builtinInt),rank(")", builtinArray, builtinInt),rank(")", builtinArrayPtr, builtinPtr),rank(")", builtinChan, builtinInt)
+	len() //@rank(re"()\\)", builtinSlice, builtinInt),rank(re"()\\)", builtinMap, builtinInt),rank(re"()\\)", builtinString, builtinInt),rank(re"()\\)", builtinArray, builtinInt),rank(re"()\\)", builtinArrayPtr, builtinPtr),rank(re"()\\)", builtinChan, builtinInt)
 
-	cap() //@rank(")", builtinSlice, builtinMap),rank(")", builtinArray, builtinString),rank(")", builtinArrayPtr, builtinPtr),rank(")", builtinChan, builtinInt)
+	cap() //@rank(re"()\\)", builtinSlice, builtinMap),rank(re"()\\)", builtinArray, builtinString),rank(re"()\\)", builtinArrayPtr, builtinPtr),rank(re"()\\)", builtinChan, builtinInt)
 
-	make()              //@rank(")", builtinMapType, int),rank(")", builtinChanType, int),rank(")", builtinSliceType, int),rank(")", builtinMapType, int)
-	make(aSliceType, a) //@rank(")", builtinInt, builtinSlice)
+	make()              //@rank(re"()\\)", builtinMapType, int),rank(re"()\\)", builtinChanType, int),rank(re"()\\)", builtinSliceType, int),rank(re"()\\)", builtinMapType, int)
+	make(aSliceType, a) //@rank(re"()\\)", builtinInt, builtinSlice)
 
 	type myInt int
 	var mi myInt        //@item(builtinMyInt, "mi", "myInt", "var")
-	make(aSliceType, m) //@snippet(")", builtinMyInt, "mi")
+	make(aSliceType, m) //@snippet(re"()\\)", builtinMyInt, "mi")
 
-	var _ []int = make() //@rank(")", builtinSliceType, builtinMapType)
+	var _ []int = make() //@rank(re"()\\)", builtinSliceType, builtinMapType)
 
 	type myStruct struct{}  //@item(builtinStructType, "myStruct", "struct{...}", "struct")
-	var _ *myStruct = new() //@rank(")", builtinStructType, int)
+	var _ *myStruct = new() //@rank(re"()\\)", builtinStructType, int)
 
-	for k := range a { //@rank(" {", builtinSlice, builtinInt),rank(" {", builtinString, builtinInt),rank(" {", builtinChan, builtinInt),rank(" {", builtinArray, builtinInt),rank(" {", builtinArrayPtr, builtinInt),rank(" {", builtinMap, builtinInt),
+	for k := range a { //@rank(re"() {", builtinSlice, builtinInt),rank(re"() {", builtinString, builtinInt),rank(re"() {", builtinChan, builtinInt),rank(re"() {", builtinArray, builtinInt),rank(re"() {", builtinArrayPtr, builtinInt),rank(re"() {", builtinMap, builtinInt),
 	}
 
-	for k, v := range a { //@rank(" {", builtinSlice, builtinChan)
+	for k, v := range a { //@rank(re"() {", builtinSlice, builtinChan)
 	}
 
-	<-a //@rank(" //", builtinChan, builtinInt)
+	<-a //@rank(re"() \\/\\/", builtinChan, builtinInt)
 }
 
 -- builtin_types.go --
@@ -74,11 +74,11 @@ package builtins
 func _() {
 	var _ []bool //@item(builtinBoolSliceType, "[]bool", "[]bool", "type")
 
-	var _ []bool = make() //@rank(")", builtinBoolSliceType, int)
+	var _ []bool = make() //@rank(re"()\\)", builtinBoolSliceType, int)
 
-	var _ []bool = make([], 0) //@rank(",", bool, int)
+	var _ []bool = make([], 0) //@rank(re"(),", bool, int)
 
-	var _ [][]bool = make([][], 0) //@rank(",", bool, int)
+	var _ [][]bool = make([][], 0) //@rank(re"(),", bool, int)
 }
 
 -- builtins.go --
@@ -101,18 +101,18 @@ package builtins
 
 func _() {
 	const (
-		foo = iota //@complete(" //", iota)
+		foo = iota //@complete(re"() \\/\\/", iota)
 	)
 
-	iota //@complete(" //")
+	iota //@complete(re"() \\/\\/")
 
 	var iota int //@item(iotaVar, "iota", "int", "var")
 
-	iota //@complete(" //", iotaVar)
+	iota //@complete(re"() \\/\\/", iotaVar)
 }
 
 func _() {
 	var twoRedUpEnd bool //@item(TRUEVar, "twoRedUpEnd", "bool", "var")
 
-	var _ bool = true //@rank(" //", _true, TRUEVar)
+	var _ bool = true //@rank(re"() \\/\\/", _true, TRUEVar)
 }

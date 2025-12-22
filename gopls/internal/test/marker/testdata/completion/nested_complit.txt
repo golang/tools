@@ -20,6 +20,6 @@ func _() {
 	_ = make([]ncFoo, 0) //@item(makeNCFoo, "make([]ncFoo, 0)", "", "func")
 
 	_ := ncBar{
-		baz: [] //@complete(" //", litNCFoo, makeNCFoo, structNCBar, structNCFoo)
+		baz: [] //@complete(re"() \\/\\/", litNCFoo, makeNCFoo, structNCBar, structNCFoo)
 	}
 }

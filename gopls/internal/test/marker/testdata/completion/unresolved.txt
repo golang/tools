@@ -12,5 +12,5 @@ This test verifies gopls does not crash on fake "resolved" types.
 package unresolved
 
 func foo(any) {
-	foo(func(i, j f //@complete(" //")
+	foo(func(i, j f //@complete(re"() \\/\\/")
 }

@@ -19,7 +19,7 @@ go 1.18
 package danglingstmt
 
 func _() {
-	for bar //@rank(" //", danglingBar)
+	for bar //@rank(re"() \\/\\/", danglingBar)
 }
 
 func bar() bool { //@item(danglingBar, "bar", "func() bool", "func")
@@ -30,7 +30,7 @@ func bar() bool { //@item(danglingBar, "bar", "func() bool", "func")
 package danglingstmt
 
 func _() {
-	for i := bar //@rank(" //", danglingBar2)
+	for i := bar //@rank(re"() \\/\\/", danglingBar2)
 }
 
 func bar2() int { //@item(danglingBar2, "bar2", "func() int", "func")
@@ -41,7 +41,7 @@ func bar2() int { //@item(danglingBar2, "bar2", "func() int", "func")
 package danglingstmt
 
 func _() {
-	for i := bar3(); i > bar //@rank(" //", danglingBar3)
+	for i := bar3(); i > bar //@rank(re"() \\/\\/", danglingBar3)
 }
 
 func bar3() int { //@item(danglingBar3, "bar3", "func() int", "func")
@@ -52,7 +52,7 @@ func bar3() int { //@item(danglingBar3, "bar3", "func() int", "func")
 package danglingstmt
 
 func _() {
-	for i := bar4(); i > bar4(); i += bar //@rank(" //", danglingBar4)
+	for i := bar4(); i > bar4(); i += bar //@rank(re"() \\/\\/", danglingBar4)
 }
 
 func bar4() int { //@item(danglingBar4, "bar4", "func() int", "func")
@@ -63,7 +63,7 @@ func bar4() int { //@item(danglingBar4, "bar4", "func() int", "func")
 package danglingstmt
 
 func _() {
-	if foo //@rank(" //", danglingFoo)
+	if foo //@rank(re"() \\/\\/", danglingFoo)
 }
 
 func foo() bool { //@item(danglingFoo, "foo", "func() bool", "func")
@@ -78,13 +78,13 @@ func bar5() bool { //@item(danglingBar5, "bar5", "func() bool", "func")
 }
 
 func _() {
-	if b //@rank(" //", danglingBar5)
+	if b //@rank(re"() \\/\\/", danglingBar5)
 
 -- dangling_if_init.go --
 package danglingstmt
 
 func _() {
-	if i := foo //@rank(" //", danglingFoo2)
+	if i := foo //@rank(re"() \\/\\/", danglingFoo2)
 }
 
 func foo2() bool { //@item(danglingFoo2, "foo2", "func() bool", "func")
@@ -95,7 +95,7 @@ func foo2() bool { //@item(danglingFoo2, "foo2", "func() bool", "func")
 package danglingstmt
 
 func _() {
-	if i := 123; foo //@rank(" //", danglingFoo3)
+	if i := 123; foo //@rank(re"() \\/\\/", danglingFoo3)
 }
 
 func foo3() bool { //@item(danglingFoo3, "foo3", "func() bool", "func")
@@ -111,14 +111,14 @@ func walrus() bool { //@item(danglingWalrus, "walrus", "func() bool", "func")
 
 func _() {
 	if true &&
-		walrus //@complete(" //", danglingWalrus)
+		walrus //@complete(re"() \\/\\/", danglingWalrus)
 }
 
 -- dangling_selector_1.go --
 package danglingstmt
 
 func _() {
-	x. //@rank(" //", danglingI)
+	x. //@rank(re"() \\/\\/", danglingI)
 }
 
 var x struct { i int } //@item(danglingI, "i", "int", "field")
@@ -131,15 +131,15 @@ package danglingstmt
 // import "golang.org/lsptests/foo"
 
 func _() {
-	foo. // rank(" //", Foo)
-	var _ = []string{foo.} // rank("}", Foo)
+	foo. // rank(re"() \\/\\/", Foo)
+	var _ = []string{foo.} // rank(re"()}", Foo)
 }
 
 -- dangling_switch_init.go --
 package danglingstmt
 
 func _() {
-	switch i := baz //@rank(" //", danglingBaz)
+	switch i := baz //@rank(re"() \\/\\/", danglingBaz)
 }
 
 func baz() int { //@item(danglingBaz, "baz", "func() int", "func")
@@ -150,7 +150,7 @@ func baz() int { //@item(danglingBaz, "baz", "func() int", "func")
 package danglingstmt
 
 func _() {
-	switch i := 0; baz //@rank(" //", danglingBaz2)
+	switch i := 0; baz //@rank(re"() \\/\\/", danglingBaz2)
 }
 
 func baz2() int { //@item(danglingBaz2, "baz2", "func() int", "func")

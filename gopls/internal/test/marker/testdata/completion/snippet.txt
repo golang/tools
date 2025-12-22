@@ -32,39 +32,39 @@ func (Foo) BazBar() func() {} //@item(snipMethodBazBar, "BazBar", "func() func()
 func (Foo) BazBaz(at AliasType) func() {} //@item(snipMethodBazBaz, "BazBaz", "func(at AliasType) func()", "method")
 
 func _() {
-	f //@snippet(" //", snipFoo, "foo(${1:})")
+	f //@snippet(re"() \\/\\/", snipFoo, "foo(${1:})")
 
-	bar //@snippet(" //", snipBar, "bar(${1:})")
+	bar //@snippet(re"() \\/\\/", snipBar, "bar(${1:})")
 
-	baz() //@snippet("(", snipBaz, "baz")
+	baz() //@snippet(re"()\\(", snipBaz, "baz")
 
-	bar(nil) //@snippet("(", snipBar, "bar")
-	bar(ba) //@snippet(")", snipBar, "bar(${1:})")
+	bar(nil) //@snippet(re"()\\(", snipBar, "bar")
+	bar(ba) //@snippet(re"()\\)", snipBar, "bar(${1:})")
 	var f Foo
-	bar(f.Ba) //@snippet(")", snipMethodBaz, "Baz()")
-	(bar)(nil) //@snippet(")", snipBar, "bar(${1:})")
-	(f.Ba)() //@snippet(")", snipMethodBaz, "Baz()")
+	bar(f.Ba) //@snippet(re"()\\)", snipMethodBaz, "Baz()")
+	(bar)(nil) //@snippet(re"()\\)", snipBar, "bar(${1:})")
+	(f.Ba)() //@snippet(re"()\\)", snipMethodBaz, "Baz()")
 
 	Foo{
-		B //@snippet(" //", snipFieldBar, "Bar: ${1:},")
+		B //@snippet(re"() \\/\\/", snipFieldBar, "Bar: ${1:},")
 	}
 
 	Foo{
-		F //@snippet(" //", snipFieldFunc, "Func: ${1:},")
+		F //@snippet(re"() \\/\\/", snipFieldFunc, "Func: ${1:},")
 	}
 
-	Foo{B} //@snippet("}", snipFieldBar, "Bar: ${1:}")
-	Foo{} //@snippet("}", snipFieldBar, "Bar: ${1:}")
+	Foo{B} //@snippet(re"()}", snipFieldBar, "Bar: ${1:}")
+	Foo{} //@snippet(re"()}", snipFieldBar, "Bar: ${1:}")
 
-	Foo{Foo{}.B} //@snippet("} ", snipFieldBar, "Bar")
+	Foo{Foo{}.B} //@snippet(re"()} ", snipFieldBar, "Bar")
 
 	var err error
-	err.Error() //@snippet("E", Error, "Error()")
-	f.Baz()     //@snippet("B", snipMethodBaz, "Baz()")
+	err.Error() //@snippet(re"()E", Error, "Error()")
+	f.Baz()     //@snippet(re"()B", snipMethodBaz, "Baz()")
 
-	f.Baz()     //@snippet("(", snipMethodBazBar, "BazBar")
+	f.Baz()     //@snippet(re"()\\(", snipMethodBazBar, "BazBar")
 
-	f.Baz()     //@snippet("B", snipMethodBazBaz, "BazBaz(${1:})")
+	f.Baz()     //@snippet(re"()B", snipMethodBazBaz, "BazBaz(${1:})")
 }
 
 func _() {
@@ -72,5 +72,5 @@ func _() {
 		a int
 		b float64 //@item(snipBarB, "b", "float64")
 	}
-	bar{b} //@snippet("}", snipBarB, "b: ${1:}")
+	bar{b} //@snippet(re"()}", snipBarB, "b: ${1:}")
 }

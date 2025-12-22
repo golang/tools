@@ -18,35 +18,35 @@ func two[a int | string, b float64 | int]() {}
 type three[a any] int
 
 func _() {
-	one[]() //@rank("]", string, float64)
-	two[]() //@rank("]", int, float64)
-	two[int, f]() //@rank("]", float64, float32)
-	int(three[]) //@rank("]") // must not crash (golang/go#70889)
+	one[]() //@rank(re"()]", string, float64)
+	two[]() //@rank(re"()]", int, float64)
+	two[int, f]() //@rank(re"()]", float64, float32)
+	int(three[]) //@rank(re"()]") // must not crash (golang/go#70889)
 }
 
 func slices[a []int | []float64]() {} //@item(tpInts, "[]int", "[]int", "type"),item(tpFloats, "[]float64", "[]float64", "type")
 
 func _() {
-	slices[]() //@rank("]", tpInts),rank("]", tpFloats)
+	slices[]() //@rank(re"()]", tpInts),rank(re"()]", tpFloats)
 }
 
 type s[a int | string] struct{}
 
 func _() {
-	s[]{} //@rank("]", int, float64)
+	s[]{} //@rank(re"()]", int, float64)
 }
 
 func takesGeneric[a int | string](s[a]) {
 	"s[a]{}" //@item(tpInScopeLit, "s[a]{}", "", "var")
-	takesGeneric() //@rank(")", tpInScopeLit),snippet(")", tpInScopeLit, "s[a]{\\}")
+	takesGeneric() //@rank(re"()\\)", tpInScopeLit),snippet(re"()\\)", tpInScopeLit, "s[a]{\\}")
 }
 
 func _() {
 	s[int]{} //@item(tpInstLit, "s[int]{}", "", "var")
-	takesGeneric[int]() //@rank(")", tpInstLit),snippet(")", tpInstLit, "s[int]{\\}")
+	takesGeneric[int]() //@rank(re"()\\)", tpInstLit),snippet(re"()\\)", tpInstLit, "s[int]{\\}")
 
 	"s[...]{}" //@item(tpUninstLit, "s[...]{}", "", "var")
-	takesGeneric() //@rank(")", tpUninstLit),snippet(")", tpUninstLit, "s[${1:}]{\\}")
+	takesGeneric() //@rank(re"()\\)", tpUninstLit),snippet(re"()\\)", tpUninstLit, "s[${1:}]{\\}")
 }
 
 func returnTP[A int | float64](a A) A { //@item(returnTP, "returnTP", "something", "func")
@@ -54,19 +54,19 @@ func returnTP[A int | float64](a A) A { //@item(returnTP, "returnTP", "something
 }
 
 func _() {
-	var _ int = returnTP //@snippet(" //", returnTP, "returnTP(${1:})")
+	var _ int = returnTP //@snippet(re"() \\/\\/", returnTP, "returnTP(${1:})")
 
 	var aa int //@item(tpInt, "aa", "int", "var")
 	var ab float64 //@item(tpFloat, "ab", "float64", "var")
-	returnTP[int](a) //@rank(")", tpInt, tpFloat)
+	returnTP[int](a) //@rank(re"()\\)", tpInt, tpFloat)
 }
 
 func takesFunc[T any](func(T) T) {
-	var _ func(t T) T = f //@snippet(" //", tpLitFunc, "func(t T) T {$0\\}")
+	var _ func(t T) T = f //@snippet(re"() \\/\\/", tpLitFunc, "func(t T) T {$0\\}")
 }
 
 func _() {
 	_ = "func(...) {}" //@item(tpLitFunc, "func(...) {}", "", "var")
-	takesFunc() //@snippet(")", tpLitFunc, "func(${1:}) ${2:} {$0\\}")
-	takesFunc[int]() //@snippet(")", tpLitFunc, "func(i int) int {$0\\}")
+	takesFunc() //@snippet(re"()\\)", tpLitFunc, "func(${1:}) ${2:} {$0\\}")
+	takesFunc[int]() //@snippet(re"()\\)", tpLitFunc, "func(i int) int {$0\\}")
 }

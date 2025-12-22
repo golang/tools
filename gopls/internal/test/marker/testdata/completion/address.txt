@@ -27,39 +27,39 @@ func _() {
 		b int    //@item(addrB, "b", "int", "var")
 	)
 
-	wantsPtr()   //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
-	wantsPtr(&b) //@snippet(")", addrB, "b")
+	wantsPtr()   //@rank(re"()\\)", addrB, addrA),snippet(re"()\\)", addrB, "&b")
+	wantsPtr(&b) //@snippet(re"()\\)", addrB, "b")
 
-	wantsVariadicPtr() //@rank(")", addrB, addrA),snippet(")", addrB, "&b")
+	wantsVariadicPtr() //@rank(re"()\\)", addrB, addrA),snippet(re"()\\)", addrB, "&b")
 
 	var s foo
 	s.c          //@item(addrDeepC, "s.c", "int", "field")
-	wantsPtr()   //@snippet(")", addrDeepC, "&s.c")
-	wantsPtr(s)  //@snippet(")", addrDeepC, "&s.c")
-	wantsPtr(&s) //@snippet(")", addrDeepC, "s.c")
+	wantsPtr()   //@snippet(re"()\\)", addrDeepC, "&s.c")
+	wantsPtr(s)  //@snippet(re"()\\)", addrDeepC, "&s.c")
+	wantsPtr(&s) //@snippet(re"()\\)", addrDeepC, "s.c")
 
 	// don't add "&" in item (it gets added as an additional edit)
-	wantsPtr(&s.c) //@snippet(")", addrFieldC, "c")
+	wantsPtr(&s.c) //@snippet(re"()\\)", addrFieldC, "c")
 
 	// check dereferencing as well
 	var c *int    //@item(addrCPtr, "c", "*int", "var")
-	var _ int = _ //@rank("_ //", addrCPtr, addrA),snippet("_ //", addrCPtr, "*c")
+	var _ int = _ //@rank(re"= ()", addrCPtr, addrA),snippet(re"= ()", addrCPtr, "*c")
 
-	wantsVariadic() //@rank(")", addrCPtr, addrA),snippet(")", addrCPtr, "*c")
+	wantsVariadic() //@rank(re"()\\)", addrCPtr, addrA),snippet(re"()\\)", addrCPtr, "*c")
 
 	var d **int   //@item(addrDPtr, "d", "**int", "var")
-	var _ int = _ //@rank("_ //", addrDPtr, addrA),snippet("_ //", addrDPtr, "**d")
+	var _ int = _ //@rank(re"= ()", addrDPtr, addrA),snippet(re"= ()", addrDPtr, "**d")
 
 	type namedPtr *int
 	var np namedPtr //@item(addrNamedPtr, "np", "namedPtr", "var")
 
-	var _ int = _ //@rank("_ //", addrNamedPtr, addrA)
+	var _ int = _ //@rank(re"= ()", addrNamedPtr, addrA)
 
 	// don't get tripped up by recursive pointer type
 	type dontMessUp *dontMessUp //@item(dontMessUp, "dontMessUp", "*dontMessUp", "type")
 	var dmu *dontMessUp //@item(addrDMU, "dmu", "*dontMessUp", "var")
 
-	var _ int = dmu //@complete(" //", addrDMU, dontMessUp)
+	var _ int = dmu //@complete(re"dmu()", addrDMU, dontMessUp)
 }
 
 func (f foo) ptr() *foo { return &f }
@@ -73,8 +73,8 @@ func _() {
 	// addressable
 	getFoo().ptr().c //@item(addrGetFooPtrC, "getFoo().ptr().c", "int", "field")
 
-	wantsPtr()   //@snippet(")", addrGetFooPtrC, "&getFoo().ptr().c")
-	wantsPtr(&g) //@snippet(")", addrGetFooPtrC, "getFoo().ptr().c")
+	wantsPtr()   //@snippet(re"()\\)", addrGetFooPtrC, "&getFoo().ptr().c")
+	wantsPtr(&g) //@snippet(re"()\\)", addrGetFooPtrC, "getFoo().ptr().c")
 }
 
 type nested struct {
@@ -88,5 +88,5 @@ func _() {
 	getNested().f.ptr().c //@item(addrNestedPtrC, "getNested().f.ptr().c", "int", "field")
 
 	// addrNestedC is not addressable, so rank lower
-	wantsPtr(getNestedfc) //@complete(")", addrNestedPtrC, addrNestedC)
+	wantsPtr(getNestedfc) //@complete(re"()\\)", addrNestedPtrC, addrNestedC)
 }

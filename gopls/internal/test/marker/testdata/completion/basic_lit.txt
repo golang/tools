@@ -9,11 +9,11 @@ package basiclit
 func _() {
 	var a int // something for lexical completions
 
-	_ = "hello." //@complete(".")
+	_ = "hello." //@complete(re"()\\.")
 
-	_ = 1 //@complete(" //")
+	_ = 1 //@complete(re"() \\/\\/")
 
-	_ = 1. //@complete(".")
+	_ = 1. //@complete(re"()\\.")
 
-	_ = 'a' //@complete("' ")
+	_ = 'a' //@complete(re"()\\' ")
 }

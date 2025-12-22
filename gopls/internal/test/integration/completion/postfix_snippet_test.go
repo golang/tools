@@ -742,7 +742,7 @@ func _() {
 
 				env.SetBufferContent("foo.go", c.before)
 
-				loc := env.RegexpSearch("foo.go", "\n}")
+				loc := env.RegexpSearch("foo.go", `()\n\}`)
 				completions := env.Completion(loc)
 				if len(completions.Items) < 1 {
 					t.Fatalf("expected at least one completion, got %v", completions.Items)

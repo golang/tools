@@ -12,12 +12,12 @@ func iter1(func(int) bool) {}
 func iter2(func(int, int) bool)
 
 func _() {
-	for range i { //@rank(" {", "iter0", "iterNot"),rank(" {", "iter1", "iterNot"),rank(" {", "iter2", "iterNot")
+	for range i { //@rank(re"() {", "iter0", "iterNot"),rank(re"() {", "iter1", "iterNot"),rank(re"() {", "iter2", "iterNot")
 	}
 
-	for k := range i { //@rank(" {", "iter1", "iterNot"),rank(" {", "iter1", "iter0"),rank(" {", "iter2", "iter0")
+	for k := range i { //@rank(re"() {", "iter1", "iterNot"),rank(re"() {", "iter1", "iter0"),rank(re"() {", "iter2", "iter0")
 	}
 
-	for k, v := range i { //@rank(" {", "iter2", "iterNot"),rank(" {", "iter2", "iter0"),rank(" {", "iter2", "iter1")
+	for k, v := range i { //@rank(re"() {", "iter2", "iterNot"),rank(re"() {", "iter2", "iter0"),rank(re"() {", "iter2", "iter1")
 	}
 }

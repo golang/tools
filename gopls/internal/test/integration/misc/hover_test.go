@@ -387,12 +387,11 @@ func Hello() string {
 		// check that the markdown for SignatureHelp and Completion are
 		// the same, and contained in that for Hover (up to trailing \n)
 		env.OpenFile("main.go")
-		loc := env.RegexpSearch("main.go", "func (Hello)")
+		loc := env.RegexpSearch("main.go", "func ()Hello")
 		hover, _ := env.Hover(loc)
 		hoverContent := hover.Value
 
-		loc = env.RegexpSearch("main.go", "//Here")
-		loc.Range.Start.Character -= 3 // Hello(_) //Here
+		loc = env.RegexpSearch("main.go", `Hello()\(\) \/\/Here`) // Hello_() //Here
 		completions := env.Completion(loc)
 		signatures := env.SignatureHelp(loc)
 

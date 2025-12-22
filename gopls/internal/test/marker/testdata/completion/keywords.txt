@@ -17,71 +17,71 @@ package keywords
 //@rank("", type),rank("", func),rank("", var),rank("", const),rank("", import)
 
 func _() {
-	var test int //@rank(" //", int, interface)
+	var test int //@rank(re"() \\/\\/", int, interface)
 	var tChan chan int
-	var _ m //@complete(" //", map)
-	var _ f //@complete(" //", func)
-	var _ c //@complete(" //", chan)
+	var _ m //@complete(re"() \\/\\/", map)
+	var _ f //@complete(re"() \\/\\/", func)
+	var _ c //@complete(re"() \\/\\/", chan)
 
-	var _ str //@rank(" //", string, struct)
+	var _ str //@rank(re"() \\/\\/", string, struct)
 
-	type _ int //@rank(" //", interface, int)
+	type _ int //@rank(re"() \\/\\/", interface, int)
 
-	type _ str //@rank(" //", struct, string)
+	type _ str //@rank(re"() \\/\\/", struct, string)
 
 	switch test {
 	case 1: // TODO: trying to complete case here will break because the parser won't return *ast.Ident
-		b //@complete(" //", break)
+		b //@complete(re"() \\/\\/", break)
 	case 2:
-		f //@complete(" //", fallthrough, for)
-		r //@complete(" //", return)
-		d //@complete(" //", default, defer)
-		c //@complete(" //", case, const)
+		f //@complete(re"() \\/\\/", fallthrough, for)
+		r //@complete(re"() \\/\\/", return)
+		d //@complete(re"() \\/\\/", default, defer)
+		c //@complete(re"() \\/\\/", case, const)
 	}
 
 	switch test.(type) {
-	case fo: //@complete(":")
+	case fo: //@complete(re"():")
 	case int:
-		b //@complete(" //", break)
+		b //@complete(re"() \\/\\/", break)
 	case int32:
-		f //@complete(" //", for)
-		d //@complete(" //", default, defer)
-		r //@complete(" //", return)
-		c //@complete(" //", case, const)
+		f //@complete(re"() \\/\\/", for)
+		d //@complete(re"() \\/\\/", default, defer)
+		r //@complete(re"() \\/\\/", return)
+		c //@complete(re"() \\/\\/", case, const)
 	}
 
 	select {
 	case <-tChan:
-		b //@complete(" //", break)
-		c //@complete(" //", case, const)
+		b //@complete(re"() \\/\\/", break)
+		c //@complete(re"() \\/\\/", case, const)
 	}
 
 	for index := 0; index < test; index++ {
-		c //@complete(" //", const, continue)
-		b //@complete(" //", break)
+		c //@complete(re"() \\/\\/", const, continue)
+		b //@complete(re"() \\/\\/", break)
 	}
 
 	for range []int{} {
-		c //@complete(" //", const, continue)
-		b //@complete(" //", break)
+		c //@complete(re"() \\/\\/", const, continue)
+		b //@complete(re"() \\/\\/", break)
 	}
 
 	// Test function level keywords
 
 	//Using 2 characters to test because map output order is random
-	sw //@complete(" //", switch)
-	se //@complete(" //", select)
+	sw //@complete(re"() \\/\\/", switch)
+	se //@complete(re"() \\/\\/", select)
 
-	f //@complete(" //", for)
-	d //@complete(" //", defer)
-	g //@rank(" //", go),rank(" //", goto)
-	r //@complete(" //", return)
-	i //@complete(" //", if)
-	e //@complete(" //", else)
-	v //@complete(" //", var)
-	c //@complete(" //", const)
+	f //@complete(re"() \\/\\/", for)
+	d //@complete(re"() \\/\\/", defer)
+	g //@rank(re"() \\/\\/", go),rank(re"() \\/\\/", goto)
+	r //@complete(re"() \\/\\/", return)
+	i //@complete(re"() \\/\\/", if)
+	e //@complete(re"() \\/\\/", else)
+	v //@complete(re"() \\/\\/", var)
+	c //@complete(re"() \\/\\/", const)
 
-	for i := r //@complete(" //", range)
+	for i := r //@complete(re"() \\/\\/", range)
 }
 
 /* package */ //@item(package, "package", "", "keyword")
@@ -122,19 +122,19 @@ func _() {
 	foo.bar() // insert some extra statements to exercise our AST surgery
 	variance := 123 //@item(kwVariance, "variance", "int", "var")
 	foo.bar()
-	println(var) //@complete(")", kwVariance)
+	println(var) //@complete(re"()\\)", kwVariance)
 }
 
 func _() {
 	foo.bar()
 	var s struct { variance int } //@item(kwVarianceField, "variance", "int", "field")
 	foo.bar()
-	s.var //@complete(" //", kwVarianceField)
+	s.var //@complete(re"() \\/\\/", kwVarianceField)
 }
 
 func _() {
 	channel := 123 //@item(kwChannel, "channel", "int", "var")
-	chan //@complete(" //", kwChannel)
+	chan //@complete(re"() \\/\\/", kwChannel)
 	foo.bar()
 }
 
@@ -142,14 +142,14 @@ func _() {
 	foo.bar()
 	var typeName string //@item(kwTypeName, "typeName", "string", "var")
 	foo.bar()
-	type //@complete(" //", kwTypeName)
+	type //@complete(re"() \\/\\/", kwTypeName)
 }
 -- empty_select.go --
 package keywords
 
 func _() {
 	select {
-		c //@complete(" //", case)
+		c //@complete(re"() \\/\\/", case)
 	}
 }
 -- empty_switch.go --
@@ -161,7 +161,7 @@ func _() {
 	}
 
 	switch test.(type) {
-		d //@complete(" //", default)
+		d //@complete(re"() \\/\\/", default)
 	}
 }
 
@@ -173,11 +173,11 @@ func _() {
 	switch defaultVar {
 		case 1:
 			println("helloworld")
-		d //@complete(" //", default, defaultVar, defer)
+		d //@complete(re"() \\/\\/", default, defaultVar, defer)
 	}
 	switch defaultVar {
 		default:
-		d //@complete(" //", defaultVar, defer)
+		d //@complete(re"() \\/\\/", defaultVar, defer)
 	}
 	var nested int
 	switch defaultVar {
@@ -186,7 +186,7 @@ func _() {
 				default:
 					println("")
 			}
-		d //@complete(" //", default, defaultVar, defer)
+		d //@complete(re"() \\/\\/", default, defaultVar, defer)
 	}
 }
 
@@ -197,48 +197,48 @@ package keywords
 
 
 func _ () int {
-	r //@complete(" //", returnWithSpace)
+	r //@complete(re"() \\/\\/", returnWithSpace)
 }
 
 func _ () (int, int) {
-	r //@complete(" //", returnWithSpace)
+	r //@complete(re"() \\/\\/", returnWithSpace)
 }
 
 func _ () (_ int) {
-	r //@complete(" //", returnWithSpace)
+	r //@complete(re"() \\/\\/", returnWithSpace)
 }
 
 func _ () (_ int) {
-	r //@complete(" //", returnWithSpace)
+	r //@complete(re"() \\/\\/", returnWithSpace)
 }
 
 func _ () (_, _ int) {
-	r //@complete(" //", returnWithSpace)
+	r //@complete(re"() \\/\\/", returnWithSpace)
 }
 
 func _ () (_, a int) {
-	r //@complete(" //", return)
+	r //@complete(re"() \\/\\/", return)
 }
 
 func _ () {
-	r //@complete(" //", return)
+	r //@complete(re"() \\/\\/", return)
 }
 
 func _ () (a int) {
-	r //@complete(" //", return)
+	r //@complete(re"() \\/\\/", return)
 }
 
 func _ () (a, b int) {
-	r //@complete(" //", return)
+	r //@complete(re"() \\/\\/", return)
 }
 
 func _ () (a, b int, c string) {
-	r //@complete(" //", return)
+	r //@complete(re"() \\/\\/", return)
 }
 
 func _ () (a int) {
 	_ = func (){
-		r //@complete(" //", return)
+		r //@complete(re"() \\/\\/", return)
 	}
 	return
 }
@@ -246,7 +246,7 @@ func _ () (a int) {
 func _ () int {
 	_ = func () (a int) {
 		// func lit will be affected by outer function.
-		r //@complete(" //", returnWithSpace)
+		r //@complete(re"() \\/\\/", returnWithSpace)
 	}
 	return
 }
@@ -254,7 +254,7 @@ func _ () int {
 func _ () {
 	_ = func () int {
 		// func lit will be affected by outer function.
-		r //@complete(" //", return)
+		r //@complete(re"() \\/\\/", return)
 	}
 	return
 }

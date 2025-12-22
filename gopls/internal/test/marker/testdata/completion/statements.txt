@@ -26,13 +26,13 @@ func _() {
 
 	// don't offer "abc = append(abc, )" because "abc" isn't necessarily
 	// better than "abcdef".
-	abc //@complete(" //", stmtABC, stmtABCDEF)
+	abc //@complete(re"() \\/\\/", stmtABC, stmtABCDEF)
 
-	abcdef //@complete(" //", stmtABCDEF, stmtABCDEFAssignAppend)
+	abcdef //@complete(re"() \\/\\/", stmtABCDEF, stmtABCDEFAssignAppend)
 
 	/* append(abc, ) */ //@item(stmtABCAppend, "append(abc, )", "", "func")
 
-	abc = app //@snippet(" //", stmtABCAppend, "append(abc, ${1:})")
+	abc = app //@snippet(re"() \\/\\/", stmtABCAppend, "append(abc, ${1:})")
 }
 
 func _() {
@@ -40,11 +40,11 @@ func _() {
 
 	/* xyz = append(s.xyz, ) */ //@item(stmtXYZAppend, "xyz = append(s.xyz, )", "", "func")
 
-	s.x //@snippet(" //", stmtXYZAppend, "xyz = append(s.xyz, ${1:})")
+	s.x //@snippet(re"() \\/\\/", stmtXYZAppend, "xyz = append(s.xyz, ${1:})")
 
 	/* s.xyz = append(s.xyz, ) */ //@item(stmtDeepXYZAppend, "s.xyz = append(s.xyz, )", "", "func")
 
-	sx //@snippet(" //", stmtDeepXYZAppend, "s.xyz = append(s.xyz, ${1:})")
+	sx //@snippet(re"() \\/\\/", stmtDeepXYZAppend, "s.xyz = append(s.xyz, ${1:})")
 }
 
 func _() {
@@ -52,7 +52,7 @@ func _() {
 
 	/* append(foo[0], ) */ //@item(stmtFooAppend, "append(foo[0], )", "", "func")
 
-	foo[0] = app //@complete(" //", stmtFooAppend),snippet(" //", stmtFooAppend, "append(foo[0], ${1:})")
+	foo[0] = app //@complete(re"() \\/\\/", stmtFooAppend),snippet(re"() \\/\\/", stmtFooAppend, "append(foo[0], ${1:})")
 }
 
 -- if_err_check_return.go --
@@ -72,16 +72,16 @@ func one() (int, float32, io.Writer, *int, []int, bytes.Buffer, error) {
 	//@snippet("", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
 
 	_, err = os.Open("foo")
-	i //@snippet(" //", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+	i //@snippet(re"() \\/\\/", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
 
 	_, err = os.Open("foo")
-	if er //@snippet(" //", stmtOneErrReturn, "err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+	if er //@snippet(re"() \\/\\/", stmtOneErrReturn, "err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
 
 	_, err = os.Open("foo")
-	if //@snippet(" //", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+	if //@snippet(re"() \\/\\/", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
 
 	_, err = os.Open("foo")
-	if //@snippet("//", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
+	if //@snippet(re"()\\/\\/", stmtOneIfErrReturn, "if err != nil {\n\treturn 0, 0, nil, nil, nil, bytes.Buffer{\\}, ${1:err}\n\\}")
 }
 
 -- if_err_check_return2.go --
@@ -109,7 +109,7 @@ func badReturn() (NotAType, error) {
 	//@snippet("", stmtOneIfErrReturn, "if err != nil {\n\treturn , ${1:err}\n\\}")
 
 	_, err = os.Open("foo")
-	if er //@snippet(" //", stmtOneErrReturn, "err != nil {\n\treturn , ${1:err}\n\\}")
+	if er //@snippet(re"() \\/\\/", stmtOneErrReturn, "err != nil {\n\treturn , ${1:err}\n\\}")
 }
 
 -- if_err_check_test.go --
@@ -140,16 +140,16 @@ package statements
 //@item(stmtReturnZeroValues, `return 0, "", nil`)
 
 func foo() (int, string, error) {
-	ret //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+	ret //@snippet(re"() ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
 }
 
 func bar() (int, string, error) {
-	return //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+	return //@snippet(re"() ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
 }
 
 
 //@item(stmtReturnInvalidValues, `return `)
 
 func invalidReturnStatement() NotAType {
-	return //@snippet(" ", stmtReturnInvalidValues, "return ${1:}")
+	return //@snippet(re"() ", stmtReturnInvalidValues, "return ${1:}")
 }

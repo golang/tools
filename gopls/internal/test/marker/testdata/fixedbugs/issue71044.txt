@@ -15,4 +15,4 @@ package amap
 
 import "unsafe"
 
-func (unsafe.Pointer) _() {} //@ rank("unsafe")
+func (unsafe.Pointer) _() {} //@ rank(re"()unsafe")

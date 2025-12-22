@@ -56,87 +56,87 @@ func AliasMap(a map[*Alias]StringAlias) (b, c map[*Alias]StringAlias) { return n
 func OtherAliasMap(a, b map[Alias]OtherAlias) map[Alias]OtherAlias    { return nil }
 
 func Qux() {
-	Foo("foo", 123) //@signature("(", "Foo(a string, b int) (c bool)", -1)
-	Foo("foo", 123) //@signature("123", "Foo(a string, b int) (c bool)", 1)
-	Foo("foo", 123) //@signature(",", "Foo(a string, b int) (c bool)", 0)
-	Foo("foo", 123) //@signature(" 1", "Foo(a string, b int) (c bool)", 1)
-	Foo("foo", 123) //@signature(")", "Foo(a string, b int) (c bool)", 1)
-	Foo("foo", 123) //@signature("o", "Foo(a string, b int) (c bool)", -1)
-	_ = Foo //@signature("o", "Foo(a string, b int) (c bool)", -1)
-	Foo //@signature("o", "Foo(a string, b int) (c bool)", -1)
-	Foo() //@signature("(", "Foo(a string, b int) (c bool)", -1)
+	Foo("foo", 123) //@signature(re"()\\(", "Foo(a string, b int) (c bool)", -1)
+	Foo("foo", 123) //@signature(re"()123", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature(re"(),", "Foo(a string, b int) (c bool)", 0)
+	Foo("foo", 123) //@signature(re"() 1", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature(re"()\\)", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature(re"()o", "Foo(a string, b int) (c bool)", -1)
+	_ = Foo //@signature(re"()o", "Foo(a string, b int) (c bool)", -1)
+	Foo //@signature(re"()o", "Foo(a string, b int) (c bool)", -1)
+	Foo() //@signature(re"()\\(", "Foo(a string, b int) (c bool)", -1)
 
-	Bar(13.37, 0x13)       //@signature("13.37", "Bar(float64, ...byte)", 0)
-	Bar(13.37, 0x37)       //@signature("0x37", "Bar(float64, ...byte)", 1)
-	Bar(13.37, 1, 2, 3, 4) //@signature("4", "Bar(float64, ...byte)", 1)
+	Bar(13.37, 0x13)       //@signature(re"()13.37", "Bar(float64, ...byte)", 0)
+	Bar(13.37, 0x37)       //@signature(re"()0x37", "Bar(float64, ...byte)", 1)
+	Bar(13.37, 1, 2, 3, 4) //@signature(re"()4", "Bar(float64, ...byte)", 1)
 
-	NoArgs() //@signature("(", "NoArgs()", -1)
-	NoArgs //@signature("s", "NoArgs()", -1)
+	NoArgs() //@signature(re"()\\(", "NoArgs()", -1)
+	NoArgs //@signature(re"()s", "NoArgs()", -1)
 
 	fn := func(hi, there string) func(i int) rune {
 		return func(int) rune { return 0 }
 	}
 
-	fn("hi", "there")    //@signature("hi", "", 0)
-	fn("hi", "there")    //@signature(",", "fn(hi string, there string) func(i int) rune", 0)
-	fn("hi", "there")(1) //@signature("1", "func(i int) rune", 0)
+	fn("hi", "there")    //@signature(re"()hi", "", 0)
+	fn("hi", "there")    //@signature(re"(),", "fn(hi string, there string) func(i int) rune", 0)
+	fn("hi", "there")(1) //@signature(re"()1", "func(i int) rune", 0)
 
 	fnPtr := &fn
-	(*fnPtr)("hi", "there") //@signature(",", "func(hi string, there string) func(i int) rune", 0)
+	(*fnPtr)("hi", "there") //@signature(re"(),", "func(hi string, there string) func(i int) rune", 0)
 
 	var fnIntf any = Foo
-	fnIntf.(func(string, int) bool)("hi", 123) //@signature("123", "func(string, int) bool", 1)
+	fnIntf.(func(string, int) bool)("hi", 123) //@signature(re"()123", "func(string, int) bool", 1)
 
-	(&bytes.Buffer{}).Next(2) //@signature("2", "Next(n int) []byte", 0)
+	(&bytes.Buffer{}).Next(2) //@signature(re"()2", "Next(n int) []byte", 0)
 
 	myFunc := MyFunc(func(n int) string { return "" })
-	myFunc(123) //@signature("123", "myFunc(foo int) string", 0)
+	myFunc(123) //@signature(re"()123", "myFunc(foo int) string", 0)
 
 	var ms myStruct
-	ms.foo(nil) //@signature("nil", "foo(e *json.Decoder) (*big.Int, error)", 0)
+	ms.foo(nil) //@signature(re"()nil", "foo(e *json.Decoder) (*big.Int, error)", 0)
 
-	_ = make([]int, 1, 2) //@signature("2", "make(t Type, size ...int) Type", 1)
+	_ = make([]int, 1, 2) //@signature(re"()2", "make(t Type, size ...int) Type", 1)
 
-	Foo(myFunc(123), 456) //@signature("o(", "Foo(a string, b int) (c bool)", -1)
-	Foo(myFunc(123), 456) //@signature("(m", "Foo(a string, b int) (c bool)", -1)
-	Foo( myFunc(123), 456) //@signature(" m", "Foo(a string, b int) (c bool)", 0)
-	Foo(myFunc(123), 456) //@signature(", ", "Foo(a string, b int) (c bool)", 0)
-	Foo(myFunc(123), 456) //@signature("456", "Foo(a string, b int) (c bool)", 1)
-	Foo(myFunc) //@signature(")", "Foo(a string, b int) (c bool)", 0)
-	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", -1)
-	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
+	Foo(myFunc(123), 456) //@signature(re"()o\\(", "Foo(a string, b int) (c bool)", -1)
+	Foo(myFunc(123), 456) //@signature(re"()\\(m", "Foo(a string, b int) (c bool)", -1)
+	Foo( myFunc(123), 456) //@signature(re"() m", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature(re"(), ", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature(re"()456", "Foo(a string, b int) (c bool)", 1)
+	Foo(myFunc) //@signature(re"()\\)", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature(re"()\\(1", "myFunc(foo int) string", -1)
+	Foo(myFunc(123), 456) //@signature(re"()123", "myFunc(foo int) string", 0)
 
-	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", -1)
-	fmt.Println(myFunc) //@signature("ln", "Println(a ...any) (n int, err error)", -1)
-	fmt.Println(myFunc) //@signature("Func", "myFunc(foo int) string", -1)
+	fmt.Println //@signature(re"()ln", "Println(a ...any) (n int, err error)", -1)
+	fmt.Println(myFunc) //@signature(re"()ln", "Println(a ...any) (n int, err error)", -1)
+	fmt.Println(myFunc) //@signature(re"()Func", "myFunc(foo int) string", -1)
 
 	var hi string = "hello"
 	var wl string = " world: %s"
-	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("Func", "myFunc(foo int) string", -1)
-	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("wl", "Sprintf(format string, a ...any) string", 0)
-	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(" m", "Sprintf(format string, a ...any) string", 1)
-	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("Sprint", "Sprintf(format string, a ...any) string", -1)
-	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(" fmt", "Println(a ...any) (n int, err error)", 0)
-	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("hi", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(re"()Func", "myFunc(foo int) string", -1)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(re"()wl", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(re"() m", "Sprintf(format string, a ...any) string", 1)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(re"()Sprint", "Sprintf(format string, a ...any) string", -1)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(re"() fmt", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(re"()hi", "Println(a ...any) (n int, err error)", 0)
 
-	panic("oops!")            //@signature(")", "panic(v any)", 0)
-	println("hello", "world") //@signature(",", "println(args ...Type)", 0)
+	panic("oops!")            //@signature(re"()\\)", "panic(v any)", 0)
+	println("hello", "world") //@signature(re"(),", "println(args ...Type)", 0)
 
 	Hello(func() {
-		//@signature("//", "", 0)
+		//@signature(re"()\\/\\/", "", 0)
 	})
 
-	AliasSlice()    //@signature(")", "AliasSlice(a []*Alias) (b Alias)", 0)
-	AliasMap()      //@signature(")", "AliasMap(a map[*Alias]StringAlias) (b map[*Alias]StringAlias, c map[*Alias]StringAlias)", 0)
-	OtherAliasMap() //@signature(")", "OtherAliasMap(a map[Alias]OtherAlias, b map[Alias]OtherAlias) map[Alias]OtherAlias", 0)
+	AliasSlice()    //@signature(re"()\\)", "AliasSlice(a []*Alias) (b Alias)", 0)
+	AliasMap()      //@signature(re"()\\)", "AliasMap(a map[*Alias]StringAlias) (b map[*Alias]StringAlias, c map[*Alias]StringAlias)", 0)
+	OtherAliasMap() //@signature(re"()\\)", "OtherAliasMap(a map[Alias]OtherAlias, b map[Alias]OtherAlias) map[Alias]OtherAlias", 0)
 
 	var l []Foo
-	l = append(l, Foo{ //@signature(",", "append(slice []Type, elems ...Type) []Type", 0)
-		A: "hello", //@signature(",", "", 0)
-		B: "world", //@signature(",", "", 0)
+	l = append(l, Foo{ //@signature(re"(),", "append(slice []Type, elems ...Type) []Type", 0)
+		A: "hello", //@signature(re"(),", "", 0)
+		B: "world", //@signature(re"(),", "", 0)
 	})
 
-	FooArr([]int{1, 2, 3, 4, 5}) //@signature("1", "", 0)
+	FooArr([]int{1, 2, 3, 4, 5}) //@signature(re"()1", "", 0)
 }
 
 func Hello(func()) {}
@@ -145,22 +145,22 @@ func Hello(func()) {}
 package signature
 
 func _() {
-	Foo(//@signature("//", "Foo(a string, b int) (c bool)", 0)
-	Foo.//@signature("//", "Foo(a string, b int) (c bool)", 0)
-	Foo.//@signature("oo", "Foo(a string, b int) (c bool)", 0)
+	Foo(//@signature(re"()\\/\\/", "Foo(a string, b int) (c bool)", 0)
+	Foo.//@signature(re"()\\/\\/", "Foo(a string, b int) (c bool)", 0)
+	Foo.//@signature(re"()oo", "Foo(a string, b int) (c bool)", 0)
 }
 
 -- signature/signature3.go --
 package signature
 
 func _() {
-	Foo("hello",//@signature("//", "Foo(a string, b int) (c bool)", 1)
+	Foo("hello",//@signature(re"()\\/\\/", "Foo(a string, b int) (c bool)", 1)
 }
 
 -- signature/nonsignature.go --
 package signature
 
-var x = (1) //@signature("1)", "", 0)
+var x = (1) //@signature(re"()1\\)", "", 0)
 
 -- signature/signature_test.go --
 package signature_test
@@ -172,9 +172,9 @@ import (
 )
 
 func TestSignature(t *testing.T) {
-	sig.AliasSlice()    //@signature(")", "AliasSlice(a []*sig.Alias) (b sig.Alias)", 0)
-	sig.AliasMap()      //@signature(")", "AliasMap(a map[*sig.Alias]sig.StringAlias) (b map[*sig.Alias]sig.StringAlias, c map[*sig.Alias]sig.StringAlias)", 0)
-	sig.OtherAliasMap() //@signature(")", "OtherAliasMap(a map[sig.Alias]sig.OtherAlias, b map[sig.Alias]sig.OtherAlias) map[sig.Alias]sig.OtherAlias", 0)
+	sig.AliasSlice()    //@signature(re"()\\)", "AliasSlice(a []*sig.Alias) (b sig.Alias)", 0)
+	sig.AliasMap()      //@signature(re"()\\)", "AliasMap(a map[*sig.Alias]sig.StringAlias) (b map[*sig.Alias]sig.StringAlias, c map[*sig.Alias]sig.StringAlias)", 0)
+	sig.OtherAliasMap() //@signature(re"()\\)", "OtherAliasMap(a map[sig.Alias]sig.OtherAlias, b map[sig.Alias]sig.OtherAlias) map[sig.Alias]sig.OtherAlias", 0)
 }
 
 -- snippets/snippets.go --
@@ -195,10 +195,10 @@ func X(_ map[signature.Alias]CoolAlias) (map[signature.Alias]CoolAlias) {
 }
 
 func _() {
-	X() //@signature(")", "X(_ map[signature.Alias]CoolAlias) map[signature.Alias]CoolAlias", 0)
+	X() //@signature(re"()\\)", "X(_ map[signature.Alias]CoolAlias) map[signature.Alias]CoolAlias", 0)
 	_ = signature.MyType{} //@item(literalMyType, "signature.MyType{}", "", "var")
 	s := structy{
-		x: //@snippet(" //", literalMyType, "signature.MyType{\\}")
+		x: //@snippet(re"() \\/\\/", literalMyType, "signature.MyType{\\}")
 	}
 }
 
@@ -210,21 +210,21 @@ import (
 	// "golang.org/lsptests/foo"
 
 	// import completions (separate blocks to avoid comment alignment)
-	"crypto/elli" //@complete("\" //", cryptoImport)
+	"crypto/elli" //@complete(re"i()\"", cryptoImport)
 
-	"fm" //@complete("\" //", fmtImport)
+	"fm" //@complete(re"m()\"", fmtImport)
 
-	"go/pars" //@complete("\" //", parserImport)
+	"go/pars" //@complete(re"s()\"", parserImport)
 
-	namedParser "go/pars" //@complete("\" //", parserImport)
+	namedParser "go/pars" //@complete(re"s()\"", parserImport)
 
-	"golang.org/lspte" //@complete("\" //", lsptestsImport)
+	"golang.org/lspte" //@complete(re"e()\"", lsptestsImport)
 
-	"golang.org/lsptests/sign" //@complete("\" //", signatureImport)
+	"golang.org/lsptests/sign" //@complete(re"n()\"", signatureImport)
 
-	"golang.org/lsptests/sign" //@complete("ests", lsptestsImport)
+	"golang.org/lsptests/sign" //@complete(re"()ests", lsptestsImport)
 
-	"golang.org/lsptests/signa" //@complete("na\" //", signatureImport)
+	"golang.org/lsptests/signa" //@complete(re"()na", signatureImport)
 )
 
 func _() {

@@ -28,10 +28,10 @@ func _() {
 
 	var foo []int
 
-	foo.fo //@snippet(" //", postfixFor, "for ${1:i} := range foo {\n\t$0\n}")
-	foo.forr //@snippet(" //", postfixForr, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
-	foo.rang //@snippet(" //", postfixRange, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
-	foo.va //@snippet(" //", postfixVar, "${1:i} := foo")
+	foo.fo //@snippet(re"() \\/\\/", postfixFor, "for ${1:i} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(re"() \\/\\/", postfixForr, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(re"() \\/\\/", postfixRange, "for ${1:i}, ${2:v} := range foo {\n\t$0\n}")
+	foo.va //@snippet(re"() \\/\\/", postfixVar, "${1:i} := foo")
 }
 
 func _() {
@@ -41,9 +41,9 @@ func _() {
 
 	var foo map[int]int
 
-	foo.fo //@snippet(" //", postfixFor, "for ${1:k} := range foo {\n\t$0\n}")
-	foo.forr //@snippet(" //", postfixForr, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
-	foo.rang //@snippet(" //", postfixRange, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
+	foo.fo //@snippet(re"() \\/\\/", postfixFor, "for ${1:k} := range foo {\n\t$0\n}")
+	foo.forr //@snippet(re"() \\/\\/", postfixForr, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(re"() \\/\\/", postfixRange, "for ${1:k}, ${2:v} := range foo {\n\t$0\n}")
 }
 
 func _() {
@@ -52,8 +52,8 @@ func _() {
 
 	var foo chan int
 
-	foo.fo //@snippet(" //", postfixForChannel, "for ${1:e} := range foo {\n\t$0\n}")
-	foo.rang //@snippet(" //", postfixRangeChannel, "for ${1:e} := range foo {\n\t$0\n}")
+	foo.fo //@snippet(re"() \\/\\/", postfixForChannel, "for ${1:e} := range foo {\n\t$0\n}")
+	foo.rang //@snippet(re"() \\/\\/", postfixRangeChannel, "for ${1:e} := range foo {\n\t$0\n}")
 }
 
 type T struct {
@@ -67,17 +67,17 @@ func _() (string, T, map[string]string, error) {
 
 
 	var err error
-	err.iferr //@snippet(" //", postfixIfErr, "if err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
-	strconv.Atoi("32").iferr //@snippet(" //", postfixIfErr, "if _, err := strconv.Atoi(\"32\"); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
-	strconv.Atoi("32").variferr //@snippet(" //", postfixVarIfErr, "${1:i}, ${2:err} := strconv.Atoi(\"32\")\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
+	err.iferr //@snippet(re"() \\/\\/", postfixIfErr, "if err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	strconv.Atoi("32").iferr //@snippet(re"() \\/\\/", postfixIfErr, "if _, err := strconv.Atoi(\"32\"); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	strconv.Atoi("32").variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:i}, ${2:err} := strconv.Atoi(\"32\")\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
 
 	// test function return multiple errors
 	var foo func() (error, error)
-	foo().iferr //@snippet(" //", postfixIfErr, "if _, err := foo(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
-	foo().variferr //@snippet(" //", postfixVarIfErr, "${1:err2}, ${2:err} := foo()\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
+	foo().iferr //@snippet(re"() \\/\\/", postfixIfErr, "if _, err := foo(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	foo().variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:err2}, ${2:err} := foo()\nif ${2:err} != nil {\n\treturn \"\", T{}, nil, ${3:${2:err}}\n}\n")
 
 	// test function just return error
 	var bar func() error
-	bar().iferr //@snippet(" //", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
-	bar().variferr //@snippet(" //", postfixVarIfErr, "${1:err2} := bar()\nif ${1:err2} != nil {\n\treturn \"\", T{}, nil, ${2:${1:err2}}\n}\n")
+	bar().iferr //@snippet(re"() \\/\\/", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:err}\n}\n")
+	bar().variferr //@snippet(re"() \\/\\/", postfixVarIfErr, "${1:err2} := bar()\nif ${1:err2} != nil {\n\treturn \"\", T{}, nil, ${2:${1:err2}}\n}\n")
 }

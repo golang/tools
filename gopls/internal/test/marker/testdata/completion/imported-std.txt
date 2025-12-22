@@ -29,16 +29,16 @@ import "go/token"
 import "go/types"
 
 // package-level decl
-var _ = types.Sat //@rank("Sat", "Satisfies")
-var _ = types.Ali //@rank("Ali", "!Alias")
+var _ = types.Sat //@rank(re"()Sat", "Satisfies")
+var _ = types.Ali //@rank(re"()Ali", "!Alias")
 
 // field
-var _ = new(types.Info).Use //@rank("Use", "Uses")
-var _ = new(types.Info).Fil //@rank("Fil", "!FileVersions")
+var _ = new(types.Info).Use //@rank(re"()Use", "Uses")
+var _ = new(types.Info).Fil //@rank(re"()Fil", "!FileVersions")
 
 // method
-var _ = new(types.Checker).Obje //@rank("Obje", "ObjectOf")
-var _ = new(types.Checker).PkgN //@rank("PkgN", "!PkgNameOf")
+var _ = new(types.Checker).Obje //@rank(re"()Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rank(re"()PkgN", "!PkgNameOf")
 
 -- b/b.go --
 //go:build go1.22
@@ -50,13 +50,13 @@ import "go/token"
 import "go/types"
 
 // package-level decl
-var _ = types.Sat //@rank("Sat", "Satisfies")
-var _ = types.Ali //@rank("Ali", "Alias")
+var _ = types.Sat //@rank(re"()Sat", "Satisfies")
+var _ = types.Ali //@rank(re"()Ali", "Alias")
 
 // field
-var _ = new(types.Info).Use //@rank("Use", "Uses")
-var _ = new(types.Info).Fil //@rank("Fil", "FileVersions")
+var _ = new(types.Info).Use //@rank(re"()Use", "Uses")
+var _ = new(types.Info).Fil //@rank(re"()Fil", "FileVersions")
 
 // method
-var _ = new(types.Checker).Obje //@rank("Obje", "ObjectOf")
-var _ = new(types.Checker).PkgN //@rank("PkgN", "PkgNameOf")
+var _ = new(types.Checker).Obje //@rank(re"()Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rank(re"()PkgN", "PkgNameOf")

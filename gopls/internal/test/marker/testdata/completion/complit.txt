@@ -46,22 +46,22 @@ func _() {
 	)
 
 	_ = map[int]int{
-		a: a, //@complete(":", abVar, aaVar),complete(",", abVar, aaVar)
+		a: a, //@complete(re"():", abVar, aaVar),complete(re"(),", abVar, aaVar)
 	}
 
 	_ = map[int]int{
 		//@complete("", abVar, int, aaVar, structPosition)
 	}
 
-	_ = []string{a: ""} //@complete(":", abVar, aaVar)
-	_ = [1]string{a: ""} //@complete(":", abVar, aaVar)
+	_ = []string{a: ""} //@complete(re"():", abVar, aaVar)
+	_ = [1]string{a: ""} //@complete(re"():", abVar, aaVar)
 
-	_ = position{X: a}   //@complete("}", abVar, aaVar)
-	_ = position{a}      //@complete("}", abVar, aaVar)
-	_ = position{a, }      //@complete("}", abVar, int, aaVar, structPosition)
+	_ = position{X: a}   //@complete(re"()}", abVar, aaVar)
+	_ = position{a}      //@complete(re"()}", abVar, aaVar)
+	_ = position{a, }      //@complete(re"()}", abVar, int, aaVar, structPosition)
 
-	_ = []int{a}  //@complete("}", abVar, aaVar)
-	_ = [1]int{a} //@complete("}", abVar, aaVar)
+	_ = []int{a}  //@complete(re"()}", abVar, aaVar)
+	_ = [1]int{a} //@complete(re"()}", abVar, aaVar)
 
 	type myStruct struct {
 		AA int    //@item(fieldAA, "AA", "int", "field")
@@ -69,36 +69,36 @@ func _() {
 	}
 
 	_ = myStruct{
-		AB: a, //@complete(",", aaVar, abVar)
+		AB: a, //@complete(re"(),", aaVar, abVar)
 	}
 
 	var s myStruct
 
-	_ = map[int]string{1: "" + s.A}                                //@complete("}", fieldAB, fieldAA)
-	_ = map[int]string{1: (func(i int) string { return "" })(s.A)} //@complete(")}", fieldAA, fieldAB)
-	_ = map[int]string{1: func() string { s.A }}                   //@complete(" }", fieldAA, fieldAB)
+	_ = map[int]string{1: "" + s.A}                                //@complete(re"()}", fieldAB, fieldAA)
+	_ = map[int]string{1: (func(i int) string { return "" })(s.A)} //@complete(re"()\\)}", fieldAA, fieldAB)
+	_ = map[int]string{1: func() string { s.A }}                   //@complete(re"() }", fieldAA, fieldAB)
 
-	_ = position{s.A} //@complete("}", fieldAA, fieldAB)
+	_ = position{s.A} //@complete(re"()}", fieldAA, fieldAB)
 
 	var X int //@item(varX, "X", "int", "var")
-	_ = position{X}      //@complete("}", fieldX, varX)
+	_ = position{X}      //@complete(re"()}", fieldX, varX)
 }
 
 func _() {
 	type foo struct{} //@item(complitFoo, "foo", "struct{...}", "struct")
 
-	var _ *foo = &fo{} //@snippet("{", complitFoo, "foo")
-	var _ *foo = fo{} //@snippet("{", complitFoo, "&foo")
+	var _ *foo = &fo{} //@snippet(re"()\\{", complitFoo, "foo")
+	var _ *foo = fo{} //@snippet(re"()\\{", complitFoo, "&foo")
 
 	struct { a, b *foo }{
-		a: &fo{}, //@rank("{", complitFoo)
-		b: fo{}, //@snippet("{", complitFoo, "&foo")
+		a: &fo{}, //@rank(re"(){", complitFoo)
+		b: fo{}, //@snippet(re"()\\{", complitFoo, "&foo")
 	}
 }
 
 func _() {
 	_ := position{
-		X: 1, //@complete("X", fieldX),complete(" 1", int, structPosition)
-		Y: ,  //@complete(":", fieldY),complete(" ,", int, structPosition)
+		X: 1, //@complete(re"()X", fieldX),complete(re"() 1", int, structPosition)
+		Y: ,  //@complete(re"():", fieldY),complete(re"() ,", int, structPosition)
 	}
 }

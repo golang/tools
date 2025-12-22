@@ -17,11 +17,11 @@ func fooPtr() *int {
 }
 
 func _() {
-	var _ int = foo //@snippet(" //", "fooFunc", "fooFunc()()"),snippet(" //", "fooPtr", "*fooPtr()")
+	var _ int = foo //@snippet(re"() \\/\\/", "fooFunc", "fooFunc()()"),snippet(re"() \\/\\/", "fooPtr", "*fooPtr()")
 }
 
 func _() {
 	var m map[int][]chan int
 
-	var _ int = m //@snippet(" //", "m", "<-m[${1:}][${2:}]")
+	var _ int = m //@snippet(re"() \\/\\/", "m", "<-m[${1:}][${2:}]")
 }

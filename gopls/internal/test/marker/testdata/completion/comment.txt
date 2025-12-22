@@ -37,51 +37,51 @@ func _() {
 	)
 }
 
-// //@complete(" ", variableC)
-var C string //@item(variableC, "C", "string", "var") //@complete(" ", variableC)
+// //@complete(re"() ", variableC)
+var C string //@item(variableC, "C", "string", "var") //@complete(re"() ", variableC)
 
-// //@complete(" ", constant)
-const Constant = "example" //@item(constant, "Constant", "string", "const") //@complete(" ", constant)
+// //@complete(re"() ", constant)
+const Constant = "example" //@item(constant, "Constant", "string", "const") //@complete(re"() ", constant)
 
-// //@complete(" ", structType, fieldB, fieldA)
-type StructType struct { //@item(structType, "StructType", "struct{...}", "struct") //@complete(" ", structType, fieldA, fieldB)
-	// //@complete(" ", fieldA, structType, fieldB)
-	A string //@item(fieldA, "A", "string", "field") //@complete(" ", fieldA, structType, fieldB)
-	b int    //@item(fieldB, "b", "int", "field") //@complete(" ", fieldB, structType, fieldA)
+// //@complete(re"() ", structType, fieldB, fieldA)
+type StructType struct { //@item(structType, "StructType", "struct{...}", "struct") //@complete(re"() ", structType, fieldA, fieldB)
+	// //@complete(re"() ", fieldA, structType, fieldB)
+	A string //@item(fieldA, "A", "string", "field") //@complete(re"() ", fieldA, structType, fieldB)
+	b int    //@item(fieldB, "b", "int", "field") //@complete(re"() ", fieldB, structType, fieldA)
 }
 
-// //@complete(" ", method, structRecv, paramX, resultY, fieldB, fieldA)
+// //@complete(re"() ", method, structRecv, paramX, resultY, fieldB, fieldA)
 func (structType *StructType) Method(X int) (Y int) { //@item(structRecv, "structType", "*StructType", "var"),item(method, "Method", "func(X int) (Y int)", "method"),item(paramX, "X", "int", "var"),item(resultY, "Y", "int", "var")
-	// //@complete(" ", method, structRecv, paramX, resultY, fieldB, fieldA)
+	// //@complete(re"() ", method, structRecv, paramX, resultY, fieldB, fieldA)
 	return
 }
 
-// //@complete(" ", newType)
-type NewType string //@item(newType, "NewType", "string", "type") //@complete(" ", newType)
+// //@complete(re"() ", newType)
+type NewType string //@item(newType, "NewType", "string", "type") //@complete(re"() ", newType)
 
-// //@complete(" ", testInterface, testA, testB)
+// //@complete(re"() ", testInterface, testA, testB)
 type TestInterface interface { //@item(testInterface, "TestInterface", "interface{...}", "interface")
-	// //@complete(" ", testA, testInterface, testB)
-	TestA(L string) (M int) //@item(testA, "TestA", "func(L string) (M int)", "method"),item(paramL, "L", "var", "string"),item(resM, "M", "var", "int") //@complete(" ", testA, testInterface, testB)
-	TestB(N int) bool       //@item(testB, "TestB", "func(N int) bool", "method"),item(paramN, "N", "var", "int") //@complete(" ", testB, testInterface, testA)
+	// //@complete(re"() ", testA, testInterface, testB)
+	TestA(L string) (M int) //@item(testA, "TestA", "func(L string) (M int)", "method"),item(paramL, "L", "var", "string"),item(resM, "M", "var", "int") //@complete(re"() ", testA, testInterface, testB)
+	TestB(N int) bool       //@item(testB, "TestB", "func(N int) bool", "method"),item(paramN, "N", "var", "int") //@complete(re"() ", testB, testInterface, testA)
 }
 
-// //@complete(" ", function)
-func Function() int { //@item(function, "Function", "func() int", "func") //@complete(" ", function)
-	// //@complete(" ", function)
+// //@complete(re"() ", function)
+func Function() int { //@item(function, "Function", "func() int", "func") //@complete(re"() ", function)
+	// //@complete(re"() ", function)
 	return 0
 }
 
 // This tests multiline block comments and completion with prefix
-// Lorem Ipsum Multili//@complete("Multi", multiline)
+// Lorem Ipsum Multili//@complete(re"()Multi", multiline)
 // Lorem ipsum dolor sit ametom
 func Multiline() int { //@item(multiline, "Multiline", "func() int", "func")
-	// //@complete(" ", multiline)
+	// //@complete(re"() ", multiline)
 	return 0
 }
 
 // This test checks that gopls does not panic if the receiver is syntactically
 // present but empty.
 //
-// //@complete(" ")
+// //@complete(re"() ")
 func () _() {}

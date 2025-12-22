@@ -30,7 +30,7 @@ func Identity[P ~int](p P) P { //@item(Identity, "Identity", "", "")
 
 func _() {
 	_ = b.B{2}
-	_ = Identi //@snippet(" //", Identity, "Identity(${1:p P})"), diag("Ident", re"(undefined|undeclared)")
+	_ = Identi //@snippet(re"ti()", Identity, "Identity(${1:p P})"), diag("Ident", re"(undefined|undeclared)")
 }
 
 -- b/b.go --
