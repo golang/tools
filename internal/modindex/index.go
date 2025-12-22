@@ -107,7 +107,7 @@ var IndexDir string = func() string {
 		var err error
 		dir, err = os.UserCacheDir()
 		// shouldn't happen, but TempDir is better than
-		// creating ./go/imports
+		// creating ./goimports
 		if err != nil {
 			dir = os.TempDir()
 		}

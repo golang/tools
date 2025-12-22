@@ -19,9 +19,16 @@ import (
 	"golang.org/x/tools/internal/modindex"
 )
 
-// experiments show the new code about 15 times faster than the old,
-// and the old code sometimes fails to find the completion
+// This code is designed to show the comparative effectiveness
+// of the current and the old ways of doing unimported completions.
+// It should only be run by hand when there is an existing module
+// cache and module cache index. It compares the two algorithms
+// for various values of the completion budget. "gopls" is the
+// current algorithm, "goimports" is the old one. [On my workstation
+// the old algorithms occasionally fails to find the completion,
+// and when it does it is more than 10 times slower.]
 func BenchmarkLocalModcache(b *testing.B) {
+	b.Skip("only run by hand")
 	budgets := []string{"0s", "100ms", "200ms", "500ms", "1s", "5s"}
 	sources := []string{"gopls", "goimports"}
 	for _, budget := range budgets {
@@ -99,12 +106,10 @@ var _ = %s.%s
 	// Check that completion works as expected
 	env.CreateBuffer("main.go", mainfile)
 	env.AfterChange()
-	if false { // warm up? or not?
-		loc := env.RegexpSearch("main.go", name)
-		completions := env.Completion(loc)
-		if len(completions.Items) == 0 {
-			b.Fatal("no completions")
-		}
+	loc := env.RegexpSearch("main.go", name)
+	completions := env.Completion(loc)
+	if len(completions.Items) == 0 {
+		b.Error("no completions")
 	}
 
 	// run benchmark
@@ -116,7 +121,7 @@ var _ = %s.%s
 
 // find some symbol in the module cache
 func findSym(t testing.TB) (pkg, name, gomodcache string) {
-	initForTest(t)
+	initForTest(t) // set modindex.IndexDir
 	cmd := exec.Command("go", "env", "GOMODCACHE")
 	out, err := cmd.Output()
 	if err != nil {
@@ -130,6 +135,7 @@ func findSym(t testing.TB) (pkg, name, gomodcache string) {
 	if ix == nil {
 		t.Fatal("nil index")
 	}
+	// find some symbol in the module cache
 	nth := 100 // or something
 	for _, e := range ix.Entries {
 		if token.IsExported(e.PkgName) || strings.HasPrefix(e.PkgName, "_") {
@@ -153,6 +159,6 @@ func initForTest(t testing.TB) {
 	if err != nil {
 		t.Fatalf("os.UserCacheDir: %v", err)
 	}
-	dir = filepath.Join(dir, "go", "imports")
+	dir = filepath.Join(dir, "goimports")
 	modindex.IndexDir = dir
 }
