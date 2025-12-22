@@ -2952,7 +2952,7 @@ The bloop analyzer suggests replacing benchmark loops of the form \`for i := 0; 
 
 This change makes benchmark code more readable and also removes the need for manual timer control, so any preceding calls to b.StartTimer, b.StopTimer, or b.ResetTimer within the same function will also be removed.
 
-Caveats: The b.Loop() method is designed to prevent the compiler from optimizing away the benchmark loop, which can occasionally result in slower execution due to increased allocations in some specific cases.
+Caveats: The b.Loop() method is designed to prevent the compiler from optimizing away the benchmark loop, which can occasionally result in slower execution due to increased allocations in some specific cases. Since its fix may change the performance of nanosecond-scale benchmarks, bloop is disabled by default in the \`go fix\` analyzer suite; see golang/go#74967.
 
 
 Default: on.
