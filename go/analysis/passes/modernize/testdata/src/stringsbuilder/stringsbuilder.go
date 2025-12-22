@@ -130,3 +130,26 @@ func _(slice []string) string {
 	a.WriteString(b)
 	return a.String()
 }
+
+// Regression test for go.dev/issue/76934, which mutilated the var decl.
+func stringDeclaredWithVarDecl() {
+	var (
+		before int // this is ok
+		str    = "hello world"
+	)
+	for range 100 {
+		str += "!" // want "using string \\+= string in a loop is inefficient"
+	}
+	println(before, str)
+}
+
+func nopeStringIsNotLastValueSpecInVarDecl() {
+	var (
+		str   = "hello world"
+		after int // this defeats the transformation
+	)
+	for range 100 {
+		str += "!" // nope
+	}
+	println(str, after)
+}
