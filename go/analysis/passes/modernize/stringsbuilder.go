@@ -78,14 +78,16 @@ nextcand:
 	for _, v := range slices.SortedFunc(maps.Keys(candidates), lexicalOrder) {
 		var edits []analysis.TextEdit
 
-		// Check declaration of s:
+		// Check declaration of s has one of these forms:
 		//
 		//    s := expr
 		//    var s [string] [= expr]
+		//    var ( ...; s [string] [= expr] )			(s is last)
 		//
-		// and transform to:
+		// and transform to one of:
 		//
-		//    var s strings.Builder; s.WriteString(expr)
+		//    var   s strings.Builder ; s.WriteString(expr)
+		//    var ( s strings.Builder); s.WriteString(expr)
 		//
 		def, ok := index.Def(v)
 		if !ok {
@@ -153,9 +155,20 @@ nextcand:
 			}
 
 		} else if ek == edge.ValueSpec_Names &&
-			len(def.Parent().Node().(*ast.ValueSpec).Names) == 1 {
-			// Have: var s [string] [= expr]
+			len(def.Parent().Node().(*ast.ValueSpec).Names) == 1 &&
+			first(def.Parent().Parent().LastChild()) == def.Parent() {
+			// Have: var   s [string] [= expr]
+			//   or: var ( s [string] [= expr] )
 			// => var s strings.Builder; s.WriteString(expr)
+			//
+			// The LastChild check rejects this case:
+			//   var ( s [string] [= expr]; others... )
+			// =>
+			//   var ( s strings.Builder; others... ); s.WriteString(expr)
+			// since it moves 'expr' across 'others', requiring
+			// reformatting of syntax, which in general is lossy
+			// of comments and vertical space.
+			// We expect this to be rare.
 
 			// Add strings import.
 			prefix, importEdits := refactor.AddImport(
@@ -170,6 +183,8 @@ nextcand:
 				init = spec.Type.End()
 			}
 
+			// Replace (possibly absent) type:
+			//
 			// var s [string]
 			//      ----------------
 			// var s strings.Builder
@@ -180,6 +195,25 @@ nextcand:
 			})
 
 			if len(spec.Values) > 0 && !isEmptyString(pass.TypesInfo, spec.Values[0]) {
+				if decl.Rparen.IsValid() {
+					// var decl with explicit parens:
+					//
+					// var ( ...  =               expr )
+					//           -                     -
+					// var ( ... ); s.WriteString(expr)
+					edits = append(edits, []analysis.TextEdit{
+						{
+							Pos:     init,
+							End:     init,
+							NewText: []byte(")"),
+						},
+						{
+							Pos: spec.Values[0].End(),
+							End: decl.End(),
+						},
+					}...)
+				}
+
 				// =               expr
 				// ----------------    -
 				// ; s.WriteString(expr)
@@ -190,8 +224,8 @@ nextcand:
 						NewText: fmt.Appendf(nil, "; %s.WriteString(", v.Name()),
 					},
 					{
-						Pos:     decl.End(),
-						End:     decl.End(),
+						Pos:     spec.Values[0].End(),
+						End:     spec.Values[0].End(),
 						NewText: []byte(")"),
 					},
 				}...)
