@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"golang.org/x/mod/modfile"
@@ -301,6 +302,9 @@ func TestCheckGoModDeps(t *testing.T) {
 }
 
 func TestVulncheckPreference(t *testing.T) {
+	if runtime.GOARCH == "wasm" {
+		t.Skip("test not supported in wasm")
+	}
 	t.Cleanup(func() {
 		configDir, err := os.UserConfigDir()
 		if err != nil {
