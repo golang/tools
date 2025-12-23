@@ -51,7 +51,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 	// Collect references.
 	var refs []protocol.Location
 	{
-		funcPos, err := pgf.Mapper.PosPosition(pgf.Tok, origDecl.Name.NamePos)
+		funcRng, err := pgf.Mapper.PosRange(pgf.Tok, origDecl.Name.NamePos, origDecl.Name.NamePos)
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +59,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		if err != nil {
 			return nil, err
 		}
-		refs, err = References(ctx, snapshot, fh, funcPos, false)
+		refs, err = References(ctx, snapshot, fh, funcRng, false)
 		if err != nil {
 			return nil, fmt.Errorf("finding references to rewrite: %v", err)
 		}

@@ -34,21 +34,9 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	}
 	defer release()
 
-	var rng protocol.Range
-	if params.Range == (protocol.Range{}) {
-		// No selection range was provided.
-		// Default to an empty range at the position.
-		rng = protocol.Range{
-			Start: params.Position,
-			End:   params.Position,
-		}
-	} else {
-		rng = params.Range
-	}
-
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
-		return mod.Hover(ctx, snapshot, fh, params.Position)
+		return mod.Hover(ctx, snapshot, fh, params.Range)
 	case file.Go:
 		var pkgURL func(path golang.PackagePath, fragment string) protocol.URI
 		if snapshot.Options().LinksInHover == settings.LinksInHover_Gopls {
@@ -61,11 +49,11 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 				}
 			}
 		}
-		return golang.Hover(ctx, snapshot, fh, rng, pkgURL)
+		return golang.Hover(ctx, snapshot, fh, params.Range, pkgURL)
 	case file.Tmpl:
-		return template.Hover(ctx, snapshot, fh, params.Position)
+		return template.Hover(ctx, snapshot, fh, params.Range)
 	case file.Work:
-		return work.Hover(ctx, snapshot, fh, params.Position)
+		return work.Hover(ctx, snapshot, fh, params.Range)
 	}
 	return nil, nil // empty result
 }

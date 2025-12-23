@@ -5599,6 +5599,8 @@ type TextDocumentPositionParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	// The position inside the text document.
+	//
+	// Deprecated: gopls should use [TextDocumentPositionParams.Range] instead.
 	Position Position `json:"position"`
 	// Range is an optional field representing the user's text selection in the document.
 	// If provided, the Position must be contained within this range.

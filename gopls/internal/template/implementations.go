@@ -97,8 +97,8 @@ func diagnoseOne(fh file.Handle) []*cache.Diagnostic {
 // does not understand scoping (if any) in templates. This code is
 // for definitions, type definitions, and implementations.
 // Results only for variables and templates.
-func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.Location, error) {
-	x, _, err := symAtPosition(fh, loc)
+func Definition(snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
+	x, _, err := symAtRange(fh, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +121,8 @@ func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position)
 	return ans, nil
 }
 
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
-	sym, p, err := symAtPosition(fh, position)
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.Hover, error) {
+	sym, p, err := symAtRange(fh, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -151,13 +151,13 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 		value = fmt.Sprintf("oops, sym=%#v", sym)
 	}
 
-	rng, err := p.mapper.OffsetRange(sym.offsets())
+	symRng, err := p.mapper.OffsetRange(sym.offsets())
 	if err != nil {
 		return nil, err
 	}
 
 	return &protocol.Hover{
-		Range: rng,
+		Range: symRng,
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.Markdown,
 			Value: value,
@@ -166,7 +166,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 }
 
 func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, params *protocol.ReferenceParams) ([]protocol.Location, error) {
-	sym, _, err := symAtPosition(fh, params.Position)
+	sym, _, err := symAtRange(fh, params.Range)
 	if err != nil {
 		return nil, err
 	}
@@ -233,19 +233,19 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 
 // TODO: still need to do rename, etc
 
-func symAtPosition(fh file.Handle, posn protocol.Position) (*symbol, *parsed, error) {
+func symAtRange(fh file.Handle, rng protocol.Range) (*symbol, *parsed, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, nil, err
 	}
 	p := parseBuffer(fh.URI(), buf)
-	offset, err := p.mapper.PositionOffset(posn)
+	start, end, err := p.mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, nil, err
 	}
 	var syms []symbol
 	for _, s := range p.symbols {
-		if s.start <= offset && offset < s.start+s.len {
+		if s.start <= start && end <= s.start+s.len {
 			syms = append(syms, s)
 		}
 	}

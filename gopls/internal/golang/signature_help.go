@@ -23,7 +23,7 @@ import (
 
 // SignatureHelp returns information about the signature of the innermost
 // function call enclosing the position, or nil if there is none.
-func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, params *protocol.SignatureHelpParams) (*protocol.SignatureInformation, error) {
+func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, context *protocol.SignatureHelpContext) (*protocol.SignatureInformation, error) {
 	ctx, done := event.Start(ctx, "golang.SignatureHelp")
 	defer done()
 
@@ -33,13 +33,13 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, fmt.Errorf("getting file for SignatureHelp: %w", err)
 	}
-	pos, err := pgf.PositionPos(params.Position)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
 	// Find a call expression surrounding the query position.
 	var callExpr *ast.CallExpr
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	if path == nil {
 		return nil, fmt.Errorf("cannot find node enclosing position")
 	}
@@ -66,7 +66,7 @@ loop:
 			}
 		case *ast.CallExpr:
 			// Beware: the ')' may be missing.
-			if node.Lparen <= pos && pos <= node.Rparen {
+			if node.Lparen <= start && end <= node.Rparen {
 				callExpr = node
 				fnval = callExpr.Fun
 				break loop
@@ -81,7 +81,7 @@ loop:
 			// golang/go#43397: don't offer signature help when the user is typing
 			// in a string literal unless it was manually invoked or help is already active.
 			if node.Kind == token.STRING &&
-				(params.Context == nil || (params.Context.TriggerKind != protocol.SigInvoked && !params.Context.IsRetrigger)) {
+				(context == nil || (context.TriggerKind != protocol.SigInvoked && !context.IsRetrigger)) {
 				return nil, nil
 			}
 		}
@@ -128,7 +128,7 @@ loop:
 		if err != nil {
 			return nil, err
 		}
-		return signatureInformation(s, snapshot.Options(), pos, callExpr)
+		return signatureInformation(s, snapshot.Options(), start, end, callExpr)
 	}
 
 	mq := MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata())
@@ -153,10 +153,10 @@ loop:
 		return nil, err
 	}
 	s.name = name
-	return signatureInformation(s, snapshot.Options(), pos, callExpr)
+	return signatureInformation(s, snapshot.Options(), start, end, callExpr)
 }
 
-func signatureInformation(sig *signature, options *settings.Options, pos token.Pos, call *ast.CallExpr) (*protocol.SignatureInformation, error) {
+func signatureInformation(sig *signature, options *settings.Options, start, end token.Pos, call *ast.CallExpr) (*protocol.SignatureInformation, error) {
 	paramInfo := make([]protocol.ParameterInformation, 0, len(sig.params))
 	for _, p := range sig.params {
 		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
@@ -165,13 +165,13 @@ func signatureInformation(sig *signature, options *settings.Options, pos token.P
 		Label:           sig.name + sig.Format(),
 		Documentation:   stringToSigInfoDocumentation(sig.doc, options),
 		Parameters:      paramInfo,
-		ActiveParameter: activeParameter(sig, pos, call),
+		ActiveParameter: activeParameter(sig, start, end, call),
 	}, nil
 }
 
 // activeParameter returns a pointer to a variable containing
 // the index of the active parameter (if known), or nil otherwise.
-func activeParameter(sig *signature, pos token.Pos, call *ast.CallExpr) *uint32 {
+func activeParameter(sig *signature, start, end token.Pos, call *ast.CallExpr) *uint32 {
 	if call == nil {
 		return nil
 	}
@@ -180,13 +180,13 @@ func activeParameter(sig *signature, pos token.Pos, call *ast.CallExpr) *uint32 
 		return nil
 	}
 	// Check if the position is even in the range of the arguments.
-	if !(call.Lparen < pos && pos <= call.Rparen) {
+	if !(call.Lparen < start && end <= call.Rparen) {
 		return nil
 	}
 
 	var activeParam uint32
 	for _, arg := range call.Args {
-		if pos <= arg.End() {
+		if end <= arg.End() {
 			break
 		}
 		// Don't advance the active parameter for the last parameter of a variadic function.

@@ -362,6 +362,7 @@ func (m *Mapper) NodeText(tf *token.File, node ast.Node) ([]byte, error) {
 func LocationTextDocumentPositionParams(loc Location) TextDocumentPositionParams {
 	return TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
+		Range:        loc.Range,
+		Position:     loc.Range.Start, // not used
 	}
 }

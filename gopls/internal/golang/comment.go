@@ -60,8 +60,8 @@ func DocCommentToMarkdown(text string, options *settings.Options) string {
 // If there is no reference at pos, returns errNoCommentReference.
 //
 // TODO(hxjiang): simplify the error handling.
-func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
-	obj, _, err := resolveDocLink(pkg, pgf, astutil.RangeOf(pos, pos))
+func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) ([]protocol.Location, error) {
+	obj, _, err := resolveDocLink(pkg, pgf, astutil.RangeOf(start, end))
 	if err != nil {
 		return nil, err
 	}

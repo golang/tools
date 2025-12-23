@@ -27,9 +27,9 @@ func (s *server) DocumentHighlight(ctx context.Context, params *protocol.Documen
 
 	switch snapshot.FileKind(fh) {
 	case file.Tmpl:
-		return template.Highlight(ctx, snapshot, fh, params.Position)
+		return template.Highlight(ctx, snapshot, fh, params.Range)
 	case file.Go:
-		rngs, err := golang.Highlight(ctx, snapshot, fh, params.Position)
+		rngs, err := golang.Highlight(ctx, snapshot, fh, params.Range)
 		if err != nil {
 			event.Error(ctx, "no highlight", err)
 		}

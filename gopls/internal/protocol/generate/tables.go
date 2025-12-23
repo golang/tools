@@ -312,6 +312,14 @@ var prependMethodDocComments = map[string]string{
 	// clicking), making it safe for Code Actions and other refactorings.`,
 }
 
+// prependMethodDocComments specifies doc comments that will be prepend to
+// an LSP type's properties existing doc comments.
+var appendTypePropDocComments = map[string]map[string]string{
+	"TextDocumentPositionParams": {"position": `	//
+	// Deprecated: gopls should use [TextDocumentPositionParams.Range] instead.
+`},
+}
+
 // appendTypeProp specifies block of code (typically properties with doc comment)
 // that will be append to a struct.
 var appendTypeProp = map[string]string{

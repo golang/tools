@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.Hover, error) {
 	// We only provide hover information for the view's go.work file.
 	if fh.URI() != snapshot.View().GoWork() {
 		return nil, nil
@@ -30,14 +30,14 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	if err != nil {
 		return nil, fmt.Errorf("getting go.work file handle: %w", err)
 	}
-	offset, err := pw.Mapper.PositionOffset(position)
+	startOffset, endOffset, err := pw.Mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, fmt.Errorf("computing cursor offset: %w", err)
 	}
 
 	// Confirm that the cursor is inside a use statement, and then find
 	// the position of the use statement's directory path.
-	use, pathStart, pathEnd := usePath(pw, offset)
+	use, pathStart, pathEnd := usePath(pw, startOffset, endOffset)
 
 	// The cursor position is not on a use statement.
 	if use == nil {
@@ -59,7 +59,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	mod := pm.File.Module.Mod
 
 	// Get the range to highlight for the hover.
-	rng, err := pw.Mapper.OffsetRange(pathStart, pathEnd)
+	pathRng, err := pw.Mapper.OffsetRange(pathStart, pathEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +69,11 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 			Kind:  options.PreferredContentFormat,
 			Value: mod.Path,
 		},
-		Range: rng,
+		Range: pathRng,
 	}, nil
 }
 
-func usePath(pw *cache.ParsedWorkFile, offset int) (use *modfile.Use, pathStart, pathEnd int) {
+func usePath(pw *cache.ParsedWorkFile, startOffset, endOffset int) (use *modfile.Use, pathStart, pathEnd int) {
 	for _, u := range pw.File.Use {
 		path := []byte(u.Path)
 		s, e := u.Syntax.Start.Byte, u.Syntax.End.Byte
@@ -85,7 +85,7 @@ func usePath(pw *cache.ParsedWorkFile, offset int) (use *modfile.Use, pathStart,
 		// Shift the start position to the location of the
 		// module directory within the use statement.
 		pathStart, pathEnd = s+i, s+i+len(path)
-		if pathStart <= offset && offset <= pathEnd {
+		if pathStart <= startOffset && endOffset <= pathEnd {
 			return u, pathStart, pathEnd
 		}
 	}

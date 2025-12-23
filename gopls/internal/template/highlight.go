@@ -14,20 +14,20 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position) ([]protocol.DocumentHighlight, error) {
+func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentHighlight, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, err
 	}
 	p := parseBuffer(fh.URI(), buf)
-	pos, err := p.mapper.PositionOffset(loc)
+	start, end, err := p.mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, err
 	}
 
 	if p.parseErr == nil {
 		for _, s := range p.symbols {
-			if s.start <= pos && pos < s.start+s.len {
+			if s.start <= start && end < s.start+s.len {
 				return markSymbols(p, s)
 			}
 		}
@@ -36,8 +36,8 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, lo
 	// these tokens exist whether or not there was a parse error
 	// (symbols require a successful parse)
 	for _, tok := range p.tokens {
-		if tok.start <= pos && pos < tok.end {
-			wordAt := wordAt(p.buf, pos)
+		if tok.start <= start && end < tok.end {
+			wordAt := wordAt(p.buf, start)
 			if len(wordAt) > 0 {
 				return markWordInToken(p, wordAt)
 			}

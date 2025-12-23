@@ -25,7 +25,7 @@ func (s *server) PrepareTypeHierarchy(ctx context.Context, params *protocol.Type
 	defer release()
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		return golang.PrepareTypeHierarchy(ctx, snapshot, fh, params.Position)
+		return golang.PrepareTypeHierarchy(ctx, snapshot, fh, params.Range)
 	}
 	return nil, fmt.Errorf("unsupported file type: %v", fh)
 }

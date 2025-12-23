@@ -25,7 +25,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.Hover, error) {
 	// We only provide hover information for the view's go.mod files.
 	if !slices.Contains(snapshot.View().ModFiles(), fh.URI()) {
 		return nil, nil
@@ -39,22 +39,22 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	if err != nil {
 		return nil, fmt.Errorf("getting modfile handle: %w", err)
 	}
-	offset, err := pm.Mapper.PositionOffset(position)
+	startOffset, endOffset, err := pm.Mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, fmt.Errorf("computing cursor position: %w", err)
 	}
 
 	// If the cursor position is on a module statement
-	if hover, ok := hoverOnModuleStatement(ctx, pm, offset, snapshot, fh); ok {
+	if hover, ok := hoverOnModuleStatement(ctx, pm, startOffset, endOffset, snapshot, fh); ok {
 		return hover, nil
 	}
-	return hoverOnRequireStatement(ctx, pm, offset, snapshot, fh)
+	return hoverOnRequireStatement(ctx, pm, startOffset, endOffset, snapshot, fh)
 }
 
-func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
+func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, startOffset, endOffset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
 	// Confirm that the cursor is at the position of a require statement.
 	var req *modfile.Require
-	var startOffset, endOffset int
+	var depStartOffset, depEndOffset int
 	for _, r := range pm.File.Require {
 		dep := []byte(r.Mod.Path)
 		s, e := r.Syntax.Start.Byte, r.Syntax.End.Byte
@@ -64,8 +64,8 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 		}
 		// Shift the start position to the location of the
 		// dependency within the require statement.
-		startOffset, endOffset = s+i, e
-		if startOffset <= offset && offset <= endOffset {
+		depStartOffset, depEndOffset = s+i, e
+		if depStartOffset <= startOffset && endOffset <= depEndOffset {
 			req = r
 			break
 		}
@@ -122,12 +122,12 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 	}, nil
 }
 
-func hoverOnModuleStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
+func hoverOnModuleStatement(ctx context.Context, pm *cache.ParsedModule, startOffset, endOffset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
 	module := pm.File.Module
 	if module == nil {
 		return nil, false // no module stmt
 	}
-	if offset < module.Syntax.Start.Byte || offset > module.Syntax.End.Byte {
+	if endOffset < module.Syntax.Start.Byte || startOffset > module.Syntax.End.Byte {
 		return nil, false // cursor not in module stmt
 	}
 

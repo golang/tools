@@ -30,7 +30,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
 	}
 
-	changes, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
+	changes, err := golang.Rename(ctx, snapshot, fh, params.Range, params.NewName)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRena
 
 	// Do not return errors here, as it adds clutter.
 	// Returning a nil result means there is not a valid rename.
-	item, usererr, err := golang.PrepareRename(ctx, snapshot, fh, params.Position)
+	item, usererr, err := golang.PrepareRename(ctx, snapshot, fh, params.Range)
 	if err != nil {
 		// Return usererr here rather than err, to avoid cluttering the UI with
 		// internal error details.

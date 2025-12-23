@@ -22,7 +22,7 @@ import (
 	"golang.org/x/tools/internal/fmtstr"
 )
 
-func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.DocumentHighlight, error) {
+func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentHighlight, error) {
 	ctx, done := event.Start(ctx, "golang.Highlight")
 	defer done()
 
@@ -33,27 +33,28 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 		return nil, fmt.Errorf("getting package for Highlight: %w", err)
 	}
 
-	pos, err := pgf.PositionPos(position)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	path, _ := goastutil.PathEnclosingInterval(pgf.File, pos, pos)
+
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 	if len(path) == 0 {
-		return nil, fmt.Errorf("no enclosing position found for %v:%v", position.Line, position.Character)
+		return nil, fmt.Errorf("no enclosing position found for %v:%v-%v:%v", rng.Start.Line, rng.Start.Character, rng.End.Line, rng.End.Character)
 	}
 	// If start == end for astutil.PathEnclosingInterval, the 1-char interval
 	// following start is used instead. As a result, we might not get an exact
 	// match so we should check the 1-char interval to the left of the passed
 	// in position to see if that is an exact match.
 	if _, ok := path[0].(*ast.Ident); !ok {
-		if p, _ := goastutil.PathEnclosingInterval(pgf.File, pos-1, pos-1); p != nil {
+		if p, _ := goastutil.PathEnclosingInterval(pgf.File, start-1, end-1); p != nil {
 			switch p[0].(type) {
 			case *ast.Ident, *ast.SelectorExpr:
 				path = p // use preceding ident/selector
 			}
 		}
 	}
-	result, err := highlightPath(pkg.TypesInfo(), path, pos)
+	result, err := highlightPath(pkg.TypesInfo(), path, start)
 	if err != nil {
 		return nil, err
 	}

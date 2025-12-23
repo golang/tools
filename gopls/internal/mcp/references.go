@@ -28,7 +28,7 @@ func (h *handler) referencesHandler(ctx context.Context, req *mcp.CallToolReques
 	}
 	defer release()
 	pos := params.Location.Range.Start
-	refs, err := golang.References(ctx, snapshot, fh, pos, true)
+	refs, err := golang.References(ctx, snapshot, fh, protocol.Range{Start: pos, End: pos}, true)
 	if err != nil {
 		return nil, nil, err
 	}

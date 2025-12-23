@@ -124,9 +124,15 @@ func TestCapabilities(t *testing.T) {
 			TextDocument: protocol.TextDocumentIdentifier{
 				URI: uri,
 			},
-			Position: protocol.Position{
-				Line:      0,
-				Character: 28,
+			Range: protocol.Range{
+				Start: protocol.Position{
+					Line:      0,
+					Character: 28,
+				},
+				End: protocol.Position{
+					Line:      0,
+					Character: 28,
+				},
 			},
 		},
 	})

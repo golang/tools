@@ -21,7 +21,7 @@ import (
 )
 
 // Definition handles the textDocument/definition request for Go assembly files.
-func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "goasm.Definition")
 	defer done()
 
@@ -36,7 +36,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, err
 	}
 	mapper := protocol.NewMapper(fh.URI(), content)
-	offset, err := mapper.PositionOffset(position)
+	start, end, err := mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// For now, just find the identifier around the cursor.
 	var found *asm.Ident
 	for _, id := range file.Idents {
-		if id.Offset <= offset && offset <= id.End() {
+		if id.Offset <= start && end <= id.End() {
 			found = &id
 			break
 		}

@@ -24,7 +24,7 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 	defer release()
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
+		return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Range)
 	}
 	return nil, nil // empty result
 }
@@ -40,7 +40,7 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 	defer release()
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+		return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range)
 	}
 	return nil, nil // empty result
 }

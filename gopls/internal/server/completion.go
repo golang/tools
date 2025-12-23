@@ -36,29 +36,34 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 	}
 	defer release()
 
+	if params.Range.Start != params.Range.End {
+		return nil, fmt.Errorf("textDocument/completion request only applicable for position")
+	}
+	pos := params.Range.Start
+
 	var candidates []completion.CompletionItem
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
+		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, pos, params.Context)
 	case file.Mod:
 		candidates, surrounding = nil, nil
 	case file.Work:
-		cl, err := work.Completion(ctx, snapshot, fh, params.Position)
+		cl, err := work.Completion(ctx, snapshot, fh, pos)
 		if err != nil {
 			break
 		}
 		return cl, nil
 	case file.Tmpl:
 		var cl *protocol.CompletionList
-		cl, err = template.Completion(ctx, snapshot, fh, params.Position, params.Context)
+		cl, err = template.Completion(ctx, snapshot, fh, pos, params.Context)
 		if err != nil {
 			break // use common error handling, candidates==nil
 		}
 		return cl, nil
 	}
 	if err != nil {
-		event.Error(ctx, "no completions found", err, label.Position.Of(params.Position))
+		event.Error(ctx, "no completions found", err, label.Position.Of(pos))
 	}
 	if candidates == nil || surrounding == nil {
 		complEmpty.Inc()

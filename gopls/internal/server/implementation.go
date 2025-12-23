@@ -32,5 +32,5 @@ func (s *server) Implementation(ctx context.Context, params *protocol.Implementa
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return golang.Implementation(ctx, snapshot, fh, params.Position)
+	return golang.Implementation(ctx, snapshot, fh, params.Range)
 }

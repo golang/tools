@@ -136,14 +136,25 @@ func genCase(model *Model, method string, param, result *Type, dir string) {
 		out.WriteString("\t\t\treturn nil, true, fmt.Errorf(\"%%w: %%s\", jsonrpc2.ErrParse, err)\n\t\t}\n")
 		p = ", &params"
 
-		// If the parameter extends the TextDocumentPositionParam, verify the
-		// position is within the provided range.
+		// Ensure consistency between Range and Position. If the client provides
+		// only a Position, synthesize a zero-width Range at that location.
+		//
+		// Crucially, we do not clear the Position field. Since this request may
+		// be forwarded, the downstream receiver (gopls) will re-validate that
+		// the Position lies within the Range.
+		//
+		// TODO(hxjiang): define util function
+		// func (*protocol.Position) EmptyRange() protocol.Range.
 		if extends(nm, "TextDocumentPositionParams") {
-			out.WriteString(`		if !params.Range.Empty() && !params.Range.Contains(params.Position) {
+			out.WriteString(`		if params.Range == (Range{}) {
+			params.Range = Range{
+				Start: params.Position,
+				End:   params.Position,
+			}
+		} else if !params.Range.Contains(params.Position) {
 			return nil, true, fmt.Errorf("position %%v is outside the provided range %%v.", params.Position, params.Range)
 		}
 `)
-
 		}
 
 	}
@@ -331,6 +342,11 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 			json = fmt.Sprintf(" `json:\"%s,omitempty\"`", p.Name)
 		}
 		generateDoc(out, p.Documentation)
+		if docs := appendTypePropDocComments[name]; docs != nil {
+			if doc, ok := docs[p.Name]; ok {
+				out.WriteString(doc)
+			}
+		}
 		if star {
 			fmt.Fprintf(out, "\t%s *%s %s\n", goName(p.Name), tp, json)
 		} else {

@@ -26,7 +26,7 @@ import (
 )
 
 // Definition handles the textDocument/definition request for Go files.
-func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "golang.Definition")
 	defer done()
 
@@ -34,14 +34,14 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(position)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 
-	// Handle the case where the cursor is in an import.
-	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, pos)
+	// Handle the case where the range is in an import.
+	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// Handle the case where the cursor is in the package name.
 	// We use "<= End" to accept a query immediately after the package name.
-	if pgf.File != nil && astutil.NodeContainsPos(pgf.File.Name, pos) {
+	if pgf.File != nil && astutil.NodeContains(pgf.File.Name, astutil.RangeOf(start, end)) {
 		// If there's no package documentation, just use current file.
 		declFile := pgf
 		for _, pgf := range pkg.CompiledGoFiles() {
@@ -68,19 +68,19 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Handle the case where the cursor is in a linkname directive.
-	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, position)
+	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, rng)
 	if !errors.Is(err, ErrNoLinkname) {
 		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in an embed directive.
-	locations, err = embedDefinition(pgf.Mapper, position)
+	locations, err = embedDefinition(pgf.Mapper, rng)
 	if !errors.Is(err, ErrNoEmbed) {
 		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in a doc link.
-	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, pos)
+	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, start, end)
 	if !errors.Is(err, errNoCommentReference) {
 		return locations, err // may be success or failure
 	}
@@ -195,7 +195,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, decl := range pgf.File.Decls {
 		if decl, ok := decl.(*ast.FuncDecl); ok &&
 			decl.Body == nil &&
-			astutil.NodeContainsPos(decl.Name, pos) {
+			astutil.NodeContains(decl.Name, astutil.RangeOf(start, end)) {
 			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
 		}
 	}
@@ -326,11 +326,11 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 // import spec containing pos.
 //
 // If pos is not inside an import spec, it returns nil, nil.
-func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
+func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) ([]protocol.Location, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
-		if astutil.NodeContainsPos(spec.Path, pos) {
+		if astutil.NodeContains(spec.Path, astutil.RangeOf(start, end)) {
 			imp = spec
 		}
 	}

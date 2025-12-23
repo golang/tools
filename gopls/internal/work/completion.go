@@ -35,7 +35,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Find the use statement the user is in.
-	use, pathStart, _ := usePath(pw, cursor)
+	use, pathStart, _ := usePath(pw, cursor, cursor)
 	if use == nil {
 		return &protocol.CompletionList{}, nil
 	}

@@ -35,7 +35,7 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 	case file.Tmpl:
 		return template.References(ctx, snapshot, fh, params)
 	case file.Go:
-		return golang.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
+		return golang.References(ctx, snapshot, fh, params.Range, params.Context.IncludeDeclaration)
 	case file.Mod:
 		return mod.References(ctx, snapshot, fh, params)
 	}

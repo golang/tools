@@ -106,12 +106,12 @@ type PrepareItem struct {
 // The returned usererr is intended to be displayed to the user to explain why
 // the prepare fails. Probably we could eliminate the redundancy in returning
 // two errors, but for now this is done defensively.
-func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position) (_ *PrepareItem, usererr, err error) {
+func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, rng protocol.Range) (_ *PrepareItem, usererr, err error) {
 	ctx, done := event.Start(ctx, "golang.PrepareRename")
 	defer done()
 
 	// Is the cursor within the package name declaration?
-	if pgf, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, pp); err != nil {
+	if pgf, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, rng); err != nil {
 		return nil, err, err
 	} else if inPackageName {
 		item, err := prepareRenamePackageName(ctx, snapshot, pgf)
@@ -131,15 +131,15 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, nil, err
 	}
-	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 
 	// Check if we're in a 'func' keyword. If so, we hijack the renaming to
 	// change the function signature.
-	if item, err := prepareRenameFuncSignature(pgf, pos, cur); err != nil {
+	if item, err := prepareRenameFuncSignature(pgf, start, end, cur); err != nil {
 		return nil, nil, err
 	} else if item != nil {
 		return item, nil, nil
@@ -151,7 +151,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 		// objectsAt will have returned an error in this case.
 		// TODO(adonovan): move this logic into objectsAt.
 		var ok bool
-		cur, ok = docCommentPosToIdent(pgf, pos, cur)
+		cur, ok = docCommentPosToIdent(pgf, start, end, cur)
 		if !ok {
 			return nil, nil, err
 		}
@@ -170,16 +170,16 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err := checkRenamable(obj, node); err != nil {
 		return nil, nil, err
 	}
-	rng, err := pgf.NodeRange(node)
+	nodeRng, err := pgf.NodeRange(node)
 	if err != nil {
 		return nil, nil, err
 	}
 	if _, isImport := node.(*ast.ImportSpec); isImport {
 		// We're not really renaming the import path.
-		rng.End = rng.Start
+		nodeRng.End = nodeRng.Start
 	}
 	return &PrepareItem{
-		Range: rng,
+		Range: nodeRng,
 		Text:  obj.Name(),
 	}, nil, nil
 }
@@ -228,8 +228,8 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 //
 // The resulting text is the signature of the function, which may be edited to
 // the new signature.
-func prepareRenameFuncSignature(pgf *parsego.File, pos token.Pos, cursor inspector.Cursor) (*PrepareItem, error) {
-	fdecl := funcKeywordDecl(pos, cursor)
+func prepareRenameFuncSignature(pgf *parsego.File, start, end token.Pos, cursor inspector.Cursor) (*PrepareItem, error) {
+	fdecl := funcKeywordDecl(start, end, cursor)
 	if fdecl == nil {
 		return nil, nil
 	}
@@ -283,8 +283,8 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 
 // renameFuncSignature computes and applies the effective change signature
 // operation resulting from a 'renamed' (=rewritten) signature.
-func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.File, pos token.Pos, snapshot *cache.Snapshot, cursor inspector.Cursor, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
-	fdecl := funcKeywordDecl(pos, cursor)
+func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.File, start, end token.Pos, snapshot *cache.Snapshot, cursor inspector.Cursor, f file.Handle, rng protocol.Range, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
+	fdecl := funcKeywordDecl(start, end, cursor)
 	if fdecl == nil {
 		return nil, nil
 	}
@@ -343,11 +343,11 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		newParams = append(newParams, info.idx)
 	}
 
-	rng, err := pgf.PosRange(ftyp.Func, ftyp.Func)
+	funcRng, err := pgf.PosRange(ftyp.Func, ftyp.Func)
 	if err != nil {
 		return nil, err
 	}
-	changes, err := ChangeSignature(ctx, snapshot, pkg, pgf, rng, newParams)
+	changes, err := ChangeSignature(ctx, snapshot, pkg, pgf, funcRng, newParams)
 	if err != nil {
 		return nil, err
 	}
@@ -360,13 +360,13 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 
 // funcKeywordDecl returns the FuncDecl for which pos is in the 'func' keyword,
 // if any.
-func funcKeywordDecl(pos token.Pos, cursor inspector.Cursor) *ast.FuncDecl {
+func funcKeywordDecl(start, end token.Pos, cursor inspector.Cursor) *ast.FuncDecl {
 	fdecl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](cursor)
 	if fdecl == nil {
 		return nil
 	}
 	ftyp := fdecl.Type
-	if pos < ftyp.Func || pos > ftyp.Func+token.Pos(len("func")) { // tolerate renaming immediately after 'func'
+	if start < ftyp.Func || end > ftyp.Func+token.Pos(len("func")) { // tolerate renaming immediately after 'func'
 		return nil
 	}
 	return fdecl
@@ -410,7 +410,7 @@ func editsToDocChanges(ctx context.Context, snapshot *cache.Snapshot, edits map[
 
 // Rename returns a map of TextEdits for each file modified when renaming a
 // given identifier within a package.
-func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) ([]protocol.DocumentChange, error) {
+func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, rng protocol.Range, newName string) ([]protocol.DocumentChange, error) {
 	ctx, done := event.Start(ctx, "golang.Rename")
 	defer done()
 
@@ -418,24 +418,24 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
 
-	cur, ok := pgf.Cursor().FindByPos(pos, pos)
+	cur, ok := pgf.Cursor().FindByPos(start, end)
 	if !ok {
 		return nil, fmt.Errorf("can't find cursor for selection")
 	}
 
-	if edits, err := renameFuncSignature(ctx, pkg, pgf, pos, snapshot, cur, f, pp, newName); err != nil {
+	if edits, err := renameFuncSignature(ctx, pkg, pgf, start, end, snapshot, cur, f, rng, newName); err != nil {
 		return nil, err
 	} else if edits != nil {
 		return editsToDocChanges(ctx, snapshot, edits)
 	}
 
 	// Cursor within package name declaration?
-	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, pp)
+	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +463,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 		if !isValidIdentifier(newName) {
 			return nil, fmt.Errorf("invalid identifier to rename: %q", newName)
 		}
-		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
+		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), rng, newName)
 		if err != nil {
 			return nil, err
 		}
@@ -561,7 +561,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 }
 
 // renameOrdinary renames an ordinary (non-package) name throughout the workspace.
-func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pp protocol.Position, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
+func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, rng protocol.Range, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
 	// Type-check the referring package and locate the object(s).
 	//
 	// Unlike NarrowestPackageForFile, this operation prefers the
@@ -586,11 +586,11 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	if err != nil {
 		return nil, err // "can't happen"
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor().FindByPos(pos, pos) // cannot fail
+	cur, _ := pgf.Cursor().FindByPos(start, end) // cannot fail
 
 	targets, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
@@ -598,7 +598,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		// objectsAt will have returned an error in this case.
 		// TODO(adonovan): move this logic into objectsAt.
 		var ok bool
-		cur, ok = docCommentPosToIdent(pgf, pos, cur)
+		cur, ok = docCommentPosToIdent(pgf, start, end, cur)
 		if !ok {
 			return nil, err
 		}
@@ -631,7 +631,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 				if err != nil {
 					return nil, err
 				}
-				return renameOrdinary(ctx, snapshot, loc.URI, loc.Range.Start, newName)
+				return renameOrdinary(ctx, snapshot, loc.URI, loc.Range, newName)
 			}
 		}
 	}
@@ -1752,31 +1752,31 @@ func docComment(pgf *parsego.File, curId inspector.Cursor) *ast.CommentGroup {
 // docCommentPosToIdent returns a cursor for the identifier whose doc
 // comment contains pos, if any. The pos must be within an occurrence
 // of the identifier's name, otherwise it returns zero.
-func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor) (inspector.Cursor, bool) {
+func docCommentPosToIdent(pgf *parsego.File, start, end token.Pos, cur inspector.Cursor) (inspector.Cursor, bool) {
 	for curId := range cur.Preorder((*ast.Ident)(nil)) {
 		id := curId.Node().(*ast.Ident)
-		if pos > id.Pos() {
+		if start > id.Pos() {
 			continue // Doc comments are not located after an ident.
 		}
 		doc := docComment(pgf, curId)
-		if doc == nil || !(doc.Pos() <= pos && pos < doc.End()) {
+		if doc == nil || !(doc.Pos() <= start && end < doc.End()) {
 			continue
 		}
 
 		docRegexp := regexp.MustCompile(`\b` + id.Name + `\b`)
 		for _, comment := range doc.List {
-			if isDirective(comment.Text) || !(comment.Pos() <= pos && pos < comment.End()) {
+			if isDirective(comment.Text) || !(comment.Pos() <= start && end < comment.End()) {
 				continue
 			}
-			start := comment.Pos()
+			commentStart := comment.Pos()
 			text, err := pgf.NodeText(comment)
 			if err != nil {
 				return inspector.Cursor{}, false
 			}
 			for _, locs := range docRegexp.FindAllIndex(text, -1) {
-				matchStart := start + token.Pos(locs[0])
-				matchEnd := start + token.Pos(locs[1])
-				if matchStart <= pos && pos <= matchEnd {
+				matchStart := commentStart + token.Pos(locs[0])
+				matchEnd := commentStart + token.Pos(locs[1])
+				if matchStart <= start && end <= matchEnd {
 					return curId, true
 				}
 			}
@@ -1814,15 +1814,15 @@ func (r *renamer) updatePkgName(pgf *parsego.File, pkgName *types.PkgName) (diff
 // whether the position ppos lies within it.
 //
 // Note: also used by references.
-func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, ppos protocol.Position) (*parsego.File, bool, error) {
+func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*parsego.File, bool, error) {
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 	if err != nil {
 		return nil, false, err
 	}
 	// Careful: because we used parsego.Header,
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
-	pos, _ := pgf.PositionPos(ppos)
-	return pgf, astutil.NodeContainsPos(pgf.File.Name, pos), nil
+	start, end, _ := pgf.RangePos(rng)
+	return pgf, astutil.NodeContains(pgf.File.Name, astutil.RangeOf(start, end)), nil
 }
 
 // posEdit returns an edit to replace the (start, end) range of tf with 'new'.

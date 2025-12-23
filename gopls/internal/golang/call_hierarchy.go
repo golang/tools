@@ -24,7 +24,7 @@ import (
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
-func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.CallHierarchyItem, error) {
+func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.CallHierarchyItem, error) {
 	ctx, done := event.Start(ctx, "golang.PrepareCallHierarchy")
 	defer done()
 
@@ -32,12 +32,11 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(hxjiang): replace PrepareCallHierarchy's input position with range.
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
+	obj, err := callHierarchyFuncAtRange(pkg.TypesInfo(), pgf, astutil.RangeOf(start, end))
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +44,6 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	if err != nil {
 		return nil, err
 	}
-	rng := declLoc.Range
 
 	return []protocol.CallHierarchyItem{{
 		Name:           obj.Name(),
@@ -53,17 +51,17 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		Tags:           []protocol.SymbolTag{},
 		Detail:         callHierarchyItemDetail(obj, declLoc),
 		URI:            declLoc.URI,
-		Range:          rng,
-		SelectionRange: rng,
+		Range:          declLoc.Range,
+		SelectionRange: declLoc.Range,
 	}}, nil
 }
 
 // IncomingCalls returns an array of CallHierarchyIncomingCall for a file and the position within the file.
-func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pos protocol.Position) ([]protocol.CallHierarchyIncomingCall, error) {
+func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.CallHierarchyIncomingCall, error) {
 	ctx, done := event.Start(ctx, "golang.IncomingCalls")
 	defer done()
 
-	refs, err := references(ctx, snapshot, fh, pos, false)
+	refs, err := references(ctx, snapshot, fh, rng, false)
 	if err != nil {
 		if errors.Is(err, ErrNoIdentFound) || errors.Is(err, errNoObjectFound) {
 			return nil, nil
@@ -193,7 +191,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, err
 	}
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
+	obj, err := callHierarchyFuncAtRange(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +232,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
-		obj, err := callHierarchyFuncAtPos(declPkg.TypesInfo(), declPGF, callRange)
+		obj, err := callHierarchyFuncAtRange(declPkg.TypesInfo(), declPGF, callRange)
 		if err != nil {
 			continue // ignore
 		}
@@ -282,9 +280,9 @@ func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
 	return detail
 }
 
-// callHierarchyFuncAtPos returns the function symbol (Func or Builtin) referred
+// callHierarchyFuncAtRange returns the function symbol (Func or Builtin) referred
 // to by the identifier at the specified range.
-func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, rng astutil.Range) (types.Object, error) {
+func callHierarchyFuncAtRange(info *types.Info, pgf *parsego.File, rng astutil.Range) (types.Object, error) {
 	cur, ok := pgf.Cursor().FindByPos(rng.Pos(), rng.End())
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen

@@ -33,18 +33,18 @@ import (
 // - fix pkg=command-line-arguments problem with query initiated at "error" in builtins.go
 
 // PrepareTypeHierarchy returns the TypeHierarchyItems for the types at the selected position.
-func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.TypeHierarchyItem, error) {
+func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TypeHierarchyItem, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
 
 	// For now, we require that the selection be a type name.
-	cur, ok := pgf.Cursor().FindByPos(pos, pos)
+	cur, ok := pgf.Cursor().FindByPos(start, end)
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}

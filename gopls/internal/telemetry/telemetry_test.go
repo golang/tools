@@ -263,7 +263,7 @@ func _() {
 	).Run(t, files, func(_ *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		before := totalLatencySamples(t, "completion", false)
-		loc := env.RegexpSearch("a.go", "x")
+		loc := env.RegexpSearch("a.go", "()x")
 		for i := 0; i < 10; i++ {
 			env.Completion(loc)
 		}

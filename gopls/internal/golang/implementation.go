@@ -54,11 +54,11 @@ import (
 //
 // If the position denotes a method, the computation is applied to its
 // receiver type and then its corresponding methods are returned.
-func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position) ([]protocol.Location, error) {
+func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "golang.Implementation")
 	defer done()
 
-	locs, err := implementations(ctx, snapshot, f, pp)
+	locs, err := implementations(ctx, snapshot, f, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -67,20 +67,20 @@ func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	return locs, nil
 }
 
-func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
+func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	// Type check the current package.
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 
 	// Find implementations based on func signatures.
-	if locs, err := implFuncs(pkg, cur, pos); err != errNotHandled {
+	if locs, err := implFuncs(pkg, cur, start, end); err != errNotHandled {
 		return locs, err
 	}
 
@@ -890,7 +890,7 @@ var (
 //
 // implFuncs returns errNotHandled to indicate that we should try the
 // regular method-sets algorithm.
-func implFuncs(pkg *cache.Package, curSel inspector.Cursor, pos token.Pos) ([]protocol.Location, error) {
+func implFuncs(pkg *cache.Package, curSel inspector.Cursor, start, end token.Pos) ([]protocol.Location, error) {
 	info := pkg.TypesInfo()
 	if info.Types == nil || info.Defs == nil || info.Uses == nil {
 		panic("one of info.Types, .Defs or .Uses is nil")
@@ -918,7 +918,7 @@ func implFuncs(pkg *cache.Package, curSel inspector.Cursor, pos token.Pos) ([]pr
 	) {
 		switch n := cur.Node().(type) {
 		case *ast.FuncDecl, *ast.FuncLit:
-			if inToken(n.Pos(), "func", pos) {
+			if inToken(n.Pos(), "func", start, end) {
 				// Case 1: concrete function declaration.
 				// Report uses of corresponding function types.
 				switch n := n.(type) {
@@ -930,14 +930,14 @@ func implFuncs(pkg *cache.Package, curSel inspector.Cursor, pos token.Pos) ([]pr
 			}
 
 		case *ast.FuncType:
-			if n.Func.IsValid() && inToken(n.Func, "func", pos) && !beneathFuncDef(cur) {
+			if n.Func.IsValid() && inToken(n.Func, "func", start, end) && !beneathFuncDef(cur) {
 				// Case 2a: function type.
 				// Report declarations of corresponding concrete functions.
 				return funcDefs(pkg, info.TypeOf(n))
 			}
 
 		case *ast.CallExpr:
-			if inToken(n.Lparen, "(", pos) {
+			if inToken(n.Lparen, "(", start, end) {
 				t := dynamicFuncCallType(info, n)
 				if t == nil {
 					return nil, fmt.Errorf("not a dynamic function call")
@@ -1059,8 +1059,8 @@ func dynamicFuncCallType(info *types.Info, call *ast.CallExpr) types.Type {
 	return nil
 }
 
-// inToken reports whether pos is within the token of
+// inToken reports whether (start, end) is within the token of
 // the specified position and string.
-func inToken(tokPos token.Pos, tokStr string, pos token.Pos) bool {
-	return tokPos <= pos && pos <= tokPos+token.Pos(len(tokStr))
+func inToken(tokPos token.Pos, tokStr string, start, end token.Pos) bool {
+	return tokPos <= start && end <= tokPos+token.Pos(len(tokStr))
 }

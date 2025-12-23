@@ -49,7 +49,7 @@ func (h *handler) symbolReferencesHandler(ctx context.Context, req *mcp.CallTool
 	if err != nil {
 		return nil, nil, err
 	}
-	refs, err := golang.References(ctx, snapshot, declFH, loc.Range.Start, true)
+	refs, err := golang.References(ctx, snapshot, declFH, loc.Range, true)
 	if err != nil {
 		return nil, nil, err
 	}
