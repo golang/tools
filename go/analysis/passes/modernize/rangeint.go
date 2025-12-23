@@ -123,9 +123,21 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						continue nextLoop
 					}
 
+					validIncrement := false
 					if inc, ok := loop.Post.(*ast.IncDecStmt); ok &&
 						inc.Tok == token.INC &&
 						astutil.EqualSyntax(compare.X, inc.X) {
+						// Have: i++
+						validIncrement = true
+					} else if assign, ok := loop.Post.(*ast.AssignStmt); ok &&
+						assign.Tok == token.ADD_ASSIGN &&
+						len(assign.Rhs) == 1 && isIntLiteral(info, assign.Rhs[0], 1) &&
+						len(assign.Lhs) == 1 && astutil.EqualSyntax(compare.X, assign.Lhs[0]) {
+						// Have: i += 1
+						validIncrement = true
+					}
+
+					if validIncrement {
 						// Have: for i = 0; i < limit; i++ {}
 
 						// Find references to i within the loop body.
@@ -246,7 +258,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 
 						pass.Report(analysis.Diagnostic{
 							Pos:     init.Pos(),
-							End:     inc.End(),
+							End:     loop.Post.End(),
 							Message: "for loop can be modernized using range over int",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: fmt.Sprintf("Replace for loop with range %s",
@@ -272,7 +284,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 									// Delete inc.
 									{
 										Pos: limit.End(),
-										End: inc.End(),
+										End: loop.Post.End(),
 									},
 									// Add ")" after limit, if needed.
 									{
