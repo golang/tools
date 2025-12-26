@@ -225,7 +225,7 @@ func TestCursor_FindNode(t *testing.T) {
 	inspect := netInspect
 
 	// Enumerate all nodes of a particular type,
-	// then check that FindPos can find them,
+	// then check that FindByPos can find them,
 	// starting at the root.
 	//
 	// (We use BasicLit because they are numerous.)
@@ -263,15 +263,15 @@ func TestCursor_FindNode(t *testing.T) {
 	}
 }
 
-// TestCursor_FindPos_order ensures that FindPos does not assume files are in Pos order.
-func TestCursor_FindPos_order(t *testing.T) {
+// TestCursor_FindByPos_order ensures that FindByPos does not assume files are in Pos order.
+func TestCursor_FindByPos_order(t *testing.T) {
 	// Pick an arbitrary decl.
 	target := netFiles[7].Decls[0]
 
 	// Find the target decl by its position.
 	cur, ok := netInspect.Root().FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
-		t.Fatalf("unshuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
+		t.Fatalf("unshuffled: FindByPos(%T) = (%v, %t)", target, cur, ok)
 	}
 
 	// Shuffle the files out of Pos order.
@@ -284,7 +284,7 @@ func TestCursor_FindPos_order(t *testing.T) {
 	inspect := inspector.New(files)
 	cur, ok = inspect.Root().FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
-		t.Fatalf("shuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
+		t.Fatalf("shuffled: FindByPos(%T) = (%v, %t)", target, cur, ok)
 	}
 }
 
@@ -375,6 +375,59 @@ func TestCursor_Edge(t *testing.T) {
 			if cur.Contains(uncle) {
 				t.Errorf("cur.Contains(cur.Parent().NextSibling()): %v", cur)
 			}
+		}
+	}
+}
+
+// Regression test for mutilple matching nodes in FindByPos (#76872).
+func TestCursor_FindByPos_Boundary(t *testing.T) {
+	// This test verifies that when a cursor position is on the boundary of two
+	// adjacent nodes (e.g. "foo|("), FindByPos returns the first node
+	// encountered in traversal order (which is usually the node "to the left").
+	//
+	// Note: The source is intentionally unformatted (no space between ')' and
+	// '{') to ensure the nodes are strictly adjacent at the boundary.
+	const src = `package p; func foo(a int){}`
+	var (
+		fset    = token.NewFileSet()
+		f, _    = parser.ParseFile(fset, "p.go", src, 0)
+		tokFile = fset.File(f.FileStart)
+		inspect = inspector.New([]*ast.File{f})
+	)
+
+	d := f.Decls[0].(*ast.FuncDecl)
+
+	format := func(pos token.Pos) string {
+		off := tokFile.Offset(pos)
+		return fmt.Sprintf("...%s<<>>%s...", src[off-1:off], src[off:off+1])
+	}
+
+	for _, test := range []struct {
+		name string
+		pos  token.Pos
+		want ast.Node
+	}{
+		{
+			// "foo|(" Ident
+			pos:  d.Type.Params.Opening,
+			want: d.Name,
+		},
+		{
+			// ")|{" FieldList
+			pos:  d.Body.Pos(),
+			want: d.Type.Params,
+		},
+	} {
+		cur, ok := inspect.Root().FindByPos(test.pos, test.pos)
+		if !ok {
+			t.Fatalf("FindByPos(%d) %s found nothing", test.pos, format(test.pos))
+		}
+
+		if cur.Node() != test.want {
+			t.Errorf("FindByPos(%d) %s:\ngot  %T (%v)\nwant %T (%v)",
+				test.pos, format(test.pos),
+				cur.Node(), cur.Node(),
+				test.want, test.want)
 		}
 	}
 }
@@ -615,12 +668,12 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 	})
 
 	// This method is about 100x (!) faster than Cursor.Preorder.
-	b.Run("Cursor.FindPos", func(b *testing.B) {
+	b.Run("Cursor.FindByPos", func(b *testing.B) {
 		needleNode := needle.Node()
 		for b.Loop() {
 			found, ok := root.FindByPos(needleNode.Pos(), needleNode.End())
 			if !ok || found != needle {
-				b.Errorf("FindPos search failed: got %v, want %v", found, needle)
+				b.Errorf("FindByPos search failed: got %v, want %v", found, needle)
 			}
 		}
 	})

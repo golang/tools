@@ -1,0 +1,16 @@
+This test exercises a references query at a position where an empty selection
+might be considered enclosed both by the node before (Ident) and the node after
+(FuncType). It ensures that we find the reference of the syntax node before the
+cursor.
+
+See https://github.com/golang/go/issues/76872.
+
+-- main.go --
+package main
+
+// re"foo()" matches the zero-width position after "foo", not the call parens.
+func foo() {} //@ loc(decl, "foo"), refs(re"foo()", decl, call)
+
+func _() {
+	foo() //@ loc(call, "foo")
+}
