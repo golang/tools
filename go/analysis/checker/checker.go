@@ -313,6 +313,7 @@ func (act *Action) execOnce() {
 	if mod := act.Package.Module; mod != nil {
 		module.Path = mod.Path
 		module.Version = mod.Version
+		module.GoMod = mod.GoMod
 		module.GoVersion = mod.GoVersion
 	}
 
