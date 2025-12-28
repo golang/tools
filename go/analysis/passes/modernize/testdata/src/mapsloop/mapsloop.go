@@ -21,6 +21,17 @@ func useCopy(dst, src map[int]string) {
 	}
 }
 
+func useCopyRetrieveMap(x map[int]int) {
+	getMap := func(int) map[int]int { return nil }
+	for i, v := range x {
+		// TODO(yuchen): don't assume that getMap returns the same map each time and has no effects.
+		//
+		// So, to avoid changing the cardinality of side effects,
+		// the limit expression must not involve function calls (e.g. seq.Len()) or channel receives.
+		getMap(0)[i] = v // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+}
+
 func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
 	// Replace loop by maps.Copy.
 	for key, value := range src {
@@ -220,5 +231,34 @@ func nopeHasImplicitKeyWidening(src map[string]string) {
 	dst := make(map[any]string)
 	for k, v := range src {
 		dst[k] = v
+	}
+}
+
+// The expression for the map (y[v]) must not itself refer to loop variables.
+// See https://go.dev/issue/77008.
+func nopeMapExprUsesLoopVars(x map[int]int, y []map[int]int) {
+	for i, v := range x {
+		y[v][i] = v
+	}
+}
+
+func nopeExtraKeyValueUsage(x map[int]int, y []map[int]int) {
+	for i, v := range x {
+		y[i][i] = v
+	}
+
+	getMap := func(int) map[int]int { return nil }
+	for i, v := range x {
+		getMap(i)[i] = v
+	}
+
+	for i, v := range x {
+		getMap(v)[i] = v
+	}
+}
+
+func nope2LhsAssigment(x map[int]int, y map[int]int) {
+	for i, v := range x {
+		y[i], _ = v, 0
 	}
 }
