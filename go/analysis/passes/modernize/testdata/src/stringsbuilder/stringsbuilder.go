@@ -1,5 +1,7 @@
 package stringsbuilder
 
+import "strings"
+
 // basic test
 func _() {
 	var s string
@@ -98,4 +100,33 @@ func issue75318(slice []string) string {
 		msg += s // want "using string \\+= string in a loop is inefficient"
 	}
 	return msg
+}
+
+// Regression test for https://go.dev/issue/76983.
+// We offer only the first fix if the second would overlap.
+// This is an ad-hoc mitigation of the more general issue #76476.
+func _(slice []string) string {
+	a := "12"
+	for range 2 {
+		a += "34" // want "using string \\+= string in a loop is inefficient"
+	}
+	b := "56"
+	for range 2 {
+		b += "78"
+	}
+	a += b
+	return a
+}
+func _(slice []string) string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString("34")
+	}
+	b := "56"
+	for range 2 {
+		b += "78" // want "using string \\+= string in a loop is inefficient"
+	}
+	a.WriteString(b)
+	return a.String()
 }
