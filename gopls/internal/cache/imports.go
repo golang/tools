@@ -191,8 +191,8 @@ func (s *modcacheState) refreshIndex() {
 	if err != nil {
 		if s.indexErr != nil {
 			s.indexErr = err // prefer most recent error
-		} else {
-			// Keep using stale s.index (if any).
+		} else if s.index != nil {
+			// Keep using stale s.index.
 			log.Printf("modcacheState.refreshIndex: %v", err)
 		}
 	} else {

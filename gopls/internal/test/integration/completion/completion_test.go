@@ -23,6 +23,7 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -1621,6 +1622,72 @@ go 1.24.2
 		one := compls.Items[0].AdditionalTextEdits[0].NewText
 		if one != "\nimport xrand \"math/rand\"\n" {
 			t.Errorf("wrong import %q", one)
+		}
+	})
+}
+
+func TestModIndexDirEmpty(t *testing.T) {
+	// Test for issue #75505. Do not run this test in parallel.
+	// Test that if modindex.IndexDir is empty, we still get stdlib completions
+	// but not unimported completions from modules.
+
+	// Save/restore IndexDir, and set it to empty string.
+	// This simulates having no module cache.
+	old := modindex.IndexDir
+	modindex.IndexDir = ""
+	defer func() { modindex.IndexDir = old }()
+	// for the paranoid, with modindex.IndexDir = old here, the test fails
+
+	const mod = `
+-- go.mod --
+module mod.com
+go 1.22
+require example.com v1.2.3
+-- main.go --
+package main
+func main() {
+	_ = fmt.P
+	_ = blah.N
+}
+-- main2.go --
+package main
+import "example.com/blah"
+func _() {
+	_ = blah.Hello
+}
+`
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy), // providing example.com through GOPROXY to the go command
+		Settings{"importsSource": settings.ImportsSourceGopls},
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		// We need example.com in the module cache, but not
+		// otherwise available to the completion logic.
+		env.RemoveWorkspaceFile("main2.go")
+		env.RunGoCommand("mod", "tidy")
+		env.Await(env.DoneWithChangeWatchedFiles())
+
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+
+		// 1. Check stdlib completion (should work)
+		loc := env.RegexpSearch("main.go", "fmt.P()")
+		completions := env.Completion(loc)
+		if len(completions.Items) == 0 {
+			t.Errorf("stdlib completion failed to find fmt.Print...")
+		}
+
+		// 2. Check unimported completion (should fail)
+		// We look for "blah.H" which is from example.com
+		loc = env.RegexpSearch("main.go", "blah.N()")
+		completions = env.Completion(loc)
+
+		// We expect NO unimported completions for blah.Name because modindex is disabled.
+		for _, item := range completions.Items {
+			// We shouldn't get candidate from example.com/blah.
+			if strings.Contains(item.Detail, "example.com/blah") {
+				t.Errorf("unexpected unimported completion for blah with empty IndexDir: %v", item)
+			}
 		}
 	})
 }
