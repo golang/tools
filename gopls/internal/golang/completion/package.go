@@ -108,14 +108,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 			if !strings.HasPrefix(PACKAGE, name.Name) {
 				return nil, fmt.Errorf("cursor in non-matching ident")
 			}
-			return &Selection{
+			sel := &Selection{
 				content: name.Name,
 				cursor:  cursor,
 				tokFile: tok,
 				start:   name.Pos(),
 				end:     name.End(),
 				mapper:  m,
-			}, nil
+			}
+			sel.check()
+			return sel, nil
 		}
 	}
 
@@ -131,14 +133,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 		return nil, err
 	}
 	if offset > start && string(bytes.TrimRight(pgf.Src[start:offset], " ")) == PACKAGE {
-		return &Selection{
+		sel := &Selection{
 			content: string(pgf.Src[start:offset]),
 			cursor:  cursor,
 			tokFile: tok,
 			start:   expr.Pos(),
 			end:     cursor,
 			mapper:  m,
-		}, nil
+		}
+		sel.check()
+		return sel, nil
 	}
 
 	// If the cursor is after the start of the expression, no package
@@ -153,14 +157,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 	}
 
 	// The surrounding range in this case is the cursor.
-	return &Selection{
+	sel := &Selection{
 		content: "",
 		tokFile: tok,
 		start:   cursor,
 		end:     cursor,
 		cursor:  cursor,
 		mapper:  m,
-	}, nil
+	}
+	sel.check()
+	return sel, nil
 }
 
 func cursorInComment(file *token.File, cursor token.Pos, src []byte) bool {

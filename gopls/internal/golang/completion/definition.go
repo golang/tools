@@ -37,13 +37,14 @@ func definition(path []ast.Node, obj types.Object, pgf *parsego.File) ([]Complet
 	start := path[0].Pos()
 	end := path[0].End()
 	sel := &Selection{
-		content: "",
+		content: "", // why isn't this name?
 		cursor:  start,
 		tokFile: pgf.Tok,
 		start:   start,
 		end:     end,
 		mapper:  pgf.Mapper,
 	}
+	sel.check()
 	var ans []CompletionItem
 	var hasParens bool
 	n, ok := path[1].(*ast.FuncDecl)

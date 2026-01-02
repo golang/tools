@@ -372,7 +372,7 @@ type completionContext struct {
 
 // A Selection represents the cursor position and surrounding identifier.
 type Selection struct {
-	content            string
+	content            string // invariant: 0<=cursor-start<=len(content)
 	tokFile            *token.File
 	start, end, cursor token.Pos // relative to rng.TokFile
 	mapper             *protocol.Mapper
@@ -396,6 +396,19 @@ func (p Selection) Suffix() string {
 	return p.content[p.cursor-p.start:]
 }
 
+// check that Prefix and Suffix will succeed (golang/go#77050)
+// at the time a Selection is constructed.
+func (p Selection) check() {
+	offset := int(p.cursor - p.start)
+	// separate the cases so that they are distinguished in the stack trace
+	if offset < 0 {
+		bug.Reportf("Selection invariant, len(content)=%d cursor=%d start=%d", len(p.content), p.cursor, p.start)
+	}
+	if offset > len(p.content) {
+		bug.Reportf("Selection invariant, len(content)=%d cursor=%d start=%d", len(p.content), p.cursor, p.start)
+	}
+}
+
 func (c *completer) setSurrounding(ident *ast.Ident) {
 	if c.surrounding != nil {
 		return
@@ -413,6 +426,7 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 		end:     ident.End(),
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
 }
@@ -438,6 +452,7 @@ func (c *completer) getSurrounding() *Selection {
 			end:     c.pos,
 			mapper:  c.mapper,
 		}
+		c.surrounding.check()
 	}
 	return c.surrounding
 }
@@ -933,6 +948,7 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 		end:     end,
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 
 	seenImports := make(map[string]struct{})
 	for _, importSpec := range c.pgf.File.Imports {
@@ -1172,6 +1188,7 @@ func (c *completer) setSurroundingForComment(comments *ast.CommentGroup) {
 		end:     token.Pos(int(cursorComment.Slash) + end),
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
 }
 
