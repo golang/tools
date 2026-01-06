@@ -71,15 +71,33 @@ func (g[T]) method() {} // want `method "method" is unused`
 const unusedConst = 1 // want `const "unusedConst" is unused`
 
 const (
-	unusedEnum = iota
+	unusedEnum = iota // want `const "unusedEnum" is unused`
 )
 
+const constOne = 1
+const unusedConstTwo = constOne // want `const "unusedConstTwo" is unused`
+const _, unusedConstThree = 0, 3 // want `const "unusedConstThree" is unused`
+const unusedConstFour, _ = 4, 0 // want `const "unusedConstFour" is unused`
+const unusedConstFive, UsedConst6 = 4, 6 // want `const "unusedConstFive" is unused`
+
+// This test verifies the fix for golang/go#76924.
+// We no longer produce unused variable warnings for a group
+// of unused constants if all constants have the same type and
+// at least one is used.
+
 const (
-	constOne       = 1
-	unusedConstTwo = constOne // want `const "unusedConstTwo" is unused`
-	_, unusedConstThree = 0, 3 // want `const "unusedConstThree" is unused`
-	unusedConstFour, _ = 4, 0 // want `const "unusedConstFour" is unused`
-	unusedConstFive, UsedConst6 = 4, 6 // want `const "unusedConstFive" is unused`
+	a = "a"
+	b = "b"
+	c = "c"
+)
+
+func _() {
+	print(a)
+}
+
+const ( // want `all values in this set of constants are unused`
+	d = "d"
+	e = "e"
 )
 
 // -- vars --
@@ -141,14 +159,24 @@ type g[T any] int
 
 // -- constants --
 
-const (
-	unusedEnum = iota
-)
+const constOne = 1
+
+const UsedConst6 = 6 // want `const "unusedConstFive" is unused`
+
+// This test verifies the fix for golang/go#76924.
+// We no longer produce unused variable warnings for a group
+// of unused constants if all constants have the same type and
+// at least one is used.
 
 const (
-	constOne = 1
-	UsedConst6 = 6 // want `const "unusedConstFive" is unused`
+	a = "a"
+	b = "b"
+	c = "c"
 )
+
+func _() {
+	print(a)
+}
 
 // -- vars --
 

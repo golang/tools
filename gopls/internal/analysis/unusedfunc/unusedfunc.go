@@ -54,9 +54,11 @@ import (
 // for unexported identifiers.)
 //
 // Types (sans methods), constants, and vars are more straightforward.
-// For now we ignore enums (const decls using iota) since it is
-// common for at least some values to be unused when they are added
-// for symmetry, future use, or to conform to some external pattern.
+//
+// For enums (defined here as const decls where all consts have the same type),
+// we only require that one of the names in the group is used, since it is
+// common for at least some values to be unused when they are added for
+// symmetry, future use, or to conform to some external pattern.
 
 //go:embed doc.go
 var doc string
@@ -97,17 +99,17 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	})
 
-	// checkUnused reports a diagnostic if the object declared at id
-	// is unexported and unused. References within curSelf are ignored.
-	checkUnused := func(noun string, id *ast.Ident, curSelf inspector.Cursor, delete func() []analysis.TextEdit) {
+	// used reports whether the object declared at id is (potentially) used.
+	// References within curSelf are ignored.
+	used := func(id *ast.Ident, curSelf inspector.Cursor) bool {
 		// Exported functions may be called from other packages.
 		if id.IsExported() {
-			return
+			return true
 		}
 
 		// Blank functions are exempt from diagnostics.
 		if id.Name == "_" {
-			return
+			return true
 		}
 
 		// Check for uses (including selections).
@@ -115,8 +117,17 @@ func run(pass *analysis.Pass) (any, error) {
 		for curId := range index.Uses(obj) {
 			// Ignore self references.
 			if !curSelf.Contains(curId) {
-				return // symbol is referenced
+				return true // symbol is referenced
 			}
+		}
+		return false
+	}
+
+	// checkUnused reports a diagnostic if the object declared at id
+	// is unexported and unused. References within curSelf are ignored.
+	checkUnused := func(noun string, id *ast.Ident, curSelf inspector.Cursor, delete func() []analysis.TextEdit) {
+		if used(id, curSelf) {
+			return
 		}
 
 		pass.Report(analysis.Diagnostic{
@@ -130,13 +141,25 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 
-	// Gather the set of enums (const GenDecls that use iota).
-	enums := make(map[inspector.Cursor]bool)
-	for curId := range index.Uses(types.Universe.Lookup("iota")) {
-		for curDecl := range curId.Enclosing((*ast.GenDecl)(nil)) {
-			enums[curDecl] = true
-			break
+	// isEnum returns true if the decl curGenDecl is a const decl with more than one
+	// spec where all consts are the same type.
+	isEnum := func(curGenDecl inspector.Cursor) bool {
+		decl := curGenDecl.Node().(*ast.GenDecl)
+		if decl.Tok != token.CONST || len(decl.Specs) < 2 {
+			return false
 		}
+		var prevType types.Type
+		for _, spec := range decl.Specs {
+			spec := spec.(*ast.ValueSpec)
+			for _, id := range spec.Names {
+				curType := pass.TypesInfo.TypeOf(id)
+				if prevType != nil && !types.Identical(curType, prevType) {
+					return false
+				}
+				prevType = curType
+			}
+		}
+		return true
 	}
 
 	// Check each package-level declaration (and method) for uses.
@@ -203,19 +226,50 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 
 				case token.CONST, token.VAR:
-					// Skip enums: values are often unused.
-					if enums[curDecl] {
-						continue
-					}
-					for i, spec := range decl.Specs {
-						spec := spec.(*ast.ValueSpec)
-						curSpec := curDecl.ChildAt(edge.GenDecl_Specs, i)
-
-						for j, id := range spec.Names {
-							checkUnused(decl.Tok.String(), id, curSpec, func() []analysis.TextEdit {
-								curId := curSpec.ChildAt(edge.ValueSpec_Names, j)
-								return refactor.DeleteVar(tokFile, pass.TypesInfo, curId)
+					if isEnum(curDecl) {
+						// For enum-like constants, a use of any
+						// name acts as a use of the whole.
+						// TODO(mkalil): This results in false negatives, for example:
+						// const (
+						//	 a = 0
+						//	 b = a + 1
+						// )
+						// We report that a is "used" even though is not used outside the const
+						// decl, and since we do not report errors in enums that have at least one
+						// used name, we do not report a diagnostic at all.
+						allUnused := true
+						for i, spec := range decl.Specs {
+							curSpec := curDecl.ChildAt(edge.GenDecl_Specs, i)
+							for _, id := range spec.(*ast.ValueSpec).Names {
+								if used(id, curSpec) {
+									allUnused = false
+									break
+								}
+							}
+						}
+						if allUnused {
+							edits := refactor.DeleteDecl(tokFile, curDecl)
+							pass.Report(analysis.Diagnostic{
+								Pos:     decl.Pos(),
+								End:     decl.End(),
+								Message: "all values in this set of constants are unused",
+								SuggestedFixes: []analysis.SuggestedFix{{
+									Message:   "Delete the constants declaration",
+									TextEdits: edits,
+								}},
 							})
+						}
+					} else {
+						for i, spec := range decl.Specs {
+							spec := spec.(*ast.ValueSpec)
+							curSpec := curDecl.ChildAt(edge.GenDecl_Specs, i)
+
+							for j, id := range spec.Names {
+								checkUnused(decl.Tok.String(), id, curSpec, func() []analysis.TextEdit {
+									curId := curSpec.ChildAt(edge.ValueSpec_Names, j)
+									return refactor.DeleteVar(tokFile, pass.TypesInfo, curId)
+								})
+							}
 						}
 					}
 				}
