@@ -244,7 +244,17 @@ func knownIntrinsic(fn *types.Func) (noreturn, known bool) {
 
 	// Functions known intrinsically never to return.
 	if typesinternal.IsFunctionNamed(fn, "syscall", "Exit", "ExitProcess", "ExitThread") ||
-		typesinternal.IsFunctionNamed(fn, "runtime", "Goexit") {
+		typesinternal.IsFunctionNamed(fn, "runtime", "Goexit", "fatalthrow", "fatalpanic", "exit") ||
+		// Following staticcheck (see go/ir/exits.go) we include functions
+		// in several popular logging packages whose no-return status is
+		// beyond the analysis to infer.
+		// TODO(adonovan): make this list extensible.
+		typesinternal.IsMethodNamed(fn, "go.uber.org/zap", "Logger", "Fatal", "Panic") ||
+		typesinternal.IsMethodNamed(fn, "go.uber.org/zap", "SugaredLogger", "Fatal", "Fatalw", "Fatalf", "Panic", "Panicw", "Panicf") ||
+		typesinternal.IsMethodNamed(fn, "github.com/sirupsen/logrus", "Logger", "Exit", "Panic", "Panicf", "Panicln") ||
+		typesinternal.IsMethodNamed(fn, "github.com/sirupsen/logrus", "Entry", "Panicf", "Panicln") ||
+		typesinternal.IsFunctionNamed(fn, "k8s.io/klog", "Exit", "ExitDepth", "Exitf", "Exitln", "Fatal", "FatalDepth", "Fatalf", "Fatalln") ||
+		typesinternal.IsFunctionNamed(fn, "k8s.io/klog/v2", "Exit", "ExitDepth", "Exitf", "Exitln", "Fatal", "FatalDepth", "Fatalf", "Fatalln") {
 		return true, true
 	}
 
