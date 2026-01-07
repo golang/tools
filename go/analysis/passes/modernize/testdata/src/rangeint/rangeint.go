@@ -307,3 +307,20 @@ NotUsedAfter:
 		break NotUsedAfter
 	}
 }
+
+// Don't allow rewriting of an outer loop when its inner loop modifies the outer
+// loop variable.
+func issue77034() {
+	for i := 0; i < 5; i++ {
+		for i = range 10 {
+		}
+	}
+}
+
+func issue77034_define_inner() {
+	for i := 0; i < 5; i++ { // want "for loop can be modernized using range over int"
+		for i := range 10 { // inner "i" doesn't modify outer "i"
+			println(i)
+		}
+	}
+}

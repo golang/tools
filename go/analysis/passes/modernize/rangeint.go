@@ -332,6 +332,11 @@ func isScalarLvalue(info *types.Info, curId inspector.Cursor) bool {
 		if v, ok := info.Defs[id]; ok && v.Pos() != id.Pos() {
 			return true // reassignment of i (i, j := 1, 2)
 		}
+	case edge.RangeStmt_Key:
+		rng := cur.Parent().Node().(*ast.RangeStmt)
+		if rng.Tok == token.ASSIGN {
+			return true // "for k, v = range x" is like an AssignStmt to k, v
+		}
 	case edge.IncDecStmt_X:
 		return true // i++, i--
 	case edge.UnaryExpr_X:
