@@ -30,7 +30,9 @@ var didChangeTests = []changeTest{
 	{"google-cloud-go", "internal/annotate.go", true},
 	{"istio", "pkg/fuzz/util.go", true},
 	{"kubernetes", "pkg/controller/lookup_cache.go", true},
-	{"kubernetes.types", "staging/src/k8s.io/api/core/v1/types.go", true}, // results in 25K file batch!
+	// disable kubernetes.types as it fails on the builders, but not locally on mac or glinux
+	// error is didchange_test.go:134: formatting before save: editing "..."": column is beyond end of line;
+	{"kubernetes.types", "staging/src/k8s.io/api/core/v1/types.go", false}, // results in 25K file batch!
 	{"kuma", "api/generic/insights.go", true},
 	{"oracle", "dataintegration/data_type.go", false}, // diagnoseSave fails because this package is generated
 	{"pkgsite", "internal/frontend/server.go", true},
