@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -691,4 +692,38 @@ func UndefinedLabel() {
 		}
 	})
 
+}
+
+func TestDefinition_embedSeparator(t *testing.T) {
+	// This test checks that Definition on a //go:embed glob pattern reports
+	// the location of the (first) matching file. It is a regression test for
+	// a path-separator bug on Windows (https://go.dev/issue/77131).
+	//
+	// It can't be expressed as a marker test because it would require
+	// a @def marker within a //go:embed directive.
+	const src = `
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/subdir/embed.txt --
+hello
+
+-- a/a.go --
+package a
+
+import _ "embed"
+
+//go:embed subdir/embed.txt
+var _ string
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.FirstDefinition(env.RegexpSearch("a/a.go", "subdir"))
+		got := fileLocations(env, []protocol.Location{loc})
+		want := []string{"a/subdir/embed.txt:1"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Definition at 'subdir' returned %v, want %v", got, want)
+		}
+	})
 }
