@@ -94,6 +94,10 @@ func (s *server) ResolveCodeLens(context.Context, *protocol.CodeLens) (*protocol
 	return nil, notImplemented("ResolveCodeLens")
 }
 
+func (s *server) ResolveCommand(context.Context, *protocol.ExecuteCommandParams) (*protocol.ExecuteCommandParams, error) {
+	return nil, notImplemented("ResolveCommand")
+}
+
 func (s *server) ResolveCompletionItem(context.Context, *protocol.CompletionItem) (*protocol.CompletionItem, error) {
 	return nil, notImplemented("ResolveCompletionItem")
 }

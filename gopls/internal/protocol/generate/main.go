@@ -95,6 +95,24 @@ func processinline() {
 		}
 	}
 
+	// Add a client to server LSP method "command/resolve" for interactive
+	// refactoring. The method's param and result are both "ExecuteCommandParams".
+	// The types are only accessible from the "workspace/executeCommand" request.
+	//
+	// See microsoft/language-server-protocol#1164.
+	for _, req := range model.Requests {
+		if req.Method == "workspace/executeCommand" {
+			model.Requests = append(model.Requests, &Request{
+				Method:    "command/resolve",
+				ErrorData: req.ErrorData,
+				Direction: "clientToServer",
+				Params:    req.Params,
+				Result:    req.Params,
+			})
+			break
+		}
+	}
+
 	findTypeNames(model)
 	generateOutput(model)
 

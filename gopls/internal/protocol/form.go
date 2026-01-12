@@ -86,3 +86,35 @@ type FormField struct {
 	// If empty, the current answer is considered valid.
 	Error string `json:"error,omitempty"`
 }
+
+// InteractiveParams allow the server and client to exchange interactive
+// questions and answers during an LSP request.
+//
+// The server populates FormFields to define the schema. The server may
+// optionally populate FormAnswers to preserve previous user input; if
+// provided, the client may present these as default values.
+//
+// When the client responds, it must provide FormAnswers. The client is not
+// required to send FormFields back to the server.
+type InteractiveParams struct {
+	// FormFields defines the questions and validation errors in previous
+	// answers to the same questions.
+	//
+	// This is a server-to-client field. The language server defines these, and
+	// the client uses them to render the form.
+	//
+	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
+	FormFields []FormField `json:"formFields,omitempty"`
+
+	// FormAnswers contains the values for the form questions.
+	//
+	// When sent by the language server, this field is optional but recommended
+	// to support editing previous values.
+	//
+	// When sent by the language client, this field is required. The slice must
+	// have the same length as FormFields (one answer per question), where the
+	// answer at index i corresponds to the field at index i.
+	//
+	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
+	FormAnswers []any `json:"formAnswers,omitempty"`
+}

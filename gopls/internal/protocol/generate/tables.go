@@ -191,6 +191,7 @@ var methodNames = map[string]string{
 	"codeAction/resolve":                     "ResolveCodeAction",
 	"codeLens/resolve":                       "ResolveCodeLens",
 	"completionItem/resolve":                 "ResolveCompletionItem",
+	"command/resolve":                        "ResolveCommand",
 	"documentLink/resolve":                   "ResolveDocumentLink",
 	"exit":                                   "Exit",
 	"initialize":                             "Initialize",
@@ -288,51 +289,30 @@ func methodName(method string) string {
 // prependMethodDocComments specifies doc comments that will be prepend to
 // an LSP method name defined in both Server and Client interface.
 var prependMethodDocComments = map[string]string{
-	"ResolveCodeAction": `// To support microsoft/language-server-protocol#1164, the language server
-	// need to read the form with client-supplied answers and either returns a
-	// CodeAction with errors in the form surfacing the error to the client, or a
-	// CodeAction with properties the language client is waiting for (e.g. edits,
-	// commands).
+	"ResolveCommand": `// To support microsoft/language-server-protocol#1164, the language server
+	// need to read the form with client-supplied answers and either returns an
+	// ExecuteCommandParams with errors in the form surfacing the error to the
+	// client, or an ExecuteCommandParams with interative properties empty (e.g
+	// formFields, formAnswers) and user information integrated in original
+	// properties.
 	//
-	// The language client may call "codeAction/resolve" if the language server
-	// returns a CodeAction with errors or try asking the user for completing the
-	// form again.
-	// The language client may call "codeAction/resolve" multiple times with user
-	// filled (re-filled) answers in the form until it obtains a CodeAction with
-	// properties (e.g. edits, commands) it's waiting for.`,
+	// The language client may call "command/resolve" if the language server
+	// returns an ExecuteCommandParams with errors or try asking the user for
+	// completing the form again.
+	// The language client may call "command/resolve" multiple times with user
+	// filled (re-filled) answers in the form until it obtains an
+	// ExecuteCommandParams with interactive properties empty (e.g. formFields,
+	// formAnswers). by then the original properties contains all information,
+	// the client can call "workspace/executeCommand" with the same param.`,
 }
 
 // appendTypeProp specifies block of code (typically properties with doc comment)
 // that will be append to a struct.
 var appendTypeProp = map[string]string{
-	"CodeAction": `
-	// FormFields and FormAnswers allow the server and client to exchange
-	// interactive questions and answers during a resolveCodeAction request.
+	"ExecuteCommandParams": `
+	// Support interactive command execution.
 	//
-	// The server populates FormFields to define the schema. The server may
-	// optionally populate FormAnswers to preserve previous user input; if
-	// provided, the client may present these as default values.
-	//
-	// When the client responds, it must provide FormAnswers. The client is not
-	// required to send FormFields back to the server.
-
-	// FormFields defines the questions and validation errors.
-	//
-	// This is a server-to-client field. The language server defines these, and
-	// the client uses them to render the form.
-	//
-	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-	FormFields []FormField ` + "`json:\"formFields,omitempty\"`" + `
-
-	// FormAnswers contains the values for the form questions.
-	//
-	// When sent by the language server, this field is optional but recommended
-	// to support editing previous values.
-	//
-	// When sent by the language client, this field is required. The slice must
-	// have the same length as FormFields (one answer per question), where the
-	// answer at index i corresponds to the field at index i.
-	//
-	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-	FormAnswers []any ` + "`json:\"formAnswers,omitempty\"`",
+	// Note: This is a non-standard protocol extension. See golang/go#76331.
+	InteractiveParams
+`,
 }

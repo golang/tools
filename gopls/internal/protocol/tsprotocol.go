@@ -577,36 +577,6 @@ type CodeAction struct {
 	//
 	// @since 3.18.0 - proposed
 	Tags []CodeActionTag `json:"tags,omitempty"`
-
-	// FormFields and FormAnswers allow the server and client to exchange
-	// interactive questions and answers during a resolveCodeAction request.
-	//
-	// The server populates FormFields to define the schema. The server may
-	// optionally populate FormAnswers to preserve previous user input; if
-	// provided, the client may present these as default values.
-	//
-	// When the client responds, it must provide FormAnswers. The client is not
-	// required to send FormFields back to the server.
-
-	// FormFields defines the questions and validation errors.
-	//
-	// This is a server-to-client field. The language server defines these, and
-	// the client uses them to render the form.
-	//
-	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-	FormFields []FormField `json:"formFields,omitempty"`
-
-	// FormAnswers contains the values for the form questions.
-	//
-	// When sent by the language server, this field is optional but recommended
-	// to support editing previous values.
-	//
-	// When sent by the language client, this field is required. The slice must
-	// have the same length as FormFields (one answer per question), where the
-	// answer at index i corresponds to the field at index i.
-	//
-	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-	FormAnswers []any `json:"formAnswers,omitempty"`
 }
 
 // The Client Capabilities of a {@link CodeActionRequest}.
@@ -2335,6 +2305,11 @@ type ExecuteCommandParams struct {
 	Command string `json:"command"`
 	// Arguments that the command should be invoked with.
 	Arguments []json.RawMessage `json:"arguments,omitempty"`
+
+	// Support interactive command execution.
+	//
+	// Note: This is a non-standard protocol extension. See golang/go#76331.
+	InteractiveParams
 	WorkDoneProgressParams
 }
 
