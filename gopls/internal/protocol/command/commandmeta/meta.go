@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -75,6 +76,11 @@ func Load() ([]*Command, error) {
 		}
 		commands = append(commands, c)
 	}
+
+	// Sort commands for deterministic results.
+	slices.SortFunc(commands, func(a, b *Command) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return commands, nil
 }
 
