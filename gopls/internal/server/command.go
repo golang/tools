@@ -1246,27 +1246,12 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
-		dir := args.URI.DirPath()
-		pattern := args.Pattern
-
-		result, err := scan.RunGovulncheck(ctx, pattern, deps.snapshot, dir, workDoneWriter)
+		result, err := c.s.runVulncheck(ctx, deps.snapshot, args.URI, args.Pattern, workDoneWriter)
 		if err != nil {
 			return err
 		}
 		commandResult.Result = result
 		commandResult.Token = deps.work.Token()
-
-		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
-			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
-		})
-		if err != nil {
-			return err
-		}
-		defer release()
-
-		// Diagnosing with the background context ensures new snapshots are fully
-		// diagnosed.
-		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {
@@ -1285,7 +1270,6 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 		sort.Strings(affectingOSVs)
 
 		showMessage(ctx, c.s.client, protocol.Warning, fmt.Sprintf("Found %v", strings.Join(affectingOSVs, ", ")))
-
 		return nil
 	})
 	if err != nil {
@@ -1332,25 +1316,10 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		tokenChan <- deps.work.Token()
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
-		dir := filepath.Dir(args.URI.Path())
-		pattern := args.Pattern
-
-		result, err := scan.RunGovulncheck(ctx, pattern, deps.snapshot, dir, workDoneWriter)
+		result, err := c.s.runVulncheck(ctx, deps.snapshot, args.URI, args.Pattern, workDoneWriter)
 		if err != nil {
 			return err
 		}
-
-		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
-			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
-		})
-		if err != nil {
-			return err
-		}
-		defer release()
-
-		// Diagnosing with the background context ensures new snapshots are fully
-		// diagnosed.
-		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {
@@ -1369,7 +1338,6 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		sort.Strings(affectingOSVs)
 
 		showMessage(ctx, c.s.client, protocol.Warning, fmt.Sprintf("Found %v", strings.Join(affectingOSVs, ", ")))
-
 		return nil
 	})
 	if err != nil {
@@ -1381,6 +1349,30 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	case token := <-tokenChan:
 		return command.RunVulncheckResult{Token: token}, nil
 	}
+}
+
+// runVulncheck executes a vulnerability scan and updates the server's state.
+func (s *server) runVulncheck(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pattern string, out io.Writer) (*vulncheck.Result, error) {
+	dir := uri.DirPath()
+	result, err := scan.RunGovulncheck(ctx, pattern, snapshot, dir, out)
+	if err != nil {
+		return nil, err
+	}
+
+	// Invalidate the view to store findings in the vulnerability cache.
+	newSnapshot, release, err := s.session.InvalidateView(ctx, snapshot.View(), cache.StateChange{
+		Vulns: map[protocol.DocumentURI]*vulncheck.Result{uri: result},
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Diagnosing with the background context ensures new snapshots are fully
+	// diagnosed.
+	s.diagnoseSnapshot(newSnapshot.BackgroundContext(), newSnapshot, nil, 0)
+
+	return result, nil
 }
 
 // MemStats implements the MemStats command. It returns an error as a

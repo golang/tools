@@ -10,20 +10,26 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 const (
 	// goModHashKind is the kind for the go.mod hash in the filecache.
-	goModHashKind = "gomodhash"
+	goModHashKind  = "gomodhash"
+	maxVulnsToShow = 10
 )
 
 // computeGoModHash computes the SHA256 hash of the go.mod file's dependencies.
@@ -95,17 +101,10 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 		if err != nil {
 			event.Error(ctx, "reading vulncheck preference failed", err)
 		}
-		args := command.VulncheckArgs{
-			URI:     uri,
-			Pattern: "./...",
-		}
-		cmd := command.NewRunGovulncheckCommand("Run govulncheck", args)
 
 		switch action {
 		case "Always":
-			if _, err := s.executeCommand(ctx, cmd); err != nil {
-				event.Error(ctx, "executing govulncheck command failed", err)
-			}
+			go s.handleVulncheck(ctx, uri)
 		case "Never":
 			return
 		case "":
@@ -125,9 +124,7 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 				}
 			}
 			if action == "Yes" || action == "Always" {
-				if _, err := s.executeCommand(ctx, cmd); err != nil {
-					event.Error(ctx, "executing govulncheck command failed", err)
-				}
+				go s.handleVulncheck(ctx, uri)
 			}
 			if action == "" {
 				// No user input gathered from prompt.
@@ -142,12 +139,74 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 	}
 }
 
-func (s *server) executeCommand(ctx context.Context, cmd *protocol.Command) (any, error) {
-	params := &protocol.ExecuteCommandParams{
-		Command:   cmd.Command,
-		Arguments: cmd.Arguments,
+func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) {
+	_, snapshot, release, err := s.session.FileOf(ctx, uri)
+	if err != nil {
+		event.Error(ctx, "getting file snapshot failed", err)
+		return
 	}
-	return s.ExecuteCommand(ctx, params)
+	defer release()
+	ctx = xcontext.Detach(ctx)
+
+	work := s.progress.Start(ctx, GoVulncheckCommandTitle, "Running govulncheck...", nil, nil)
+	defer work.End(ctx, "Done.")
+	workDoneWriter := progress.NewWorkDoneWriter(ctx, work)
+	result, err := s.runVulncheck(ctx, snapshot, uri, "./...", workDoneWriter)
+	if err != nil {
+		event.Error(ctx, "vulncheck failed", err)
+		return
+	}
+
+	affecting := make(map[string]struct{})
+	upgrades := make(map[string]string)
+	for _, f := range result.Findings {
+		if len(f.Trace) > 1 {
+			affecting[f.OSV] = struct{}{}
+			if f.FixedVersion != "" && f.Trace[0].Module != "stdlib" {
+				upgrades[f.Trace[0].Module] = f.FixedVersion
+			}
+		}
+	}
+
+	if len(affecting) == 0 {
+		showMessage(ctx, s.client, protocol.Info, "No vulnerabilities found.")
+		return
+	}
+
+	affectingOSVs := slices.Sorted(maps.Keys(affecting))
+	sort.Strings(affectingOSVs)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Found %d vulnerabilities affecting your dependencies:\n\n", len(affectingOSVs))
+
+	for i, id := range affectingOSVs {
+		if i >= maxVulnsToShow {
+			break
+		}
+		cveURL := fmt.Sprintf("https://pkg.go.dev/vuln/%s", id)
+		if s.Options().LinkifyShowMessage {
+			fmt.Fprintf(&b, "Vulnerability #%d: [%s](%s)", i+1, id, cveURL)
+		} else {
+			fmt.Fprintf(&b, "Vulnerability #%d: %s (%s)", i+1, id, cveURL)
+		}
+		if i < len(affectingOSVs)-1 && i < maxVulnsToShow-1 {
+			b.WriteString(", ")
+		}
+	}
+	if len(affectingOSVs) > maxVulnsToShow {
+		fmt.Fprintf(&b, "\n\n...and %d more.", len(affectingOSVs)-maxVulnsToShow)
+	}
+
+	action, err := showMessageRequest(ctx, s.client, protocol.Warning, b.String(), "Upgrade All", "Ignore")
+	if err != nil {
+		event.Error(ctx, "vulncheck remediation failed", err)
+		return
+	}
+
+	if action == "Upgrade All" {
+		// TODO: Add dependency upgrade functionality.
+		showMessage(ctx, s.client, protocol.Info, "Upgrading all modules... (not yet implemented)")
+	}
 }
 
 type vulncheckConfig struct {
