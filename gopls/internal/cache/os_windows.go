@@ -20,30 +20,34 @@ func windowsCheckPathValid(path string) error {
 	// path, so we can use it here. Inspired by
 	// http://stackoverflow.com/q/2113822.
 
-	// Short paths can be longer than long paths, and unicode, so be generous.
-	buflen := 4 * len(path)
 	namep, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return err
 	}
-	short := make([]uint16, buflen)
-	n, err := syscall.GetShortPathName(namep, &short[0], uint32(len(short)*2)) // buflen is in bytes.
+
+	// Short paths can be longer than long paths, and unicode, so be generous.
+	plenty := 4 * len(path)
+
+	short := make([]uint16, plenty)
+	n, err := syscall.GetShortPathName(namep, &short[0], uint32(len(short)))
 	if err != nil {
 		return err
 	}
-	if int(n) > len(short)*2 {
-		return fmt.Errorf("short buffer too short: %v vs %v*2", n, len(short))
+	if int(n) > len(short) {
+		return fmt.Errorf("short buffer too short: %v vs %v", n, len(short))
 	}
-	long := make([]uint16, buflen)
-	n, err = syscall.GetLongPathName(&short[0], &long[0], uint32(len(long)*2))
+
+	long := make([]uint16, plenty)
+	n, err = syscall.GetLongPathName(&short[0], &long[0], uint32(len(long)))
 	if err != nil {
 		return err
 	}
-	if int(n) > len(long)*2 {
-		return fmt.Errorf("long buffer too short: %v vs %v*2", n, len(long))
+	if int(n) > len(long) {
+		return fmt.Errorf("long buffer too short: %v vs %v", n, len(long))
 	}
 	longstr := syscall.UTF16ToString(long)
 
+	// Check that the the path -> short -> long roundtrip was idempotent.
 	isRoot := func(p string) bool {
 		return p[len(p)-1] == filepath.Separator
 	}
