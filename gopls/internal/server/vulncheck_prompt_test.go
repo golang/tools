@@ -45,8 +45,8 @@ func TestComputeGoModHash(t *testing.T) {
 			`,
 			want: func() string {
 				h := sha256.New()
-				h.Write([]byte("golang.org/x/toolsv0.1.0"))
-				h.Write([]byte("golang.org/x/vulnv0.2.0"))
+				h.Write([]byte("golang.org/x/tools\x00v0.1.0"))
+				h.Write([]byte("golang.org/x/vuln\x00v0.2.0"))
 				return hex.EncodeToString(h.Sum(nil))
 			}(),
 		},
@@ -60,7 +60,7 @@ func TestComputeGoModHash(t *testing.T) {
 			`,
 			want: func() string {
 				h := sha256.New()
-				h.Write([]byte("golang.org/x/toolsv0.1.0"))
+				h.Write([]byte("golang.org/x/tools\x00v0.1.0"))
 				return hex.EncodeToString(h.Sum(nil))
 			}(),
 		},
@@ -74,7 +74,7 @@ func TestComputeGoModHash(t *testing.T) {
 			`,
 			want: func() string {
 				h := sha256.New()
-				h.Write([]byte("golang.org/x/toolsv0.1.0golang.org/x/toolsv0.2.0"))
+				h.Write([]byte("golang.org/x/tools\x00v0.1.0\x00golang.org/x/tools\x00v0.2.0"))
 				return hex.EncodeToString(h.Sum(nil))
 			}(),
 		},
