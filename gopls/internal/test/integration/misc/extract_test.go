@@ -61,7 +61,77 @@ func newFunction() int {
 }
 `
 		if got := env.BufferText("main.go"); got != want {
-			t.Fatalf("TestFillStruct failed:\n%s", compare.Text(want, got))
+			t.Fatalf("TestExtractFunction failed:\n%s", compare.Text(want, got))
+		}
+	})
+}
+
+func TestExtractLabel(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func Foo(x []int) int {
+	var i int
+	for i = range x {
+		if x[i] == 10 {
+			goto found
+		}
+	}
+	panic("not found")
+found:
+
+	if i < 2 {
+	}
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		loc := env.RegexpSearch("main.go", `(?s)for.*found:`)
+		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Find the extract function code action.
+		var extractFunc *protocol.CodeAction
+		for _, action := range actions {
+			if action.Kind == settings.RefactorExtractFunction {
+				extractFunc = &action
+				break
+			}
+		}
+		if extractFunc == nil {
+			t.Fatal("could not find extract function action")
+		}
+
+		env.ApplyCodeAction(*extractFunc)
+		want := `package main
+
+func Foo(x []int) int {
+	var i int
+	newFunction(i, x)
+
+	if i < 2 {
+	}
+}
+
+func newFunction(i int, x []int) {
+	for i = range x {
+		if x[i] == 10 {
+			goto found
+		}
+	}
+	panic("not found")
+found:
+}
+`
+		if got := env.BufferText("main.go"); got != want {
+			t.Fatalf("TestExtractlabel failed:\n%s", compare.Text(want, got))
 		}
 	})
 }

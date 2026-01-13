@@ -598,8 +598,20 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	// Narrow (start, end) to the located nodes.
 	start, end = curStart.Node().Pos(), curEnd.Node().End()
-
 	outer := curFuncDecl.Node().(*ast.FuncDecl)
+
+	// Labeled statements have un-intuitive ranges.
+	// Technically they end at the end of the statement
+	// that they label, but user expectation is that the label
+	// is a pseudo-statement by itself. This is especially confusing when
+	// the statement that's labeled is a multi-line block statement.
+	//
+	// If the end cursor is the identifier in a labeled statement,
+	// we expand the range to include the colon.
+	// That way, we include the label, but not the statement being labeled
+	if astutil.IsChildOf(curEnd, edge.LabeledStmt_Label) {
+		end = curEnd.Parent().Node().(*ast.LabeledStmt).Colon + 1
+	}
 
 	// A return statement is non-nested if its parent node is equal to the parent node
 	// of the first node in the selection. These cases must be handled separately because
