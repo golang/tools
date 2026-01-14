@@ -303,7 +303,13 @@ var prependMethodDocComments = map[string]string{
 	// filled (re-filled) answers in the form until it obtains an
 	// ExecuteCommandParams with interactive properties empty (e.g. formFields,
 	// formAnswers). by then the original properties contains all information,
-	// the client can call "workspace/executeCommand" with the same param.`,
+	// the client can call "workspace/executeCommand" with the same param.
+	//
+	// Standard resolution (e.g., "codeAction/resolve") cannot be used here because
+	// it is often triggered eagerly (e.g., for previews), prohibiting interactive
+	// forms. "command/resolve" is introduced to handle the interactive flow
+	// strictly *after* the user has explicitly indicated intention (e.g., by
+	// clicking), making it safe for Code Actions and other refactorings.`,
 }
 
 // appendTypeProp specifies block of code (typically properties with doc comment)

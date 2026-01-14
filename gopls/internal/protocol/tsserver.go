@@ -47,7 +47,13 @@ type Server interface {
 	// formAnswers). by then the original properties contains all information,
 	// the client can call "workspace/executeCommand" with the same param.
 	//
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#command_resolve
+	// Standard resolution (e.g., "codeAction/resolve") cannot be used here because
+	// it is often triggered eagerly (e.g., for previews), prohibiting interactive
+	// forms. "command/resolve" is introduced to handle the interactive flow
+	// strictly *after* the user has explicitly indicated intention (e.g., by
+	// clicking), making it safe for Code Actions and other refactorings..
+	//
+	// Note: This is a non-standard protocol extension.
 	ResolveCommand(context.Context, *ExecuteCommandParams) (*ExecuteCommandParams, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItem_resolve
 	ResolveCompletionItem(context.Context, *CompletionItem) (*CompletionItem, error)

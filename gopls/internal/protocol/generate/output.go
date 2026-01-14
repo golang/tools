@@ -31,7 +31,7 @@ var (
 
 func generateOutput(model *Model) {
 	for _, r := range model.Requests {
-		genDecl(model, r.Method, r.Params, r.Result, r.Direction)
+		genDecl(model, r.Method, r.Params, r.Result, r.Direction, r.Line == 0)
 		genCase(model, r.Method, r.Params, r.Result, r.Direction)
 		genFunc(model, r.Method, r.Params, r.Result, r.Direction, false)
 	}
@@ -39,7 +39,7 @@ func generateOutput(model *Model) {
 		if n.Method == "$/cancelRequest" {
 			continue // handled internally by jsonrpc2
 		}
-		genDecl(model, n.Method, n.Params, nil, n.Direction)
+		genDecl(model, n.Method, n.Params, nil, n.Direction, n.Line == 0)
 		genCase(model, n.Method, n.Params, nil, n.Direction)
 		genFunc(model, n.Method, n.Params, nil, n.Direction, true)
 	}
@@ -50,7 +50,7 @@ func generateOutput(model *Model) {
 	genMarshal()
 }
 
-func genDecl(model *Model, method string, param, result *Type, dir string) {
+func genDecl(model *Model, method string, param, result *Type, dir string, experiment bool) {
 	fname := methodName(method)
 	p := ""
 	if notNil(param) {
@@ -72,11 +72,28 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 		p = ", *ParamConfiguration"
 		ret = "([]LSPAny, error)"
 	}
-	fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
-	msg := fmt.Sprintf("\t%s\t%s(context.Context%s) %s\n", lspLink(model, fragment), fname, p, ret)
-	if doc, ok := prependMethodDocComments[fname]; ok {
-		msg = doc + "\n\t//\n" + msg
+
+	var msg string
+	{
+		var sb strings.Builder
+
+		if doc, ok := prependMethodDocComments[fname]; ok {
+			sb.WriteString(doc)
+			sb.WriteString("\n\t//\n")
+		}
+
+		if experiment {
+			sb.WriteString("\t// Note: This is a non-standard protocol extension.\n")
+		} else {
+			fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
+			fmt.Fprintf(&sb, "\t%s", lspLink(model, fragment))
+		}
+
+		fmt.Fprintf(&sb, "\t%s(context.Context%s) %s\n", fname, p, ret)
+
+		msg = sb.String()
 	}
+
 	switch dir {
 	case "clientToServer":
 		sdecls[method] = msg
