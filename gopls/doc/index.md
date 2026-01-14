@@ -42,7 +42,7 @@ To get started with `gopls`, install an LSP plugin in your editor of choice.
 
 <!-- TODO: be more consistent about editor (e.g. Emacs) vs. client (e.g. eglot). -->
 
-* [Acme](https://github.com/fhs/acme-lsp/blob/master/README.md)
+* [Acme](https://github.com/9fans/acme-lsp/blob/master/README.md)
 * [Atom](https://github.com/MordFustang21/ide-gopls/blob/master/README.md)
 * [Emacs](editor/emacs.md)
 * [Helix](editor/helix.md)
