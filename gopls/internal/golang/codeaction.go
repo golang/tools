@@ -1153,7 +1153,7 @@ func goToTestCodeAction(ctx context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 
-	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
+	path, _ := goastutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
 	if len(path) < 2 {
 		return nil
 	}
