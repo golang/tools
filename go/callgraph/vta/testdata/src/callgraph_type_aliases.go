@@ -6,7 +6,6 @@
 
 // This file is the same as callgraph_interfaces.go except for
 // types J, X, Y, and Z aliasing types I, A, B, and C, resp.
-// This test requires GODEBUG=gotypesalias=1 (the default in go1.23).
 
 package testdata
 

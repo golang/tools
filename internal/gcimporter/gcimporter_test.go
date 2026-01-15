@@ -120,10 +120,6 @@ func TestImportTestdata(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
-	testAliases(t, testImportTestdata)
-}
-
-func testImportTestdata(t *testing.T) {
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
 
@@ -173,23 +169,6 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Skipf("gc-built packages not available (compiler = %s)", runtime.Compiler)
 	}
 
-	testAliases(t, func(t *testing.T) {
-		var skip map[string]string
-
-		// Add tests to skip.
-		if testenv.Go1Point() == 22 && os.Getenv("GODEBUG") == aliasesOn {
-			// The tests below can be skipped in 1.22 as gotypesalias=1 was experimental.
-			// These do not need to be addressed.
-			skip = map[string]string{
-				"struct.go":     "1.22 differences in formatting a *types.Alias",
-				"issue50259.go": "1.22 cannot compile due to an understood types.Alias bug",
-			}
-		}
-		testImportTypeparamTests(t, skip)
-	})
-}
-
-func testImportTypeparamTests(t *testing.T, skip map[string]string) {
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
 
@@ -208,10 +187,6 @@ func testImportTypeparamTests(t *testing.T, skip map[string]string) {
 		}
 
 		t.Run(entry.Name(), func(t *testing.T) {
-			if reason := skip[entry.Name()]; reason != "" {
-				t.Skipf("Skipping due to %s", reason)
-			}
-
 			filename := filepath.Join(rootDir, entry.Name())
 			src, err := os.ReadFile(filename)
 			if err != nil {
@@ -360,10 +335,6 @@ func TestImportStdLib(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
-	testAliases(t, testImportStdLib)
-}
-
-func testImportStdLib(t *testing.T) {
 	// Get list of packages in stdlib. Filter out test-only packages with {{if .GoFiles}} check.
 	var stderr bytes.Buffer
 	cmd := exec.Command("go", "list", "-f", "{{if .GoFiles}}{{.ImportPath}}{{end}}", "std")
@@ -930,8 +901,6 @@ func TestIssueAliases(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 	skipWindows(t)
 
-	t.Setenv("GODEBUG", aliasesOn)
-
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
 	testoutdir := filepath.Join(tmpdir, "testdata")
@@ -1023,24 +992,6 @@ func lookupObj(t *testing.T, scope *types.Scope, name string) types.Object {
 func skipWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
-}
-
-const (
-	aliasesOff = "gotypesalias=0" // default GODEBUG in 1.22 (like x/tools)
-	aliasesOn  = "gotypesalias=1" // default after 1.23
-)
-
-// testAliases runs f within subtests with the GODEBUG gotypesalias enables and disabled.
-func testAliases(t *testing.T, f func(*testing.T)) {
-	for _, dbg := range []string{
-		aliasesOff,
-		aliasesOn,
-	} {
-		t.Run(dbg, func(t *testing.T) {
-			t.Setenv("GODEBUG", dbg)
-			f(t)
-		})
 	}
 }
 

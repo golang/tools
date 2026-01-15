@@ -7,11 +7,11 @@ TODO(golang/go#67623): the diagnostic should be on the bad godebug value.
 -errors_ok
 
 -- go.mod --
-module example.com/m //@diag("module", re`unknown godebug "gotypealias"`)
+module example.com/m //@diag("module", re`unknown godebug "panicnull"`)
 
 go 1.23
 
 godebug (
-	gotypealias=0 // misspelled
+	panicnull=0 // misspelled
 )
-godebug gotypesalias=1
+godebug panicnil=1

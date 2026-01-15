@@ -3142,8 +3142,6 @@ func TestIssue70394(t *testing.T) {
 	testenv.NeedsTool(t, "go") // requires go list.
 	testenv.NeedsGoBuild(t)    // requires the compiler for export data.
 
-	t.Setenv("GODEBUG", "gotypesalias=1")
-
 	dir := t.TempDir()
 	overlay := map[string][]byte{
 		filepath.Join(dir, "go.mod"): []byte("module m"), // go version of the module does not matter.

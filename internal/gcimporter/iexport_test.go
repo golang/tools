@@ -44,10 +44,6 @@ func TestIExportData_stdlib(t *testing.T) {
 		t.Skip("skipping RAM hungry test in -short mode")
 	}
 
-	testAliases(t, testIExportData_stdlib)
-}
-
-func testIExportData_stdlib(t *testing.T) {
 	var errorsDir string // GOROOT/src/errors directory
 	{
 		cfg := packages.Config{
@@ -226,9 +222,6 @@ func TestIExportData_long(t *testing.T) {
 }
 
 func TestIExportData_typealiases(t *testing.T) {
-	testAliases(t, testIExportData_typealiases)
-}
-func testIExportData_typealiases(t *testing.T) {
 	// parse and typecheck
 	fset1 := token.NewFileSet()
 	f, err := parser.ParseFile(fset1, "p.go", src, 0)
@@ -428,8 +421,6 @@ func TestIExportDataTypeParameterizedAliases(t *testing.T) {
 	if testenv.Go1Point() == 23 {
 		testenv.NeedsGoExperiment(t, "aliastypeparams") // testenv.Go1Point() >= 24 implies aliastypeparams=1
 	}
-
-	t.Setenv("GODEBUG", aliasesOn)
 
 	// High level steps:
 	// * parse  and typecheck

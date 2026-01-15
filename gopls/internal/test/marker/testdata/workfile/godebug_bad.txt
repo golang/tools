@@ -12,11 +12,11 @@ go 1.23
 use .
 
 godebug (
-	gotypealias=0 // misspelled
+	panicnull=0 // misspelled
 )
-godebug gotypesalias=1
+godebug panicnil=1
 
 -- go.mod --
-module example.com/m //@diag("module", re`unknown godebug "gotypealias"`)
+module example.com/m //@diag("module", re`unknown godebug "panicnull"`)
 
 go 1.23

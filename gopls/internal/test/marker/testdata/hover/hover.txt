@@ -1,12 +1,15 @@
 This test demonstrates some basic features of hover.
 
-Needs go1.22 for the gotypesalias godebug value.
+One of those features is the display of per-file variation in
+configuration, including GODEBUG. We use panicnil from go1.21 as an
+arbitrary GODEBUG; if it goes away, pick another from
+https://go.dev/doc/godebug#history.
 
 -- settings.json --
 {"analyses": {"unusedfunc": false}}
 
 -- flags --
--min_go_command=go1.22
+-min_go_command=go1.21
 
 -- go.mod --
 module example.com
@@ -36,7 +39,7 @@ func _() {
 	}
 }
 -- cmd/main.go --
-//go:debug gotypesalias=0
+//go:debug panicnil=0
 
 // Note that since GODEBUG shows only settings that differ from
 // the current toolchain, the output here depends on the toolchain used.

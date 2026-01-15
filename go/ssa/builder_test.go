@@ -1112,10 +1112,7 @@ func TestGenericAliases(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestGenericAliases")
-	cmd.Env = append(os.Environ(),
-		"GENERICALIASTEST_CHILD=1",
-		"GODEBUG=gotypesalias=1",
-	)
+	cmd.Env = append(os.Environ(), "GENERICALIASTEST_CHILD=1")
 	if testenv.Go1Point() == 23 {
 		cmd.Env = append(cmd.Env, "GOEXPERIMENT=aliastypeparams")
 	}
