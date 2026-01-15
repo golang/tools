@@ -100,10 +100,6 @@ func TestIndexedImportTypeparamTests(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 	testenv.NeedsGOROOTDir(t, "test")
 
-	testAliases(t, testIndexedImportTypeparamTests)
-}
-
-func testIndexedImportTypeparamTests(t *testing.T) {
 	// Check go files in test/typeparam.
 	rootDir := filepath.Join(runtime.GOROOT(), "test", "typeparam")
 	list, err := os.ReadDir(rootDir)

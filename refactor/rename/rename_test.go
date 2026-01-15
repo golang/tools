@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -1319,14 +1318,6 @@ func main() {
 		writeFile = func(filename string, content []byte) error {
 			got[filepath.ToSlash(filename)] = string(content)
 			return nil
-		}
-
-		// Skip tests that require aliases when not enables.
-		// (No test requires _no_ aliases,
-		// so there is no contrapositive case.)
-		if test.alias && !aliases.Enabled() {
-			t.Log("test requires aliases")
-			continue
 		}
 
 		err := Main(ctxt, test.offset, test.from, test.to)

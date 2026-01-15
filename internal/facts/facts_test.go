@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:debug gotypesalias=1
-
 package facts_test
 
 import (
@@ -20,7 +18,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/aliases"
+
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typesinternal"
@@ -379,8 +377,8 @@ var customFind = map[string]func(p *types.Package) types.Object{
 	"c.V1->c.N1->b.B->a.A": func(p *types.Package) types.Object {
 		cV1 := p.Scope().Lookup("V1")
 		cN1 := cV1.Type().(*types.Alias)
-		aT1 := aliases.TypeArgs(cN1).At(0).(*types.Alias)
-		zZ1 := aliases.Rhs(aT1).(*types.Alias)
+		aT1 := cN1.TypeArgs().At(0).(*types.Alias)
+		zZ1 := aT1.Rhs().(*types.Alias)
 		return zZ1.Obj()
 	},
 }

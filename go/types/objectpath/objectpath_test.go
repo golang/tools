@@ -8,35 +8,21 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"slices"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
 func TestPaths(t *testing.T) {
-	for _, aliases := range []int{0, 1} {
-		t.Run(fmt.Sprint(aliases), func(t *testing.T) {
-			testPaths(t, aliases)
-		})
-	}
-}
-
-func testPaths(t *testing.T, gotypesalias int) {
-	// override default set by go1.22 in go.mod
-	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", gotypesalias))
-
 	const src = `
 -- go.mod --
 module x.io
@@ -111,7 +97,7 @@ type Issue68046 interface { f(x int) interface{Issue68046} }
 		{"b", "AN.O", "type b.unexported2 struct{z int}", ""},
 		{"b", "AN.aUF0", "field z int", ""},
 		{"b", "AN.UF0", "field z int", ""},
-		// {"b", "GA", "type parameter b.GA = T", ""}, // TODO(adonovan): enable once GOEXPERIMENT=aliastypeparams has gone, and only when gotypesalias=1
+		// {"b", "GA", "type parameter b.GA = T", ""}, // TODO(adonovan): enable once GOEXPERIMENT=aliastypeparams has gone
 		{"b", "V", "var b.V []*a.T", ""},
 		{"b", "M", "type b.M map[struct{x int}]struct{y int}", ""},
 		{"b", "M.UKF0", "field x int", ""},
@@ -153,20 +139,6 @@ type Issue68046 interface { f(x int) interface{Issue68046} }
 		{"b", "F.XO", "", "invalid path: unknown code 'X'"},
 	}
 	for _, test := range paths {
-		// go1.22 gotypesalias=1 prints aliases wrong: "type A = A".
-		// (Fixed by https://go.dev/cl/574716.)
-		// Work around it here by updating the expectation.
-		if slices.Contains(build.Default.ReleaseTags, "go1.22") &&
-			!slices.Contains(build.Default.ReleaseTags, "go1.23") &&
-			aliases.Enabled() {
-			if test.pkg == "b" && test.path == "A" {
-				test.wantobj = "type b.A = b.A"
-			}
-			if test.pkg == "b" && test.path == "AN" {
-				test.wantobj = "type b.AN = b.AN"
-			}
-		}
-
 		if err := testPath(pkgmap, test); err != nil {
 			t.Error(err)
 		}
