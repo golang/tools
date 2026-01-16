@@ -289,6 +289,16 @@ func idx_gtr_negone(s string, sub string) string {
 	return ""
 }
 
+// Regression test for a crash (https://go.dev/issue/77208)
+func idx_call() {
+	i := bytes.Index(b(), []byte(""))
+	_ = i
+}
+
+func b() []byte {
+	return nil
+}
+
 func function(s string) {}
 
 func reference_str(s *string) {}
