@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	debuglog "golang.org/x/tools/gopls/internal/debug/log"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -66,6 +67,10 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 		s.handleOptionResult(ctx, res, errs)
 	}
 	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
+
+	if options.MaxFileCacheBytes > 0 {
+		filecache.SetBudget(options.MaxFileCacheBytes)
+	}
 
 	if options.ShowBugReports {
 		// Report the next bug that occurs on the server.

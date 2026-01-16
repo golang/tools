@@ -7,6 +7,7 @@ package settings
 import (
 	"fmt"
 	"maps"
+	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -658,6 +659,14 @@ type UserOptions struct {
 	UIOptions
 	FormattingOptions
 
+	// MaxFileCacheBytes sets a soft limit on the file cache size in bytes.
+	// If zero, the default budget is used.
+	//
+	// The cache may temporarily use more than this amount.
+	// Also, this parameter limits file contents; disk block usage
+	// as measured by du(1) may be significantly higher.
+	MaxFileCacheBytes int64 `status:"experimental"`
+
 	// VerboseOutput enables additional debug logging.
 	VerboseOutput bool `status:"debug"`
 }
@@ -1265,6 +1274,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 	case "local":
 		return nil, setString(&o.Local, value)
 
+	case "maxFileCacheBytes":
+		return setInt64(&o.MaxFileCacheBytes, value)
+
 	case "verboseOutput":
 		return setBool(&o.VerboseOutput, value)
 
@@ -1672,4 +1684,44 @@ func asEnum[S ~string](value any, options ...S) (S, error) {
 		}
 	}
 	return "", fmt.Errorf("invalid option %q for enum", str)
+}
+
+func setInt64(dest *int64, value any) ([]CounterPath, error) {
+	i, err := asInt64(value)
+	if err != nil {
+		return nil, err
+	}
+	*dest = i
+	return []CounterPath{{fmt.Sprint(i)}}, nil
+}
+
+func asInt64(value any) (int64, error) {
+	switch v := value.(type) {
+
+	case float64:
+		// Note that this is what we expect since JSON unmarshalling
+		// into any produces float64 for numbers.
+		if !isFinite(v) {
+			return 0, fmt.Errorf("invalid value %v (want finite number)", v)
+		}
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("invalid value %v (want integer)", v)
+		}
+		if v != float64(int64(v)) {
+			return 0, fmt.Errorf("invalid value %v (not representable as int64)", v)
+		}
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case int:
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("invalid type %T (want int64)", value)
+	}
+}
+
+// isFinite reports whether f represents a finite rational value.
+// It is equivalent to !math.IsNan(f) && !math.IsInf(f, 0).
+func isFinite(f float64) bool {
+	return math.Abs(f) <= math.MaxFloat64
 }

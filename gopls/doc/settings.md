@@ -624,6 +624,20 @@ dependencies.
 
 Default: `"all"`.
 
+<a id='maxFileCacheBytes'></a>
+### `maxFileCacheBytes int64`
+
+**This setting is experimental and may be deleted.**
+
+maxFileCacheBytes sets a soft limit on the file cache size in bytes.
+If zero, the default budget is used.
+
+The cache may temporarily use more than this amount.
+Also, this parameter limits file contents; disk block usage
+as measured by du(1) may be significantly higher.
+
+Default: `0`.
+
 <a id='verboseOutput'></a>
 ### `verboseOutput bool`
 

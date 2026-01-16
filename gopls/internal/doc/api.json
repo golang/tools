@@ -2237,6 +2237,20 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "maxFileCacheBytes",
+				"Type": "int64",
+				"Doc": "maxFileCacheBytes sets a soft limit on the file cache size in bytes.\nIf zero, the default budget is used.\n\nThe cache may temporarily use more than this amount.\nAlso, this parameter limits file contents; disk block usage\nas measured by du(1) may be significantly higher.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "0",
+				"Status": "experimental",
+				"Hierarchy": "",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "verboseOutput",
 				"Type": "bool",
 				"Doc": "verboseOutput enables additional debug logging.\n",
