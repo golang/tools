@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
@@ -139,8 +138,7 @@ package a
 			listJSON := jsons[0]
 			driverJSON := jsons[1]
 
-			// Use the myers package for better line diffs.
-			edits := myers.ComputeEdits(listJSON, driverJSON)
+			edits := diff.Lines(listJSON, driverJSON)
 			d, err := diff.ToUnified("go list", "driver", listJSON, edits, 0)
 			if err != nil {
 				t.Fatal(err)

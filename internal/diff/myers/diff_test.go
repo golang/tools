@@ -7,10 +7,10 @@ package myers_test
 import (
 	"testing"
 
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/diff/difftest"
-	"golang.org/x/tools/internal/diff/myers"
 )
 
 func TestDiff(t *testing.T) {
-	difftest.DiffTest(t, myers.ComputeEdits)
+	difftest.DiffTest(t, diff.Lines)
 }

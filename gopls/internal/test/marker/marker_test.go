@@ -43,7 +43,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
@@ -323,7 +322,13 @@ func Test(t *testing.T) {
 				// report duplicate mismatches of golden data.
 				// Otherwise, verify that formatted content matches.
 				if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
-					t.Errorf("formatted test does not match on-disk content:\n%s", diff)
+					// at this point, the txtar file created by the test and the expected txtar file on the
+					// disk differ. The differences are irrelevant if they are only the contents
+					// of files from a unified diff. These files are dependent on which diff algorithm was used,
+					// so instead checkDiffs has already checked that they correctly express the difference between
+					// the test input and the test output. (If the test code uses the diff that created them, then
+					// they would not differ, but that diff algorithms has been replaced.)
+					checkDifferences(t, test.content, formatted)
 				}
 			}
 		})
@@ -331,6 +336,29 @@ func Test(t *testing.T) {
 
 	if abs, err := filepath.Abs(dir); err == nil && t.Failed() {
 		t.Logf("(Filenames are relative to %s.)", abs)
+	}
+}
+
+// checkDifferences reports whether the txtars in result and disk
+// differ, other than in the contents of golden files containing unified diffs
+func checkDifferences(t *testing.T, result, disk []byte) {
+	got := txtar.Parse(result) // the computed slice of file retains the ordering in result
+	want := txtar.Parse(disk)
+	for i, tf := range got.Files {
+		if i >= len(want.Files) {
+			t.Errorf("test failed to create file %s", tf.Name)
+			continue
+		}
+		// if they are both golden files (name starts with @) and both unified diffs
+		// (both start with @@, then the difference is insignificant)
+		ff := want.Files[i]
+		if strings.HasPrefix(tf.Name, "@") && strings.HasPrefix(ff.Name, "@") && tf.Name == ff.Name &&
+			bytes.HasPrefix(tf.Data, []byte("@@")) && bytes.HasPrefix(ff.Data, []byte("@@")) {
+			continue
+		}
+		if !bytes.Equal(tf.Data, ff.Data) {
+			t.Errorf("%s differs, got:%q want:%q", tf.Name, tf.Data, ff.Data)
+		}
 	}
 }
 
@@ -1468,7 +1496,7 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
-		edits := myers.ComputeEdits(before, string(after))
+		edits := diff.Lines(before, string(after))
 		d, err := diff.ToUnified("before", "after", before, edits, 0)
 		if err != nil {
 			// Can't happen: edits are consistent.
