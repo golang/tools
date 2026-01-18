@@ -380,6 +380,45 @@ func TestLoadArgumentListIsNotTooLong(t *testing.T) {
 	}
 }
 
+func TestLoadSamePackageMultipleChunks(t *testing.T) {
+	t.Parallel()
+
+	exported := packagestest.Export(t, packagestest.GOPATH, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"a/def.go": `package a; const SharedConstant = 42`,
+		}}})
+	defer exported.Cleanup()
+
+	defFile := exported.File("golang.org/fake", "a/def.go")
+
+	// Force chunking (exceed ~16KB arg limit)
+	var files []string
+	files = append(files, defFile)
+
+	for i := 0; i < 200; i++ {
+		fillerPath := filepath.Join(filepath.Dir(defFile), fmt.Sprintf("filler_%03d.go", i))
+		if err := os.WriteFile(fillerPath, []byte("package a\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, fillerPath)
+	}
+
+	exported.Config.Mode = packages.NeedFiles
+	pkgs, err := packages.Load(exported.Config, files...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pkgs) == 0 {
+		t.Fatal("package golang.org/fake/a not found")
+	}
+
+	if len(pkgs[0].GoFiles) != len(files) {
+		t.Errorf("expected %d files, got %d", len(files), len(pkgs[0].GoFiles))
+	}
+}
+
 func TestVendorImports(t *testing.T) {
 	t.Parallel()
 
