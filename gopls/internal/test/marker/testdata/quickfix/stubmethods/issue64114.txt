@@ -23,13 +23,7 @@ type WriteStruct struct {
 	WriterTwoStruct
 }
 -- @issue64114/issue64114.go --
-@@ -22 +22,11 @@
-+
-+// RRRR implements [WriteTest].
-+// Subtle: this method shadows the method (WriterTwoStruct).RRRR of WriteStruct.WriterTwoStruct.
-+func (w *WriteStruct) RRRR() {
-+	panic("unimplemented")
-+}
+@@ -22 +22,5 @@
 +
 +// WWWW implements [WriteTest].
 +func (w *WriteStruct) WWWW() {

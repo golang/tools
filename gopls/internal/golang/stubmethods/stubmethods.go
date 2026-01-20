@@ -93,23 +93,16 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		}
 	}
 
-	// Find subset of interface methods that the concrete type lacks.
-	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
-
-	type missingFn struct {
-		fn         *types.Func
-		needSubtle string
-	}
-
 	var (
-		missing                  []missingFn
-		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
+		missing []*types.Func
+		// Find subset of interface methods that the concrete type lacks.
+		ifaceType = si.Interface.Type().Underlying().(*types.Interface)
 	)
 
 	for imethod := range ifaceType.Methods() {
 		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.pointer, imethod.Pkg(), imethod.Name())
 		if cmethod == nil {
-			missing = append(missing, missingFn{fn: imethod})
+			missing = append(missing, imethod)
 			continue
 		}
 
@@ -127,19 +120,19 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 			continue
 		}
 
-		mf := missingFn{fn: imethod}
-		if isStruct && len(index) > 0 {
-			field := concreteStruct.Field(index[0])
-
-			fn := field.Name()
-			if _, ok := field.Type().(*types.Pointer); ok {
-				fn = "*" + fn
-			}
-
-			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
+		if len(index) > 0 {
+			// len(index) > 0 implies that the current method is already
+			// implemented on some embedded object.
+			// Do not generate a method if it would result in shadowing, but
+			// continue generating other parts of the stub.
+			// For example, if some struct A partially implements an interface I
+			// and another struct B embeds A, we should not implement methods on
+			// B that are already implemented on A, as these would be shadowed
+			// methods.
+			continue
 		}
 
-		missing = append(missing, mf)
+		missing = append(missing, imethod)
 	}
 	if len(missing) == 0 {
 		return fmt.Errorf("no missing methods found")
@@ -181,25 +174,24 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 
 	for index := range missing {
 		mrn := rn + " "
-		sig := missing[index].fn.Signature()
+		sig := missing[index].Signature()
 		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
 			mrn = ""
 		}
 
 		fmt.Fprintf(out, `// %s implements [%s].
-%sfunc (%s%s%s%s) %s%s {
+func (%s%s%s%s) %s%s {
 	panic("unimplemented")
 }
 `,
-			missing[index].fn.Name(),
+			missing[index].Name(),
 			iface,
-			missing[index].needSubtle,
 			mrn,
 			star,
 			si.Concrete.Obj().Name(),
 			typesutil.FormatTypeParams(si.Concrete.TypeParams()),
-			missing[index].fn.Name(),
-			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
+			missing[index].Name(),
+			strings.TrimPrefix(types.TypeString(missing[index].Type(), qual), "func"))
 	}
 	return nil
 }
