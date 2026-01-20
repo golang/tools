@@ -39,6 +39,7 @@ func _() {
 
 func _() {
 	/* append! */ //@item(postfixAppend, "append!", "append and re-assign slice", "snippet")
+	/* clear! */ //@item(postfixClearSlice, "clear!", "clear contents", "snippet")
 	/* copy! */ //@item(postfixCopy, "copy!", "duplicate slice", "snippet")
 	/* for! */ //@item(postfixFor, "for!", "range over slice by index", "snippet")
 	/* forr! */ //@item(postfixForr, "forr!", "range over slice by index and value", "snippet")
@@ -52,10 +53,11 @@ func _() {
 	/* ifnotnil! */ //@item(postfixIfNotNil, "ifnotnil!", "if expr != nil", "snippet")
 
 	var foo []int
-	foo. //@complete(" //", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixVar)
+	foo. //@complete(" //", postfixAppend, postfixClearSlice, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixVar)
 	foo = nil
 
 	foo.append //@snippet(" //", postfixAppend, "foo = append(foo, $0)")
+	foo.clear //@snippet(" //", postfixClearSlice, "clear(foo)")
 	foo.copy //snippet(" //", postfixCopy, "fooCopy := make([]int, len(foo))\ncopy($fooCopy, foo)\n")
 	foo.fo //@snippet(" //", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
 	foo.forr //@snippet(" //", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
@@ -73,7 +75,7 @@ func _() {
 	/* for! */ //@item(postfixForMap, "for!", "range over map by key", "snippet")
 	/* forr! */ //@item(postfixForrMap, "forr!", "range over map by key and value", "snippet")
 	/* range! */ //@item(postfixRangeMap, "range!", "range over map", "snippet")
-	/* clear! */ //@item(postfixClear, "clear!", "clear map contents", "snippet")
+	/* clear! */ //@item(postfixClear, "clear!", "clear contents", "snippet")
 	/* keys! */ //@item(postfixKeys, "keys!", "create slice of keys", "snippet")
 
 	var foo map[int]int
@@ -84,7 +86,7 @@ func _() {
 	foo.fo //@snippet(" //", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
 	foo.forr //@snippet(" //", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
 	foo.rang //@snippet(" //", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.clear //@snippet(" //", postfixClear, "for k := range foo {\n\tdelete(foo, k)\n}\n")
+	foo.clear //@snippet(" //", postfixClear, "clear(foo)")
 	foo.keys //@snippet(" //", postfixKeys, "keys := make([]int, 0, len(foo))\nfor k := range foo {\n\tkeys = append(keys, k)\n}\n")
 }
 
