@@ -110,6 +110,9 @@ type ClientOptions struct {
 	// SupportedWorkDoneProgressFormats specifies the formats supported by the
 	// client for handling workdone progress metadata.
 	SupportedWorkDoneProgressFormats map[WorkDoneProgressStyle]bool
+	// SupportedInteractiveInputTypes specifies the interactive types supported
+	// by the client.
+	SupportedInteractiveInputTypes map[InteractiveInputType]bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -696,6 +699,17 @@ type WorkDoneProgressStyle string
 
 const WorkDoneProgressStyleLog WorkDoneProgressStyle = "log"
 
+type InteractiveInputType string
+
+const (
+	InteractiveInputTypeString  InteractiveInputType = "string"
+	InteractiveInputTypeFileURI InteractiveInputType = "fileURI"
+	InteractiveInputTypeBool    InteractiveInputType = "bool"
+	InteractiveInputTypeNumber  InteractiveInputType = "number"
+	InteractiveInputTypeEnum    InteractiveInputType = "enum"
+	InteractiveInputTypeList    InteractiveInputType = "list"
+)
+
 // InternalOptions contains settings that are not intended for use by the
 // average user. These may be settings used by tests or outdated settings that
 // will soon be deprecated. Some of these settings may not even be configurable
@@ -1050,6 +1064,13 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 			o.SupportedWorkDoneProgressFormats = make(map[WorkDoneProgressStyle]bool, len(formats))
 			for _, f := range formats {
 				o.SupportedWorkDoneProgressFormats[WorkDoneProgressStyle(f.(string))] = true
+			}
+		}
+
+		if inputTypes, ok := experimental["interactiveInputTypes"].([]any); ok {
+			o.SupportedInteractiveInputTypes = make(map[InteractiveInputType]bool, len(inputTypes))
+			for _, t := range inputTypes {
+				o.SupportedInteractiveInputTypes[InteractiveInputType(t.(string))] = true
 			}
 		}
 	}
