@@ -31,10 +31,12 @@ import (
 	label1 "golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
 	"golang.org/x/tools/internal/event/export/metric"
+	"golang.org/x/tools/internal/event/export/otel"
 	"golang.org/x/tools/internal/event/export/prometheus"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/event/label"
@@ -60,6 +62,7 @@ type Instance struct {
 	prometheus *prometheus.Exporter
 	rpcs       *Rpcs
 	traces     *traces
+	otel       *otel.Exporter
 	State      *State
 
 	serveMu              sync.Mutex
@@ -452,7 +455,7 @@ func GetInstance(ctx context.Context) *Instance {
 
 // WithInstance creates debug instance ready for use using the supplied
 // configuration and stores it in the returned context.
-func WithInstance(ctx context.Context) context.Context {
+func WithInstance(ctx context.Context, otelEndpoint string) context.Context {
 	i := &Instance{
 		StartTime: time.Now(),
 	}
@@ -461,6 +464,12 @@ func WithInstance(ctx context.Context) context.Context {
 	i.rpcs = &Rpcs{}
 	i.traces = &traces{}
 	i.State = &State{}
+	if otelEndpoint != "" {
+		i.otel = otel.NewExporter(ctx,
+			otel.WithEndpoint(otelEndpoint),
+			otel.WithServiceName("gopls"),
+			otel.WithServiceVersion(versionpkg.Version()))
+	}
 	i.exporter = makeInstanceExporter(i)
 	return context.WithValue(ctx, instanceKey, i)
 }
@@ -639,6 +648,9 @@ func makeInstanceExporter(i *Instance) event.Exporter {
 		}
 		if i.traces != nil {
 			ctx = i.traces.ProcessEvent(ctx, ev, lm)
+		}
+		if i.otel != nil {
+			ctx = i.otel.ProcessEvent(ctx, ev, lm)
 		}
 		if event.IsLog(ev) {
 			if s := cache.KeyCreateSession.Get(ev); s != nil {

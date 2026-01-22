@@ -29,9 +29,8 @@ func (p *Printer) WriteEvent(w io.Writer, ev core.Event, lm label.Map) {
 		}
 		io.WriteString(w, err.Error())
 	}
-	for index := 0; ev.Valid(index); index++ {
-		l := ev.Label(index)
-		if !l.Valid() || l.Key() == keys.Msg || l.Key() == keys.Err {
+	for l := range ev.Labels() {
+		if l.Key() == keys.Msg || l.Key() == keys.Err {
 			continue
 		}
 		io.WriteString(w, "\n\t")

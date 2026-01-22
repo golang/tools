@@ -63,6 +63,9 @@ type Application struct {
 	// VeryVerbose enables a higher level of verbosity in logging output.
 	VeryVerbose bool `flag:"vv,veryverbose" help:"very verbose output"`
 
+	// OTel specifies the OpenTelemetry collector endpoint (e.g. http://localhost:4318).
+	OTel string `flag:"otel" help:"export telemetry to specified OpenTelemetry collector address (e.g. http://localhost:4318)"`
+
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
 	PrepareOptions func(*settings.Options)
@@ -233,7 +236,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 	// executable, and immediately runs a gc.
 	filecache.Start()
 
-	ctx = debug.WithInstance(ctx)
+	ctx = debug.WithInstance(ctx, app.OTel)
 	if len(args) == 0 {
 		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
 		return tool.Run(ctx, s, &app.Serve, args)

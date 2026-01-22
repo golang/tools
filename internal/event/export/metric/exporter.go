@@ -40,11 +40,7 @@ func (e *Config) Exporter(output event.Exporter) event.Exporter {
 		mu.Lock()
 		defer mu.Unlock()
 		var metrics []Data
-		for index := 0; ev.Valid(index); index++ {
-			l := ev.Label(index)
-			if !l.Valid() {
-				continue
-			}
+		for l := range ev.Labels() {
 			id := l.Key()
 			if list := e.subscribers[id]; len(list) > 0 {
 				for _, s := range list {

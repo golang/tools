@@ -1022,7 +1022,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	// Put a debug instance in the context to prevent logging to stderr.
 	// See associated TODO in runner.go: we should revisit this pattern.
 	ctx := context.Background()
-	ctx = debug.WithInstance(ctx)
+	ctx = debug.WithInstance(ctx, "")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 

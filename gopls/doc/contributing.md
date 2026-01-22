@@ -202,8 +202,45 @@ debugger.
 
 See also [Troubleshooting](troubleshooting.md#troubleshooting).
 
-<!--TODO(rstambler): Add more details about the debug server and viewing
-telemetry.-->
+### Debug Server
+
+Gopls includes a built-in debug server that exposes metrics, traces, and
+profiling information. Start it by passing the `-debug` flag, e.q. `gopls serve -debug=localhost:6060`. When using `:0`, gopls logs the assigned address to stderr.
+
+You can also start the server in a running gopls process by executing a StartDebugging LSP command. In VS Code this is bound to the "Go: Start language server maintainer's interface" command.
+
+**Key endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/` | Overview of caches, sessions and clients |
+| `/rpc/` | RPC statistics with latency and status codes |
+| `/trace/` | Recent spans and operation traces |
+| `/metrics/` | Prometheus-compatible metrics |
+| `/memory` | Memory usage statistics |
+| `/debug/pprof/` | Go pprof profiling |
+
+### OpenTelemetry
+
+Gopls supports periodical export of traces and metrics by POSTing JSON messages to an OpenTelemetry collector process such as Jaeger/Grafana. 
+Use the `-otel` flag to specify the collector endpoint to enable exporting:
+
+```bash
+gopls serve -otel=http://localhost:4318
+```
+
+The data are discarded if no collector is listening at that address.
+
+For example, to view traces locally with Jaeger:
+```sh
+$ podman run --rm --name jaeger \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:1.76.0
+```
+
+Then open http://localhost:16686 to view traces.
+
 
 [issue-gopls]: https://github.com/golang/go/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+label%3Agopls "gopls issues"
 [issue-wanted]: https://github.com/golang/go/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Agopls+label%3A"help+wanted" "help wanted"
