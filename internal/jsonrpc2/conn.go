@@ -7,9 +7,11 @@ package jsonrpc2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
@@ -85,8 +87,10 @@ func (c *conn) Notify(ctx context.Context, method string, params any) (err error
 		Method.Of(method),
 		RPCDirection.Of(Outbound),
 	)
+	start := time.Now()
 	defer func() {
-		recordStatus(ctx, err)
+		ctx = recordStatus(ctx, err)
+		event.Metric(ctx, Latency.Of(time.Since(start).Seconds()))
 		done()
 	}()
 
@@ -108,8 +112,11 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) (_ I
 		RPCDirection.Of(Outbound),
 		RPCID.Of(fmt.Sprintf("%q", id)),
 	)
+	start := time.Now()
+	var rpcErr error
 	defer func() {
-		recordStatus(ctx, err)
+		ctx = recordStatus(ctx, rpcErr)
+		event.Metric(ctx, Latency.Of(time.Since(start).Seconds()))
 		done()
 	}()
 	event.Metric(ctx, Started.Of(1))
@@ -138,6 +145,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) (_ I
 	case response := <-rchan:
 		// is it an error response?
 		if response.err != nil {
+			rpcErr = response.err
 			return id, response.err
 		}
 		if result == nil || len(response.result) == 0 {
@@ -148,14 +156,18 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) (_ I
 		}
 		return id, nil
 	case <-ctx.Done():
+		rpcErr = ctx.Err()
 		return id, ctx.Err()
 	}
 }
 
-func (c *conn) replier(req Request, spanDone func()) Replier {
+func (c *conn) replier(req Request, start time.Time, spanDone func()) Replier {
 	return func(ctx context.Context, result any, err error) error {
+		// Save the RPC error before err gets reassigned by NewResponse/write below.
+		rpcErr := err
 		defer func() {
-			recordStatus(ctx, err)
+			ctx = recordStatus(ctx, rpcErr)
+			event.Metric(ctx, Latency.Of(time.Since(start).Seconds()))
 			spanDone()
 		}()
 		call, ok := req.(*Call)
@@ -211,10 +223,11 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 				labels = labels[:len(labels)-1]
 			}
 			reqCtx, spanDone := event.Start(ctx, msg.Method(), labels...)
+			start := time.Now()
 			event.Metric(reqCtx,
 				Started.Of(1),
 				ReceivedBytes.Of(n))
-			if err := handler(reqCtx, c.replier(msg, spanDone), msg); err != nil {
+			if err := handler(reqCtx, c.replier(msg, start, spanDone), msg); err != nil {
 				// delivery failed, not much we can do
 				event.Error(reqCtx, "jsonrpc2 message delivery failed", err)
 			}
@@ -252,10 +265,22 @@ func (c *conn) fail(err error) {
 	c.stream.Close()
 }
 
-func recordStatus(ctx context.Context, err error) {
-	if err != nil {
-		event.Label(ctx, StatusCode.Of("ERROR"))
-	} else {
-		event.Label(ctx, StatusCode.Of("OK"))
+func recordStatus(ctx context.Context, err error) context.Context {
+	var status string
+	var wireError *WireError
+	switch {
+	case err == nil:
+		status = "OK"
+	case errors.Is(err, context.Canceled):
+		status = "CANCELED"
+	case errors.As(err, &wireError) && wireError.Code == -32800: // JSON RPC request canceled
+		status = "CANCELED"
+	case errors.Is(err, context.DeadlineExceeded):
+		status = "DEADLINE_EXCEEDED"
+	case errors.Is(err, ErrMethodNotFound):
+		status = "METHOD_NOT_FOUND"
+	default:
+		status = "ERROR"
 	}
+	return event.Label(ctx, StatusCode.Of(status))
 }

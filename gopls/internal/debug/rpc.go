@@ -186,9 +186,9 @@ func (r *Rpcs) getRPCStats(lm label.Map) *rpcStats {
 	copy(*set, old[:index])
 	copy((*set)[index+1:], old[index:])
 	stats := &rpcStats{Method: method}
-	stats.Latency.Values = make([]rpcTimeBucket, len(millisecondsDistribution))
-	for i, m := range millisecondsDistribution {
-		stats.Latency.Values[i].Limit = timeUnits(m)
+	stats.Latency.Values = make([]rpcTimeBucket, len(secondsDistribution))
+	for i, m := range secondsDistribution {
+		stats.Latency.Values[i].Limit = timeUnits(m * 1000 * 1000)
 	}
 	(*set)[index] = stats
 	return stats

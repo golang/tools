@@ -12,8 +12,25 @@ import (
 
 var (
 	// the distributions we use for histograms
-	bytesDistribution        = []int64{1 << 10, 1 << 11, 1 << 12, 1 << 14, 1 << 16, 1 << 20}
-	millisecondsDistribution = []float64{0.1, 0.5, 1, 2, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}
+	bytesDistribution   = []int64{1 << 10, 1 << 11, 1 << 12, 1 << 14, 1 << 16, 1 << 20}
+	secondsDistribution = []float64{
+		0.0001, // 0.1ms
+		0.0005, // 0.5ms
+		0.001,  // 1ms
+		0.002,  // 2ms
+		0.005,  // 5ms
+		0.01,   // 10ms
+		0.05,   // 50ms
+		0.1,    // 100ms
+		0.5,    // 500ms
+		1,      // 1s
+		5,      // 5s
+		10,     // 10s
+		50,     // 50s
+		100,    // 1m40s
+		500,    // 8m20s
+		1000,   // 16m40s
+	}
 
 	receivedBytes = metric.HistogramInt64{
 		Name:        "received_bytes",
@@ -31,9 +48,9 @@ var (
 
 	latency = metric.HistogramFloat64{
 		Name:        "latency",
-		Description: "Distribution of latency in milliseconds, by method.",
+		Description: "Distribution of latency in seconds, by method.",
 		Keys:        []label.Key{jsonrpc2.RPCDirection, jsonrpc2.Method},
-		Buckets:     millisecondsDistribution,
+		Buckets:     secondsDistribution,
 	}
 
 	started = metric.Scalar{
