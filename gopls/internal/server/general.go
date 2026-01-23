@@ -193,6 +193,22 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 					},
 				},
 			},
+			Experimental: map[string]any{
+				// interactiveResolveProvider lists the LSP objects that support
+				// an interactive resolution stage. For instance, the presence of
+				// "command" indicates that the server handles "command/resolve"
+				// requests.
+				//
+				// Due to the existence of "codeAction/resolve" and language
+				// clients that resolve code action eagerly, "codeAction" can
+				// never be interactively resolved.
+				//
+				// TODO(hxjiang): experiment with interactively resolving
+				// "RenameParams". See golang/go#69107.
+				//
+				// TODO(pjw): add "command" to the supported list.
+				"interactiveResolveProvider": []string{},
+			},
 		},
 		ServerInfo: &protocol.ServerInfo{
 			Name:    "gopls",
