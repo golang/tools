@@ -379,7 +379,7 @@ func TestCursor_Edge(t *testing.T) {
 	}
 }
 
-// Regression test for mutilple matching nodes in FindByPos (#76872).
+// Regression test for multiple matching nodes in FindByPos (#76872).
 func TestCursor_FindByPos_Boundary(t *testing.T) {
 	// This test verifies that when a cursor position is on the boundary of two
 	// adjacent nodes (e.g. "foo|("), FindByPos returns the first node

@@ -134,7 +134,7 @@ type FormFieldTypeLazyEnum struct {
 	Config json.RawMessage `json:"config,omitempty"`
 }
 
-// FormFieldTypeList defines a homogenous list of items.
+// FormFieldTypeList defines a homogeneous list of items.
 type FormFieldTypeList struct {
 	// Kind must be "list".
 	Kind string `json:"kind"`

@@ -900,7 +900,7 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 				return nil, fmt.Errorf("%s:%d: unwanted space before marker (// @)", file.Name, line)
 			}
 
-			// The 'go list' command doesn't work correct with modules named
+			// The 'go list' command doesn't work correctly with modules named
 			// testdata", so don't allow it as a module name (golang/go#65406).
 			// (Otherwise files within it will end up in an ad hoc
 			// package, "command-line-arguments/$TMPDIR/...".)

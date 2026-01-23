@@ -92,7 +92,7 @@ func init() {
 //     }
 //
 // If the condition involving `i` is equivalent to i >= 0, then we replace it with
-// `if ok“.
+// `if ok`.
 // If the condition is negated (e.g. equivalent to `i < 0`), we use `if !ok` instead.
 // If the slices of `s` match `s[:i]` or `s[i+len(substr):]` or their variants listed above,
 // then we replace them with before and after.
@@ -524,7 +524,7 @@ func indexArgValid(info *types.Info, index *typeindex.Index, expr ast.Expr, afte
 		return !hasModifyingUses(sUses, afterPos)
 	default:
 		// For now, skip instances where s or substr are not
-		// identifers, basic lits, or call expressions of the form
+		// identifiers, basic lits, or call expressions of the form
 		// []byte(s).
 		// TODO(mkalil): Handle s and substr being expressions like ptr.field[i].
 		// From adonovan: We'd need to analyze s and substr to see

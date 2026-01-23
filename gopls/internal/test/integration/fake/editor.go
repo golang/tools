@@ -1344,7 +1344,7 @@ func (e *Editor) Symbols(ctx context.Context, sym string) ([]protocol.SymbolInfo
 	return ans, err
 }
 
-// CodeLens executes a codelens request on the server.
+// InlayHint executes an inlay hint request on the server.
 func (e *Editor) InlayHint(ctx context.Context, path string) ([]protocol.InlayHint, error) {
 	if e.Server == nil {
 		return nil, nil

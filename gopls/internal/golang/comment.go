@@ -37,7 +37,7 @@ func DocCommentToMarkdown(text string, options *settings.Options) string {
 
 	var printer comment.Printer
 	// The default produces {#Hdr-...} tags for headings.
-	// vscode displays thems, which is undesirable.
+	// vscode displays them, which is undesirable.
 	// The godoc for comment.Printer says the tags
 	// avoid a security problem.
 	printer.HeadingID = func(*comment.Heading) string { return "" }
