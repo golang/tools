@@ -204,19 +204,19 @@ func Select(curFile inspector.Cursor, start, end token.Pos) (_enclosing, _start,
 	for cur := range curEnclosing.Preorder() {
 		if rng.Contains(NodeRange(cur.Node())) {
 			// The start node has the least Pos.
-			if !CursorValid(curStart) {
+			if !curStart.Valid() {
 				curStart = cur
 			}
 			// The end node has the greatest End.
 			// End positions do not change monotonically,
 			// so we must compute the max.
-			if !CursorValid(curEnd) ||
+			if !curEnd.Valid() ||
 				cur.Node().End() > curEnd.Node().End() {
 				curEnd = cur
 			}
 		}
 	}
-	if !CursorValid(curStart) {
+	if !curStart.Valid() {
 		// The selection is valid (inside curEnclosing) but contains no
 		// complete nodes. This happens for point selections (start == end),
 		// or selections covering only only spaces, comments, and punctuation
@@ -225,17 +225,6 @@ func Select(curFile inspector.Cursor, start, end token.Pos) (_enclosing, _start,
 		return curEnclosing, noCursor, noCursor, fmt.Errorf("invalid selection")
 	}
 	return curEnclosing, curStart, curEnd, nil
-}
-
-// CursorValid reports whether the cursor is valid.
-//
-// A valid cursor may yet be the virtual root node,
-// cur.Inspector.Root(), which has no [Cursor.Node].
-//
-// TODO(adonovan): move to cursorutil package, and move that package into x/tools.
-// Ultimately, make this a method of Cursor. Needs a proposal.
-func CursorValid(cur inspector.Cursor) bool {
-	return cur.Inspector() != nil
 }
 
 var noCursor inspector.Cursor

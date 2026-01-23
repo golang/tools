@@ -303,7 +303,7 @@ func stmtToInsertVarBefore(cur inspector.Cursor, variables []*variable) (token.P
 				break
 			}
 		}
-		if !astutil.CursorValid(curStmt) {
+		if !curStmt.Valid() {
 			return 0, fmt.Errorf("no enclosing statement")
 		}
 		cur = curStmt

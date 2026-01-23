@@ -114,7 +114,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 
 	// firstRef should never be nil; at least one ident at cursor
 	// position should be found. But be defensive.
-	if !astutil.CursorValid(curFirstRef) {
+	if !curFirstRef.Valid() {
 		return nil, nil, fmt.Errorf("no identifier found")
 	}
 	insertPos, err := stmtToInsertVarBefore(curFirstRef, nil)

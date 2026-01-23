@@ -102,7 +102,7 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 
 			// Is sum.x converted from unsafe.Pointer?
 			_, curPtr := isConversion(curX)
-			if !astutil.CursorValid(curPtr) {
+			if !curPtr.Valid() {
 				continue
 			}
 			ptr := curPtr.Node().(ast.Expr)
