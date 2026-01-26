@@ -13,13 +13,16 @@ import (
 	"strconv"
 	"strings"
 
-	goastutil "golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
+	"golang.org/x/tools/internal/moreiters"
 )
 
 func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentHighlight, error) {
@@ -38,23 +41,9 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 		return nil, err
 	}
 
-	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
-	if len(path) == 0 {
-		return nil, fmt.Errorf("no enclosing position found for %v:%v-%v:%v", rng.Start.Line, rng.Start.Character, rng.End.Line, rng.End.Character)
-	}
-	// If start == end for astutil.PathEnclosingInterval, the 1-char interval
-	// following start is used instead. As a result, we might not get an exact
-	// match so we should check the 1-char interval to the left of the passed
-	// in position to see if that is an exact match.
-	if _, ok := path[0].(*ast.Ident); !ok {
-		if p, _ := goastutil.PathEnclosingInterval(pgf.File, start-1, end-1); p != nil {
-			switch p[0].(type) {
-			case *ast.Ident, *ast.SelectorExpr:
-				path = p // use preceding ident/selector
-			}
-		}
-	}
-	result, err := highlightPath(pkg.TypesInfo(), path, start)
+	cur, _, _, _ := astutil.Select(pgf.Cursor(), start, end) // can't fail: pgf contains pos
+
+	result, err := highlightPath(pkg.TypesInfo(), cur, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -72,70 +61,60 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 	return ranges, nil
 }
 
-// highlightPath returns ranges to highlight for the given enclosing path,
-// which should be the result of astutil.PathEnclosingInterval.
-func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[astutil.Range]protocol.DocumentHighlightKind, error) {
+// highlightPath returns ranges to highlight for the given the cursor.
+func highlightPath(info *types.Info, cur inspector.Cursor, start, end token.Pos) (map[astutil.Range]protocol.DocumentHighlightKind, error) {
 	result := make(map[astutil.Range]protocol.DocumentHighlightKind)
 
 	// Inside a call to a printf-like function (as identified
 	// by a simple heuristic).
 	// Treat each corresponding ("%v", arg) pair as a highlight class.
-	for _, node := range path {
-		if call, ok := node.(*ast.CallExpr); ok {
-			lit, idx := formatStringAndIndex(info, call)
-			if idx != -1 {
-				highlightPrintf(call, idx, pos, lit, result)
-			}
+	for node := range cur.Enclosing((*ast.CallExpr)(nil)) {
+		call := node.Node().(*ast.CallExpr)
+		lit, idx := formatStringAndIndex(info, call)
+		if idx != -1 {
+			highlightPrintf(call, idx, start, end, lit, result)
 		}
 	}
 
-	file := path[len(path)-1].(*ast.File)
-	switch node := path[0].(type) {
+	switch node := cur.Node().(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
-		if len(path) > 1 {
-			if imp, ok := path[1].(*ast.ImportSpec); ok {
-				highlight := func(n ast.Node) {
-					highlightNode(result, n, protocol.Text)
-				}
-
-				// Highlight the import itself...
-				highlight(imp)
-
-				// ...and all references to it in the file.
-				if pkgname := info.PkgNameOf(imp); pkgname != nil {
-					ast.Inspect(file, func(n ast.Node) bool {
-						if id, ok := n.(*ast.Ident); ok &&
-							info.Uses[id] == pkgname {
-							highlight(id)
-						}
-						return true
-					})
-				}
-				return result, nil
+		if imp, ok := cur.Parent().Node().(*ast.ImportSpec); ok {
+			highlight := func(n ast.Node) {
+				highlightNode(result, n, protocol.Text)
 			}
+
+			// Highlight the import itself...
+			highlight(imp)
+
+			// ...and all references to it in the file.
+			if pkgname := info.PkgNameOf(imp); pkgname != nil {
+				_, curFile := cursorutil.FirstEnclosing[*ast.File](cur)
+				for c := range curFile.Preorder((*ast.Ident)(nil)) {
+					if id := c.Node().(*ast.Ident); info.Uses[id] == pkgname {
+						highlight(id)
+					}
+				}
+			}
+			return result, nil
 		}
-		highlightFuncControlFlow(path, result)
+		highlightFuncControlFlow(cur, result)
 	case *ast.ReturnStmt, *ast.FuncDecl, *ast.FuncType:
-		highlightFuncControlFlow(path, result)
+		highlightFuncControlFlow(cur, result)
 	case *ast.Ident:
 		// Check if ident is inside return or func decl.
-		highlightFuncControlFlow(path, result)
-		highlightIdentifier(node, file, info, result)
+		highlightFuncControlFlow(cur, result)
+		highlightIdentifier(cur, info, result)
 	case *ast.ForStmt, *ast.RangeStmt:
 		var label *ast.Ident
-		if len(path) > 1 {
-			if l, ok := path[1].(*ast.LabeledStmt); ok {
-				label = l.Label
-			}
+		if l, ok := cur.Parent().Node().(*ast.LabeledStmt); ok {
+			label = l.Label
 		}
 		highlightLoopControlFlow(node, label, info, result)
 	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 		var label *ast.Ident
-		if len(path) > 1 {
-			if l, ok := path[1].(*ast.LabeledStmt); ok {
-				label = l.Label
-			}
+		if l, ok := cur.Parent().Node().(*ast.LabeledStmt); ok {
+			label = l.Label
 		}
 		highlightSwitchFlow(node, label, info, result)
 	case *ast.BranchStmt:
@@ -146,29 +125,22 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[astuti
 		switch node.Tok {
 		case token.BREAK:
 			if node.Label != nil {
-				highlightLabeledFlow(path, info, node, result)
+				highlightLabeledFlow(cur, info, result)
 			} else {
-				highlightUnlabeledBreakFlow(path, info, result)
+				highlightUnlabeledBreakFlow(cur, info, result)
 			}
 		case token.CONTINUE:
 			if node.Label != nil {
-				highlightLabeledFlow(path, info, node, result)
+				highlightLabeledFlow(cur, info, result)
 			} else {
 				var (
 					stmt  ast.Node
 					label *ast.Ident
 				)
-			Outer:
-				for i := range path {
-					switch n := path[i].(type) {
-					case *ast.ForStmt, *ast.RangeStmt:
-						stmt = n
-						if i+1 < len(path) {
-							if l, ok := path[i+1].(*ast.LabeledStmt); ok {
-								label = l.Label
-							}
-						}
-						break Outer
+				if curLoop, ok := moreiters.First(cur.Enclosing((*ast.ForStmt)(nil), (*ast.RangeStmt)(nil))); ok {
+					stmt = curLoop.Node()
+					if l, ok := curLoop.Parent().Node().(*ast.LabeledStmt); ok {
+						label = l.Label
 					}
 				}
 				highlightLoopControlFlow(stmt, label, info, result)
@@ -208,15 +180,15 @@ func formatStringAndIndex(info *types.Info, call *ast.CallExpr) (*ast.BasicLit, 
 	return nil, -1
 }
 
-// highlightPrintf highlights operations in a format string and their corresponding
-// variadic arguments in a (possible) printf-style function call.
+// highlightPrintf highlights operations in a format string and their
+// corresponding variadic arguments in a (possible) printf-style function call.
 // For example:
 //
 // fmt.Printf("Hello %s, you scored %d", name, score)
 //
 // If the cursor is on %s or name, it will highlight %s as a write operation,
 // and name as a read operation.
-func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.BasicLit, result map[astutil.Range]protocol.DocumentHighlightKind) {
+func highlightPrintf(call *ast.CallExpr, idx int, start, end token.Pos, lit *ast.BasicLit, result map[astutil.Range]protocol.DocumentHighlightKind) {
 	format, err := strconv.Unquote(lit.Value)
 	if err != nil {
 		return
@@ -240,21 +212,35 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		rng, err := astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
+		var (
+			rng       astutil.Range
+			withinRng bool
+		)
+		rng, err = astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
 		if err != nil {
 			return
 		}
 		visited[rng] = argIndex
 
-		var arg ast.Expr
-		if argIndex < len(call.Args) {
-			arg = call.Args[argIndex]
+		if start == end {
+			// End pos can't equal to range's end, otherwise the two neighborhood
+			// such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
+			withinRng = rng.Start <= start && end < rng.End()
+		} else {
+			// With a non-empty selection, there is no ambiguity.
+			withinRng = rng.Contains(astutil.RangeOf(start, end))
 		}
 
-		// cursorPos can't equal to end position, otherwise the two
-		// neighborhood such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
-		if rng.ContainsPos(cursorPos) && cursorPos < rng.End() ||
-			arg != nil && astutil.NodeContainsPos(arg, cursorPos) {
+		var (
+			arg       ast.Expr
+			withinArg bool
+		)
+		if argIndex < len(call.Args) {
+			arg = call.Args[argIndex]
+			withinArg = astutil.NodeContains(arg, astutil.RangeOf(start, end))
+		}
+
+		if withinRng || withinArg {
 			highlightRange(result, rng, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex
@@ -313,7 +299,7 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 //
 // As a special case, if the cursor is within a complicated expression, control
 // flow highlighting is disabled, as it would highlight too much.
-func highlightFuncControlFlow(path []ast.Node, result map[astutil.Range]protocol.DocumentHighlightKind) {
+func highlightFuncControlFlow(cur inspector.Cursor, result map[astutil.Range]protocol.DocumentHighlightKind) {
 
 	var (
 		funcType   *ast.FuncType   // type of enclosing func, or nil
@@ -321,9 +307,9 @@ func highlightFuncControlFlow(path []ast.Node, result map[astutil.Range]protocol
 		returnStmt *ast.ReturnStmt // enclosing ReturnStmt within the func, or nil
 	)
 
-findEnclosingFunc:
-	for i, n := range path {
-		switch n := n.(type) {
+loop:
+	for cur := range cur.Enclosing() {
+		switch n := cur.Node().(type) {
 		// TODO(rfindley, low priority): these pre-existing cases for KeyValueExpr
 		// and CallExpr appear to avoid highlighting when the cursor is in a
 		// complicated expression. However, the basis for this heuristic is
@@ -332,28 +318,23 @@ findEnclosingFunc:
 			// If cursor is in a key: value expr, we don't want control flow highlighting.
 			return
 
-		case *ast.CallExpr:
-			// If cursor is an arg in a callExpr, we don't want control flow highlighting.
-			if i > 0 {
-				for _, arg := range n.Args {
-					if arg == path[i-1] {
-						return
-					}
-				}
-			}
-
 		case *ast.FuncLit:
 			funcType = n.Type
 			funcBody = n.Body
-			break findEnclosingFunc
+			break loop
 
 		case *ast.FuncDecl:
 			funcType = n.Type
 			funcBody = n.Body
-			break findEnclosingFunc
+			break loop
 
 		case *ast.ReturnStmt:
 			returnStmt = n
+		}
+
+		// If cursor is an arg in a callExpr, we don't want control flow highlighting.
+		if astutil.IsChildOf(cur, edge.CallExpr_Args) {
+			return
 		}
 	}
 
@@ -363,7 +344,7 @@ findEnclosingFunc:
 
 	// Helper functions for inspecting the current location.
 	var (
-		pos    = path[0].Pos()
+		pos    = cur.Node().Pos()
 		inSpan = func(start, end token.Pos) bool { return start <= pos && pos < end }
 		inNode = func(n ast.Node) bool { return inSpan(n.Pos(), n.End()) }
 	)
@@ -374,7 +355,7 @@ findEnclosingFunc:
 	// specific field or expression, we should highlight all of the exit points
 	// of the function, including the "return" and "func" keywords.
 	funcEnd := funcType.Func + token.Pos(len("func"))
-	highlightAll := path[0] == returnStmt || inSpan(funcType.Func, funcEnd)
+	highlightAll := cur.Node() == returnStmt || inSpan(funcType.Func, funcEnd)
 	var highlightIndexes map[int]bool
 
 	if highlightAll {
@@ -468,26 +449,23 @@ findEnclosingFunc:
 	}
 }
 
-// highlightUnlabeledBreakFlow highlights the innermost enclosing for/range/switch or swlect
-func highlightUnlabeledBreakFlow(path []ast.Node, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
+// highlightUnlabeledBreakFlow highlights the innermost enclosing
+// for/range/switch or select
+func highlightUnlabeledBreakFlow(cur inspector.Cursor, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
 	// Reverse walk the path until we find closest loop, select, or switch.
-	for i := range path {
-		switch n := path[i].(type) {
+	for cur := range cur.Enclosing() {
+		switch n := cur.Node().(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
 			var label *ast.Ident
-			if i+1 < len(path) {
-				if l, ok := path[i+1].(*ast.LabeledStmt); ok {
-					label = l.Label
-				}
+			if l, ok := cur.Parent().Node().(*ast.LabeledStmt); ok {
+				label = l.Label
 			}
 			highlightLoopControlFlow(n, label, info, result)
 			return // only highlight the innermost statement
 		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
 			var label *ast.Ident
-			if i+1 < len(path) {
-				if l, ok := path[i+1].(*ast.LabeledStmt); ok {
-					label = l.Label
-				}
+			if l, ok := cur.Parent().Node().(*ast.LabeledStmt); ok {
+				label = l.Label
 			}
 			highlightSwitchFlow(n, label, info, result)
 			return
@@ -500,13 +478,15 @@ func highlightUnlabeledBreakFlow(path []ast.Node, info *types.Info, result map[a
 
 // highlightLabeledFlow highlights the enclosing labeled for, range,
 // or switch statement denoted by a labeled break or continue stmt.
-func highlightLabeledFlow(path []ast.Node, info *types.Info, stmt *ast.BranchStmt, result map[astutil.Range]protocol.DocumentHighlightKind) {
-	use := info.Uses[stmt.Label]
+//
+// The input cursor must point to a [ast.BranchStmt]
+func highlightLabeledFlow(curBranch inspector.Cursor, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
+	use := info.Uses[curBranch.Node().(*ast.BranchStmt).Label]
 	if use == nil {
 		return
 	}
-	for _, n := range path {
-		if label, ok := n.(*ast.LabeledStmt); ok && info.Defs[label.Label] == use {
+	for cur := range curBranch.Enclosing((*ast.LabeledStmt)(nil)) {
+		if label := cur.Node().(*ast.LabeledStmt); info.Defs[label.Label] == use {
 			switch label.Stmt.(type) {
 			case *ast.ForStmt, *ast.RangeStmt:
 				highlightLoopControlFlow(label.Stmt, label.Label, info, result)
@@ -632,15 +612,16 @@ func highlightRange(result map[astutil.Range]protocol.DocumentHighlightKind, rng
 	}
 }
 
-func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
+func highlightIdentifier(cur inspector.Cursor, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
+	ident := cur.Node().(*ast.Ident)
 
 	// obj may be nil if the Ident is undefined.
 	// In this case, the behavior expected by tests is
 	// to match other undefined Idents of the same name.
-	obj := info.ObjectOf(id)
+	obj := info.ObjectOf(ident)
 
 	highlightIdent := func(n *ast.Ident, kind protocol.DocumentHighlightKind) {
-		if n.Name == id.Name && info.ObjectOf(n) == obj {
+		if n.Name == ident.Name && info.ObjectOf(n) == obj {
 			highlightNode(result, n, kind)
 		}
 	}
@@ -666,8 +647,9 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 		}
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch n := n.(type) {
+	_, curFile := cursorutil.FirstEnclosing[*ast.File](cur)
+	curFile.Inspect(nil, func(c inspector.Cursor) bool {
+		switch n := c.Node().(type) {
 		case *ast.AssignStmt:
 			for _, s := range n.Lhs {
 				highlightWriteInExpr(s)
