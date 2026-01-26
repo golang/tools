@@ -28,7 +28,7 @@ func TestLabelToAttribute_String(t *testing.T) {
 }
 
 func TestLabelToAttribute_Int(t *testing.T) {
-	key := keys.NewInt64("count", "")
+	key := keys.NewInt("count", "")
 	l := key.Of(42)
 
 	attr, ok := labelToAttribute(l)
@@ -44,7 +44,7 @@ func TestLabelToAttribute_Int(t *testing.T) {
 }
 
 func TestLabelToAttribute_Float(t *testing.T) {
-	key := keys.NewFloat64("ratio", "")
+	key := keys.NewFloat("ratio", "")
 	l := key.Of(3.14)
 
 	attr, ok := labelToAttribute(l)
@@ -56,22 +56,6 @@ func TestLabelToAttribute_Float(t *testing.T) {
 	}
 	if attr.Value.DoubleValue == nil || *attr.Value.DoubleValue != 3.14 {
 		t.Errorf("expected doubleValue 3.14, got %v", attr.Value.DoubleValue)
-	}
-}
-
-func TestLabelToAttribute_Bool(t *testing.T) {
-	key := keys.NewBoolean("enabled", "")
-	l := key.Of(true)
-
-	attr, ok := labelToAttribute(l)
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	if attr.Key != "enabled" {
-		t.Errorf("expected key 'enabled', got %q", attr.Key)
-	}
-	if attr.Value.BoolValue == nil || *attr.Value.BoolValue != true {
-		t.Errorf("expected boolValue true, got %v", attr.Value.BoolValue)
 	}
 }
 

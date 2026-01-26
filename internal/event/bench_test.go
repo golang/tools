@@ -25,9 +25,9 @@ type Hooks struct {
 var (
 	aValue  = keys.NewInt("a", "")
 	bValue  = keys.NewString("b", "")
-	aCount  = keys.NewInt64("aCount", "Count of time A is called.")
+	aCount  = keys.NewInt("aCount", "Count of time A is called.")
 	aStat   = keys.NewInt("aValue", "A value.")
-	bCount  = keys.NewInt64("B", "Count of time B is called.")
+	bCount  = keys.NewInt("B", "Count of time B is called.")
 	bLength = keys.NewInt("BLen", "B length.")
 
 	Baseline = Hooks{

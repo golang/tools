@@ -43,7 +43,7 @@ func captureMetricData(name string, setup func(*metric.Config), record func(cont
 }
 
 func TestConvertInt64Data_Counter(t *testing.T) {
-	key := keys.NewInt64("value", "")
+	key := keys.NewInt("value", "")
 
 	data := captureMetricData("request_count", func(cfg *metric.Config) {
 		metric.Scalar{
@@ -80,7 +80,7 @@ func TestConvertInt64Data_Counter(t *testing.T) {
 }
 
 func TestConvertInt64Data_Gauge(t *testing.T) {
-	key := keys.NewInt64("value", "")
+	key := keys.NewInt("value", "")
 
 	data := captureMetricData("current_connections", func(cfg *metric.Config) {
 		metric.Scalar{Name: "current_connections"}.LatestInt64(cfg, key)
@@ -105,7 +105,7 @@ func TestConvertInt64Data_Gauge(t *testing.T) {
 }
 
 func TestConvertFloat64Data(t *testing.T) {
-	key := keys.NewFloat64("value", "")
+	key := keys.NewFloat("value", "")
 
 	data := captureMetricData("cpu_usage", func(cfg *metric.Config) {
 		metric.Scalar{Name: "cpu_usage"}.LatestFloat64(cfg, key)
@@ -127,13 +127,13 @@ func TestConvertFloat64Data(t *testing.T) {
 }
 
 func TestConvertHistogramInt64Data(t *testing.T) {
-	key := keys.NewInt64("value", "")
+	key := keys.NewInt("value", "")
 	buckets := []int64{10, 50, 100, 500}
 
 	// Record multiple values across different buckets:
 	// Bucket boundaries: <=10, <=50, <=100, <=500, >500
 	// Values: 5, 8 (<=10), 20, 30, 40 (<=50), 75 (<=100), 200, 300 (<=500), 1000 (>500)
-	values := []int64{5, 8, 20, 30, 40, 75, 200, 300, 1000}
+	values := []int{5, 8, 20, 30, 40, 75, 200, 300, 1000}
 
 	data := captureMetricData("response_time", func(cfg *metric.Config) {
 		metric.HistogramInt64{
@@ -201,7 +201,7 @@ func TestConvertHistogramInt64Data(t *testing.T) {
 }
 
 func TestConvertInt64Data_WithAttributes(t *testing.T) {
-	valueKey := keys.NewInt64("value", "")
+	valueKey := keys.NewInt("value", "")
 	methodKey := keys.NewString("method", "")
 
 	data := captureMetricData("requests_by_method", func(cfg *metric.Config) {

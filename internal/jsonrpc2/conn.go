@@ -96,7 +96,7 @@ func (c *conn) Notify(ctx context.Context, method string, params any) (err error
 
 	event.Metric(ctx, Started.Of(1))
 	n, err := c.write(ctx, notify)
-	event.Metric(ctx, SentBytes.Of(n))
+	event.Metric(ctx, SentBytes.Of64(n))
 	return err
 }
 
@@ -135,7 +135,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) (_ I
 	}()
 	// now we are ready to send
 	n, err := c.write(ctx, call)
-	event.Metric(ctx, SentBytes.Of(n))
+	event.Metric(ctx, SentBytes.Of64(n))
 	if err != nil {
 		// sending failed, we will never get a response, so don't leave it pending
 		return id, err
@@ -180,7 +180,7 @@ func (c *conn) replier(req Request, start time.Time, spanDone func()) Replier {
 			return err
 		}
 		n, err := c.write(ctx, response)
-		event.Metric(ctx, SentBytes.Of(n))
+		event.Metric(ctx, SentBytes.Of64(n))
 		if err != nil {
 			// TODO(iancottrell): if a stream write fails, we really need to shut down
 			// the whole stream
@@ -226,7 +226,7 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 			start := time.Now()
 			event.Metric(reqCtx,
 				Started.Of(1),
-				ReceivedBytes.Of(n))
+				ReceivedBytes.Of64(n))
 			if err := handler(reqCtx, c.replier(msg, start, spanDone), msg); err != nil {
 				// delivery failed, not much we can do
 				event.Error(reqCtx, "jsonrpc2 message delivery failed", err)

@@ -175,10 +175,10 @@ func (e *Exporter) post(path string, payload any) error {
 func (e *Exporter) buildResource() otlpResource {
 	attrs := []otlpAttribute{
 		{Key: "service.name", Value: otlpAttributeValue{StringValue: &e.serviceName}},
-		{Key: "process.runtime.version", Value: otlpAttributeValue{StringValue: strPtr(runtime.Version())}},
-		{Key: "process.pid", Value: otlpAttributeValue{StringValue: strPtr(strconv.Itoa(os.Getpid()))}},
-		{Key: "host.arch", Value: otlpAttributeValue{StringValue: strPtr(runtime.GOARCH)}},
-		{Key: "os.type", Value: otlpAttributeValue{StringValue: strPtr(runtime.GOOS)}},
+		{Key: "process.runtime.version", Value: otlpAttributeValue{StringValue: varOf(runtime.Version())}},
+		{Key: "process.pid", Value: otlpAttributeValue{StringValue: varOf(strconv.Itoa(os.Getpid()))}},
+		{Key: "host.arch", Value: otlpAttributeValue{StringValue: varOf(runtime.GOARCH)}},
+		{Key: "os.type", Value: otlpAttributeValue{StringValue: varOf(runtime.GOOS)}},
 	}
 
 	if hostname, err := os.Hostname(); err == nil {
