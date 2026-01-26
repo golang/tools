@@ -597,8 +597,10 @@ func (i *Instance) ListenedDebugAddress() string {
 }
 
 func makeGlobalExporter(stderr io.Writer) event.Exporter {
-	p := export.Printer{}
-	var pMu sync.Mutex
+	var (
+		pMu sync.Mutex
+		p   export.Printer
+	)
 	return func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
 		i := GetInstance(ctx)
 

@@ -7,8 +7,6 @@ package cache
 // session event tracing
 
 import (
-	"io"
-
 	"golang.org/x/tools/internal/event/label"
 )
 
@@ -32,8 +30,8 @@ func NewSessionKey(name, description string) *SessionKey {
 func (k *SessionKey) Name() string        { return k.name }
 func (k *SessionKey) Description() string { return k.description }
 
-func (k *SessionKey) Format(w io.Writer, buf []byte, l label.Label) {
-	io.WriteString(w, k.From(l).ID())
+func (k *SessionKey) Append(buf []byte, l label.Label) []byte {
+	return append(buf, k.From(l).ID()...)
 }
 
 // Of creates a new Label with this key and the supplied session.

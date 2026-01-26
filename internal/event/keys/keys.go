@@ -6,7 +6,6 @@ package keys
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"strconv"
 
@@ -27,8 +26,8 @@ func New(name, description string) *Value {
 func (k *Value) Name() string        { return k.name }
 func (k *Value) Description() string { return k.description }
 
-func (k *Value) Format(w io.Writer, buf []byte, l label.Label) {
-	fmt.Fprint(w, k.From(l))
+func (k *Value) Append(buf []byte, l label.Label) []byte {
+	return fmt.Append(buf, k.From(l))
 }
 
 // Get returns the label for the key of a label.Map.
@@ -62,7 +61,7 @@ func NewTag(name, description string) *Tag {
 func (k *Tag) Name() string        { return k.name }
 func (k *Tag) Description() string { return k.description }
 
-func (k *Tag) Format(w io.Writer, buf []byte, l label.Label) {}
+func (k *Tag) Append(buf []byte, l label.Label) []byte { return buf }
 
 // New creates a new Label with this key.
 func (k *Tag) New() label.Label { return label.OfValue(k, nil) }
@@ -81,8 +80,8 @@ func NewInt(name, description string) *Int {
 func (k *Int) Name() string        { return k.name }
 func (k *Int) Description() string { return k.description }
 
-func (k *Int) Format(w io.Writer, buf []byte, l label.Label) {
-	w.Write(strconv.AppendInt(buf, k.From(l), 10))
+func (k *Int) Append(buf []byte, l label.Label) []byte {
+	return strconv.AppendInt(buf, k.From(l), 10)
 }
 
 // Of creates a new Label with this key and the supplied value.
@@ -116,8 +115,8 @@ func NewUint(name, description string) *Uint {
 func (k *Uint) Name() string        { return k.name }
 func (k *Uint) Description() string { return k.description }
 
-func (k *Uint) Format(w io.Writer, buf []byte, l label.Label) {
-	w.Write(strconv.AppendUint(buf, k.From(l), 10))
+func (k *Uint) Append(buf []byte, l label.Label) []byte {
+	return strconv.AppendUint(buf, k.From(l), 10)
 }
 
 // Of creates a new Label with this key and the supplied value.
@@ -148,8 +147,8 @@ func NewFloat(name, description string) *Float {
 func (k *Float) Name() string        { return k.name }
 func (k *Float) Description() string { return k.description }
 
-func (k *Float) Format(w io.Writer, buf []byte, l label.Label) {
-	w.Write(strconv.AppendFloat(buf, k.From(l), 'E', -1, 64))
+func (k *Float) Append(buf []byte, l label.Label) []byte {
+	return strconv.AppendFloat(buf, k.From(l), 'E', -1, 64)
 }
 
 // Of creates a new Label with this key and the supplied value.
@@ -184,8 +183,8 @@ func NewString(name, description string) *String {
 func (k *String) Name() string        { return k.name }
 func (k *String) Description() string { return k.description }
 
-func (k *String) Format(w io.Writer, buf []byte, l label.Label) {
-	w.Write(strconv.AppendQuote(buf, k.From(l)))
+func (k *String) Append(buf []byte, l label.Label) []byte {
+	return strconv.AppendQuote(buf, k.From(l))
 }
 
 // Of creates a new Label with this key and the supplied value.
@@ -216,8 +215,8 @@ func NewError(name, description string) *Error {
 func (k *Error) Name() string        { return k.name }
 func (k *Error) Description() string { return k.description }
 
-func (k *Error) Format(w io.Writer, buf []byte, l label.Label) {
-	io.WriteString(w, k.From(l).Error())
+func (k *Error) Append(buf []byte, l label.Label) []byte {
+	return append(buf, k.From(l).Error()...)
 }
 
 // Of returns a new Label with this key and the supplied value.
