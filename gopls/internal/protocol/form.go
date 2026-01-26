@@ -17,6 +17,19 @@ type FormFieldTypeString struct {
 	Kind string `json:"kind"`
 }
 
+// FormFieldTypeDocumentURI defines an input for a file or directory URI.
+//
+// The client determines the best mechanism to collect this information from
+// the user (e.g., a graphical file picker, a text input with autocomplete, etc).
+//
+// The value returned by the client must be a valid "DocumentUri" as defined
+// in the LSP specification:
+// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentUri
+type FormFieldTypeDocumentURI struct {
+	// Kind must be "documentURI".
+	Kind string `json:"kind"`
+}
+
 // FormFieldTypeBool defines a boolean input.
 type FormFieldTypeBool struct {
 	// Kind must be "bool".
