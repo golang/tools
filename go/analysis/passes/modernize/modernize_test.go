@@ -63,10 +63,19 @@ func TestRangeInt(t *testing.T) {
 }
 
 func TestPlusBuild(t *testing.T) {
+	// This test assumes a particular OS/ARCH so that the test
+	// files are selected by the build; otherwise they would
+	// appear in IgnoredFiles, for which file version information
+	// is not available. See https://go.dev/issue/77318.
+	t.Setenv("GOOS", "linux")
+	t.Setenv("GOARCH", "amd64")
+
 	// This test has a dedicated hack in the analysistest package:
 	// Because it cares about IgnoredFiles, which most analyzers
 	// ignore, the test framework will consider expectations in
 	// ignore files too, but only for this analyzer.
+	// (But see above: IgnoredFiles lack version information
+	// so we can't safely apply any fixes to them.)
 	RunWithSuggestedFixes(t, TestData(), goplsexport.PlusBuildModernizer, "plusbuild")
 }
 
