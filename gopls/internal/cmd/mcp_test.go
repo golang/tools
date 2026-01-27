@@ -55,6 +55,7 @@ const B = 2
 	goplsCmd := exec.Command(os.Args[0], "mcp")
 	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
 	goplsCmd.Dir = tree
+	goplsCmd.Stderr = t.Output() // to debug https://go.dev/issue/77334
 
 	ctx := t.Context()
 	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
@@ -143,6 +144,7 @@ package p
 			goplsCmd := exec.Command(os.Args[0], args...)
 			goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
 			goplsCmd.Dir = tree
+			goplsCmd.Stderr = t.Output() // to debug https://go.dev/issue/77334
 
 			ctx := t.Context()
 			client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
@@ -337,6 +339,7 @@ func main() {
 		"GOVULNDB="+db.URI(),
 	)
 	goplsCmd.Dir = tree
+	goplsCmd.Stderr = t.Output() // to debug https://go.dev/issue/77334
 
 	ctx := t.Context()
 	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
