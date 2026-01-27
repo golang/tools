@@ -132,15 +132,18 @@ func commentDocLinks(cg *ast.CommentGroup) iter.Seq[docLink] {
 			// position of each doc link from the parsed result.
 
 			for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(comment.Text, -1) {
-				mstart, mend := idx[2], idx[3]
-
-				// [bracketPos.Start, bracketPos.End) identifies the start and end
-				// of the brackets. e.g. "[fmt.Scanner.Scan]".
-				bracketText := comment.Text[mstart-1 : mend+1]
-
 				// [mstart, mend) identifies the first submatch, which is the
 				// reference name in the doc link (sans '*').
 				// e.g. The "[fmt.Println]" reference name is "fmt.Println".
+				mstart, mend := idx[2], idx[3]
+
+				// idx[0], idx[1] matches the full pattern. idx[0] corresponds
+				// to the opening bracket. idx[1] may include trailing
+				// whitespace or punctuation, so we need to use "mend" to
+				// capture the exact location of the closing bracket, which must
+				// be one space after the end of the reference name.
+				bracketText := comment.Text[idx[0] : mend+1]
+
 				match := comment.Text[mstart:mend]
 
 				if strings.Contains(match, "\n") {

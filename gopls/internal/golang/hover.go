@@ -1523,7 +1523,7 @@ func formatHover(h *hoverResult, options *settings.Options, pkgURL func(path Pac
 				if part == "" {
 					continue
 				}
-				// When markdown is a available, insert an hline before the start of
+				// When markdown is available, insert an hline before the start of
 				// the section, if there is content above.
 				if markdown && b.Len() == start && start > 0 {
 					newline()
