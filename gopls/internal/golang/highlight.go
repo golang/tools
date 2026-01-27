@@ -122,9 +122,21 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[astuti
 		highlightFuncControlFlow(path, result)
 		highlightIdentifier(node, file, info, result)
 	case *ast.ForStmt, *ast.RangeStmt:
-		highlightLoopControlFlow(path, info, result)
+		var label *ast.Ident
+		if len(path) > 1 {
+			if l, ok := path[1].(*ast.LabeledStmt); ok {
+				label = l.Label
+			}
+		}
+		highlightLoopControlFlow(node, label, info, result)
 	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-		highlightSwitchFlow(path, info, result)
+		var label *ast.Ident
+		if len(path) > 1 {
+			if l, ok := path[1].(*ast.LabeledStmt); ok {
+				label = l.Label
+			}
+		}
+		highlightSwitchFlow(node, label, info, result)
 	case *ast.BranchStmt:
 		// BREAK can exit a loop, switch or select, while CONTINUE exit a loop so
 		// these need to be handled separately. They can also be embedded in any
@@ -141,7 +153,24 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[astuti
 			if node.Label != nil {
 				highlightLabeledFlow(path, info, node, result)
 			} else {
-				highlightLoopControlFlow(path, info, result)
+				var (
+					stmt  ast.Node
+					label *ast.Ident
+				)
+			Outer:
+				for i := range path {
+					switch n := path[i].(type) {
+					case *ast.ForStmt, *ast.RangeStmt:
+						stmt = n
+						if i+1 < len(path) {
+							if l, ok := path[i+1].(*ast.LabeledStmt); ok {
+								label = l.Label
+							}
+						}
+						break Outer
+					}
+				}
+				highlightLoopControlFlow(stmt, label, info, result)
 			}
 		}
 	}
@@ -441,13 +470,25 @@ findEnclosingFunc:
 // highlightUnlabeledBreakFlow highlights the innermost enclosing for/range/switch or swlect
 func highlightUnlabeledBreakFlow(path []ast.Node, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
 	// Reverse walk the path until we find closest loop, select, or switch.
-	for _, n := range path {
-		switch n.(type) {
+	for i := range path {
+		switch n := path[i].(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
-			highlightLoopControlFlow(path, info, result)
+			var label *ast.Ident
+			if i+1 < len(path) {
+				if l, ok := path[i+1].(*ast.LabeledStmt); ok {
+					label = l.Label
+				}
+			}
+			highlightLoopControlFlow(n, label, info, result)
 			return // only highlight the innermost statement
 		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-			highlightSwitchFlow(path, info, result)
+			var label *ast.Ident
+			if i+1 < len(path) {
+				if l, ok := path[i+1].(*ast.LabeledStmt); ok {
+					label = l.Label
+				}
+			}
+			highlightSwitchFlow(n, label, info, result)
 			return
 		case *ast.SelectStmt:
 			// TODO: add highlight when breaking a select.
@@ -467,45 +508,16 @@ func highlightLabeledFlow(path []ast.Node, info *types.Info, stmt *ast.BranchStm
 		if label, ok := n.(*ast.LabeledStmt); ok && info.Defs[label.Label] == use {
 			switch label.Stmt.(type) {
 			case *ast.ForStmt, *ast.RangeStmt:
-				highlightLoopControlFlow([]ast.Node{label.Stmt, label}, info, result)
+				highlightLoopControlFlow(label.Stmt, label.Label, info, result)
 			case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-				highlightSwitchFlow([]ast.Node{label.Stmt, label}, info, result)
+				highlightSwitchFlow(label.Stmt, label.Label, info, result)
 			}
 			return
 		}
 	}
 }
 
-func labelFor(path []ast.Node) *ast.Ident {
-	if len(path) > 1 {
-		if n, ok := path[1].(*ast.LabeledStmt); ok {
-			return n.Label
-		}
-	}
-	return nil
-}
-
-func highlightLoopControlFlow(path []ast.Node, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
-	var loop ast.Node
-	var loopLabel *ast.Ident
-	stmtLabel := labelFor(path)
-Outer:
-	// Reverse walk the path till we get to the for loop.
-	for i := range path {
-		switch n := path[i].(type) {
-		case *ast.ForStmt, *ast.RangeStmt:
-			loopLabel = labelFor(path[i:])
-
-			if stmtLabel == nil || loopLabel == stmtLabel {
-				loop = n
-				break Outer
-			}
-		}
-	}
-	if loop == nil {
-		return
-	}
-
+func highlightLoopControlFlow(loop ast.Node, label *ast.Ident, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
 	// Add the for statement.
 	rngStart := loop.Pos()
 	rngEnd := loop.Pos() + token.Pos(len("for"))
@@ -523,7 +535,7 @@ Outer:
 		if !ok {
 			return true
 		}
-		if b.Label == nil || info.Uses[b.Label] == info.Defs[loopLabel] {
+		if b.Label == nil || info.Uses[b.Label] == info.Defs[label] {
 			highlightNode(result, b, protocol.Text)
 		}
 		return true
@@ -543,7 +555,7 @@ Outer:
 	})
 
 	// We don't need to check other for loops if we aren't looking for labeled statements.
-	if loopLabel == nil {
+	if label == nil {
 		return
 	}
 
@@ -554,44 +566,24 @@ Outer:
 			return true
 		}
 		// statement with labels that matches the loop
-		if b.Label != nil && info.Uses[b.Label] == info.Defs[loopLabel] {
+		if b.Label != nil && info.Uses[b.Label] == info.Defs[label] {
 			highlightNode(result, b, protocol.Text)
 		}
 		return true
 	})
 }
 
-func highlightSwitchFlow(path []ast.Node, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
-	var switchNode ast.Node
-	var switchNodeLabel *ast.Ident
-	stmtLabel := labelFor(path)
-Outer:
-	// Reverse walk the path till we get to the switch statement.
-	for i := range path {
-		switch n := path[i].(type) {
-		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-			switchNodeLabel = labelFor(path[i:])
-			if stmtLabel == nil || switchNodeLabel == stmtLabel {
-				switchNode = n
-				break Outer
-			}
-		}
-	}
-	// Cursor is not in a switch statement
-	if switchNode == nil {
-		return
-	}
-
+func highlightSwitchFlow(node ast.Node, label *ast.Ident, info *types.Info, result map[astutil.Range]protocol.DocumentHighlightKind) {
 	// Add the switch statement.
-	rngStart := switchNode.Pos()
-	rngEnd := switchNode.Pos() + token.Pos(len("switch"))
+	rngStart := node.Pos()
+	rngEnd := node.Pos() + token.Pos(len("switch"))
 	highlightRange(result, astutil.RangeOf(rngStart, rngEnd), protocol.Text)
 
 	// Traverse AST to find break statements within the same switch.
-	ast.Inspect(switchNode, func(n ast.Node) bool {
+	ast.Inspect(node, func(n ast.Node) bool {
 		switch n.(type) {
 		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-			return switchNode == n
+			return node == n
 		case *ast.ForStmt, *ast.RangeStmt, *ast.SelectStmt:
 			return false
 		}
@@ -601,25 +593,25 @@ Outer:
 			return true
 		}
 
-		if b.Label == nil || info.Uses[b.Label] == info.Defs[switchNodeLabel] {
+		if b.Label == nil || info.Uses[b.Label] == info.Defs[label] {
 			highlightNode(result, b, protocol.Text)
 		}
 		return true
 	})
 
 	// We don't need to check other switches if we aren't looking for labeled statements.
-	if switchNodeLabel == nil {
+	if label == nil {
 		return
 	}
 
 	// Find labeled break statements in any switch
-	ast.Inspect(switchNode, func(n ast.Node) bool {
+	ast.Inspect(node, func(n ast.Node) bool {
 		b, ok := n.(*ast.BranchStmt)
 		if !ok || b.Tok != token.BREAK {
 			return true
 		}
 
-		if b.Label != nil && info.Uses[b.Label] == info.Defs[switchNodeLabel] {
+		if b.Label != nil && info.Uses[b.Label] == info.Defs[label] {
 			highlightNode(result, b, protocol.Text)
 		}
 
