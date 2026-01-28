@@ -362,8 +362,8 @@ func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitializ
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = &protocol.Or_ClientSemanticTokensRequestOptions_range{Value: true}
 	// params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
-	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = moreslices.ConvertStrings[string](semtok.TokenTypes)
-	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = moreslices.ConvertStrings[string](semtok.TokenModifiers)
+	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = moreslices.ConvertStrings[string](semtok.Types)
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = moreslices.ConvertStrings[string](semtok.Modifiers)
 	params.Capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
 		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
 			CodeActionKind: protocol.ClientCodeActionKindOptions{

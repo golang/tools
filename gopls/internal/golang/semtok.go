@@ -549,11 +549,15 @@ func (tv *tokenVisitor) appendObjectModifiers(mods []semtok.Modifier, obj types.
 		return semtok.TokVariable, mods
 
 	case *types.Var:
-		if tv.isParam(obj.Pos()) {
+		switch obj.Kind() {
+		case types.PackageVar:
+			mods = append(mods, semtok.ModStatic)
+		case types.RecvVar, types.ParamVar:
 			return semtok.TokParameter, mods
-		} else {
-			return semtok.TokVariable, mods
+		case types.FieldVar:
+			return semtok.TokProperty, mods
 		}
+		return semtok.TokVariable, mods
 
 	case *types.Label:
 		return semtok.TokLabel, mods
@@ -644,32 +648,6 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 		log.Printf(" use %s/%T/%s got %s %v (%s)",
 			id.Name, obj, q, tok, mods, tv.strStack())
 	}
-}
-
-// isParam reports whether the position is that of a parameter name of
-// an enclosing function.
-func (tv *tokenVisitor) isParam(pos token.Pos) bool {
-	for i := len(tv.stack) - 1; i >= 0; i-- {
-		switch n := tv.stack[i].(type) {
-		case *ast.FuncDecl:
-			for _, f := range n.Type.Params.List {
-				for _, id := range f.Names {
-					if id.Pos() == pos {
-						return true
-					}
-				}
-			}
-		case *ast.FuncLit:
-			for _, f := range n.Type.Params.List {
-				for _, id := range f.Names {
-					if id.Pos() == pos {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
 
 // unkIdent handles identifiers with no types.Object (neither use nor

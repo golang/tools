@@ -28,10 +28,10 @@ func F(v Foo) {
 }
 
 /*
-	[F1] print [A] and [B] //@token("F1", "function", "signature"),token("A", "variable", "readonly number"),token("B", "variable", "number")
+	[F1] print [A] and [B] //@token("F1", "function", "signature"),token("A", "variable", "readonly number"),token("B", "variable", "static number")
 */
 func F1() {
-	// print [A] and [B]. //@token("A", "variable", "readonly number"),token("B", "variable", "number")
+	// print [A] and [B]. //@token("A", "variable", "readonly number"),token("B", "variable", "static number")
 	println(A, B)
 }
 

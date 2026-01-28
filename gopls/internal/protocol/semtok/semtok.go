@@ -31,6 +31,7 @@ const (
 	TokNumber    Type = "number"        // for a numeric literal
 	TokOperator  Type = "operator"      // for an operator
 	TokParameter Type = "parameter"     // for a parameter variable
+	TokProperty  Type = "property"      // for a struct field
 	TokString    Type = "string"        // for a string literal
 	TokType      Type = "type"          // for a type name (plus other uses)
 	TokTypeParam Type = "typeParameter" // for a type parameter
@@ -40,24 +41,24 @@ const (
 	//
 	// If you move types to above, document it in
 	// gopls/doc/features/passive.md#semantic-tokens.
-	// TokClass      TokenType = "class"
-	// TokDecorator  TokenType = "decorator"
-	// TokEnum       TokenType = "enum"
-	// TokEnumMember TokenType = "enumMember"
-	// TokEvent      TokenType = "event"
-	// TokInterface  TokenType = "interface"
-	// TokModifier   TokenType = "modifier"
-	// TokProperty   TokenType = "property"
-	// TokRegexp     TokenType = "regexp"
-	// TokStruct     TokenType = "struct"
+	// TokClass      Type = "class"
+	// TokDecorator  Type = "decorator"
+	// TokEnum       Type = "enum"
+	// TokEnumMember Type = "enumMember"
+	// TokEvent      Type = "event"
+	// TokInterface  Type = "interface"
+	// TokModifier   Type = "modifier"
+	// TokRegexp     Type = "regexp"
+	// TokStruct     Type = "struct"
 )
 
-// TokenTypes is a slice of types gopls will return as its server capabilities.
-var TokenTypes = []Type{
+// Types is a slice of types gopls will return as its server capabilities.
+var Types = []Type{
 	TokNamespace,
 	TokType,
 	TokTypeParam,
 	TokParameter,
+	TokProperty,
 	TokVariable,
 	TokFunction,
 	TokMethod,
@@ -74,13 +75,14 @@ type Modifier string
 
 const (
 	// LSP 3.18 standard modifiers
-	// As with TokenTypes, clients get only the modifiers they request.
+	// As with Types, clients get only the modifiers they request.
 	//
 	// The section below defines a subset of modifiers in standard modifiers
 	// that gopls understand.
 	ModDefaultLibrary Modifier = "defaultLibrary" // for predeclared symbols
 	ModDefinition     Modifier = "definition"     // for the declaring identifier of a symbol
 	ModReadonly       Modifier = "readonly"       // for constants (TokVariable)
+	ModStatic         Modifier = "static"         // for package-level variables
 	// The section below defines the rest of the modifiers in standard modifiers
 	// that gopls does not use.
 	//
@@ -92,7 +94,6 @@ const (
 	// ModDeprecated    Modifier = "deprecated"
 	// ModDocumentation Modifier = "documentation"
 	// ModModification  Modifier = "modification"
-	// ModStatic        Modifier = "static"
 
 	// non-standard modifiers
 	//
@@ -113,13 +114,13 @@ const (
 	ModStruct    Modifier = "struct"
 )
 
-// TokenModifiers is a slice of modifiers gopls will return as its server
-// capabilities.
-var TokenModifiers = []Modifier{
+// Modifiers is a slice of modifiers gopls will return as its server capabilities.
+var Modifiers = []Modifier{
 	// LSP 3.18 standard modifiers.
 	ModDefinition,
 	ModReadonly,
 	ModDefaultLibrary,
+	ModStatic,
 	// Additional custom modifiers.
 	ModArray,
 	ModBool,
@@ -153,7 +154,7 @@ func Encode(
 	})
 
 	typeMap := make(map[Type]int)
-	for i, t := range TokenTypes {
+	for i, t := range Types {
 		if enable, ok := encodeType[t]; ok && !enable {
 			continue
 		}
@@ -161,7 +162,7 @@ func Encode(
 	}
 
 	modMap := make(map[Modifier]int)
-	for i, m := range TokenModifiers {
+	for i, m := range Modifiers {
 		if enable, ok := encodeModifier[m]; ok && !enable {
 			continue
 		}

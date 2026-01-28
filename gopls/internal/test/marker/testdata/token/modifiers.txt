@@ -59,3 +59,14 @@ func _() {
 	foo = Foo{} //@ token("foo", "variable", "struct")
 }
 
+// Tests of various types.Var kinds (#77344).
+
+type T struct {
+	field int //@ token("field", "property", "definition number")
+}
+
+func (recv *T) method(param int) (result int) { //@ token("recv", "parameter", "definition pointer"), token("param", "parameter", "definition number"), token("result", "variable", "definition number")
+     var local int //@ token("local", "variable", "definition number")
+}
+
+var global int //@ token("global", "variable", "definition static number")
