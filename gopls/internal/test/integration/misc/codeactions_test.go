@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 )
@@ -188,5 +189,119 @@ package a; func f([3]int)
 		env.OpenFile("a/a.go")
 		loc := env.RegexpSearch("a/a.go", "3")
 		env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger) // ignore error
+	})
+}
+
+func TestGoToTestCodeAction(t *testing.T) {
+	const src = `
+-- a.go --
+package codelenses
+
+func bar() {
+	_ = "bar"
+}
+
+func noTests() {
+	_ = "no_tests"
+}
+
+-- a_test.go --
+package codelenses_test
+
+import "testing"
+
+func Test_bar(*testing.T) {}
+
+func Benchmark_bar(*testing.B) {}
+
+func Fuzz_bar(*testing.F) {}
+
+-- slices.go --
+package codelenses
+
+func Delete() {
+	_ = "delete"
+}
+
+func DeleteFunc() {}
+
+-- slices_test.go --
+package codelenses
+
+import "testing"
+
+func TestDelete(*testing.T) {}
+
+func TestDeleteClearTail(*testing.T) {}
+
+func TestDeletePanics(*testing.T) {}
+
+func TestDeleteFunc(*testing.T) {}
+
+func TestDeleteFuncClearTail(*testing.T) {}
+
+`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		getLoc := func(file, re string) protocol.Location {
+			t.Helper()
+
+			env.OpenFile(file)
+			return env.RegexpSearch(file, re)
+		}
+
+		type CodeAction struct {
+			Title string
+			Loc   protocol.Location
+		}
+		for _, tt := range []struct {
+			file, re string
+			want     []CodeAction
+		}{
+			{
+				file: "a.go", re: `_ = "bar"`,
+				want: []CodeAction{
+					{Title: "Go to Test_bar", Loc: getLoc("a_test.go", "()func Test_bar")},
+					{Title: "Go to Benchmark_bar", Loc: getLoc("a_test.go", "()func Benchmark_bar")},
+					{Title: "Go to Fuzz_bar", Loc: getLoc("a_test.go", "()func Fuzz_bar")},
+				},
+			},
+			{
+				file: "a.go", re: `_ = "no_tests"`,
+				want: nil,
+			},
+			{
+				file: "slices.go", re: `_ = "delete"`,
+				want: []CodeAction{
+					{Title: "Go to TestDelete", Loc: getLoc("slices_test.go", "()func TestDelete")},
+					{Title: "Go to TestDeleteClearTail", Loc: getLoc("slices_test.go", "()func TestDeleteClearTail")},
+					{Title: "Go to TestDeletePanics", Loc: getLoc("slices_test.go", "()func TestDeletePanics")},
+				},
+			},
+		} {
+			env.OpenFile(tt.file)
+			loc := env.RegexpSearch(tt.file, tt.re)
+			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []CodeAction
+			for _, v := range actions {
+				if v.Kind == "source.go_to_test" {
+					var loc protocol.Location
+					err := command.UnmarshalArgs(v.Command.Arguments, &loc)
+					if err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, CodeAction{
+						Title: v.Title,
+						Loc:   loc,
+					})
+				}
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("CodeAction mismatch (-want +got):\n%s", diff)
+			}
+		}
 	})
 }
