@@ -65,6 +65,26 @@ This analyzer is currently disabled by default as the
 transformation does not preserve the nilness of the base slice in
 all cases; see https://go.dev/issue/73557.
 
+# Analyzer atomic
+
+atomic: replace basic types in sync/atomic calls with atomic types
+
+The atomic analyzer suggests replacing the primitive sync/atomic functions with
+the strongly typed atomic wrapper types introduced in Go1.19 (e.g.
+atomic.Int32). For example,
+
+	var x int32
+	atomic.AddInt32(&x, 1)
+
+would become
+
+	var x atomic.Int32
+	x.Add(1)
+
+The atomic types are safer because they don't allow non-atomic access, which is
+a common source of bugs. These types also resolve memory alignment issues that
+plagued the old atomic functions on 32-bit architectures.
+
 # Analyzer bloop
 
 bloop: replace for-range over b.N with b.Loop

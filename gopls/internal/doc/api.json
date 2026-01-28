@@ -1372,6 +1372,12 @@
 						},
 						{
 							"Name": "\"atomic\"",
+							"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+							"Default": "true",
+							"Status": ""
+						},
+						{
+							"Name": "\"atomic\"",
 							"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
 							"Default": "true",
 							"Status": ""
@@ -3297,6 +3303,12 @@
 			"Name": "assign",
 			"Doc": "check for useless assignments\n\nThis checker reports assignments of the form x = x or a[i] = a[i].\nThese are almost always useless, and even when they aren't they are\nusually a mistake.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/assign",
+			"Default": true
+		},
+		{
+			"Name": "atomic",
+			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic",
 			"Default": true
 		},
 		{

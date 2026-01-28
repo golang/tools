@@ -1,0 +1,12 @@
+//go:build !go1.21
+
+package go120
+
+import "sync/atomic"
+
+func _() {
+	var x int32 // AndInt32 not available until go1.23
+	for range 100 {
+		go atomic.AndInt32(&x, 1)
+	}
+}

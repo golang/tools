@@ -17,6 +17,9 @@ func TestAppendClipped(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.AppendClippedAnalyzer, "appendclipped")
 }
 
+func TestAtomic(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.AtomicModernizer, "atomic/...")
+}
 func TestBloop(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.BLoopAnalyzer, "bloop")
 }

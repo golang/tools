@@ -1,0 +1,12 @@
+//go:build !go1.19
+
+package go118
+
+import "sync/atomic"
+
+func _() {
+	var x int32 // AddInt32 not available until go1.19
+	for range 100 {
+		go atomic.AddInt32(&x, 1)
+	}
+}

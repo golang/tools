@@ -35,6 +35,7 @@ var doc string
 // Suite lists all modernize analyzers.
 var Suite = []*analysis.Analyzer{
 	AnyAnalyzer,
+	atomicAnalyzer,
 	// AppendClippedAnalyzer, // not nil-preserving!
 	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
 	FmtAppendfAnalyzer,
@@ -168,4 +169,15 @@ func freshName(info *types.Info, index *typeindex.Index, scope *types.Scope, pos
 	}
 	// Name is taken but not used in the given block; shadowing is acceptable.
 	return preferredName
+}
+
+// isLocal reports whether obj is local to some function.
+// Precondition: not a struct field or interface method.
+func isLocal(obj types.Object) bool {
+	// [... 5=stmt 4=func 3=file 2=pkg 1=universe]
+	var depth int
+	for scope := obj.Parent(); scope != nil; scope = scope.Parent() {
+		depth++
+	}
+	return depth >= 4
 }
