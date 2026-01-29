@@ -189,7 +189,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 // declaration of the typed error var. The var must not be
 // used outside the if statement.
 func canUseErrorsAsType(info *types.Info, index *typeindex.Index, curCall inspector.Cursor) (_ *types.Var, _ inspector.Cursor) {
-	if !astutil.IsChildOf(curCall, edge.IfStmt_Cond) {
+	if curCall.ParentEdgeKind() != edge.IfStmt_Cond {
 		return // not beneath if statement
 	}
 	var (
@@ -221,7 +221,7 @@ func canUseErrorsAsType(info *types.Info, index *typeindex.Index, curCall inspec
 			return // v used before/after if statement
 		}
 	}
-	if !astutil.IsChildOf(curDef, edge.ValueSpec_Names) {
+	if curDef.ParentEdgeKind() != edge.ValueSpec_Names {
 		return // v not declared by "var v T"
 	}
 	var (

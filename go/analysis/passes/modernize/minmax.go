@@ -209,7 +209,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 			// (This case would require introducing another block
 			//    if cond { ... } else { if a < b { lhs = rhs } }
 			// and checking that there is no following "else".)
-			if astutil.IsChildOf(curIfStmt, edge.IfStmt_Else) {
+			if curIfStmt.ParentEdgeKind() == edge.IfStmt_Else {
 				continue
 			}
 

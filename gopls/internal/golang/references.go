@@ -35,7 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil"
+
 	"golang.org/x/tools/internal/event"
 )
 
@@ -644,7 +644,7 @@ func objectsAt(info *types.Info, cur inspector.Cursor) ([]objectAt, error) {
 
 	// Within an ImportSpec, return the PkgName
 	// and its .Name (if explicit) or the spec if not.
-	if astutil.IsChildOf(cur, edge.ImportSpec_Path) {
+	if cur.ParentEdgeKind() == edge.ImportSpec_Path {
 		cur = cur.Parent() // ImportSpec
 		spec := cur.Node().(*ast.ImportSpec)
 		pkgname := info.PkgNameOf(spec)

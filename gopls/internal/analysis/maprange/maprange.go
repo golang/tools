@@ -49,7 +49,7 @@ func run(pass *analysis.Pass) (any, error) {
 	)
 	for _, callee := range []types.Object{mapsKeys, mapsValues, xmapsKeys, xmapsValues} {
 		for curCall := range index.Calls(callee) {
-			if astutil.IsChildOf(curCall, edge.RangeStmt_X) {
+			if curCall.ParentEdgeKind() == edge.RangeStmt_X {
 				analyzeRangeStmt(pass, callee, curCall)
 			}
 		}

@@ -55,8 +55,7 @@ func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, 
 	cur, _ := pgf.Cursor().FindByPos(pos, end)
 	for cur := range cur.Enclosing() {
 		// TODO: do cur = unparenEnclosing(cur) first, once CL 701035 lands.
-		ek, _ := cur.ParentEdge()
-		switch ek {
+		switch cur.ParentEdgeKind() {
 		case edge.ValueSpec_Values:
 			return fromValueSpec(fset, info, cur)
 		case edge.ReturnStmt_Results:
@@ -217,7 +216,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cu
 		return nil
 	}
 
-	_, argIdx := curCallArg.ParentEdge()
+	argIdx := curCallArg.ParentEdgeIndex()
 	var paramType types.Type
 	if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
 		v := sig.Params().At(sig.Params().Len() - 1)
@@ -277,8 +276,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.C
 			len(ret.Results),
 			rets.Len())
 	}
-	_, resultIdx := curResult.ParentEdge()
-	iface := ifaceObjFromType(rets.At(resultIdx).Type())
+	iface := ifaceObjFromType(rets.At(curResult.ParentEdgeIndex()).Type())
 	if iface == nil {
 		return nil, nil
 	}
@@ -336,8 +334,7 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Curs
 	//          ^^^^
 
 	assign := curRhs.Parent().Node().(*ast.AssignStmt)
-	_, idx := curRhs.ParentEdge()
-	lhs, rhs := assign.Lhs[idx], curRhs.Node().(ast.Expr)
+	lhs, rhs := assign.Lhs[curRhs.ParentEdgeIndex()], curRhs.Node().(ast.Expr)
 
 	ifaceObj := ifaceType(lhs, info)
 	if ifaceObj == nil {

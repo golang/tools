@@ -11,7 +11,6 @@ import (
 	"go/token"
 	"strings"
 
-	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/moreiters"
 )
@@ -71,14 +70,6 @@ func NodeContains(n ast.Node, rng Range) bool {
 // file's complete extent.
 func NodeContainsPos(n ast.Node, pos token.Pos) bool {
 	return NodeRange(n).ContainsPos(pos)
-}
-
-// IsChildOf reports whether cur.ParentEdge is ek.
-//
-// TODO(adonovan): promote to a method of Cursor.
-func IsChildOf(cur inspector.Cursor, ek edge.Kind) bool {
-	got, _ := cur.ParentEdge()
-	return got == ek
 }
 
 // EnclosingFile returns the syntax tree for the file enclosing c.

@@ -1039,7 +1039,7 @@ func funcDefs(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 // beneathFuncDef reports whether the specified FuncType cursor is a
 // child of Func{Decl,Lit}.
 func beneathFuncDef(cur inspector.Cursor) bool {
-	switch ek, _ := cur.ParentEdge(); ek {
+	switch cur.ParentEdgeKind() {
 	case edge.FuncDecl_Type, edge.FuncLit_Type:
 		return true
 	}

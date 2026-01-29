@@ -88,7 +88,7 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 		if sum, ok := curSum.Node().(*ast.BinaryExpr); ok &&
 			sum.Op == token.ADD &&
 			types.Identical(info.TypeOf(sum.X), types.Typ[types.Uintptr]) &&
-			astutil.IsChildOf(curSum, edge.CallExpr_Args) {
+			curSum.ParentEdgeKind() == edge.CallExpr_Args {
 			// Have: sum ≡ T(x:...uintptr... + y:...uintptr...)
 			curX := curSum.ChildAt(edge.BinaryExpr_X, -1)
 			curY := curSum.ChildAt(edge.BinaryExpr_Y, -1)

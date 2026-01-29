@@ -102,7 +102,7 @@ nextcand:
 			continue
 		}
 
-		ek, _ := def.ParentEdge()
+		ek := def.ParentEdgeKind()
 		if ek == edge.AssignStmt_Lhs &&
 			len(def.Parent().Node().(*ast.AssignStmt).Lhs) == 1 {
 			// Have: s := expr
@@ -274,10 +274,10 @@ nextcand:
 		)
 		for curUse := range index.Uses(v) {
 			// Strip enclosing parens around Ident.
-			ek, _ := curUse.ParentEdge()
+			ek := curUse.ParentEdgeKind()
 			for ek == edge.ParenExpr_X {
 				curUse = curUse.Parent()
-				ek, _ = curUse.ParentEdge()
+				ek = curUse.ParentEdgeKind()
 			}
 
 			// The rvalueUse must be the lexically last use.

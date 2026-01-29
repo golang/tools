@@ -333,7 +333,7 @@ loop:
 		}
 
 		// If cursor is an arg in a callExpr, we don't want control flow highlighting.
-		if astutil.IsChildOf(cur, edge.CallExpr_Args) {
+		if cur.ParentEdgeKind() == edge.CallExpr_Args {
 			return
 		}
 	}

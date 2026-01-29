@@ -180,8 +180,7 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 func isLvalueUse(cur inspector.Cursor, info *types.Info) bool {
 	cur = unparenEnclosing(cur)
 
-	kind, _ := cur.ParentEdge()
-	switch kind {
+	switch cur.ParentEdgeKind() {
 	case edge.AssignStmt_Lhs, edge.IncDecStmt_X:
 		return true // v=..., v++
 
@@ -206,7 +205,7 @@ func isLvalueUse(cur inspector.Cursor, info *types.Info) bool {
 // unparenEnclosing removes enclosing parens from cur in
 // preparation for a call to [Cursor.ParentEdge].
 func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for astutil.IsChildOf(cur, edge.ParenExpr_X) {
+	for cur.ParentEdgeKind() == edge.ParenExpr_X {
 		cur = cur.Parent()
 	}
 	return cur
@@ -230,7 +229,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		scope = info.Scopes[pgf.File].Innermost(pos)
 	)
 	for curIdent := range curRHS.Preorder((*ast.Ident)(nil)) {
-		if astutil.IsChildOf(curIdent, edge.SelectorExpr_Sel) {
+		if curIdent.ParentEdgeKind() == edge.SelectorExpr_Sel {
 			continue // ignore f in x.f
 		}
 		id := curIdent.Node().(*ast.Ident)

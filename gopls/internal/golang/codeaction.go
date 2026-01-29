@@ -28,7 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/astutil"
+
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -757,7 +757,7 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 		// that reference package-level symbols.
 		// All other references to a symbol imported from another package
 		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
-		if astutil.IsChildOf(curId, edge.SelectorExpr_Sel) {
+		if curId.ParentEdgeKind() == edge.SelectorExpr_Sel {
 			continue // qualified identifier (pkg.X) or selector (T.X or e.X)
 		}
 		if !typesinternal.IsPackageLevel(use) {

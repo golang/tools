@@ -176,8 +176,7 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 		cur, _ := curFile.FindByPos(start, end)
 		for cur := range cur.Enclosing() {
 			// TODO: do cur = enclosingUnparen(cur) first, once CL 701035 lands.
-			ek, _ := cur.ParentEdge()
-			switch ek {
+			switch cur.ParentEdgeKind() {
 			// params or results of func signature
 			// Note:
 			// - each ast.Field (e.g. "x, y, z int") is considered a single item.

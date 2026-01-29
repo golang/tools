@@ -220,7 +220,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			)
 
 			// Analyze enclosing loop.
-			switch first(curLenCall.ParentEdge()) {
+			switch curLenCall.ParentEdgeKind() {
 			case edge.BinaryExpr_Y:
 				// pattern 1: for i := 0; i < x.Len(); i++ { ... }
 				var (
@@ -228,7 +228,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					cmp    = curCmp.Node().(*ast.BinaryExpr)
 				)
 				if cmp.Op != token.LSS ||
-					!astutil.IsChildOf(curCmp, edge.ForStmt_Cond) {
+					curCmp.ParentEdgeKind() != edge.ForStmt_Cond {
 					continue
 				}
 				if id, ok := cmp.X.(*ast.Ident); ok {

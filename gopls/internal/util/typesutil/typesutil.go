@@ -51,11 +51,7 @@ func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
 	var typs []types.Type
 
 	// TODO: do cur = unparenEnclosing(cur), once CL 701035 lands.
-	for {
-		ek, _ := cur.ParentEdge()
-		if ek != edge.ParenExpr_X {
-			break
-		}
+	for cur.ParentEdgeKind() == edge.ParenExpr_X {
 		cur = cur.Parent()
 	}
 

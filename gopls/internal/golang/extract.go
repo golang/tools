@@ -326,7 +326,7 @@ func stmtToInsertVarBefore(cur inspector.Cursor, variables []*variable) (token.P
 	// baseIfStmt walks up the if/else-if chain until we get to
 	// the top of the current if chain.
 	baseIfStmt := func(curIf inspector.Cursor) (token.Pos, error) {
-		for astutil.IsChildOf(curIf, edge.IfStmt_Else) {
+		for curIf.ParentEdgeKind() == edge.IfStmt_Else {
 			curIf = curIf.Parent()
 			if hasFreeVar(curIf.Node().(*ast.IfStmt).Init) {
 				return 0, fmt.Errorf("else-if's init has free variable")
@@ -483,7 +483,7 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 	//   x := *newVar + 1
 	//   *newVar = 2
 	for _, curExpr := range curExprs {
-		switch ek, _ := curExpr.ParentEdge(); ek {
+		switch curExpr.ParentEdgeKind() {
 		case edge.AssignStmt_Lhs:
 			return nil, fmt.Errorf("node %T is in LHS of an AssignStmt", expr)
 		case edge.ValueSpec_Names:
@@ -609,7 +609,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// If the end cursor is the identifier in a labeled statement,
 	// we expand the range to include the colon.
 	// That way, we include the label, but not the statement being labeled
-	if astutil.IsChildOf(curEnd, edge.LabeledStmt_Label) {
+	if curEnd.ParentEdgeKind() == edge.LabeledStmt_Label {
 		end = curEnd.Parent().Node().(*ast.LabeledStmt).Colon + 1
 	}
 

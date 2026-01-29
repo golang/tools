@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -55,7 +54,7 @@ func undeclaredFixTitle(curId inspector.Cursor, errMsg string) string {
 	}
 
 	// Offer a fix.
-	noun := cond(astutil.IsChildOf(curId, edge.CallExpr_Fun), "function", "variable")
+	noun := cond(curId.ParentEdgeKind() == edge.CallExpr_Fun, "function", "variable")
 	return fmt.Sprintf("Create %s %s", noun, name)
 }
 
@@ -75,7 +74,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 
 	// Check for a possible call expression, in which case we should add a
 	// new function declaration.
-	if astutil.IsChildOf(curId, edge.CallExpr_Fun) {
+	if curId.ParentEdgeKind() == edge.CallExpr_Fun {
 		return newFunctionDeclaration(curId, file, pkg.Types(), info, fset)
 	}
 	// We should insert the new declaration before the
@@ -94,7 +93,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	for curRef := range curFuncDecl.Preorder((*ast.Ident)(nil)) {
 		n := curRef.Node().(*ast.Ident)
 		if n.Name == ident.Name && info.ObjectOf(n) == nil {
-			if astutil.IsChildOf(curRef, edge.AssignStmt_Lhs) {
+			if curRef.ParentEdgeKind() == edge.AssignStmt_Lhs {
 				assign := curRef.Parent().Node().(*ast.AssignStmt)
 				if assign.Tok == token.ASSIGN && !referencesIdent(info, assign, ident) {
 					// replace = with :=

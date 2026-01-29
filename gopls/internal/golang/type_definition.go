@@ -47,8 +47,8 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 
 		// edge case: switch id := expr.(type) {}
 		// id has no type; use expr instead.
-		if astutil.IsChildOf(cur, edge.AssignStmt_Lhs) &&
-			astutil.IsChildOf(cur.Parent(), edge.TypeSwitchStmt_Assign) {
+		if cur.ParentEdgeKind() == edge.AssignStmt_Lhs &&
+			cur.Parent().ParentEdgeKind() == edge.TypeSwitchStmt_Assign {
 			expr = cur.Parent().Node().(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr).X
 		}
 
