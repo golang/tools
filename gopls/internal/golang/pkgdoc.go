@@ -43,11 +43,11 @@ import (
 	"slices"
 	"strings"
 
-	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
@@ -192,20 +192,18 @@ type thing struct {
 }
 
 func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) thing {
-	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
+	cur, _, _, _ := astutil.Select(pgf.Cursor(), start, end)
 
 	// In an import spec?
-	if len(path) >= 3 { // [...ImportSpec GenDecl File]
-		if spec, ok := path[len(path)-3].(*ast.ImportSpec); ok {
-			if pkgname := pkg.TypesInfo().PkgNameOf(spec); pkgname != nil {
-				return thing{pkg: pkgname.Imported()}
-			}
+	if spec, _ := cursorutil.FirstEnclosing[*ast.ImportSpec](cur); spec != nil {
+		if pkgname := pkg.TypesInfo().PkgNameOf(spec); pkgname != nil {
+			return thing{pkg: pkgname.Imported()}
 		}
 	}
 
 	// Definition or reference to symbol?
 	var obj types.Object
-	if id, ok := path[0].(*ast.Ident); ok {
+	if id, ok := cur.Node().(*ast.Ident); ok {
 		obj = pkg.TypesInfo().ObjectOf(id)
 
 		// Treat use to PkgName like ImportSpec.
@@ -213,7 +211,7 @@ func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) t
 			return thing{pkg: pkgname.Imported()}
 		}
 
-	} else if sel, ok := path[0].(*ast.SelectorExpr); ok {
+	} else if sel, ok := cur.Node().(*ast.SelectorExpr); ok {
 		// e.g. selection is "fmt.Println" or just a portion ("mt.Prin")
 		obj = pkg.TypesInfo().Uses[sel.Sel]
 	}
@@ -221,34 +219,20 @@ func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) t
 		return thing{symbol: obj}
 	}
 
-	// Find enclosing declaration.
-	if n := len(path); n > 1 {
-		switch decl := path[n-2].(type) {
-		case *ast.FuncDecl:
-			// method?
-			if fn := pkg.TypesInfo().Defs[decl.Name]; fn != nil {
-				return thing{enclosing: fn}
-			}
-
-		case *ast.GenDecl:
-			// path=[... Spec? GenDecl File]
-			for _, spec := range decl.Specs {
-				if n > 2 && spec == path[n-3] {
-					var name *ast.Ident
-					switch spec := spec.(type) {
-					case *ast.ValueSpec:
-						// var, const: use first name
-						name = spec.Names[0]
-					case *ast.TypeSpec:
-						name = spec.Name
-					}
-					if name != nil {
-						return thing{enclosing: pkg.TypesInfo().Defs[name]}
-					}
-					break
-				}
-			}
+	// Find outermost enclosing declaration.
+	var id *ast.Ident
+	for cur := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil), (*ast.TypeSpec)(nil)) {
+		switch n := cur.Node().(type) {
+		case *ast.FuncDecl: // function or method
+			id = n.Name
+		case *ast.ValueSpec:
+			id = n.Names[0] // var, const: use first name
+		case *ast.TypeSpec:
+			id = n.Name
 		}
+	}
+	if obj := pkg.TypesInfo().Defs[id]; obj != nil {
+		return thing{enclosing: obj}
 	}
 
 	return thing{} // nothing to see here

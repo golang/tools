@@ -305,7 +305,7 @@ func (*T) M() { /*in T.M*/}
 
 			// imported
 			{"\"fmt\"", "fmt?view=1"},              // in import spec
-			{"fmt[.]", "fmt?view=1"},               // use of PkgName
+			{"fmt()[.]", "fmt?view=1"},             // use of PkgName
 			{"Println", "fmt?view=1#Println"},      // use of imported pkg-level symbol
 			{"fmt.Println", "fmt?view=1#Println"},  // qualified identifier
 			{"Write", "bytes?view=1#Buffer.Write"}, // use of imported method
