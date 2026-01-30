@@ -1091,7 +1091,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		declarations = initializeVars(uninitialized, retVars, seenUninitialized, seenVars)
 	}
 
-	var declBuf, replaceBuf, newFuncBuf, ifBuf, commentBuf bytes.Buffer
+	var declBuf, replaceBuf, newFuncBuf, ifBuf bytes.Buffer
 	if err := format.Node(&declBuf, fset, declarations); err != nil {
 		return nil, nil, err
 	}
@@ -1112,6 +1112,25 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 	}
 
+	newFuncResults := &ast.FieldList{List: append(returnTypes, getDecls(retVars)...)}
+
+	// Expand multi-value function calls in return statements.
+	// If a return contains a single CallExpr that is being augmented with new
+	// return values, the call return values must be expanded to maintain valid syntax.
+	ast.Inspect(extractedBlock, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.BlockStmt:
+			n.List = expandFunctionCallReturnValues(n.List, info, newFuncResults, file, start)
+		case *ast.CaseClause:
+			n.Body = expandFunctionCallReturnValues(n.Body, info, newFuncResults, file, start)
+		case *ast.FuncLit:
+			// Don't descend into nested functions.
+			return false
+		}
+
+		return true
+	})
+
 	// Build the extracted function. We format the function declaration and body
 	// separately, so that comments are printed relative to the extracted
 	// BlockStmt.
@@ -1125,7 +1144,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		Name: ast.NewIdent(funName),
 		Type: &ast.FuncType{
 			Params:  &ast.FieldList{List: paramTypes},
-			Results: &ast.FieldList{List: append(returnTypes, getDecls(retVars)...)},
+			Results: newFuncResults,
 		},
 		// Body handled separately -- see above.
 	}
@@ -1172,10 +1191,6 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	var fullReplacement strings.Builder
 	fullReplacement.Write(before)
-	if commentBuf.Len() > 0 {
-		comments := strings.ReplaceAll(commentBuf.String(), "\n", newLineIndent)
-		fullReplacement.WriteString(comments)
-	}
 	if declBuf.Len() > 0 { // add any initializations, if needed
 		initializations := strings.ReplaceAll(declBuf.String(), "\n", newLineIndent) +
 			newLineIndent
@@ -1214,6 +1229,60 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			NewText: []byte(fullReplacement.String()),
 		}},
 	}, nil
+}
+
+// expandFunctionCallReturnValues expands the return value of function calls when necessary.
+func expandFunctionCallReturnValues(stmts []ast.Stmt, info *types.Info, newFuncResults *ast.FieldList, file *ast.File, start token.Pos) []ast.Stmt {
+	result := make([]ast.Stmt, 0, len(stmts))
+	for _, stmt := range stmts {
+		result = append(result, stmt)
+
+		retStmt, ok := stmt.(*ast.ReturnStmt)
+		if !ok {
+			continue
+		}
+
+		// when we have multiple return statement results, we can't have a CallExpr in it.
+		// in that case, we need to splat the values of that CallExpr into variable(s)
+		// and return them.
+		if len(retStmt.Results) <= 1 {
+			continue
+		}
+
+		// We can only have CallExpr in the first return statement result with the assumption that
+		// the original code is valid.
+		callExpr, ok := retStmt.Results[0].(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+
+		// Infer the number of function's return value using the enclosing function
+		// signature and the original return statement results because we don't have
+		// type information here. This should be correct assuming the original code
+		// is valid to begin with.
+		expandedVars := make([]ast.Expr, len(newFuncResults.List)-len(retStmt.Results)+1) // plus one to replace the CallExpr
+		prevIdx := 1
+		for i := range expandedVars {
+			// ideally we want to generate a better name (e.g. `errX` for error values)
+			// but we don't have type info at this stage.
+			name, idx := freshName(info, file, start, "v", prevIdx)
+			expandedVars[i] = ast.NewIdent(name)
+			prevIdx = idx
+		}
+
+		result[len(result)-1] = ast.Stmt(&ast.AssignStmt{
+			Lhs:    expandedVars,
+			Tok:    token.DEFINE,
+			Rhs:    []ast.Expr{callExpr},
+			TokPos: 0,
+		})
+		result = append(result, &ast.ReturnStmt{
+			Return:  retStmt.Return,
+			Results: slices.Concat(expandedVars, retStmt.Results[1:]),
+		})
+	}
+
+	return result
 }
 
 // isSelector reports if e is the selector expr <x>, <sel>. It works for pointer and non-pointer selector expressions.
