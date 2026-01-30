@@ -164,6 +164,9 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 	if strings.HasPrefix(c.Text, "//go:") {
 		tv.godirective(c)
 		return
+	} else if strings.HasPrefix(c.Text, "//export") {
+		tv.goexport(c)
+		return
 	}
 
 	pkgScope := tv.pkg.Types().Scope()
@@ -898,6 +901,21 @@ func (tv *tokenVisitor) godirective(c *ast.Comment) {
 	if len(args) > 0 {
 		tailStart := c.Pos() + token.Pos(len(directive)+len(" "))
 		tv.token(tailStart, len(args), semtok.TokComment)
+	}
+}
+
+func (tv *tokenVisitor) goexport(c *ast.Comment) {
+	funcName := strings.TrimPrefix(c.Text, "//export ")
+
+	// Make the 'export func' part stand out, the rest is comments.
+	tv.token(c.Pos(), len("//"), semtok.TokComment)
+
+	exportStart := c.Pos() + token.Pos(len("//"))
+	tv.token(exportStart, len("export "), semtok.TokNamespace)
+
+	if len(funcName) > 0 {
+		funcStart := c.Pos() + token.Pos(len("//export "))
+		tv.token(funcStart, len(funcName), semtok.TokFunction)
 	}
 }
 
