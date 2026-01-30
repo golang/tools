@@ -1,0 +1,31 @@
+Test that refactor.inline.variable adds parens as needed to preserve
+operator precedence (go.dev/issue/77381).
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+func _() {
+	x := 3 + 4
+	print(x) //@codeaction("x", "refactor.inline.variable", result=one)
+	print(2 * x) //@codeaction("x", "refactor.inline.variable", result=two)
+}
+-- @one/a/a.go --
+package a
+
+func _() {
+	x := 3 + 4
+	print(3 + 4) //@codeaction("x", "refactor.inline.variable", result=one)
+	print(2 * x) //@codeaction("x", "refactor.inline.variable", result=two)
+}
+-- @two/a/a.go --
+package a
+
+func _() {
+	x := 3 + 4
+	print(x) //@codeaction("x", "refactor.inline.variable", result=one)
+	print(2 * (3 + 4)) //@codeaction("x", "refactor.inline.variable", result=two)
+}

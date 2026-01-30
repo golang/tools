@@ -228,3 +228,68 @@ func Select(curFile inspector.Cursor, start, end token.Pos) (_enclosing, _start,
 }
 
 var noCursor inspector.Cursor
+
+// MaybeParenthesize returns new, possibly wrapped in parens if needed
+// to preserve operator precedence when it replaces old, whose parent
+// is parentNode.
+//
+// (This would be more naturally written in terms of Cursor, but one of
+// the callers--the inliner--does not have cursors handy.)
+func MaybeParenthesize(parentNode ast.Node, old, new ast.Expr) ast.Expr {
+	if needsParens(parentNode, old, new) {
+		new = &ast.ParenExpr{X: new}
+	}
+	return new
+}
+
+func needsParens(parentNode ast.Node, old, new ast.Expr) bool {
+	// An expression beneath a non-expression
+	// has no precedence ambiguity.
+	parent, ok := parentNode.(ast.Expr)
+	if !ok {
+		return false
+	}
+
+	precedence := func(n ast.Node) int {
+		switch n := n.(type) {
+		case *ast.UnaryExpr, *ast.StarExpr:
+			return token.UnaryPrec
+		case *ast.BinaryExpr:
+			return n.Op.Precedence()
+		}
+		return -1
+	}
+
+	// Parens are not required if the new node
+	// is not unary or binary.
+	newprec := precedence(new)
+	if newprec < 0 {
+		return false
+	}
+
+	// Parens are required if parent and child are both
+	// unary or binary and the parent has higher precedence.
+	if precedence(parent) > newprec {
+		return true
+	}
+
+	// Was the old node the operand of a postfix operator?
+	//  f().sel
+	//  f()[i:j]
+	//  f()[i]
+	//  f().(T)
+	//  f()(x)
+	switch parent := parent.(type) {
+	case *ast.SelectorExpr:
+		return parent.X == old
+	case *ast.IndexExpr:
+		return parent.X == old
+	case *ast.SliceExpr:
+		return parent.X == old
+	case *ast.TypeAssertExpr:
+		return parent.X == old
+	case *ast.CallExpr:
+		return parent.Fun == old
+	}
+	return false
+}

@@ -71,7 +71,7 @@ func _() {
     v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     var vptr *V = &v
-    &v.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
+    (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
     fmt.Println(v, vptr)
 }

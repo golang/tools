@@ -221,10 +221,11 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 	if !ok {
 		return nil, nil, fmt.Errorf("cannot inline variable here")
 	}
-	use := curUse.Node().(*ast.Ident)
 
 	// Check that free symbols of rhs are unshadowed at curUse.
 	var (
+		use   = curUse.Node().(*ast.Ident)
+		rhs   = curRHS.Node().(ast.Expr)
 		pos   = use.Pos()
 		scope = info.Scopes[pgf.File].Innermost(pos)
 	)
@@ -240,7 +241,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		if v, ok := obj1.(*types.Var); ok && v.IsField() {
 			continue // a field reference T{F: 0} is non-lexical
 		}
-		if astutil.NodeContainsPos(curRHS.Node(), obj1.Pos()) {
+		if astutil.NodeContainsPos(rhs, obj1.Pos()) {
 			continue // not free (id is defined within RHS)
 		}
 		_, obj2 := scope.LookupParent(id.Name, pos)
@@ -252,13 +253,16 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 
 	// TODO(adonovan): also reject variables that are updated by assignments?
 
+	// Add parens to 'new' as needed by the 'use' context.
+	rhs = astutil.MaybeParenthesize(curUse.Parent().Node(), use, rhs)
+
 	return pkg.FileSet(), &analysis.SuggestedFix{
 		Message: fmt.Sprintf("Replace variable %q by its initializer expression", use.Name),
 		TextEdits: []analysis.TextEdit{
 			{
 				Pos:     use.Pos(),
 				End:     use.End(),
-				NewText: []byte(FormatNode(pkg.FileSet(), curRHS.Node())),
+				NewText: []byte(FormatNode(pkg.FileSet(), rhs)),
 			},
 		},
 	}, nil
