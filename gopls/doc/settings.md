@@ -210,8 +210,9 @@ Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":true,"tidy":t
 
 **This setting is experimental and may be deleted.**
 
-semanticTokens controls whether the LSP server will send
-semantic tokens to the client.
+semanticTokens determines whether gopls will return a
+SemanticTokensProvider at initialization, or respond
+to request for semantic tokens.
 
 Default: `false`.
 

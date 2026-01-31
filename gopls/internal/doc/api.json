@@ -2113,7 +2113,7 @@
 			{
 				"Name": "semanticTokens",
 				"Type": "bool",
-				"Doc": "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client.\n",
+				"Doc": "semanticTokens determines whether gopls will return a\nSemanticTokensProvider at initialization, or respond\nto request for semantic tokens.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null

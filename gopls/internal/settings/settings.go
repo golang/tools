@@ -225,8 +225,9 @@ type UIOptions struct {
 	// ```
 	Codelenses map[CodeLensSource]bool
 
-	// SemanticTokens controls whether the LSP server will send
-	// semantic tokens to the client.
+	// SemanticTokens determines whether gopls will return a
+	// SemanticTokensProvider at initialization, or respond
+	// to request for semantic tokens.
 	SemanticTokens bool `status:"experimental"`
 
 	// NoSemanticString turns off the sending of the semantic token 'string'

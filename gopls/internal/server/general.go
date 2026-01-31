@@ -123,6 +123,18 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 		}
 	}
 
+	var semanticTokenProvider any
+	if options.SemanticTokens {
+		semanticTokenProvider = protocol.SemanticTokensOptions{
+			Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
+			Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
+			Legend: protocol.SemanticTokensLegend{
+				TokenTypes:     moreslices.ConvertStrings[string](semtok.Types),
+				TokenModifiers: moreslices.ConvertStrings[string](semtok.Modifiers),
+			},
+		}
+	}
+
 	versionInfo := debug.VersionInfo()
 
 	goplsVersion, err := json.Marshal(versionInfo)
@@ -156,14 +168,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			ReferencesProvider:        &protocol.Or_ServerCapabilities_referencesProvider{Value: true},
 			RenameProvider:            renameOpts,
 			SelectionRangeProvider:    &protocol.Or_ServerCapabilities_selectionRangeProvider{Value: true},
-			SemanticTokensProvider: protocol.SemanticTokensOptions{
-				Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
-				Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
-				Legend: protocol.SemanticTokensLegend{
-					TokenTypes:     moreslices.ConvertStrings[string](semtok.Types),
-					TokenModifiers: moreslices.ConvertStrings[string](semtok.Modifiers),
-				},
-			},
+			SemanticTokensProvider:    semanticTokenProvider,
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
 				// Used to update or dismiss signature help when it's already active,
