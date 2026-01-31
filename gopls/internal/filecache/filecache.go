@@ -125,15 +125,7 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// automatically, but for efficiency most POSIX systems have
 	// for many years set the noatime mount option to avoid every
 	// open or read operation entailing a metadata write.)
-	now := time.Now()
-	touch := func(filename string) {
-		st, err := os.Stat(filename)
-		if err == nil && now.Sub(st.ModTime()) > time.Hour {
-			os.Chtimes(filename, now, now) // ignore error
-		}
-	}
-	touch(indexName)
-	touch(casName)
+	touch(indexName, casName)
 
 	memCache.Set(memKey{kind, key}, value, len(value))
 
@@ -198,7 +190,20 @@ func Set(kind string, key [32]byte, value []byte) error {
 		return err           // e.g. disk full
 	}
 
+	// Update the CAS file's timestamp to prevent premature LRU eviction.
+	touch(casName)
+
 	return nil
+}
+
+func touch(filenames ...string) {
+	now := time.Now()
+	for _, filename := range filenames {
+		st, err := os.Stat(filename)
+		if err == nil && now.Sub(st.ModTime()) > time.Hour {
+			os.Chtimes(filename, now, now) // ignore error
+		}
+	}
 }
 
 // The active 1-channel is a selectable resettable event
