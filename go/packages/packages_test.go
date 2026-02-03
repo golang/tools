@@ -419,6 +419,82 @@ func TestLoadSamePackageMultipleChunks(t *testing.T) {
 	}
 }
 
+// TestLoadDoesNotInvokeGit ensures that the expensive and unnecessary VCS check is skipped;
+// see go.dev/issue/51999 and go.dev/issue/77419.
+func TestLoadDoesNotInvokeGit(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+	t.Parallel()
+
+	exported := packagestest.Export(t, packagestest.Modules, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"main.go": `package main; func main() {}`,
+		}}})
+	defer exported.Cleanup()
+
+	// mock a git repository by creating a .git directory
+	modRoot := filepath.Dir(exported.File("golang.org/fake", "main.go"))
+	if err := os.MkdirAll(filepath.Join(modRoot, ".git"), 0755); err != nil {
+		t.Fatalf("creating .git: %v", err)
+	}
+
+	fakeGitDir := buildFakeGit(t, exported.Config.Env)
+
+	pathVar := "PATH"
+	if runtime.GOOS == "plan9" {
+		pathVar = "path"
+	}
+	exported.Config.Env = prependPath(exported.Config.Env, pathVar, fakeGitDir)
+	// NeedTypes triggers usesExportData, which sets -export=true on the go list invocation
+	exported.Config.Mode = packages.NeedTypes
+
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake")
+	if err != nil {
+		t.Fatalf("packages.Load: %v", err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("packages.Load: expected 1 package, got %d: %v", len(pkgs), pkgs)
+	}
+	if len(pkgs[0].Errors) > 0 {
+		// Assume the failure was due to the fake git command being executed.
+		t.Fatalf("packages.Load: unexpected errors (git should not have been called): %v", pkgs[0].Errors)
+	}
+}
+
+// buildFakeGit returns a directory containing a "git" executable that exits 1.
+func buildFakeGit(t *testing.T, env []string) string {
+	t.Helper()
+
+	tmpdir := t.TempDir()
+	gitName := "git"
+	if runtime.GOOS == "windows" {
+		gitName = "git.exe"
+	}
+	src := filepath.Join(tmpdir, "main.go")
+	if err := os.WriteFile(src, []byte(`package main; func main() { panic("git executed") }`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", gitName, "main.go")
+	cmd.Dir = tmpdir
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building fake git: %v\n%s", err, out)
+	}
+	return tmpdir
+}
+
+func prependPath(env []string, key, dir string) []string {
+	result := make([]string, len(env))
+	copy(result, env)
+	for i, v := range result {
+		if val, ok := strings.CutPrefix(v, key+"="); ok {
+			result[i] = key + "=" + dir + string(os.PathListSeparator) + val
+			return result
+		}
+	}
+	return append(result, key+"="+dir)
+}
+
 func TestVendorImports(t *testing.T) {
 	t.Parallel()
 

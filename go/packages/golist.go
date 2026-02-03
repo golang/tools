@@ -861,6 +861,8 @@ func golistargs(cfg *Config, words []string, goVersion int) []string {
 		// go list doesn't let you pass -test and -find together,
 		// probably because you'd just get the TestMain.
 		fmt.Sprintf("-find=%t", !cfg.Tests && cfg.Mode&findFlags == 0 && !usesExportData(cfg)),
+		// VCS information is not needed when not printing Stale or StaleReason fields
+		"-buildvcs=false",
 	}
 
 	// golang/go#60456: with go1.21 and later, go list serves pgo variants, which
