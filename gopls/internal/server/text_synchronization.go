@@ -255,15 +255,7 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
 
 	// TODO: also handle go.work changes as well.
-	uris := make(map[protocol.DocumentURI]struct{})
-	for _, m := range modifications {
-		if strings.HasSuffix(m.URI.Path(), "go.mod") && (m.Action == file.Create || m.Action == file.Save) {
-			uris[m.URI] = struct{}{}
-		}
-	}
-	for uri := range uris {
-		go s.checkGoModDeps(ctx, uri)
-	}
+	s.handleModuleChanges(ctx, modifications, cause)
 
 	viewsToDiagnose, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
@@ -285,6 +277,39 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// in case something changed. Compute the new set of directories to watch,
 	// and if it differs from the current set, send updated registrations.
 	return s.updateWatchedDirectories(ctx)
+}
+
+func (s *server) handleModuleChanges(ctx context.Context, modifications []file.Modification, cause ModificationSource) {
+	// If any change in this batch is not a module metadata file, gopls will treat
+	// the entire batch as a bulk operation (like a git branch switch). This is to
+	// avoid doing expensive dependency checks for every module file in a
+	// large change, which is redundant during a full workspace load.
+	//
+	// This also accounts for "atomic saves" in editors like Vim/Neovim,
+	// which may surface as a Delete + Create sequence in the file watcher
+	// rather than a single Save event.
+	if cause == FromDidChangeWatchedFiles {
+		for _, m := range modifications {
+			switch m.URI.Base() {
+			case "go.mod", "go.sum", "go.work", "go.work.sum":
+				// Module metadata file; continue checking.
+			default:
+				// Batch contains non-module files; skip dependency checks.
+				return
+			}
+		}
+	}
+
+	uris := make(map[protocol.DocumentURI]struct{})
+	for _, m := range modifications {
+		if m.URI.Base() == "go.mod" && (m.Action == file.Create || m.Action == file.Save) {
+			uris[m.URI] = struct{}{}
+		}
+	}
+
+	for uri := range uris {
+		go s.checkGoModDeps(ctx, uri)
+	}
 }
 
 // needsDiagnosis records the given views as needing diagnosis, returning the
