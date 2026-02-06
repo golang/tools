@@ -1821,6 +1821,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"writestring\"",
+							"Doc": "detect inefficient string concatenation in uses of WriteString\n\nThe writestring analyzer offers to replace a call to WriteString(x + y) by\ntwo calls WriteString(x); WriteString(y). This is more efficient because it\navoids the additional memory allocation produced by string concatenation;\ninstead we just write each string into the buffer directly.\n\nIt explicitly looks for calls to certain well-known writers such as\nbytes.Buffer, strings.Builder and bufio.Writer. The analyzer will not suggest\na fix for calls to, say, (*os.File).WriteString, because for certain kinds of\nfile such as a UDP socket, it could split a single message into two.\nSimilarly it does not offer fixes when the type of the writer is unknown (as\nin calls to io.WriteString).\n\nFor example:\n\n\tfunc f(a string, b string) string {\n\t\t var s strings.Builder\n\t\t s.WriteString(a+b)\n\t\t return s.String()\n\t}\n\nwould become:\n\n\tfunc f(a string, b string) string {\n\t\tvar s strings.Builder\n\t\ts.WriteString(a)\n\t\ts.WriteString(b)\n\t\treturn s.String()\n\t}",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"yield\"",
 							"Doc": "report calls to yield where the result is ignored\n\nAfter a yield function returns false, the caller should not call\nthe yield function again; generally the iterator should return\npromptly.\n\nThis example fails to check the result of the call to yield,\ncausing this analyzer to report a diagnostic:\n\n\tyield(1) // yield may be called again (on L2) after returning false\n\tyield(2)\n\nThe corrected code is either this:\n\n\tif yield(1) { yield(2) }\n\nor simply:\n\n\t_ = yield(1) \u0026\u0026 yield(2)\n\nIt is not always a mistake to ignore the result of yield.\nFor example, this is a valid single-element iterator:\n\n\tyield(1) // ok to ignore result\n\treturn\n\nIt is only a mistake when the yield call that returned false may be\nfollowed by another call.",
 							"Default": "true",
@@ -3741,6 +3747,12 @@
 			"Name": "waitgroup",
 			"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroup analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroup",
+			"Default": true
+		},
+		{
+			"Name": "writestring",
+			"Doc": "detect inefficient string concatenation in uses of WriteString\n\nThe writestring analyzer offers to replace a call to WriteString(x + y) by\ntwo calls WriteString(x); WriteString(y). This is more efficient because it\navoids the additional memory allocation produced by string concatenation;\ninstead we just write each string into the buffer directly.\n\nIt explicitly looks for calls to certain well-known writers such as\nbytes.Buffer, strings.Builder and bufio.Writer. The analyzer will not suggest\na fix for calls to, say, (*os.File).WriteString, because for certain kinds of\nfile such as a UDP socket, it could split a single message into two.\nSimilarly it does not offer fixes when the type of the writer is unknown (as\nin calls to io.WriteString).\n\nFor example:\n\n\tfunc f(a string, b string) string {\n\t\t var s strings.Builder\n\t\t s.WriteString(a+b)\n\t\t return s.String()\n\t}\n\nwould become:\n\n\tfunc f(a string, b string) string {\n\t\tvar s strings.Builder\n\t\ts.WriteString(a)\n\t\ts.WriteString(b)\n\t\treturn s.String()\n\t}",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/writestring",
 			"Default": true
 		},
 		{

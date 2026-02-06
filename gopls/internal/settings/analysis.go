@@ -66,6 +66,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedfunc"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
+	"golang.org/x/tools/gopls/internal/analysis/writestring"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/goplsexport"
@@ -214,6 +215,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: waitgroup.Analyzer},     // to appear in cmd/vet@go1.25
 	{analyzer: hostport.Analyzer},      // to appear in cmd/vet@go1.25
 	{analyzer: recursiveiter.Analyzer}, // under evaluation
+	{analyzer: writestring.Analyzer},
 
 	// disabled due to high false positives
 	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // very noisy
