@@ -97,6 +97,65 @@ func TestComputeGoModHash(t *testing.T) {
 	}
 }
 
+func TestComputeGoWorkHash(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "empty file",
+			content: "go 1.25",
+			want:    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // sha256 of empty string
+		},
+		{
+			name: "with use",
+			content: `
+			go 1.25
+			use (
+				./foo
+				./bar
+			)
+			`,
+			want: func() string {
+				h := sha256.New()
+				h.Write([]byte("./foo\x00"))
+				h.Write([]byte("./bar\x00"))
+				return hex.EncodeToString(h.Sum(nil))
+			}(),
+		},
+		{
+			name: "with replace",
+			content: `
+			go 1.25
+			replace golang.org/x/tools v0.1.0 => ./tools
+			`,
+			want: func() string {
+				h := sha256.New()
+				h.Write([]byte("golang.org/x/tools\x00v0.1.0\x00./tools\x00"))
+				return hex.EncodeToString(h.Sum(nil))
+			}(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workFile, err := modfile.ParseWork("go.work", []byte(tt.content), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := computeGoWorkHash(workFile)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("computeGoWorkHash() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("computeGoWorkHash() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 type mockClient struct {
 	protocol.Client
 	showMessageRequest func(context.Context, *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error)
@@ -117,7 +176,7 @@ func (c *mockClient) Close() error {
 	return nil
 }
 
-func TestCheckGoModDeps(t *testing.T) {
+func TestCheckDependencyChanges(t *testing.T) {
 	testenv.NeedsExec(t)
 	const (
 		yes    = "Yes"
@@ -128,6 +187,7 @@ func TestCheckGoModDeps(t *testing.T) {
 
 	tests := []struct {
 		name            string
+		filename        string
 		vulncheckMode   settings.VulncheckMode
 		oldContent      string
 		newContent      string
@@ -136,7 +196,8 @@ func TestCheckGoModDeps(t *testing.T) {
 		wantHashUpdated bool
 	}{
 		{
-			name:          "vulncheck disabled",
+			name:          "go.mod: vulncheck disabled",
+			filename:      "go.mod",
 			vulncheckMode: settings.ModeVulncheckOff,
 			oldContent:    "module example.com",
 			newContent: `
@@ -146,14 +207,16 @@ func TestCheckGoModDeps(t *testing.T) {
 			wantPrompt: false,
 		},
 		{
-			name:          "no changes",
+			name:          "go.mod: no changes",
+			filename:      "go.mod",
 			vulncheckMode: settings.ModeVulncheckPrompt,
 			oldContent:    "module example.com",
 			newContent:    "module example.com",
 			wantPrompt:    false,
 		},
 		{
-			name:          "user says yes",
+			name:          "go.mod: user says yes",
+			filename:      "go.mod",
 			vulncheckMode: settings.ModeVulncheckPrompt,
 			oldContent:    "module example.com",
 			newContent: `
@@ -165,51 +228,25 @@ func TestCheckGoModDeps(t *testing.T) {
 			wantHashUpdated: true,
 		},
 		{
-			name:          "user says no",
+			name:          "go.work: user says yes",
+			filename:      "go.work",
 			vulncheckMode: settings.ModeVulncheckPrompt,
-			oldContent:    "module example.com",
+			oldContent:    "go 1.25",
 			newContent: `
-			module example.com
-			require golang.org/x/tools v0.1.0
+			go 1.25
+			use ./foo
 			`,
-			userAction:      no,
+			userAction:      yes,
 			wantPrompt:      true,
 			wantHashUpdated: true,
 		},
 		{
-			name:          "user says always",
+			name:          "go.work: no changes",
+			filename:      "go.work",
 			vulncheckMode: settings.ModeVulncheckPrompt,
-			oldContent:    "module example.com",
-			newContent: `
-			module example.com
-			require golang.org/x/tools v0.1.0
-			`,
-			userAction:      always,
-			wantPrompt:      true,
-			wantHashUpdated: true,
-		},
-		{
-			name:          "user says never",
-			vulncheckMode: settings.ModeVulncheckPrompt,
-			oldContent:    "module example.com",
-			newContent: `
-			module example.com
-			require golang.org/x/tools v0.1.0
-			`,
-			userAction:      never,
-			wantPrompt:      true,
-			wantHashUpdated: true,
-		},
-		{
-			name:          "user dismisses prompt",
-			vulncheckMode: settings.ModeVulncheckPrompt,
-			oldContent:    "module example.com",
-			newContent: `
-			module example.com
-			require golang.org/x/tools v0.1.0
-			`,
-			userAction: "",
-			wantPrompt: true,
+			oldContent:    "go 1.25\nuse ./foo",
+			newContent:    "go 1.25\nuse ./foo",
+			wantPrompt:    false,
 		},
 	}
 
@@ -251,48 +288,40 @@ func TestCheckGoModDeps(t *testing.T) {
 				},
 			}
 			dir := t.TempDir()
-			goModPath := filepath.Join(dir, "go.mod")
-			if err := os.WriteFile(goModPath, []byte(tt.oldContent), 0644); err != nil {
+			filePath := filepath.Join(dir, tt.filename)
+			if err := os.WriteFile(filePath, []byte(tt.oldContent), 0644); err != nil {
 				t.Fatal(err)
 			}
-			uri := protocol.URIFromPath(goModPath)
+			uri := protocol.URIFromPath(filePath)
 
 			// Set the initial hash in the cache.
-			oldModFile, err := modfile.Parse("go.mod", []byte(tt.oldContent), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			oldHash, err := computeGoModHash(oldModFile)
+			oldHash, _, err := getDependencyHashes(uri)
 			if err != nil {
 				t.Fatal(err)
 			}
 			pathHash := sha256.Sum256([]byte(uri.Path()))
-			if err := filecache.Set(goModHashKind, pathHash, []byte(oldHash)); err != nil {
+			if err := filecache.Set(dependencyHashKind, pathHash, []byte(oldHash)); err != nil {
 				t.Fatal(err)
 			}
 
 			// Simulate the file change.
-			if err := os.WriteFile(goModPath, []byte(tt.newContent), 0644); err != nil {
+			if err := os.WriteFile(filePath, []byte(tt.newContent), 0644); err != nil {
 				t.Fatal(err)
 			}
 
-			s.checkGoModDeps(ctx, uri)
+			s.checkDependencyChanges(ctx, uri)
 
 			if promptShown != tt.wantPrompt {
 				t.Errorf("promptShown = %v, want %v", promptShown, tt.wantPrompt)
 			}
 
 			// Check if the hash was updated.
-			newModFile, err := modfile.Parse("go.mod", []byte(tt.newContent), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			newHash, err := computeGoModHash(newModFile)
+			newHash, _, err := getDependencyHashes(uri)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			cachedHashBytes, err := filecache.Get(goModHashKind, pathHash)
+			cachedHashBytes, err := filecache.Get(dependencyHashKind, pathHash)
 			if err != nil && err != filecache.ErrNotFound {
 				t.Fatal(err)
 			}

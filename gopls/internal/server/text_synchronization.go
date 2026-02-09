@@ -254,7 +254,6 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// to their files.
 	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
 
-	// TODO: also handle go.work changes as well.
 	s.handleModuleChanges(ctx, modifications, cause)
 
 	viewsToDiagnose, err := s.session.DidModifyFiles(ctx, modifications)
@@ -302,13 +301,13 @@ func (s *server) handleModuleChanges(ctx context.Context, modifications []file.M
 
 	uris := make(map[protocol.DocumentURI]struct{})
 	for _, m := range modifications {
-		if m.URI.Base() == "go.mod" && (m.Action == file.Create || m.Action == file.Save) {
+		if (m.URI.Base() == "go.mod" || m.URI.Base() == "go.work") && (m.Action == file.Create || m.Action == file.Save) {
 			uris[m.URI] = struct{}{}
 		}
 	}
 
 	for uri := range uris {
-		go s.checkGoModDeps(ctx, uri)
+		go s.checkDependencyChanges(ctx, uri)
 	}
 }
 

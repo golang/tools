@@ -31,9 +31,9 @@ import (
 )
 
 const (
-	// goModHashKind is the kind for the go.mod hash in the filecache.
-	goModHashKind  = "gomodhash"
-	maxVulnsToShow = 10
+	// dependencyHashKind is the kind for the dependency hash in the filecache.
+	dependencyHashKind = "dephash"
+	maxVulnsToShow     = 10
 )
 
 type vulncheckAction string
@@ -77,39 +77,72 @@ func computeGoModHash(file *modfile.File) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func getModFileHashes(uri protocol.DocumentURI) (contentHash string, pathHash [32]byte, err error) {
+// computeGoWorkHash computes the SHA256 hash of the go.work file's dependencies.
+// It only considers the Use and Replace directives and ignores other parts of
+// the file.
+func computeGoWorkHash(file *modfile.WorkFile) (string, error) {
+	h := sha256.New()
+	for _, use := range file.Use {
+		if _, err := h.Write([]byte(use.Path + "\x00")); err != nil {
+			return "", err
+		}
+	}
+	for _, rep := range file.Replace {
+		if _, err := h.Write([]byte(rep.Old.Path + "\x00" + rep.Old.Version + "\x00" + rep.New.Path + "\x00" + rep.New.Version)); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func getDependencyHashes(uri protocol.DocumentURI) (contentHash string, pathHash [32]byte, err error) {
 	content, err := os.ReadFile(uri.Path())
 	if err != nil {
 		return "", [32]byte{}, err
 	}
-	newModFile, err := modfile.Parse("go.mod", content, nil)
-	if err != nil {
-		return "", [32]byte{}, err
-	}
-	contentHash, err = computeGoModHash(newModFile)
-	if err != nil {
-		return "", [32]byte{}, err
+	filename := filepath.Base(uri.Path())
+	switch filename {
+	case "go.mod":
+		modFile, err := modfile.Parse(filename, content, nil)
+		if err != nil {
+			return "", [32]byte{}, err
+		}
+		contentHash, err = computeGoModHash(modFile)
+		if err != nil {
+			return "", [32]byte{}, err
+		}
+	case "go.work":
+		workFile, err := modfile.ParseWork(filename, content, nil)
+		if err != nil {
+			return "", [32]byte{}, err
+		}
+		contentHash, err = computeGoWorkHash(workFile)
+		if err != nil {
+			return "", [32]byte{}, err
+		}
+	default:
+		return "", [32]byte{}, fmt.Errorf("unsupported file: %s", filename)
 	}
 	pathHash = sha256.Sum256([]byte(uri.Path()))
 	return contentHash, pathHash, nil
 }
 
-func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
+func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.DocumentURI) {
 	if s.Options().Vulncheck != settings.ModeVulncheckPrompt {
 		return
 	}
-	ctx, done := event.Start(ctx, "server.CheckGoModDeps")
+	ctx, done := event.Start(ctx, "server.checkDependencyChanges")
 	defer done()
 
-	newHash, pathHash, err := getModFileHashes(uri)
+	newHash, pathHash, err := getDependencyHashes(uri)
 	if err != nil {
-		event.Error(ctx, "getting go.mod hashes failed", err)
+		event.Error(ctx, "getting dependency hashes failed", err)
 		return
 	}
 
-	oldHashBytes, err := filecache.Get(goModHashKind, pathHash)
+	oldHashBytes, err := filecache.Get(dependencyHashKind, pathHash)
 	if err != nil && err != filecache.ErrNotFound {
-		event.Error(ctx, "reading old go.mod hash from filecache failed", err)
+		event.Error(ctx, "reading old dependency hash from filecache failed", err)
 		return
 	}
 	oldHash := string(oldHashBytes)
@@ -136,7 +169,7 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 			// invalid value, clear preference and prompt the user again.
 			choice, err := showMessageRequest(ctx, s.client, protocol.Info, message, string(vulncheckActionYes), string(vulncheckActionNo), string(vulncheckActionAlways), string(vulncheckActionNever))
 			if err != nil {
-				event.Error(ctx, "showing go.mod changed notification failed", err)
+				event.Error(ctx, "showing dependency changed notification failed", err)
 				return
 			}
 			action = vulncheckAction(choice)
@@ -156,8 +189,8 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 			}
 		}
 
-		if err := filecache.Set(goModHashKind, pathHash, []byte(newHash)); err != nil {
-			event.Error(ctx, "writing new go.mod hash to filecache failed", err)
+		if err := filecache.Set(dependencyHashKind, pathHash, []byte(newHash)); err != nil {
+			event.Error(ctx, "writing new dependency hash to filecache failed", err)
 			return
 		}
 	}
@@ -312,12 +345,12 @@ func (s *server) upgradeModules(ctx context.Context, snapshot *cache.Snapshot, u
 
 	msg := fmt.Sprintf("Successfully upgraded vulnerable modules:\n %s", strings.Join(upgradedStrs, ",\n "))
 	showMessage(ctx, s.client, protocol.Info, msg)
-	if hash, pathHash, err := getModFileHashes(uri); err == nil {
-		if err := filecache.Set(goModHashKind, pathHash, []byte(hash)); err != nil {
-			event.Error(ctx, "failed to update go.mod hash after upgrade", err)
+	if hash, pathHash, err := getDependencyHashes(uri); err == nil {
+		if err := filecache.Set(dependencyHashKind, pathHash, []byte(hash)); err != nil {
+			event.Error(ctx, "failed to update dependency hash after upgrade", err)
 		}
 	} else {
-		event.Error(ctx, "failed to get go.mod hash after upgrade", err)
+		event.Error(ctx, "failed to get dependency hash after upgrade", err)
 	}
 	return nil
 }
