@@ -23,10 +23,33 @@ import (
 // ErrClosed is used when trying to operate on a closed Watcher.
 var ErrClosed = errors.New("file watcher: watcher already closed")
 
+func NewFSNotifyWatcher(interval time.Duration, log *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) (Watcher, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	w := &fsnotifyWatcher{
+		log:       log,
+		watcher:   watcher,
+		interval:  interval,
+		onEvents:  onEvents,
+		onError:   onError,
+		knownDirs: make(map[string]struct{}),
+		stop:      make(chan struct{}),
+		ready:     make(chan struct{}, 1),
+	}
+	w.wg.Go(w.run)
+	w.wg.Go(w.process)
+	return w, nil
+}
+
 // fsnotifyWatcher collects events from a [fsnotify.Watcher] and converts them
 // into batched LSP [protocol.FileEvent]s.
 type fsnotifyWatcher struct {
-	logger *slog.Logger
+	log      *slog.Logger
+	onEvents func([]protocol.FileEvent)
+	onError  func(error)
+	interval time.Duration
 
 	stop chan struct{}  // closed by Close to terminate run and process loop
 	wg   sync.WaitGroup // counts the number of active run and process goroutines (max 2)
@@ -49,34 +72,6 @@ type fsnotifyWatcher struct {
 	knownDirs map[string]struct{}
 }
 
-// New creates a new file watcher and starts its event-handling loop. The
-// [Watcher.Close] method must be called to clean up resources.
-//
-// The provided event handler is called sequentially with a batch of file events,
-// but the error handler is called concurrently. The watcher blocks until the
-// handler returns, so the handlers should be fast and non-blocking.
-func NewFSNotifyWatcher(delay time.Duration, logger *slog.Logger, eventsHandler func([]protocol.FileEvent), errHandler func(error)) (Watcher, error) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	w := &fsnotifyWatcher{
-		logger:    logger,
-		watcher:   watcher,
-		knownDirs: make(map[string]struct{}),
-		stop:      make(chan struct{}),
-		ready:     make(chan struct{}, 1),
-	}
-
-	w.wg.Add(1)
-	go w.run(eventsHandler, errHandler, delay)
-
-	w.wg.Add(1)
-	go w.process(errHandler)
-
-	return w, nil
-}
-
 // run is the receiver and sender loop.
 //
 // As receiver, its primary responsibility is to drain events and errors from
@@ -86,10 +81,8 @@ func NewFSNotifyWatcher(delay time.Duration, logger *slog.Logger, eventsHandler 
 //
 // As sender, it manages a timer and flush events to the handler if there is
 // no events captured for a period of time.
-func (w *fsnotifyWatcher) run(eventsHandler func([]protocol.FileEvent), errHandler func(error), delay time.Duration) {
-	defer w.wg.Done()
-
-	timer := time.NewTimer(delay)
+func (w *fsnotifyWatcher) run() {
+	timer := time.NewTimer(w.interval)
 	defer timer.Stop()
 
 	for {
@@ -112,10 +105,10 @@ func (w *fsnotifyWatcher) run(eventsHandler func([]protocol.FileEvent), errHandl
 			w.mu.Unlock()
 
 			if len(events) > 0 {
-				eventsHandler(events)
+				w.onEvents(events)
 			}
 
-			timer.Reset(delay)
+			timer.Reset(w.interval)
 
 		case event, ok := <-w.watcher.Events:
 			// The watcher closed. Continue the loop and let the <-w.stop case
@@ -125,9 +118,9 @@ func (w *fsnotifyWatcher) run(eventsHandler func([]protocol.FileEvent), errHandl
 			}
 
 			// TODO(hxjiang): perform some filtering before we reset the timer
-			// to avoid consistently resetting the timer in a noisy file system,
+			// to avoid consistenly resetting the timer in a noisy file syestem,
 			// or simply convert the event here.
-			timer.Reset(delay)
+			timer.Reset(w.interval)
 
 			w.mu.Lock()
 			w.in = append(w.in, event)
@@ -142,7 +135,7 @@ func (w *fsnotifyWatcher) run(eventsHandler func([]protocol.FileEvent), errHandl
 				continue
 			}
 
-			errHandler(err)
+			w.onError(err)
 		}
 	}
 }
@@ -150,9 +143,7 @@ func (w *fsnotifyWatcher) run(eventsHandler func([]protocol.FileEvent), errHandl
 // process is a worker goroutine that converts raw fsnotify events from queue
 // and handles the potentially blocking work of watching new directories. It is
 // the counterpart to the run goroutine.
-func (w *fsnotifyWatcher) process(errHandler func(error)) {
-	defer w.wg.Done()
-
+func (w *fsnotifyWatcher) process() {
 	for {
 		select {
 		case <-w.stop:
@@ -203,7 +194,7 @@ func (w *fsnotifyWatcher) process(errHandler func(error)) {
 						//     CREATE a/b/c
 						//     CREATE a/c
 						//     CREATE a/c/d
-						w.walkDirWithRetry(event.Name, errHandler, func(path string, isDir bool) error {
+						w.walkDirWithRetry(event.Name, w.onError, func(path string, isDir bool) error {
 							if path != event.Name {
 								synthesized = append(synthesized, protocol.FileEvent{
 									URI:  protocol.URIFromPath(path),
@@ -294,9 +285,9 @@ func skipFile(fileName string) bool {
 // them to the watcher.
 func (w *fsnotifyWatcher) WatchDir(path string) error {
 	log.Printf("Watching %s", path)
-	return filepath.WalkDir(filepath.Clean(path), func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() {
-			if skipDir(d.Name()) {
+	return filepath.WalkDir(filepath.Clean(path), func(path string, dirent fs.DirEntry, err error) error {
+		if dirent.IsDir() {
+			if skipDir(dirent.Name()) {
 				return filepath.SkipDir
 			}
 
@@ -322,8 +313,8 @@ func (w *fsnotifyWatcher) convertEvent(event fsnotify.Event) (_ protocol.FileEve
 	} else {
 		// If statting failed, something is wrong with the file system.
 		// Log and move on.
-		if w.logger != nil {
-			w.logger.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", event.Name, "err", err)
+		if w.log != nil {
+			w.log.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", event.Name, "err", err)
 		}
 		return protocol.FileEvent{}, false
 	}

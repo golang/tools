@@ -110,6 +110,8 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	errHandler := func(err error) {
 		log.Printf("watch error: %v", err)
 	}
+
+	// TODO(hxjiang): enable file watcher based on the gopls setting.
 	w, err := filewatcher.New("fsnotify", 500*time.Millisecond, nil, func(events []protocol.FileEvent) {
 		if len(events) == 0 {
 			return

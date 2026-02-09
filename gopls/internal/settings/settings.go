@@ -792,6 +792,8 @@ type InternalOptions struct {
 	// issue.
 	SubdirWatchPatterns SubdirWatchPatterns
 
+	// TODO(hxjiang): create setting for enable file watcher.
+
 	// ReportAnalysisProgressAfter sets the duration for gopls to wait before starting
 	// progress reporting for ongoing go/analysis passes.
 	//

@@ -35,7 +35,8 @@ type Watcher interface {
 // TODO(hxjiang): replace mode string to enum.
 func New(mode string, interval time.Duration, logger *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) (Watcher, error) {
 	switch mode {
-	// TODO (hxjiang): support poll watcher.
+	case "poll":
+		return NewPollWatcher(interval, logger, onEvents, onError), nil
 	case "fsnotify":
 		return NewFSNotifyWatcher(interval, logger, onEvents, onError)
 	}
