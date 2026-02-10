@@ -197,6 +197,7 @@ var methodNames = map[string]string{
 	"initialize":                             "Initialize",
 	"initialized":                            "Initialized",
 	"inlayHint/resolve":                      "Resolve",
+	"interactive/listEnum":                   "InteractiveListEnum",
 	"notebookDocument/didChange":             "DidChangeNotebookDocument",
 	"notebookDocument/didClose":              "DidCloseNotebookDocument",
 	"notebookDocument/didOpen":               "DidOpenNotebookDocument",
@@ -310,6 +311,13 @@ var prependMethodDocComments = map[string]string{
 	// forms. "command/resolve" is introduced to handle the interactive flow
 	// strictly *after* the user has explicitly indicated intention (e.g., by
 	// clicking), making it safe for Code Actions and other refactorings.`,
+	"InteractiveListEnum": `// InteractiveListEnum is the request handler for fetching dynamic enum options.
+	//
+	// This method is called by the client when the user interacts with a
+	// FormFieldTypeLazyEnum field (e.g., typing in a combo box). The server
+	// uses the provided Action and Params to determine the context (e.g.,
+	// "search workspace symbols for interfaces") and returns a filtered list
+	// of matching entries.`,
 }
 
 // prependMethodDocComments specifies doc comments that will be prepend to

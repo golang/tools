@@ -67,6 +67,16 @@ type Server interface {
 	Initialized(context.Context, *InitializedParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHint_resolve
 	Resolve(context.Context, *InlayHint) (*InlayHint, error)
+	// InteractiveListEnum is the request handler for fetching dynamic enum options.
+	//
+	// This method is called by the client when the user interacts with a
+	// FormFieldTypeLazyEnum field (e.g., typing in a combo box). The server
+	// uses the provided Action and Params to determine the context (e.g.,
+	// "search workspace symbols for interfaces") and returns a filtered list
+	// of matching entries.
+	//
+	// Note: This is a non-standard protocol extension.
+	InteractiveListEnum(context.Context, *InteractiveListEnumParams) ([]FormEnumEntry, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didChange
 	DidChangeNotebookDocument(context.Context, *DidChangeNotebookDocumentParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didClose
@@ -330,6 +340,17 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		resp, err := server.Resolve(ctx, &params)
+		if err != nil {
+			return nil, true, err
+		}
+		return resp, true, nil
+
+	case "interactive/listEnum":
+		var params InteractiveListEnumParams
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		resp, err := server.InteractiveListEnum(ctx, &params)
 		if err != nil {
 			return nil, true, err
 		}
@@ -1166,6 +1187,13 @@ func (s *serverDispatcher) Initialized(ctx context.Context, params *InitializedP
 func (s *serverDispatcher) Resolve(ctx context.Context, params *InlayHint) (*InlayHint, error) {
 	var result *InlayHint
 	if err := s.sender.Call(ctx, "inlayHint/resolve", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+func (s *serverDispatcher) InteractiveListEnum(ctx context.Context, params *InteractiveListEnumParams) ([]FormEnumEntry, error) {
+	var result []FormEnumEntry
+	if err := s.sender.Call(ctx, "interactive/listEnum", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

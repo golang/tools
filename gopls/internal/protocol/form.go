@@ -8,6 +8,8 @@
 
 package protocol
 
+import "encoding/json"
+
 // FormFieldTypeString defines a text input.
 //
 // It is defined as a struct to allow for future extensibility, such as
@@ -45,22 +47,57 @@ type FormFieldTypeNumber struct {
 	Kind string `json:"kind"`
 }
 
+// FormEnumEntry represents a single option in an enumeration.
+type FormEnumEntry struct {
+	// Value is the unique string identifier for this option.
+	//
+	// This is the value that will be sent back to the server in
+	// 'FormAnswers' if the user selects this option.
+	Value string `json:"value"`
+
+	// Description is the human-readable label presented to the user.
+	Description string `json:"description"`
+}
+
 // FormFieldTypeEnum defines a selection from a set of values.
+//
+// Use this type when:
+// - The number of options is small (e.g., < 20).
+// - All options are known at the time the form is created.
 type FormFieldTypeEnum struct {
 	// Kind must be "enum".
 	Kind string `json:"kind"`
 
-	// Name is an optional identifier for the enum type.
-	Name string `json:"name,omitempty"`
+	// Entries is the list of allowable options.
+	Entries []FormEnumEntry `json:"entries"`
+}
 
-	// Values is the set of allowable options.
-	Values []string `json:"values"`
+// FormFieldTypeLazyEnum defines a selection from a large or dynamic enum entry set.
+//
+// Use this type when:
+//  1. The dataset is too large to send efficiently in a single payload
+//     (e.g., thousands of workspace symbols, file uri or cloud resources).
+//  2. The available options depend on the user's input (e.g., semantic search).
+//  3. Generating the list is expensive and should only be done if requested.
+//
+// The client is expected to render a search interface (e.g., a combo box with
+// a text input) and query the server via 'interactive/listEnum' as the user types.
+type FormFieldTypeLazyEnum struct {
+	// Kind must be "lazyEnum".
+	Kind string `json:"kind"`
 
-	// Description provides human-readable labels for the options.
+	// TODO(hxjiang): consider make debounce configurable since fetching
+	// cloud resources could be expensive and slow.
+
+	// Source identifies the data source on the server.
 	//
-	// This slice must have the same length as Values, where Description[i]
-	// corresponds to Values[i].
-	Description []string `json:"description"`
+	// Examples: "workspace/symbol", "database/schema", "git/tags".
+	Source string `json:"source"`
+
+	// Config contains the static settings for the source.
+	// The client treats this as opaque data and echoes it back in the
+	// 'interactive/listEnum' request.
+	Config *json.RawMessage `json:"config,omitempty"`
 }
 
 // FormFieldTypeList defines a homogenous list of items.
@@ -130,4 +167,31 @@ type InteractiveParams struct {
 	//
 	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
 	FormAnswers []any `json:"formAnswers,omitempty"`
+}
+
+// InteractiveListEnumParams defines the parameters for the
+// 'interactive/listEnum' request.
+type InteractiveListEnumParams struct {
+	// Source identifies the data source on the server.
+	//
+	// The client treats this as opaque data and echoes it back in the
+	// 'interactive/listEnum' request.
+	//
+	// Examples: "workspace/symbol", "database/schema", "git/tags".
+	Source string `json:"source"`
+
+	// Config contains the static settings for the specified source.
+	//
+	// The client treats this as opaque data and echoes it back in the
+	// 'interactive/listEnum' request.
+	Config *json.RawMessage `json:"config,omitempty"`
+
+	// A query string to filter enum entries by.
+	//
+	// The exact interpretation of this string (e.g., fuzzy matching, exact
+	// match, prefix search, or regular expression) is entirely up to the
+	// server and may vary depending on the source. This follows the similar
+	// semantics as the standard 'workspace/symbol' request. Clients may
+	// send an empty string here to request a default set of enum entries.
+	Query string `json:"query"`
 }

@@ -51,14 +51,37 @@ var AddTagsForm = []protocol.FormField{
 		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
 		Type: protocol.FormFieldTypeEnum{
 			Kind: "enum",
-			Name: "transform rule",
-			Values: []string{
-				"camelcase",  // MyField -> myField
-				"lispcase",   // MyField -> my-field
-				"pascalcase", // MyField -> MyField
-				"titlecase",  // MyField -> My Field
-				"snakecase",  // MyField -> my_field
-				"keep",       // keep the existing field name
+			Entries: []protocol.FormEnumEntry{
+				{
+					// MyField -> myField
+					Value:       "camelcase",
+					Description: "camelcase",
+				},
+				{
+					// MyField -> my-field
+					Value:       "lispcase",
+					Description: "lispcase",
+				},
+				{
+					// MyField -> MyField
+					Value:       "pascalcase",
+					Description: "pascalcase",
+				},
+				{
+					// MyField -> My Field
+					Value:       "titlecase",
+					Description: "titlecase",
+				},
+				{
+					// MyField -> my_field
+					Value:       "snakecase",
+					Description: "snakecase",
+				},
+				{
+					// keep the existing field name
+					Value:       "keep",
+					Description: "keep",
+				},
 			},
 		},
 		Default: "camelcase",

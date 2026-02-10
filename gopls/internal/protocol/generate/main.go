@@ -113,6 +113,22 @@ func processinline() {
 		}
 	}
 
+	model.Requests = append(model.Requests, &Request{
+		Method:    "interactive/listEnum",
+		Direction: "clientToServer",
+		Params: &Type{
+			Kind: "reference",
+			Name: "InteractiveListEnumParams",
+		},
+		Result: &Type{
+			Kind: "array",
+			Element: &Type{
+				Kind: "reference",
+				Name: "FormEnumEntry",
+			},
+		},
+	})
+
 	findTypeNames(model)
 	generateOutput(model)
 
