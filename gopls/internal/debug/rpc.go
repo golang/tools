@@ -62,15 +62,15 @@ type rpcStats struct {
 }
 
 type rpcTimeHistogram struct {
-	Sum    timeUnits
+	Sum    time.Duration
 	Count  int64
-	Min    timeUnits
-	Max    timeUnits
+	Min    time.Duration
+	Max    time.Duration
 	Values []rpcTimeBucket
 }
 
 type rpcTimeBucket struct {
-	Limit timeUnits
+	Limit time.Duration
 	Count int64
 }
 
@@ -130,22 +130,17 @@ func endRPC(span *export.Span, stats *rpcStats) {
 
 	// calculate latency if this was an rpc span
 	elapsedTime := span.Finish().At().Sub(span.Start().At())
-	latencyMillis := timeUnits(elapsedTime) / timeUnits(time.Millisecond)
 	if stats.Latency.Count == 0 {
-		stats.Latency.Min = latencyMillis
-		stats.Latency.Max = latencyMillis
+		stats.Latency.Min = elapsedTime
+		stats.Latency.Max = elapsedTime
 	} else {
-		if stats.Latency.Min > latencyMillis {
-			stats.Latency.Min = latencyMillis
-		}
-		if stats.Latency.Max < latencyMillis {
-			stats.Latency.Max = latencyMillis
-		}
+		stats.Latency.Min = min(stats.Latency.Min, elapsedTime)
+		stats.Latency.Max = max(stats.Latency.Max, elapsedTime)
 	}
 	stats.Latency.Count++
-	stats.Latency.Sum += latencyMillis
+	stats.Latency.Sum += elapsedTime
 	for i := range stats.Latency.Values {
-		if stats.Latency.Values[i].Limit > latencyMillis {
+		if stats.Latency.Values[i].Limit > elapsedTime {
 			stats.Latency.Values[i].Count++
 			break
 		}
@@ -188,7 +183,7 @@ func (r *Rpcs) getRPCStats(lm label.Map) *rpcStats {
 	stats := &rpcStats{Method: method}
 	stats.Latency.Values = make([]rpcTimeBucket, len(secondsDistribution))
 	for i, m := range secondsDistribution {
-		stats.Latency.Values[i].Limit = timeUnits(m * 1000 * 1000)
+		stats.Latency.Values[i].Limit = time.Duration(m * float64(time.Second))
 	}
 	(*set)[index] = stats
 	return stats
@@ -198,7 +193,7 @@ func (s *rpcStats) InProgress() int64       { return s.Started - s.Completed }
 func (s *rpcStats) SentMean() byteUnits     { return s.Sent / byteUnits(s.Started) }
 func (s *rpcStats) ReceivedMean() byteUnits { return s.Received / byteUnits(s.Started) }
 
-func (h *rpcTimeHistogram) Mean() timeUnits { return h.Sum / timeUnits(h.Count) }
+func (h *rpcTimeHistogram) Mean() time.Duration { return h.Sum / time.Duration(h.Count) }
 
 func getStatusCode(span *export.Span) string {
 	for _, ev := range span.Events() {
@@ -223,13 +218,6 @@ func units(v float64, suffixes []string) string {
 		v = n
 	}
 	return fmt.Sprintf("%.2f%s", v, s)
-}
-
-type timeUnits float64
-
-func (v timeUnits) String() string {
-	v = v * 1000 * 1000
-	return units(float64(v), []string{"ns", "μs", "ms", "s"})
 }
 
 type byteUnits float64
