@@ -43,7 +43,7 @@ The specification's types are "base", "reference", "map", "literal", "stringLite
 The "base" types correspond directly to Go types, although some Go types needs to be chosen for `URI` and `DocumentUri`. (The "base" types`RegExp`, `BooleanLiteral`, `NumericLiteral` never occur.)
 
 "reference" types are the struct-like types in the Structures section of the specification. The given
-names are suitable for Go to use, except the code needs to change names like `_Initialze` to `XInitialize` so
+names are suitable for Go to use, except the code needs to change names like `_Initialize` to `XInitialize` so
 they are exported for json marshaling and unmarshaling.
 
 "map" types are just like Go. (The key type in all of them is `DocumentUri`.)

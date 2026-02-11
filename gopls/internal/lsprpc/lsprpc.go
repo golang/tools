@@ -495,7 +495,7 @@ type handshakeResponse struct {
 }
 
 // clientSession identifies a current client LSP session on the server. Note
-// that it looks similar to handshakeResposne, but in fact 'Logfile' and
+// that it looks similar to handshakeResponse, but in fact 'Logfile' and
 // 'DebugAddr' now refer to the client.
 type clientSession struct {
 	SessionID string `json:"sessionID"`

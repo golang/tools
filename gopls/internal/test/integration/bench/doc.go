@@ -18,7 +18,7 @@
 // test flags for profiling aren't useful. Instead the -gopls_cpuprofile,
 // -gopls_memprofile, -gopls_allocprofile, -gopls_blockprofile, and
 // -gopls_trace flags may be used to pass through profiling to the gopls
-// subproces.
+// subprocess.
 //
 // Each of these flags sets a suffix for the respective gopls profile, which is
 // named according to the schema <repo>.<operation>.<suffix>. For example,

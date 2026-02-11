@@ -104,7 +104,7 @@ type Workdir struct {
 }
 
 // NewWorkdir writes the txtar-encoded file data in txt to dir, and returns a
-// Workir for operating on these files using
+// Workdir for operating on these files using relative paths.
 func NewWorkdir(dir string, files map[string][]byte) (*Workdir, error) {
 	w := &Workdir{RelativeTo: RelativeTo(dir)}
 	for name, data := range files {

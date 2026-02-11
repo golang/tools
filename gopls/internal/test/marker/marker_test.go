@@ -1490,7 +1490,7 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 }
 
 // checkDiffs checks that the diff content stored in the given golden directory
-// converts the orginal contents into the changed contents.
+// converts the original contents into the changed contents.
 // (This logic is strange because hundreds of existing marker tests were created
 // containing a modified version of unified diffs.)
 func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
@@ -1518,7 +1518,7 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 				mark.note.Name, name, got)
 			return
 		} else {
-			// restore the ToUnifed header lines deleted above
+			// restore the ToUnified header lines deleted above
 			// before calling ApplyUnified
 			diffsFromTest := "--- \n+++ \n" + string(tdiffs)
 			want, err := diff.ApplyUnified(diffsFromTest, before)

@@ -438,7 +438,7 @@ const (
 
 // MarshalJSON implements the json.Marshaler interface, so that the default
 // values are formatted correctly in documentation. (See [Options.setOne] for
-// the flexible custom unmarshalling behavior).
+// the flexible custom unmarshaling behavior).
 func (l LinksInHoverEnum) MarshalJSON() ([]byte, error) {
 	switch l {
 	case LinksInHover_None:
@@ -619,7 +619,7 @@ const (
 	// implicitly ignored.
 	//
 	// To suppress the hint, write an actual comment containing
-	// "ignore error" following the call statement, or explictly
+	// "ignore error" following the call statement, or explicitly
 	// assign the result to a blank variable. A handful of common
 	// functions such as `fmt.Println` are excluded from the
 	// check.

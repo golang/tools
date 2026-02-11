@@ -140,7 +140,7 @@ func (c *completer) explicitPkgName(ctx context.Context, pkgname metadata.Packag
 	return false
 }
 
-// see if this path contains a usable import with explict package name
+// see if this path contains a usable import with explicit package name
 func (c *completer) tryPath(ctx context.Context, path metadata.PackagePath, pkgname, prefix string) bool {
 	packages := c.snapshot.MetadataGraph().ForPackagePath
 	ids := []metadata.PackageID{}

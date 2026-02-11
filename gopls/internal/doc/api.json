@@ -2023,7 +2023,7 @@
 						},
 						{
 							"Name": "\"ignoredError\"",
-							"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explictly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
+							"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -3783,7 +3783,7 @@
 		},
 		{
 			"Name": "ignoredError",
-			"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explictly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
+			"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
 			"Default": false,
 			"Status": ""
 		},

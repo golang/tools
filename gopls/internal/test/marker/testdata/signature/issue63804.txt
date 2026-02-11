@@ -1,4 +1,4 @@
-Regresson test for #63804: conversion to built-in type caused panic.
+Regression test for #63804: conversion to built-in type caused panic.
 
 the server's Signature method never returns an actual error,
 so the best we can assert is that there is no result.

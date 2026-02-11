@@ -292,7 +292,7 @@ var prependMethodDocComments = map[string]string{
 	"ResolveCommand": `// To support microsoft/language-server-protocol#1164, the language server
 	// need to read the form with client-supplied answers and either returns an
 	// ExecuteCommandParams with errors in the form surfacing the error to the
-	// client, or an ExecuteCommandParams with interative properties empty (e.g
+	// client, or an ExecuteCommandParams with interactive properties empty (e.g
 	// formFields, formAnswers) and user information integrated in original
 	// properties.
 	//

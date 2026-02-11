@@ -124,7 +124,7 @@ func (w *Watcher) run(eventsHandler func([]protocol.FileEvent), errHandler func(
 			}
 
 			// TODO(hxjiang): perform some filtering before we reset the timer
-			// to avoid consistenly resetting the timer in a noisy file syestem,
+			// to avoid consistently resetting the timer in a noisy file system,
 			// or simply convert the event here.
 			timer.Reset(delay)
 

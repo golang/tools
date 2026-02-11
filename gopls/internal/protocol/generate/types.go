@@ -42,7 +42,7 @@ type Request struct {
 	Line                int    `json:"line"`
 }
 
-// A Notificatin is the parsed version of an LSP notification
+// A Notification is the parsed version of an LSP notification
 type Notification struct {
 	Documentation       string `json:"documentation"`
 	Direction           string `json:"messageDirection"`

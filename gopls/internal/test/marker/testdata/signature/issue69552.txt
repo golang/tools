@@ -1,4 +1,4 @@
-Regresson test for #69552: panic in activeParam of a builtin, when requesting
+Regression test for #69552: panic in activeParam of a builtin, when requesting
 signature help outside of the argument list.
 
 -- go.mod --
@@ -11,4 +11,3 @@ package a
 func _() {
 	_ = len([]int{}) //@signature("en", "len(v Type) int", -1)
 }
-

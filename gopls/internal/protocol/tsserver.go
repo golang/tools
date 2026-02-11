@@ -34,7 +34,7 @@ type Server interface {
 	// To support microsoft/language-server-protocol#1164, the language server
 	// need to read the form with client-supplied answers and either returns an
 	// ExecuteCommandParams with errors in the form surfacing the error to the
-	// client, or an ExecuteCommandParams with interative properties empty (e.g
+	// client, or an ExecuteCommandParams with interactive properties empty (e.g
 	// formFields, formAnswers) and user information integrated in original
 	// properties.
 	//
@@ -51,7 +51,7 @@ type Server interface {
 	// it is often triggered eagerly (e.g., for previews), prohibiting interactive
 	// forms. "command/resolve" is introduced to handle the interactive flow
 	// strictly *after* the user has explicitly indicated intention (e.g., by
-	// clicking), making it safe for Code Actions and other refactorings..
+	// clicking), making it safe for Code Actions and other refactorings.
 	//
 	// Note: This is a non-standard protocol extension.
 	ResolveCommand(context.Context, *ExecuteCommandParams) (*ExecuteCommandParams, error)

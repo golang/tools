@@ -111,7 +111,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 type implYieldFunc func(pkgpath metadata.PackagePath, name string, abstract bool, loc protocol.Location)
 
 // implementationsMsets computes implementations of the type at the
-// position specifed by cur, by method sets.
+// position specified by cur, by method sets.
 //
 // rel specifies the desired direction of the relation: Subtype,
 // Supertype, or both. As a special case, zero means infer the

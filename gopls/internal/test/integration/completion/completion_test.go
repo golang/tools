@@ -1531,7 +1531,7 @@ var _ = blah.
 	})
 }
 
-// show that the efficacy counters get exercised. Fortuntely a small program
+// show that the efficacy counters get exercised. Fortunately a small program
 // exercises them all
 func TestCounters(t *testing.T) {
 	const files = `

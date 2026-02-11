@@ -189,7 +189,7 @@ package foo
 				{URI: "foo", Type: protocol.Deleted},
 			},
 		},
-		// TOOD(hxjiang): test for symlink to a dir.
+		// TODO(hxjiang): test for symlink to a dir.
 	}
 
 	for _, tt := range testCases {

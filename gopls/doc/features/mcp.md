@@ -61,7 +61,7 @@ may perform any of the operations gopls normally performs, including:
 - executing the `go` command to load package information, which may result in
   calls to https://proxy.golang.org to download Go modules, and writes to go
   caches;
-- writing to gopls' cache or persistant configuration files; and
+- writing to gopls' cache or persistent configuration files; and
 - uploading weekly telemetry data **if you have opted in** to [Go telemetry](https://go.dev/doc/telemetry).
 
 The gopls MCP server does not perform any operations not already performed by
