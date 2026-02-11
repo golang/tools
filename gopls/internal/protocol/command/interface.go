@@ -325,6 +325,9 @@ type Interface interface {
 
 	// MoveType: Move a type declaration to a different package.
 	MoveType(context.Context, MoveTypeArgs) error
+
+	// ImplementInterface: Add methods to a type to implement an interface.
+	ImplementInterface(context.Context, ImplementInterfaceArgs) error
 }
 
 type RunTestsArgs struct {
@@ -857,6 +860,17 @@ type PackageSymbol struct {
 
 	// Index of this symbol's file in PackageSymbolsResult.Files
 	File int `json:"file,omitempty"`
+}
+
+type ImplementInterfaceArgs struct {
+	// Location is the location where the user invoked the code action.
+	// This location must be within a type declaration.
+	Location protocol.Location
+
+	// Interface is the fully qualified name of pacakge-level interface type to
+	// implement. It must follow the pattern "path/to/package.InterfaceName"
+	// (e.g., "io.Reader").
+	Interface string
 }
 
 // ModifyTagsArgs holds variables that determine how struct tags are modified.

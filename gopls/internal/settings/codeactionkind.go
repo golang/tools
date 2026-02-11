@@ -99,6 +99,7 @@ const (
 	RefactorRewriteSplitLines         protocol.CodeActionKind = "refactor.rewrite.splitLines"
 	RefactorRewriteEliminateDotImport protocol.CodeActionKind = "refactor.rewrite.eliminateDotImport"
 	RefactorRewriteAddTags            protocol.CodeActionKind = "refactor.rewrite.addTags"
+	RefactorRewriteImplementInterface protocol.CodeActionKind = "refactor.rewrite.implementInterface"
 	RefactorRewriteRemoveTags         protocol.CodeActionKind = "refactor.rewrite.removeTags"
 
 	// refactor.inline

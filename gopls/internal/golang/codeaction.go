@@ -28,6 +28,8 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -258,6 +260,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
 	{kind: settings.RefactorRewriteFillSwitch, fn: refactorRewriteFillSwitch, needPkg: true},
+	{kind: settings.RefactorRewriteImplementInterface, fn: refactorRewriteImplementInterface, needPkg: true},
 	{kind: settings.RefactorRewriteInvertIf, fn: refactorRewriteInvertIf},
 	{kind: settings.RefactorRewriteJoinLines, fn: refactorRewriteJoinLines, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveUnusedParam, fn: refactorRewriteRemoveUnusedParam, needPkg: true},
@@ -936,6 +939,55 @@ func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsReques
 		})
 		req.addCommandAction(cmdRemove, false)
 	}
+	return nil
+}
+
+// refactorRewriteImplementInterface produces "Add methods to implement an
+// interface." code actions.
+// See [server.commandHandler.ImplementInterface] for command implementation.
+func refactorRewriteImplementInterface(_ context.Context, req *codeActionsRequest) error {
+	// TODO(hxjiang): when enum is implemented, either lazy enum or string
+	// input is possible.
+	if !supportsDialog(req, settings.InteractiveInputTypeString) {
+		return nil
+	}
+
+	start, end, err := req.pgf.RangePos(req.loc.Range)
+	if err != nil {
+		return err
+	}
+
+	cur, _, _, _ := astutil.Select(req.pgf.Cursor(), start, end) // can't fail
+
+	spec, curSpec := cursorutil.FirstEnclosing[*ast.TypeSpec](cur)
+	if spec == nil {
+		return nil
+	}
+
+	// Only offer code action for package level type spec.
+	if curSpec.Parent().Parent().Node() != req.pgf.File {
+		return nil
+	}
+
+	// Does not support type parameter.
+	if spec.TypeParams != nil {
+		return nil
+	}
+
+	// Alias or interface.
+	if spec.Assign.IsValid() || types.IsInterface(req.pkg.TypesInfo().TypeOf(spec.Type)) {
+		return nil
+	}
+
+	// Have: concrete defined type
+	cmdAdd := command.NewImplementInterfaceCommand(
+		fmt.Sprintf("Add methods to %s to implement an interface...", spec.Name.Name),
+		command.ImplementInterfaceArgs{
+			Location: req.loc,
+			// Interface will be provided by the user through dialog.
+		},
+	)
+	req.addCommandAction(cmdAdd, false)
 	return nil
 }
 

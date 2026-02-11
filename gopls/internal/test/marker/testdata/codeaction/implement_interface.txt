@@ -1,0 +1,45 @@
+This test checks the behavior of the 'Add methods to TYPE to implement an
+interface...' code action.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveInputTypes":["string"]}
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/implementinterface
+
+go 1.18
+
+-- bad/bad.go --
+package bad
+
+type foo struct{}
+
+// Alias
+type aliasOfBasic = int //@codeaction("Basic", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions")
+
+type aliasOfStruct = foo //@codeaction("Struct", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions")
+
+// Interface
+type iface interface {} //@codeaction("iface", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions")
+
+// Not package level
+func _ () {
+    type NamedOfBasic int //@codeaction("Basic", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions")
+
+    type NamedOfStruct foo //@codeaction("Struct", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions")
+}
+
+-- good/good.go --
+package good
+
+type foo struct{}
+
+// Named
+type namedOfBasic int //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=empty)
+
+type namedOfStruct foo //@codeaction("Struct", "refactor.rewrite.implementInterface", edit=empty)
