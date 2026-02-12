@@ -1,0 +1,110 @@
+-- settings.json --
+{
+	"codelenses": {
+		"go_to_test": true
+	}
+}
+
+-- a.go --
+//@codelenses()
+
+package codelenses
+
+func Foo() int { return 0 } //@codelens(re"()func Foo", "Go to TestFoo")
+
+func bar() {} //@codelens(re"()func bar", "Go to Test_bar"),codelens(re"()func bar", "Go to Benchmark_bar"),codelens(re"()func bar", "Go to Fuzz_bar")
+
+func xyz() {} //@codelens(re"()func xyz", "Go to TestXyz")
+
+func Translate() { //@codelens(re"()func Translate", "Go to TestTranslate")
+	translate()
+}
+
+func translate() {}
+
+-- a1_test.go --
+package codelenses
+
+import "testing"
+
+func TestFoo(*testing.T) {}
+
+func TestTranslate(*testing.T) {
+	translate()
+}
+
+-- a2_test.go --
+package codelenses
+
+import "testing"
+
+func TestXyz(*testing.T) {}
+
+-- a3_test.go --
+package codelenses_test
+
+import "testing"
+
+func Test_bar(*testing.T) {}
+
+func Benchmark_bar(*testing.B) {}
+
+func Fuzz_bar(*testing.F) {}
+
+-- writer.go --
+//@codelenses()
+
+package codelenses
+
+type Writer struct{}
+
+func (w *Writer) Write() error { return nil } //@codelens(re"()func", "Go to TestWriter_Write")
+
+func (w *Writer) Flush() {} //@codelens(re"()func", "Go to TestWriter_Flush")
+
+-- writer_test.go --
+package codelenses
+
+import "testing"
+
+func TestWriter_Write(*testing.T) {}
+
+func TestWriter_Flush(*testing.T) {}
+
+-- slices.go --
+//@codelenses()
+
+package codelenses
+
+func Delete() {} //@codelens(re"()func", "Go to TestDelete"),codelens(re"()func", "Go to TestDeleteClearTail"),codelens(re"()func", "Go to TestDeletePanics")
+
+func DeleteFunc() {} //@codelens(re"()func", "Go to TestDeleteFunc"),codelens(re"()func", "Go to TestDeleteFuncClearTail")
+
+-- slices_test.go --
+package codelenses
+
+import "testing"
+
+func TestDelete(*testing.T) {}
+
+func TestDeleteClearTail(*testing.T) {}
+
+func TestDeletePanics(*testing.T) {}
+
+func TestDeleteFunc(*testing.T) {}
+
+func TestDeleteFuncClearTail(*testing.T) {}
+
+-- example.go --
+//@codelenses()
+
+package codelenses
+
+func Sort() {} //@codelens(re"()func", "Go to ExampleSort_long"),codelens(re"()func", "Go to ExampleSort_short")
+
+-- example_test.go --
+package codelenses
+
+func ExampleSort_short() {}
+
+func ExampleSort_long() {}
