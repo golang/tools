@@ -297,6 +297,7 @@ return nil
 	modcache := t.TempDir()
 	defer CleanModCache(t, modcache)
 	mx := fake.UnpackTxt(cache)
+
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
 		dir := filepath.Dir(fname)
@@ -304,11 +305,16 @@ return nil
 		if err := os.WriteFile(fname, v, 0644); err != nil {
 			t.Fatal(err)
 		}
+		if true {
+			// for diagnosing flakiness
+			t.Logf("wrote %s:%d", fname, len(v))
+		}
 	}
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
 		Settings{"importsSource": settings.ImportsSourceGopls},
+		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 
 		env.OpenFile("main.go")
@@ -316,6 +322,15 @@ return nil
 		out := env.BufferText("main.go")
 		if !strings.Contains(out, "xurls/v2") {
 			t.Errorf("did not get v2 in %q", out)
+			// golang/go#77552 finds this test flaky, so print out more
+			ix, err := modindex.Read(modcache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%d entries", len(ix.Entries))
+			for i, e := range ix.Entries {
+				t.Logf("%d: %s, %s, %d", i, e.ImportPath, e.Dir, len(e.Names))
+			}
 		}
 	})
 }
