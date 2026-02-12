@@ -125,22 +125,11 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 		errtype := types.TypeString(v.Type(), qual)
 
 		// Choose a name for the "ok" variable.
-		// TODO(adonovan): this pattern also appears in stditerators,
-		// and is wanted elsewhere; factor.
-		okName := "ok"
-		if okVar := lookup(info, curCall, "ok"); okVar != nil {
-			// The name 'ok' is already declared, but
-			// don't choose a fresh name unless okVar
-			// is also used within the if-statement.
-			curIf := curCall.Parent()
-			for curUse := range index.Uses(okVar) {
-				if curIf.Contains(curUse) {
-					scope := info.Scopes[curIf.Node().(*ast.IfStmt)]
-					okName = refactor.FreshName(scope, v.Pos(), "ok")
-					break
-				}
-			}
-		}
+		// We generate a new name only if 'ok' is already declared at
+		// curCall and it also used within the if-statement.
+		curIf := curCall.Parent()
+		ifScope := info.Scopes[curIf.Node().(*ast.IfStmt)]
+		okName := freshName(info, index, ifScope, v.Pos(), curCall, curIf, token.NoPos, "ok")
 
 		pass.Report(analysis.Diagnostic{
 			Pos:     call.Fun.Pos(),

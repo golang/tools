@@ -100,8 +100,12 @@ func _() {
 	if after := strings.TrimPrefix(s, ""); s != after { // want "TrimPrefix can be simplified to CutPrefix"
 		println(after)
 	}
-	var ok bool // define an ok variable to test the fix won't shadow it for its if stmt body
-	_ = ok
+	var ok bool                                          // define an ok variable to test the fix won't shadow it for its if stmt body
+	if after := strings.TrimPrefix(s, pre); after != s { // want "TrimPrefix can be simplified to CutPrefix"
+		_ = ok
+		println(after)
+	}
+	_ = ok                                               // fine to shadow, since ok is not used within the ifstmt block
 	if after := strings.TrimPrefix(s, pre); after != s { // want "TrimPrefix can be simplified to CutPrefix"
 		println(after)
 	}

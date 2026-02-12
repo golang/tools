@@ -20,6 +20,8 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/packagepath"
@@ -144,3 +146,26 @@ func lookup(info *types.Info, cur inspector.Cursor, name string) types.Object {
 }
 
 func first[T any](x T, _ any) T { return x }
+
+// freshName returns a fresh name at the given pos and scope based on preferredName.
+// It generates a new name using refactor.FreshName only if:
+// (a) the preferred name is already defined at definedCur, and
+// (b) there are references to it from within usedCur.
+// If useAfterPos.IsValid(), the references must be after
+// useAfterPos within usedCur in order to warrant a fresh name.
+// Otherwise, it returns preferredName, since shadowing is valid in this case.
+// (declaredCur and usedCur may be identical in some use cases).
+func freshName(info *types.Info, index *typeindex.Index, scope *types.Scope, pos token.Pos, defCur inspector.Cursor, useCur inspector.Cursor, useAfterPos token.Pos, preferredName string) string {
+	obj := lookup(info, defCur, preferredName)
+	if obj == nil {
+		// preferredName has not been declared here.
+		return preferredName
+	}
+	for use := range index.Uses(obj) {
+		if useCur.Contains(use) && use.Node().Pos() >= useAfterPos {
+			return refactor.FreshName(scope, pos, preferredName)
+		}
+	}
+	// Name is taken but not used in the given block; shadowing is acceptable.
+	return preferredName
+}

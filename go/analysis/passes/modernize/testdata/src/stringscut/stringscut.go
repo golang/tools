@@ -311,6 +311,49 @@ func idx_call() {
 	_ = i
 }
 
+// Fix for golang/go#77566
+func multipleCallsSameScope(s string) (bool, bool) {
+	i := strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if i != -1 {
+		print(s[:i])
+	}
+	j := strings.Index(s, "-") // want "strings.Index can be simplified using strings.Cut"
+	if j != -1 {
+		print(s[:j])
+	}
+	return i >= 0, j >= 0
+}
+
+func shadowing(s string) string {
+	ok := "true"
+	before := "before"
+	print(before)              // declared within scope but not used after the index call, so no fresh name
+	i := strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	print(ok)
+	if i >= 0 {
+		print(s[:i])
+		print(i >= 0)
+		return s[i+1:]
+	}
+	return ""
+}
+
+func foreshadowing(s string) string {
+	i := strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if i != -1 {
+		return s[i+1:]
+	}
+	// Generate a fresh name for ok because it is used within the scope after the Index call.
+	ok, m := true, "m"
+	if ok {
+		return m
+	}
+	if i != -1 {
+		return s
+	}
+	return ""
+}
+
 func b() []byte {
 	return nil
 }
