@@ -268,6 +268,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 	{kind: settings.RefactorRewriteAddTags, fn: refactorRewriteAddStructTags, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveTags, fn: refactorRewriteRemoveStructTags, needPkg: true},
+	{kind: settings.RefactorRewriteVarDeclaration, fn: refactorRewriteVarDeclaration, needPkg: true},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
@@ -909,6 +910,15 @@ func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsReques
 			Clear: true,
 		})
 		req.addCommandAction(cmdRemove, false)
+	}
+	return nil
+}
+
+// refactorRewriteVarDeclaration produces "Replace := with var declaration" code actions.
+// It transforms short variable declarations into explicit var declarations with separate assignment.
+func refactorRewriteVarDeclaration(ctx context.Context, req *codeActionsRequest) error {
+	if _, ok, _ := canConvertToVarDecl(req.pkg, req.pgf, req.start, req.end); ok {
+		req.addApplyFixAction("Replace := with var declaration", fixVarDeclaration, req.loc)
 	}
 	return nil
 }
