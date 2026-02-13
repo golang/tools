@@ -42,3 +42,22 @@ func comma() {
 		fmt.Sprintf("%d", 0),
 	)
 }
+
+func emptystring() {
+	// empty string edge case only applies to Sprintf
+	_ = []byte(fmt.Sprintln("")) // want "Replace .*Sprintln.* with fmt.Appendln"
+	// nope - these return []byte{}, while the fmt.Append version returns nil
+	_ = []byte(fmt.Sprintf(""))
+	_ = []byte(fmt.Sprintf("%s", ""))
+	_ = []byte(fmt.Sprintf("%#s", ""))
+	_ = []byte(fmt.Sprintf("%s%v", "", getString()))
+	// conservatively omitting a suggested fix (ignoring precision and args)
+	_ = []byte(fmt.Sprintf("%.0q", "notprinted"))
+	_ = []byte(fmt.Sprintf("%v", "nonempty"))
+	// has non-operation characters
+	_ = []byte(fmt.Sprintf("%vother", "")) // want "Replace .*Sprint.* with fmt.Appendf"
+}
+
+func getString() string {
+	return ""
+}
