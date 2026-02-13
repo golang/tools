@@ -39,7 +39,7 @@ type IfaceStubInfo struct {
 	Fset      *token.FileSet // the FileSet used to type-check the types below
 	Interface *types.TypeName
 	Concrete  typesinternal.NamedOrAlias
-	pointer   bool
+	Pointer   bool
 }
 
 // GetIfaceStubInfo determines whether the "missing method error"
@@ -99,7 +99,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	)
 
 	for imethod := range ifaceType.Methods() {
-		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.pointer, imethod.Pkg(), imethod.Name())
+		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
 		if cmethod == nil {
 			missing = append(missing, imethod)
 			continue
@@ -145,7 +145,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 
 	// Pointer receiver?
 	var star string
-	if si.pointer {
+	if si.Pointer {
 		star = "*"
 	}
 
@@ -236,7 +236,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cu
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		pointer:   pointer,
+		Pointer:   pointer,
 		Interface: iface,
 	}
 }
@@ -283,7 +283,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.C
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		pointer:   pointer,
+		Pointer:   pointer,
 		Interface: iface,
 	}, nil
 }
@@ -319,7 +319,7 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, curValue inspector.Cur
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		pointer:   pointer,
+		Pointer:   pointer,
 	}
 }
 
@@ -352,7 +352,7 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Curs
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		pointer:   pointer,
+		Pointer:   pointer,
 	}
 }
 

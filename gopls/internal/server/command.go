@@ -1814,7 +1814,11 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		return nil
+		edits, err := golang.ImplementInterface(ctx, deps.snapshot, args.Location, args.Interface)
+		if err != nil {
+			return err
+		}
+		return applyChanges(ctx, c.s.client, edits)
 	})
 }
 

@@ -969,13 +969,12 @@ func refactorRewriteImplementInterface(_ context.Context, req *codeActionsReques
 		return nil
 	}
 
-	// Does not support type parameter.
-	if spec.TypeParams != nil {
+	named, ok := types.Unalias(req.pkg.TypesInfo().TypeOf(spec.Name)).(*types.Named)
+	if !ok {
 		return nil
 	}
 
-	// Alias or interface.
-	if spec.Assign.IsValid() || types.IsInterface(req.pkg.TypesInfo().TypeOf(spec.Type)) {
+	if is[*types.Pointer](named.Underlying()) || types.IsInterface(named) {
 		return nil
 	}
 
@@ -985,6 +984,8 @@ func refactorRewriteImplementInterface(_ context.Context, req *codeActionsReques
 		command.ImplementInterfaceArgs{
 			Location: req.loc,
 			// Interface will be provided by the user through dialog.
+			// TODO(hxjiang): leave this as empty after support dialog.
+			Interface: "error",
 		},
 	)
 	req.addCommandAction(cmdAdd, false)
