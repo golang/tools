@@ -317,9 +317,9 @@ nextcand:
 				//  -------------    -
 				// s.WriteString(expr)
 				edits = append(edits, []analysis.TextEdit{
-					// replace += with .WriteString()
+					// replace " += " with ".WriteString("
 					{
-						Pos:     assign.TokPos,
+						Pos:     assign.Lhs[0].End(),
 						End:     assign.Rhs[0].Pos(),
 						NewText: []byte(".WriteString("),
 					},
