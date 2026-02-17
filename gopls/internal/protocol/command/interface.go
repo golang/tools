@@ -861,6 +861,11 @@ type PackageSymbol struct {
 
 // ModifyTagsArgs holds variables that determine how struct tags are modified.
 type ModifyTagsArgs struct {
+	// NOTE(hxjiang): the mofidication field is important, when resolving a
+	// command, the title of the code action or code lenses is no longer available.
+	// The language server is not aware of the original user intention, whether
+	// the command is meant for tag addition or tag removal.
+	Modification         string
 	URI                  protocol.DocumentURI // uri of the file to be modified
 	Range                protocol.Range       // range in the file for where to modify struct tags
 	Add                  string               // comma-separated list of tags to add; i.e. "json,xml"

@@ -210,9 +210,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 				//
 				// TODO(hxjiang): experiment with interactively resolving
 				// "RenameParams". See golang/go#69107.
-				//
-				// TODO(pjw): add "command" to the supported list.
-				"interactiveResolveProvider": []string{},
+				"interactiveResolveProvider": []string{"command"},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{

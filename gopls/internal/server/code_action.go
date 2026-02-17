@@ -174,7 +174,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		}
 
 		// computed code actions (may include quickfixes from diagnostics)
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, enabled, triggerKind(params))
+		moreActions, err := golang.CodeActions(ctx, snapshot, s.Options(), fh, params.Range, params.Context.Diagnostics, enabled, triggerKind(params))
 		if err != nil {
 			return nil, err
 		}

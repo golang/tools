@@ -1,4 +1,4 @@
-This test checks the behavior of the 'Remove struct tags' code action.
+This test checks the behavior of the 'Remove struct tags' code action without dialogs.
 
 -- flags --
 -ignore_extra_diags

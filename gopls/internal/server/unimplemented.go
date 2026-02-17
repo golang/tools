@@ -94,15 +94,6 @@ func (s *server) ResolveCodeLens(context.Context, *protocol.CodeLens) (*protocol
 	return nil, notImplemented("ResolveCodeLens")
 }
 
-func (s *server) ResolveCommand(context.Context, *protocol.ExecuteCommandParams) (*protocol.ExecuteCommandParams, error) {
-	// TODO: Inspect server.options.SupportedInteractiveInputTypes to determine
-	// if the client supports the interactive input types required by this command.
-	//
-	// When constructing ExecuteCommandParams, ensure only the form fields
-	// (questions) that the client explicitly supports are included in the response.
-	return nil, notImplemented("ResolveCommand")
-}
-
 func (s *server) ResolveCompletionItem(context.Context, *protocol.CompletionItem) (*protocol.CompletionItem, error) {
 	return nil, notImplemented("ResolveCompletionItem")
 }

@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -41,7 +40,7 @@ import (
 // offered, e.g. to avoid UI distractions after mere cursor motion.
 //
 // See ../protocol/codeactionkind.go for some code action theory.
-func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
+func CodeActions(ctx context.Context, snapshot *cache.Snapshot, opts *settings.Options, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
 	loc := fh.URI().Location(rng)
 
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -86,6 +85,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		actions:     &actions,
 		lazy:        make(map[reflect.Type]any),
 		snapshot:    snapshot,
+		options:     *opts,
 		fh:          fh,
 		pgf:         pgf,
 		loc:         loc,
@@ -130,6 +130,7 @@ type codeActionsRequest struct {
 	// inputs to the producer function:
 	kind        protocol.CodeActionKind
 	snapshot    *cache.Snapshot
+	options     settings.Options
 	fh          file.Handle
 	pgf         *parsego.File
 	loc         protocol.Location
@@ -883,15 +884,37 @@ func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, remo
 	return false
 }
 
+// supportsDialog reports whether the client supports interactive UI dialogs.
+// If specific [settings.InteractiveInputType]s are provided, it also verifies that
+// the client explicitly supports every requested input type.
+func supportsDialog(req *codeActionsRequest, need ...settings.InteractiveInputType) bool {
+	// TODO(pjw): this would be better if it checked the actual form, e.g., server.AddTagsForm
+	// rather than the types, but that would cause an imports loop.
+	o := req.options.ClientOptions.SupportedInteractiveInputTypes
+	if o == nil {
+		return false
+	}
+	for _, n := range need {
+		if !o[n] {
+			return false
+		}
+	}
+	return true
+}
+
 // refactorRewriteAddStructTags produces "Add struct tags" code actions.
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) error {
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, false) {
-		// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
+		add := ""
+		if !supportsDialog(req) {
+			add = "json" // default choice
+		}
 		cmdAdd := command.NewModifyTagsCommand("Add struct tags", command.ModifyTagsArgs{
-			URI:   req.loc.URI,
-			Range: req.loc.Range,
-			Add:   "json",
+			Modification: "add",
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			Add:          add,
 		})
 		req.addCommandAction(cmdAdd, false)
 	}
@@ -901,12 +924,13 @@ func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) 
 // refactorRewriteRemoveStructTags produces "Remove struct tags" code actions.
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsRequest) error {
-	// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, true) {
+		clear := !supportsDialog(req) // clear the entry if there is no dialog
 		cmdRemove := command.NewModifyTagsCommand("Remove struct tags", command.ModifyTagsArgs{
-			URI:   req.loc.URI,
-			Range: req.loc.Range,
-			Clear: true,
+			Modification: "remove",
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			Clear:        clear,
 		})
 		req.addCommandAction(cmdRemove, false)
 	}
@@ -1134,7 +1158,8 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 	return nil
 }
 
-func refactorMoveType(ctx context.Context, req *codeActionsRequest) error {
+// (this function is unused)
+func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
 	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
 	if _, _, _, typeName, ok := selectionContainsType(curSel); ok {
 		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", typeName), command.MoveTypeArgs{Location: req.loc})
