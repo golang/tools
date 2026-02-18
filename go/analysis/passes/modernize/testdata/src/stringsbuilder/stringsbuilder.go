@@ -153,3 +153,26 @@ func nopeStringIsNotLastValueSpecInVarDecl() {
 	}
 	println(str, after)
 }
+
+// Regression test for go.dev/issue/77659.
+// Multiple rvalue uses of the accumulated string should all be converted.
+func _() {
+	acc := "s1"
+	for _, s := range []string{"foo", "bar"} {
+		acc += s // want "using string \\+= string in a loop is inefficient"
+	}
+	_ = acc
+	_ = acc + "footer2"
+}
+
+// Regression test for go.dev/issue/77659 (negative case).
+// += after an rvalue use should still be rejected.
+func _() {
+	var s string
+	for _, x := range []string{"a", "b"} {
+		s += x
+	}
+	print(s)
+	s += "extra" // nope: += after rvalue use
+	print(s)
+}
