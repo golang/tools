@@ -1,0 +1,29 @@
+-- src.go --
+package p
+func f() bool
+func g() bool
+func main() {
+	// The unary not should be reflected directly in the control flow.
+	if !f() && g() {
+		print()
+	}
+}
+-- want --
+B0: ExKindIf, CFG block .0
+	f()
+	succs: B4 B1
+
+B1: ExKindIf, CFG block .0
+	g()
+	succs: B2 B4
+
+B2: ExKindSubExpr, CFG block .1
+	print()
+	succs: B3
+
+B3: ExKindStmt, CFG block .1
+	B2
+	succs: B4
+
+B4: ExKindStmt, CFG block .2
+	return

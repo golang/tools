@@ -1,0 +1,25 @@
+-- src.go --
+package main
+var x bool
+func main() {
+l:
+    print()
+    if x {
+        goto l
+    }
+}
+-- want --
+B0: ExKindSubExpr, CFG block .1
+	print()
+	succs: B1
+
+B1: ExKindStmt, CFG block .1
+	B0
+	succs: B2
+
+B2: ExKindIf, CFG block .1
+	x
+	succs: B0 B3
+
+B3: ExKindStmt, CFG block .3
+	return

@@ -1,0 +1,21 @@
+-- src.go --
+package main
+func main() {
+    f := func() { print() }
+    f()
+}
+-- want --
+B0: ExKindStmt, CFG block .0
+	f := func() { print() }
+	succs: B1
+
+B1: ExKindSubExpr, CFG block .0
+	f()
+	succs: B2
+
+B2: ExKindStmt, CFG block .0
+	B1
+	succs: B3
+
+B3: ExKindStmt, CFG block .0
+	return
