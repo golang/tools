@@ -167,6 +167,9 @@ func _[P ~struct{F I}]() {
 	_ = P{W{}}
 	_ = P{F: X{}}
 }
+
+// golang/go#77625: don't panic on a method expression of an anonymous interface.
+var _ = interface{ m() }.m
 `
 	got := constraints(t, src)
 	want := []string{
