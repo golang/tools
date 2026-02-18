@@ -168,3 +168,14 @@ func nopeIfElseIf(a int) int {
 	}
 	return x
 }
+
+// Regression test for https://go.dev/issue/77671
+func selectComm(ch chan int) int {
+	select {
+	case n := <-ch:
+		if n > 100 {
+			n = 100
+		}
+		return n
+	}
+}
