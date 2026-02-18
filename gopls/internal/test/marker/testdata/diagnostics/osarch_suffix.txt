@@ -9,7 +9,7 @@ The two p/*.go files below are written to trigger the same diagnostic
 In the q test, a single location in the common code q.go has two
 diagnostics, one of which is tagged.
 
-This test would fail on openbsd/mips64 because it will be
+This test would fail on openbsd/riscv64 because it will be
 the same as the default build, so we skip that platform.
 
 -- flags --
@@ -23,19 +23,19 @@ package p
 
 var _ fmt.Stringer //@diag("fmt", re"unde.*: fmt$")
 
--- p/p_openbsd_mips64.go --
+-- p/p_openbsd_riscv64.go --
 package p
 
-var _ fmt.Stringer //@diag("fmt", re"unde.*: fmt \\[openbsd,mips64\\]")
+var _ fmt.Stringer //@diag("fmt", re"unde.*: fmt \\[openbsd,riscv64\\]")
 
 -- q/q_default.go --
-//+build !openbsd && !mips64
+//+build !openbsd && !riscv64
 
 package q
 
 func f(int) int
 
--- q/q_openbsd_mips64.go --
+-- q/q_openbsd_riscv64.go --
 package q
 
 func f(string) int
@@ -43,4 +43,4 @@ func f(string) int
 -- q/q.go --
 package q
 
-var _ = f() //@ diag(")", re`.*want \(string\) \[openbsd,mips64\]`), diag(")", re`.*want \(int\)$`)
+var _ = f() //@ diag(")", re`.*want \(string\) \[openbsd,riscv64\]`), diag(")", re`.*want \(int\)$`)
