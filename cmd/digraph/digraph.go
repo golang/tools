@@ -143,51 +143,16 @@ func (g digraph) transpose() digraph {
 }
 
 func (g digraph) sccs() []nodeset {
-	// Kosaraju's algorithm---Tarjan is overkill here.
-
-	// Forward pass.
-	S := make(nodelist, 0, len(g)) // postorder stack
-	seen := make(nodeset)
-	var visit func(node string)
-	visit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			for e := range g[node] {
-				visit(e)
-			}
-			S = append(S, node)
-		}
-	}
-	for node := range g {
-		visit(node)
-	}
-
-	// Reverse pass.
-	rev := g.transpose()
-	var scc nodeset
-	seen = make(nodeset)
-	var rvisit func(node string)
-	rvisit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			scc[node] = true
-			for e := range rev[node] {
-				rvisit(e)
-			}
-		}
-	}
 	var sccs []nodeset
-	for len(S) > 0 {
-		top := S[len(S)-1]
-		S = S[:len(S)-1] // pop
-		if !seen[top] {
-			scc = make(nodeset)
-			rvisit(top)
-			if len(scc) == 1 && !g[top][top] {
-				continue
-			}
-			sccs = append(sccs, scc)
+	for _, comp := range graph.SCCs(g) {
+		scc := make(nodeset)
+		for _, node := range comp {
+			scc[node] = true
 		}
+		if len(scc) == 1 && !g[comp[0]][comp[0]] {
+			continue // trivial SCC without even a self-edge
+		}
+		sccs = append(sccs, scc)
 	}
 	return sccs
 }
