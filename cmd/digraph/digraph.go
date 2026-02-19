@@ -131,23 +131,6 @@ func (g digraph) nodelist() nodelist {
 	return nodelist(slices.Collect(g.Nodes()))
 }
 
-func (g digraph) reachableFrom(roots nodeset) nodeset {
-	seen := make(nodeset)
-	var visit func(node string)
-	visit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			for e := range g[node] {
-				visit(e)
-			}
-		}
-	}
-	for root := range roots {
-		visit(root)
-	}
-	return seen
-}
-
 func (g digraph) transpose() digraph {
 	rev := make(digraph)
 	for node, edges := range g {
@@ -214,8 +197,8 @@ func (g digraph) allpaths(from, to string) error {
 	// the reverse closure of 'to'. This is not the most
 	// efficient implementation, but it's the clearest,
 	// and the previous one had bugs.
-	seen := g.reachableFrom(singleton(from))
-	rev := g.transpose().reachableFrom(singleton(to))
+	seen := nodeset(graph.Reachable(g, from))
+	rev := nodeset(graph.Reachable(g.transpose(), to))
 	for n := range seen {
 		if !rev[n] {
 			delete(seen, n)
@@ -407,7 +390,7 @@ func doDigraph(cmd string, args []string) error {
 		if cmd == "reverse" {
 			g = g.transpose()
 		}
-		g.reachableFrom(roots).sort().println("\n")
+		nodeset(graph.Reachable(g, roots.sort()...)).sort().println("\n")
 
 	case "somepath":
 		if len(args) != 2 {
@@ -479,14 +462,14 @@ func doDigraph(cmd string, args []string) error {
 		}
 
 		edges := make(map[string]struct{})
-		for from := range g.reachableFrom(singleton(node)) {
+		for from := range graph.Reachable(g, node) {
 			for to := range g[from] {
 				edges[fmt.Sprintf("%s %s", from, to)] = struct{}{}
 			}
 		}
 
 		gtrans := g.transpose()
-		for from := range gtrans.reachableFrom(singleton(node)) {
+		for from := range graph.Reachable(gtrans, node) {
 			for to := range gtrans[from] {
 				edges[fmt.Sprintf("%s %s", to, from)] = struct{}{}
 			}
