@@ -387,11 +387,15 @@ func TestToDot(t *testing.T) {
 	in := `a b c
 b "d\"\\d"
 c "d\"\\d"`
-	want := `digraph {
-	"a" -> "b";
-	"a" -> "c";
-	"b" -> "d\"\\d";
-	"c" -> "d\"\\d";
+	want := `digraph "" {
+n0 [label="a"];
+n1 [label="b"];
+n2 [label="c"];
+n3 [label="d\"\\d"];
+n0 -> n1;
+n0 -> n2;
+n1 -> n3;
+n2 -> n3;
 }
 `
 	defer func(in io.Reader, out io.Writer) { stdin, stdout = in, out }(stdin, stdout)
@@ -402,7 +406,6 @@ c "d\"\\d"`
 	}
 	got := stdout.(fmt.Stringer).String()
 	if got != want {
-		t.Errorf("digraph(to, dot) = got %q, want %q", got, want)
+		t.Errorf("digraph(to, dot) = got\n  %q\nwant\n  %q", got, want)
 	}
-
 }

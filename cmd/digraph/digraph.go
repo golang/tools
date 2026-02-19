@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/internal/graph"
+	"golang.org/x/tools/internal/graph/graphfmt"
 )
 
 func usage() {
@@ -169,20 +170,6 @@ func (g digraph) somepath(from, to string) error {
 		fmt.Fprintln(stdout, path[i]+" "+path[i+1])
 	}
 	return nil
-}
-
-func (g digraph) toDot(w *bytes.Buffer) {
-	fmt.Fprintln(w, "digraph {")
-	for _, src := range g.nodelist() {
-		for _, dst := range g[src].sort() {
-			// Dot's quoting rules appear to align with Go's for escString,
-			// which is the syntax of node IDs. Labels require significantly
-			// more quoting, but that appears not to be necessary if the node ID
-			// is implicitly used as the label.
-			fmt.Fprintf(w, "\t%q -> %q;\n", src, dst)
-		}
-	}
-	fmt.Fprintln(w, "}")
 }
 
 func parse(rd io.Reader) (digraph, error) {
@@ -398,9 +385,7 @@ func doDigraph(cmd string, args []string) error {
 		if len(args) != 1 || args[0] != "dot" {
 			return fmt.Errorf("usage: digraph to dot")
 		}
-		var b bytes.Buffer
-		g.toDot(&b)
-		stdout.Write(b.Bytes())
+		stdout.Write([]byte(graphfmt.Dot[string]{}.Sprint(g)))
 
 	default:
 		return fmt.Errorf("no such command %q", cmd)
