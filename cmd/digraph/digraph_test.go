@@ -53,7 +53,7 @@ e e
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.input)
 			stdout = new(bytes.Buffer)
-			if err := digraph(test.cmd, test.args); err != nil {
+			if err := doDigraph(test.cmd, test.args); err != nil {
 				t.Fatal(err)
 			}
 
@@ -187,7 +187,7 @@ func TestAllpaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("allpaths", []string{"A", test.to}); err != nil {
+			if err := doDigraph("allpaths", []string{"A", test.to}); err != nil {
 				t.Fatal(err)
 			}
 
@@ -242,7 +242,7 @@ func TestSomepath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("somepath", []string{"A", test.to}); err != nil {
+			if err := doDigraph("somepath", []string{"A", test.to}); err != nil {
 				t.Fatal(err)
 			}
 
@@ -372,7 +372,7 @@ func TestFocus(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("focus", []string{test.focus}); err != nil {
+			if err := doDigraph("focus", []string{test.focus}); err != nil {
 				t.Fatal(err)
 			}
 			got := stdout.(fmt.Stringer).String()
@@ -397,7 +397,7 @@ c "d\"\\d"`
 	defer func(in io.Reader, out io.Writer) { stdin, stdout = in, out }(stdin, stdout)
 	stdin = strings.NewReader(in)
 	stdout = new(bytes.Buffer)
-	if err := digraph("to", []string{"dot"}); err != nil {
+	if err := doDigraph("to", []string{"dot"}); err != nil {
 		t.Fatal(err)
 	}
 	got := stdout.(fmt.Stringer).String()

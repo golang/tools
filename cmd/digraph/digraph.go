@@ -48,7 +48,7 @@ func main() {
 		usage()
 	}
 
-	if err := digraph(args[0], args[1:]); err != nil {
+	if err := doDigraph(args[0], args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "digraph: %s\n", err)
 		os.Exit(1)
 	}
@@ -87,10 +87,10 @@ func (s nodeset) addAll(x nodeset) {
 	}
 }
 
-// A graph maps nodes to the non-nil set of their immediate successors.
-type graph map[string]nodeset
+// A digraph maps nodes to the non-nil set of their immediate successors.
+type digraph map[string]nodeset
 
-func (g graph) addNode(node string) nodeset {
+func (g digraph) addNode(node string) nodeset {
 	edges := g[node]
 	if edges == nil {
 		edges = make(nodeset)
@@ -99,7 +99,7 @@ func (g graph) addNode(node string) nodeset {
 	return edges
 }
 
-func (g graph) addEdges(from string, to ...string) {
+func (g digraph) addEdges(from string, to ...string) {
 	edges := g.addNode(from)
 	for _, to := range to {
 		g.addNode(to)
@@ -107,7 +107,7 @@ func (g graph) addEdges(from string, to ...string) {
 	}
 }
 
-func (g graph) nodelist() nodelist {
+func (g digraph) nodelist() nodelist {
 	nodes := make(nodeset)
 	for node := range g {
 		nodes[node] = true
@@ -115,7 +115,7 @@ func (g graph) nodelist() nodelist {
 	return nodes.sort()
 }
 
-func (g graph) reachableFrom(roots nodeset) nodeset {
+func (g digraph) reachableFrom(roots nodeset) nodeset {
 	seen := make(nodeset)
 	var visit func(node string)
 	visit = func(node string) {
@@ -132,8 +132,8 @@ func (g graph) reachableFrom(roots nodeset) nodeset {
 	return seen
 }
 
-func (g graph) transpose() graph {
-	rev := make(graph)
+func (g digraph) transpose() digraph {
+	rev := make(digraph)
 	for node, edges := range g {
 		rev.addNode(node)
 		for succ := range edges {
@@ -143,7 +143,7 @@ func (g graph) transpose() graph {
 	return rev
 }
 
-func (g graph) sccs() []nodeset {
+func (g digraph) sccs() []nodeset {
 	// Kosaraju's algorithm---Tarjan is overkill here.
 
 	// Forward pass.
@@ -193,7 +193,7 @@ func (g graph) sccs() []nodeset {
 	return sccs
 }
 
-func (g graph) allpaths(from, to string) error {
+func (g digraph) allpaths(from, to string) error {
 	// We intersect the forward closure of 'from' with
 	// the reverse closure of 'to'. This is not the most
 	// efficient implementation, but it's the clearest,
@@ -225,7 +225,7 @@ func (g graph) allpaths(from, to string) error {
 	return nil
 }
 
-func (g graph) somepath(from, to string) error {
+func (g digraph) somepath(from, to string) error {
 	// Search breadth-first so that we return a minimal path.
 
 	// A path is a linked list whose head is a candidate "to" node
@@ -266,7 +266,7 @@ func (g graph) somepath(from, to string) error {
 	return fmt.Errorf("no path from %q to %q", from, to)
 }
 
-func (g graph) toDot(w *bytes.Buffer) {
+func (g digraph) toDot(w *bytes.Buffer) {
 	fmt.Fprintln(w, "digraph {")
 	for _, src := range g.nodelist() {
 		for _, dst := range g[src].sort() {
@@ -280,8 +280,8 @@ func (g graph) toDot(w *bytes.Buffer) {
 	fmt.Fprintln(w, "}")
 }
 
-func parse(rd io.Reader) (graph, error) {
-	g := make(graph)
+func parse(rd io.Reader) (digraph, error) {
+	g := make(digraph)
 
 	var linenum int
 	// We avoid bufio.Scanner as it imposes a (configurable) limit
@@ -315,7 +315,7 @@ func parse(rd io.Reader) (graph, error) {
 var stdin io.Reader = os.Stdin
 var stdout io.Writer = os.Stdout
 
-func digraph(cmd string, args []string) error {
+func doDigraph(cmd string, args []string) error {
 	// Parse the input graph.
 	g, err := parse(stdin)
 	if err != nil {
