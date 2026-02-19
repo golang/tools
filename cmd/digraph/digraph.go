@@ -73,8 +73,6 @@ func (l nodelist) println(sep string) {
 
 type nodeset map[string]bool
 
-func singleton(x string) nodeset { return nodeset{x: true} }
-
 func (s nodeset) sort() nodelist {
 	nodes := make(nodelist, len(s))
 	var i int
@@ -190,44 +188,14 @@ func (g digraph) allpaths(from, to string) error {
 }
 
 func (g digraph) somepath(from, to string) error {
-	// Search breadth-first so that we return a minimal path.
-
-	// A path is a linked list whose head is a candidate "to" node
-	// and whose tail is the path ending in the "from" node.
-	type path struct {
-		node string
-		tail *path
+	path := graph.ShortestPath(g, from, to)
+	if path == nil {
+		return fmt.Errorf("no path from %q to %q", from, to)
 	}
-
-	seen := singleton(from)
-
-	var queue []*path
-	queue = append(queue, &path{node: from, tail: nil})
-	for len(queue) > 0 {
-		p := queue[0]
-		queue = queue[1:]
-
-		if p.node == to {
-			// Found a path. Print, tail first.
-			var print func(p *path)
-			print = func(p *path) {
-				if p.tail != nil {
-					print(p.tail)
-					fmt.Fprintln(stdout, p.tail.node+" "+p.node)
-				}
-			}
-			print(p)
-			return nil
-		}
-
-		for succ := range g[p.node] {
-			if !seen[succ] {
-				seen[succ] = true
-				queue = append(queue, &path{node: succ, tail: p})
-			}
-		}
+	for i := 0; i < len(path)-1; i++ {
+		fmt.Fprintln(stdout, path[i]+" "+path[i+1])
 	}
-	return fmt.Errorf("no path from %q to %q", from, to)
+	return nil
 }
 
 func (g digraph) toDot(w *bytes.Buffer) {
