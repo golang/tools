@@ -84,12 +84,6 @@ func (s nodeset) sort() nodelist {
 	return nodes
 }
 
-func (s nodeset) addAll(x nodeset) {
-	for node := range x {
-		s[node] = true
-	}
-}
-
 // A digraph maps nodes to the non-nil set of their immediate successors.
 type digraph map[string]nodeset
 
@@ -127,17 +121,6 @@ func (g digraph) addEdges(from string, to ...string) {
 
 func (g digraph) nodelist() nodelist {
 	return nodelist(slices.Collect(g.Nodes()))
-}
-
-func (g digraph) transpose() digraph {
-	rev := make(digraph)
-	for node, edges := range g {
-		rev.addNode(node)
-		for succ := range edges {
-			rev.addEdges(succ, node)
-		}
-	}
-	return rev
 }
 
 func (g digraph) sccs() []nodeset {
@@ -260,9 +243,13 @@ func doDigraph(cmd string, args []string) error {
 		for node := range g {
 			nodes[node] = true
 		}
-		rev := g.transpose()
+		rev := graph.Transpose(g)
 		for _, node := range nodes.sort() {
-			fmt.Fprintf(stdout, "%d\t%d\t%s\n", len(rev[node]), len(g[node]), node)
+			inDegree := 0
+			for range rev.Out(node) {
+				inDegree++
+			}
+			fmt.Fprintf(stdout, "%d\t%d\t%s\n", inDegree, len(g[node]), node)
 		}
 
 	case "transpose":
@@ -270,8 +257,9 @@ func doDigraph(cmd string, args []string) error {
 			return fmt.Errorf("usage: digraph transpose")
 		}
 		var revEdges []string
-		for node, succs := range g.transpose() {
-			for succ := range succs {
+		rev := graph.Transpose(g)
+		for node := range rev.Nodes() {
+			for succ := range rev.Out(node) {
 				revEdges = append(revEdges, fmt.Sprintf("%s %s", node, succ))
 			}
 		}
@@ -284,17 +272,18 @@ func doDigraph(cmd string, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("usage: digraph %s <node> ... ", cmd)
 		}
-		g := g
+		var gr graph.Graph[string] = g
 		if cmd == "preds" {
-			g = g.transpose()
+			gr = graph.Transpose(g)
 		}
 		result := make(nodeset)
 		for _, root := range args {
-			edges := g[root]
-			if edges == nil {
+			if g[root] == nil {
 				return fmt.Errorf("no such node %q", root)
 			}
-			result.addAll(edges)
+			for succ := range gr.Out(root) {
+				result[succ] = true
+			}
 		}
 		result.sort().println("\n")
 
@@ -309,11 +298,11 @@ func doDigraph(cmd string, args []string) error {
 			}
 			roots[root] = true
 		}
-		g := g
+		var gr graph.Graph[string] = g
 		if cmd == "reverse" {
-			g = g.transpose()
+			gr = graph.Transpose(g)
 		}
-		nodeset(graph.Reachable(g, roots.sort()...)).sort().println("\n")
+		nodeset(graph.Reachable(gr, roots.sort()...)).sort().println("\n")
 
 	case "somepath":
 		if len(args) != 2 {
@@ -391,9 +380,9 @@ func doDigraph(cmd string, args []string) error {
 			}
 		}
 
-		gtrans := g.transpose()
+		gtrans := graph.Transpose(g)
 		for from := range graph.Reachable(gtrans, node) {
-			for to := range gtrans[from] {
+			for to := range gtrans.Out(from) {
 				edges[fmt.Sprintf("%s %s", to, from)] = struct{}{}
 			}
 		}
