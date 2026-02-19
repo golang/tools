@@ -156,17 +156,7 @@ func (g digraph) sccs() []nodeset {
 }
 
 func (g digraph) allpaths(from, to string) error {
-	// We intersect the forward closure of 'from' with
-	// the reverse closure of 'to'. This is not the most
-	// efficient implementation, but it's the clearest,
-	// and the previous one had bugs.
-	seen := nodeset(graph.Reachable(g, from))
-	rev := nodeset(graph.Reachable(g.transpose(), to))
-	for n := range seen {
-		if !rev[n] {
-			delete(seen, n)
-		}
-	}
+	seen := graph.AllPaths(g, from, to)
 
 	// For each marked node, collect its marked successors.
 	var edges []string
