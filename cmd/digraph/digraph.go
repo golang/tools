@@ -18,12 +18,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/tools/internal/graph"
 )
 
 func usage() {
@@ -90,6 +95,21 @@ func (s nodeset) addAll(x nodeset) {
 // A digraph maps nodes to the non-nil set of their immediate successors.
 type digraph map[string]nodeset
 
+func (g digraph) Nodes() iter.Seq[string] {
+	return slices.Values(slices.Sorted(maps.Keys(g)))
+}
+
+func (g digraph) NumNodes() int {
+	return len(g)
+}
+
+func (g digraph) Out(node string) iter.Seq[string] {
+	// Out must be deterministic.
+	return slices.Values(slices.Sorted(maps.Keys(g[node])))
+}
+
+var _ graph.Graph[string] = digraph{}
+
 func (g digraph) addNode(node string) nodeset {
 	edges := g[node]
 	if edges == nil {
@@ -108,11 +128,7 @@ func (g digraph) addEdges(from string, to ...string) {
 }
 
 func (g digraph) nodelist() nodelist {
-	nodes := make(nodeset)
-	for node := range g {
-		nodes[node] = true
-	}
-	return nodes.sort()
+	return nodelist(slices.Collect(g.Nodes()))
 }
 
 func (g digraph) reachableFrom(roots nodeset) nodeset {
