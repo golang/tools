@@ -56,11 +56,6 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 		tUnsafePointer = types.Typ[types.UnsafePointer]
 	)
 
-	isInteger := func(t types.Type) bool {
-		basic, ok := t.Underlying().(*types.Basic)
-		return ok && basic.Info()&types.IsInteger != 0
-	}
-
 	// isConversion reports whether e is a conversion T(x).
 	// If so, it returns T and x.
 	isConversion := func(curExpr inspector.Cursor) (t types.Type, x inspector.Cursor) {
@@ -207,4 +202,9 @@ func deleteConv(cur inspector.Cursor) []analysis.TextEdit {
 			End: conv.End(),
 		},
 	}
+}
+
+func isInteger(t types.Type) bool {
+	basic, ok := t.Underlying().(*types.Basic)
+	return ok && basic.Info()&types.IsInteger != 0
 }

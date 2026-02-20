@@ -324,3 +324,30 @@ func issue77034_define_inner() {
 		}
 	}
 }
+
+type C int32
+
+// Don't add an unneeded type cast if the limit's default type is an integer, and
+// the init value is assigned outside the loop, because the compiler can infer the type.
+func issue77891() {
+	const limit_float = 1e6
+	var i int
+	for i = 0; i < limit_float; i++ { // want "for loop can be modernized using range over int"
+		println(i)
+	}
+
+	var j int64
+	for j = 0; j < 20; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+
+	var c C
+	for c = 0; c < 10; c++ { // want "for loop can be modernized using range over int"
+		println(c)
+	}
+
+	var ptr uintptr
+	for ptr = 0; ptr < 100; ptr++ { // want "for loop can be modernized using range over int"
+		println(ptr)
+	}
+}
