@@ -984,8 +984,6 @@ func refactorRewriteImplementInterface(_ context.Context, req *codeActionsReques
 		command.ImplementInterfaceArgs{
 			Location: req.loc,
 			// Interface will be provided by the user through dialog.
-			// TODO(hxjiang): leave this as empty after support dialog.
-			Interface: "error",
 		},
 	)
 	req.addCommandAction(cmdAdd, false)

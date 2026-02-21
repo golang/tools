@@ -1,0 +1,173 @@
+This test checks the behavior of the 'Add methods to TYPE to implement an
+interface...' code action.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveInputTypes":["string"]}
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/implementinterface
+
+go 1.18
+
+-- bad/bad.go --
+package bad
+
+type foo struct{}
+
+// Named
+type namedOfPointer *foo //@codeaction("Pointer", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+type namedOfInterface error //@codeaction("Interface", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+// Alias
+type aliasOfBasic = int //@codeaction("Basic", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+type aliasOfInterface = error //@codeaction("Interface", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+type aliasOfPointer = *foo //@codeaction("Pointer", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+type aliasOfNamedPointer namedOfPointer //@codeaction("Pointer", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+type aliasOfNameInterface namedOfInterface //@codeaction("Interface", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+// Interface
+type iface interface {} //@codeaction("iface", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+// Not package level
+func _ () {
+    type NamedOfBasic int //@codeaction("Basic", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+
+    type NamedOfStruct foo //@codeaction("Struct", "refactor.rewrite.implementInterface", err=re"found 0 CodeActions", form0="error")
+}
+
+-- good/good.go --
+package good
+
+type foo struct{}
+
+// Named
+type namedOfBasic int //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=namedBasic, form0="error")
+
+type namedOfStruct foo //@codeaction("Struct", "refactor.rewrite.implementInterface", edit=namedStruct, form0="error")
+
+type namedOfFunc func(string) bool //@codeaction("Func", "refactor.rewrite.implementInterface", edit=namedFunc, form0="error")
+
+type namedOfChannel chan struct{} //@codeaction("Channel", "refactor.rewrite.implementInterface", edit=namedChannel, form0="error")
+
+// Struct
+type structType struct{} //@codeaction("Type", "refactor.rewrite.implementInterface", edit=struct, form0="error")
+
+type genericStructType[T any] struct{} //@codeaction("Type", "refactor.rewrite.implementInterface", edit=genericStruct, form0="error")
+
+// Alias
+type aliasOfNamedBasic namedOfBasic //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=aliasNamedBasic, form0="error")
+
+type aliasOfNamedStruct namedOfStruct //@codeaction("Struct", "refactor.rewrite.implementInterface", edit=aliasNamedStruct, form0="error")
+
+-- @aliasNamedBasic/good/good.go --
+@@ -20 +20,8 @@
+-type aliasOfNamedBasic namedOfBasic //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=aliasNamedBasic)
++type aliasOfNamedBasic namedOfBasic
++
++// Error implements [error].
++func (a *aliasOfNamedBasic) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Basic", "refactor.rewrite.implementInterface", edit=aliasNamedBasic, form0="error")
+@@ -23 +30 @@
+-
+-- @aliasNamedStruct/good/good.go --
+@@ -22 +22,6 @@
+-type aliasOfNamedStruct namedOfStruct //@codeaction("Struct", "refactor.rewrite.implementInterface", edit=aliasNamedStruct, form0="error")
++type aliasOfNamedStruct namedOfStruct
++
++// Error implements [error].
++func (a *aliasOfNamedStruct) Error() string {
++	panic("unimplemented")
++}
+@@ -24 +29 @@
++//@codeaction("Struct", "refactor.rewrite.implementInterface", edit=aliasNamedStruct, form0="error")
+-- @genericStruct/good/good.go --
+@@ -17 +17,8 @@
+-type genericStructType[T any] struct{} //@codeaction("Type", "refactor.rewrite.implementInterface", edit=genericStruct, form0="error")
++type genericStructType[T any] struct{}
++
++// Error implements [error].
++func (g *genericStructType[T]) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Type", "refactor.rewrite.implementInterface", edit=genericStruct, form0="error")
+@@ -23 +30 @@
+-
+-- @namedBasic/good/good.go --
+@@ -6 +6,8 @@
+-type namedOfBasic int //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=namedBasic, form0="error")
++type namedOfBasic int
++
++// Error implements [error].
++func (n *namedOfBasic) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Basic", "refactor.rewrite.implementInterface", edit=namedBasic, form0="error")
+@@ -23 +30 @@
+-
+-- @namedChannel/good/good.go --
+@@ -12 +12,8 @@
+-type namedOfChannel chan struct{} //@codeaction("Channel", "refactor.rewrite.implementInterface", edit=namedChannel, form0="error")
++type namedOfChannel chan struct{}
++
++// Error implements [error].
++func (n *namedOfChannel) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Channel", "refactor.rewrite.implementInterface", edit=namedChannel, form0="error")
+@@ -23 +30 @@
+-
+-- @namedFunc/good/good.go --
+@@ -10 +10,8 @@
+-type namedOfFunc func(string) bool //@codeaction("Func", "refactor.rewrite.implementInterface", edit=namedFunc, form0="error")
++type namedOfFunc func(string) bool
++
++// Error implements [error].
++func (n *namedOfFunc) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Func", "refactor.rewrite.implementInterface", edit=namedFunc, form0="error")
+@@ -23 +30 @@
+-
+-- @namedStruct/good/good.go --
+@@ -8 +8,8 @@
+-type namedOfStruct foo //@codeaction("Struct", "refactor.rewrite.implementInterface", edit=namedStruct, form0="error")
++type namedOfStruct foo
++
++// Error implements [error].
++func (n *namedOfStruct) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Struct", "refactor.rewrite.implementInterface", edit=namedStruct, form0="error")
+@@ -23 +30 @@
+-
+-- @struct/good/good.go --
+@@ -15 +15,8 @@
+-type structType struct{} //@codeaction("Type", "refactor.rewrite.implementInterface", edit=struct, form0="error")
++type structType struct{}
++
++// Error implements [error].
++func (s *structType) Error() string {
++	panic("unimplemented")
++}
++
++//@codeaction("Type", "refactor.rewrite.implementInterface", edit=struct, form0="error")
+@@ -23 +30 @@
+-
