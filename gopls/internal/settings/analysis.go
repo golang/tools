@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/defers"
 	"golang.org/x/tools/go/analysis/passes/directive"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
+	"golang.org/x/tools/go/analysis/passes/fieldalignment"
 	"golang.org/x/tools/go/analysis/passes/framepointer"
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
@@ -218,8 +219,8 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: writestring.Analyzer},
 
 	// disabled due to high false positives
-	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // very noisy
-	// fieldalignment is not even off-by-default; see #67762.
+	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
+	{analyzer: fieldalignment.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // #67762, #76237
 
 	// simplifiers and modernizers
 	//

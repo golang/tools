@@ -2924,6 +2924,20 @@ Default: on.
 Package documentation: [assign](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/assign)
 
 <a id='atomic'></a>
+## `atomic`: check for common mistakes using the sync/atomic package
+
+The atomic checker looks for assignment statements of the form:
+
+	x = atomic.AddUint64(&x, 1)
+
+which are not atomic.
+
+
+Default: on.
+
+Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic)
+
+<a id='atomic'></a>
 ## `atomic`: replace basic types in sync/atomic calls with atomic types
 
 The atomic analyzer suggests replacing the primitive sync/atomic functions with the strongly typed atomic wrapper types introduced in Go1.19 (e.g. atomic.Int32). For example,
@@ -2942,20 +2956,6 @@ The atomic types are safer because they don't allow non-atomic access, which is 
 Default: on.
 
 Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic)
-
-<a id='atomic'></a>
-## `atomic`: check for common mistakes using the sync/atomic package
-
-The atomic checker looks for assignment statements of the form:
-
-	x = atomic.AddUint64(&x, 1)
-
-which are not atomic.
-
-
-Default: on.
-
-Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic)
 
 <a id='atomicalign'></a>
 ## `atomicalign`: check for non-64-bits-aligned arguments to sync/atomic functions
@@ -3142,6 +3142,37 @@ The fix is only offered if the var declaration has the form shown and there are 
 Default: on.
 
 Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype)
+
+<a id='fieldalignment'></a>
+## `fieldalignment`: find structs that would use less memory if their fields were sorted
+
+This analyzer finds structs that can be rearranged to use less memory, and provides a suggested edit with the most compact order.
+
+Note that there are two different diagnostics reported. One checks struct size, and the other reports "pointer bytes" used. Pointer bytes is how many bytes of the object that the garbage collector has to potentially scan for pointers, for example:
+
+	struct { uint32; string }
+
+have 16 pointer bytes because the garbage collector has to scan up through the string's inner pointer.
+
+	struct { string; *uint32 }
+
+has 24 pointer bytes because it has to scan further through the \*uint32.
+
+	struct { string; uint32 }
+
+has 8 because it can stop immediately after the string pointer.
+
+Be aware that the most compact order is not always the most efficient. In rare cases it may cause two variables each updated by its own goroutine to occupy the same CPU cache line, inducing a form of memory contention known as "false sharing" that slows down both goroutines.
+
+Unlike most analyzers, which report likely mistakes, the diagnostics produced by fieldanalyzer very rarely indicate a significant problem, so the analyzer is not included in typical suites such as vet or gopls. Use this standalone command to run it on your code:
+
+	$ go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
+	$ fieldalignment [packages]
+
+
+Default: off. Enable by setting `"analyses": {"fieldalignment": true}`.
+
+Package documentation: [fieldalignment](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment)
 
 <a id='fillreturns'></a>
 ## `fillreturns`: suggest fixes for errors due to an incorrect number of return values

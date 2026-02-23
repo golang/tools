@@ -23,7 +23,7 @@ import (
 
 const Doc = `find structs that would use less memory if their fields were sorted
 
-This analyzer find structs that can be rearranged to use less memory, and provides
+This analyzer finds structs that can be rearranged to use less memory, and provides
 a suggested edit with the most compact order.
 
 Note that there are two different diagnostics reported. One checks struct size,

@@ -1240,14 +1240,7 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 			DefinitionShortcut)
 
 	case "analyses":
-		counts, err := setBoolMap(&o.Analyses, value)
-		if err != nil {
-			return nil, err
-		}
-		if o.Analyses["fieldalignment"] {
-			return counts, &SoftError{"the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/67762)"}
-		}
-		return counts, nil
+		return setBoolMap(&o.Analyses, value)
 
 	case "hints":
 		return setBoolMap(&o.Hints, value)

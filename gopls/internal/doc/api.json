@@ -1372,13 +1372,13 @@
 						},
 						{
 							"Name": "\"atomic\"",
-							"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+							"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
 							"Default": "true",
 							"Status": ""
 						},
 						{
 							"Name": "\"atomic\"",
-							"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
+							"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -1464,6 +1464,12 @@
 							"Name": "\"errorsastype\"",
 							"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
 							"Default": "true",
+							"Status": ""
+						},
+						{
+							"Name": "\"fieldalignment\"",
+							"Doc": "find structs that would use less memory if their fields were sorted\n\nThis analyzer finds structs that can be rearranged to use less memory, and provides\na suggested edit with the most compact order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n\nBe aware that the most compact order is not always the most efficient.\nIn rare cases it may cause two variables each updated by its own goroutine\nto occupy the same CPU cache line, inducing a form of memory contention\nknown as \"false sharing\" that slows down both goroutines.\n\nUnlike most analyzers, which report likely mistakes, the diagnostics\nproduced by fieldanalyzer very rarely indicate a significant problem,\nso the analyzer is not included in typical suites such as vet or\ngopls. Use this standalone command to run it on your code:\n\n   $ go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest\n   $ fieldalignment [packages]\n\n",
+							"Default": "false",
 							"Status": ""
 						},
 						{
@@ -3307,14 +3313,14 @@
 		},
 		{
 			"Name": "atomic",
-			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic",
+			"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic",
 			"Default": true
 		},
 		{
 			"Name": "atomic",
-			"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic",
+			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic",
 			"Default": true
 		},
 		{
@@ -3400,6 +3406,12 @@
 			"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
 			"Default": true
+		},
+		{
+			"Name": "fieldalignment",
+			"Doc": "find structs that would use less memory if their fields were sorted\n\nThis analyzer finds structs that can be rearranged to use less memory, and provides\na suggested edit with the most compact order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n\nBe aware that the most compact order is not always the most efficient.\nIn rare cases it may cause two variables each updated by its own goroutine\nto occupy the same CPU cache line, inducing a form of memory contention\nknown as \"false sharing\" that slows down both goroutines.\n\nUnlike most analyzers, which report likely mistakes, the diagnostics\nproduced by fieldanalyzer very rarely indicate a significant problem,\nso the analyzer is not included in typical suites such as vet or\ngopls. Use this standalone command to run it on your code:\n\n   $ go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest\n   $ fieldalignment [packages]\n\n",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment",
+			"Default": false
 		},
 		{
 			"Name": "fillreturns",
