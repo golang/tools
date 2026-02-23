@@ -121,6 +121,12 @@ func _() {
 		defer wg1.Done()
 		fmt.Println()
 	}()
+
+	wg.Add(1) // noop: function literal has return values, wg.Go requires func().
+	go func() int {
+		defer wg.Done()
+		return 0
+	}()
 }
 
 // this function puts the unsupported cases of pattern 2.
@@ -148,6 +154,13 @@ func _() {
 	go func() {
 		fmt.Println()
 		wg1.Done()
+	}()
+
+	wg.Add(1) // noop: function literal has return values, wg.Go requires func().
+	go func() int {
+		fmt.Println()
+		wg.Done()
+		return 0
 	}()
 }
 
