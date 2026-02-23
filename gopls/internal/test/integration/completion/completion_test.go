@@ -706,20 +706,17 @@ var Lower = ""
 				}
 
 				for _, tc := range testcases {
-					t.Run(fmt.Sprintf("%v/%v", tc.mode, tc.accept), func(t *testing.T) {
-						t.Logf("mode=%q accept=%q", tc.mode, tc.accept)
-
-						env.SetSuggestionInsertReplaceMode(tc.mode == "replace")
-						env.SetBufferContent("main.go", orig)
-						loc := env.RegexpSearch("main.go", `()Lower\)`)
-						completions := env.Completion(loc)
-						item := find(t, completions, tc.accept)
-						env.AcceptCompletion(loc, item)
-						got := env.BufferText("main.go")
-						if !strings.Contains(got, tc.want) {
-							t.Errorf("unexpected state after completion:\n%v\nwanted %v", got, tc.want)
-						}
-					})
+					t.Logf("mode=%q accept=%q", tc.mode, tc.accept)
+					env.SetSuggestionInsertReplaceMode(tc.mode == "replace")
+					env.SetBufferContent("main.go", orig)
+					loc := env.RegexpSearch("main.go", `()Lower\)`)
+					completions := env.Completion(loc)
+					item := find(t, completions, tc.accept)
+					env.AcceptCompletion(loc, item)
+					got := env.BufferText("main.go")
+					if !strings.Contains(got, tc.want) {
+						t.Errorf("unexpected state after completion:\n%v\nwanted %v", got, tc.want)
+					}
 				}
 			})
 		})
