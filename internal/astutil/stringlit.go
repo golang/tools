@@ -40,6 +40,10 @@ func PosInStringLiteral(lit *ast.BasicLit, offset int) (token.Pos, error) {
 		return 0, fmt.Errorf("invalid offset")
 	}
 
+	// Did the scanner normalize one or more carriage
+	// returns (\r) in a raw string literal?
+	norm := int(lit.End()-lit.Pos()) > len(lit.Value)
+
 	// remove quotes
 	quote := raw[0] // '"' or '`'
 	raw = raw[1 : len(raw)-1]
@@ -52,6 +56,12 @@ func PosInStringLiteral(lit *ast.BasicLit, offset int) (token.Pos, error) {
 		r, _, rest, _ := strconv.UnquoteChar(raw, quote) // can't fail
 		sz := len(raw) - len(rest)                       // length of literal char in raw bytes
 		pos += token.Pos(sz)
+		// If any \r normalization occurred,
+		// assume each \n was preceded by \r.
+		// (This is just a heuristic.)
+		if norm && r == '\n' {
+			pos++
+		}
 		raw = raw[sz:]
 		i += utf8.RuneLen(r)
 	}
