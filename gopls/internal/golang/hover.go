@@ -1056,42 +1056,32 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 				}
 			}
 		case constant.String:
-			// Locate the unicode escape sequence under the current cursor
-			// position.
-			litOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
+			index, err := astutil.OffsetInStringLiteral(lit, posRange.Pos())
 			if err != nil {
 				return protocol.Range{}, nil, err
 			}
-			startOffset, err := safetoken.Offset(pgf.Tok, posRange.Pos())
+			// pos is the point in the literal where the current rune starts.
+			pos, err := astutil.PosInStringLiteral(lit, index)
 			if err != nil {
 				return protocol.Range{}, nil, err
 			}
-			for i := startOffset - litOffset; i > 0; i-- {
-				// Start at the cursor position and search backward for the beginning of a rune escape sequence.
-				rr, _ := utf8.DecodeRuneInString(lit.Value[i:])
-				if rr == utf8.RuneError {
-					return protocol.Range{}, nil, fmt.Errorf("rune error")
-				}
-				if rr == '\\' {
-					// Got the beginning, decode it.
-					rr, _, tail, err := strconv.UnquoteChar(lit.Value[i:], '"')
-					if err != nil {
-						// If the conversion fails, it's because of an invalid
-						// syntax, therefore is no rune to be found.
-						return protocol.Range{}, nil, nil
-					}
-					// Only the rune escape sequence part of the string has to
-					// be highlighted, recompute the range.
-					runeLen := len(lit.Value) - (i + len(tail))
-					pStart := token.Pos(int(lit.Pos()) + i)
-					pEnd := token.Pos(int(pStart) + runeLen)
 
-					if pEnd >= posRange.End() {
-						start, end = pStart, pEnd
-						r = rr
-					}
-					break
+			rest, err := pgf.PosText(pos, lit.End())
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+
+			// Is the selected character denoted by an escape sequence?
+			if bytes.HasPrefix(rest, []byte(`\`)) {
+				rr, _, tail, err := strconv.UnquoteChar(string(rest), lit.Value[0])
+				if err != nil {
+					return protocol.Range{}, nil, err
 				}
+
+				rawSize := len(rest) - len(tail)
+
+				start, end = pos, pos+token.Pos(rawSize)
+				r = rr
 			}
 		default:
 			panic("unexpected constant.Kind")

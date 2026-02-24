@@ -13,6 +13,7 @@ func _() {
 	_ = 0x61 //@hover("0x61", "0x61", latinAHex)
 
 	_ = '\u2211' //@hover("'\\u2211'", "'\\u2211'", summation)
+	_ = '\u2211' //@hover(re"u22()11", "'\\u2211'", summation)
 	_ = 0x2211 //@hover("0x2211", "0x2211", summationHex)
 	_ = "foo \u2211 bar" //@hover("\\u2211", "\\u2211", summation)
 
