@@ -1,0 +1,37 @@
+Test adding struct tags with dialogs
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveInputTypes":["string","bool","number","enum"]}
+}
+
+-- flags --
+-ignore_extra_diags
+
+
+-- addtags.go --
+package addtags
+
+type A struct {
+	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline, form0="xml", form1="camelcase")
+	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines, form0="xml", form1="camelcase")
+	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct, form0="xml", form1="camelcase")
+}
+-- @entirestruct/addtags.go --
+@@ -4,3 +4,3 @@
+-	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline, form0="xml", form1="camelcase")
+-	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines, form0="xml", form1="camelcase")
+-	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct, form0="xml", form1="camelcase")
++	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.addTags", edit=singleline, form0="xml", form1="camelcase")
++	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines, form0="xml", form1="camelcase")
++	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct, form0="xml", form1="camelcase")
+-- @singleline/addtags.go --
+@@ -4 +4 @@
+-	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline, form0="xml", form1="camelcase")
++	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.addTags", edit=singleline, form0="xml", form1="camelcase")
+-- @twolines/addtags.go --
+@@ -5,2 +5,2 @@
+-	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines, form0="xml", form1="camelcase")
+-	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct, form0="xml", form1="camelcase")
++	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines, form0="xml", form1="camelcase")
++	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct, form0="xml", form1="camelcase")

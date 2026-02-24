@@ -1,0 +1,36 @@
+Test removing struct tags with dialogs
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveInputTypes":["string","bool","number","enum"]}
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- removetags.go --
+package removetags
+
+type A struct {
+	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
+	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
+	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
+}
+-- @entirestruct/removetags.go --
+@@ -4,3 +4,3 @@
+-	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
+-	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
+-	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
+-- @singleline/removetags.go --
+@@ -4 +4 @@
+-	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
+-- @twolines/removetags.go --
+@@ -5,2 +5,2 @@
+-	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
+-	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
