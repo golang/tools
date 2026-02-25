@@ -224,3 +224,11 @@ func issue76210negation(haystack []string, needle string) bool {
 	}
 	return res
 }
+
+func issue77677emptybody(slice []int, needle int) {
+	for _, elem := range slice { // nope: would produce "if slices.Contains" with an empty body
+		if elem == needle {
+			break
+		}
+	}
+}

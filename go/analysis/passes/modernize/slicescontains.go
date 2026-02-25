@@ -231,7 +231,9 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		// that might affected by melting down the loop.
 		//
 		// TODO(adonovan): relax check by analyzing branch target.
+		numBodyStmts := 0
 		for curBodyStmt := range curBody.Children() {
+			numBodyStmts += 1
 			if curBodyStmt != curLastStmt {
 				for range curBodyStmt.Preorder((*ast.BranchStmt)(nil), (*ast.ReturnStmt)(nil)) {
 					return
@@ -292,7 +294,16 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		case *ast.BranchStmt:
 			if lastStmt.Tok == token.BREAK && lastStmt.Label == nil { // unlabeled break
 				// Have: for ... { if ... { stmts; break } }
-
+				if numBodyStmts == 1 {
+					// If the only stmt in the body is an unlabeled "break" that
+					// will get deleted in the fix, don't suggest a fix, as it
+					// produces confusing code:
+					//    if slices.Contains(slice, f) {}
+					// Explicitly discarding the result isn't much better:
+					//    _ = slices.Contains(slice, f) // just for effects
+					// See https://go.dev/issue/77677.
+					return
+				}
 				var prevStmt ast.Stmt // previous statement to range (if any)
 				if curPrev, ok := curRange.PrevSibling(); ok {
 					// If the RangeStmt's previous sibling is a Stmt,
