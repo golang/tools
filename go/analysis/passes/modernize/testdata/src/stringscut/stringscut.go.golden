@@ -8,7 +8,9 @@ import (
 func basic(s string) bool {
 	s = "reassigned"
 	before, _, ok := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
-	print(before)
+	if ok {
+		print(before)
+	}
 	return ok
 }
 
@@ -50,7 +52,9 @@ func skip_var_decl(s string) bool {
 
 func basic_substr_arg(s string, substr string) bool {
 	_, after, ok := strings.Cut(s, substr) // want "strings.Index can be simplified using strings.Cut"
-	print(after)
+	if ok {
+		print(after)
+	}
 	return ok
 }
 
@@ -62,20 +66,26 @@ func wrong_len_arg(s string, substr string) bool {
 
 func basic_strings_byte(s string) bool {
 	before, _, ok := strings.Cut(s, "+") // want "strings.IndexByte can be simplified using strings.Cut"
-	print(before)
+	if ok {
+		print(before)
+	}
 	return ok
 }
 
 func basic_strings_byte_int(s string) bool {
 	before, _, ok := strings.Cut(s, "7") // want "strings.IndexByte can be simplified using strings.Cut"
-	print(before)
+	if ok {
+		print(before)
+	}
 	return ok
 }
 
 func basic_strings_byte_var(s string) bool {
 	b := byte('b')
 	before, _, ok := strings.Cut(s, string(b)) // want "strings.IndexByte can be simplified using strings.Cut"
-	print(before)
+	if ok {
+		print(before)
+	}
 	return ok
 }
 
@@ -89,24 +99,30 @@ func basic_bytes(b []byte) []byte {
 }
 
 func basic_index_bytes(b []byte) string {
-	before, after, ok := bytes.Cut(b, []byte{'s'}) // want "bytes.IndexByte can be simplified using bytes.Cut"
-	if ok {
-		return string(before)
+	i := bytes.IndexByte(b, 's') // don't modernize: b[i+1:] in else is not guarded
+	if i >= 0 {
+		return string(b[:i])
 	} else {
-		return string(after)
+		return string(b[i+1:])
 	}
 }
 
 func const_substr_len(s string) bool {
-	_, after, _ := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
-	r := after
-	return len(r) > 0
+	_, after, ok := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if ok {
+		r := after
+		return len(r) > 0
+	}
+	return false
 }
 
 func const_for_len(s string) bool {
-	_, after, _ := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
-	r := after
-	return len(r) > 0
+	_, after, ok := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if ok {
+		r := after
+		return len(r) > 0
+	}
+	return false
 }
 
 func index(s string) bool {
@@ -154,28 +170,28 @@ func invalid_slice(s string) string {
 
 func index_and_before_after(s string) string {
 	substr := "="
-	before, after, ok := strings.Cut(s, substr) // want "strings.Index can be simplified using strings.Cut"
-	if !ok {
+	i := strings.Index(s, substr) // don't modernize: s[i+len(substr):] and s[len(substr)+i:] not nonneg-guarded
+	if i == -1 {
 		print("test")
 	}
-	if !ok {
+	if i < 0 {
 		return ""
 	} else {
-		if ok {
-			return before
+		if i >= 0 {
+			return s[:i]
 		} else {
-			return after
+			return s[i+len(substr):]
 		}
 	}
-	if !ok {
-		return after
+	if -1 == i {
+		return s[len(substr)+i:]
 	}
 	return "final"
 }
 
 func idx_var_init(s string) (string, string) {
-	var before, _, _ = strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
-	return before, s
+	var idx = strings.Index(s, "=") // don't modernize: s[0:idx] is not guarded
+	return s[0:idx], s
 }
 
 func idx_reassigned(s string) string {
@@ -219,9 +235,9 @@ func s_modified_no_params() string {
 func s_in_func_call() string {
 	s := "string"
 	substr := "substr"
-	before, _, _ := strings.Cut(s, substr) // want "strings.Index can be simplified using strings.Cut"
+	idx := strings.Index(s, substr) // don't modernize: s[:idx] is not guarded
 	function(s)
-	return before
+	return s[:idx]
 }
 
 func s_pointer() string {
@@ -306,3 +322,51 @@ func reference_str(s *string) {}
 func reference_int(i *int) {}
 
 func blank() {}
+
+// Regression test for unguarded slice uses (https://go.dev/issue/77737).
+// The s[colon+1:] usage outside the "if" relies on -1+1=0 to return the full
+// string when the separator is absent. Rewriting to "after" would return "".
+func unguarded_after_slice(s string) (int, string) {
+	colon := strings.Index(s, ":")
+	if colon != -1 {
+		print(s[:colon])
+	}
+	return colon, s[colon+1:] // don't modernize: s[colon+1:] not guarded
+}
+
+// Same as above but with the guard using i < 0.
+func unguarded_after_slice_negcheck(s string) string {
+	i := strings.Index(s, ":")
+	if i < 0 {
+		print("not found")
+	}
+	return s[i+1:] // don't modernize: s[i+1:] not guarded
+}
+
+// Safe: both slice uses are inside the nonneg guard.
+func guarded_both_slices(s string) (string, string) {
+	before, after, ok := strings.Cut(s, ":") // want "strings.Index can be simplified using strings.Cut"
+	if ok {
+		return before, after
+	}
+	return "", s
+}
+
+// Safe: slice uses after early-return negative check.
+func guarded_early_return(s string) (string, string) {
+	before, after, ok := strings.Cut(s, ":") // want "strings.Index can be simplified using strings.Cut"
+	if !ok {
+		return "", s
+	}
+	return before, after
+}
+
+// Safe: slice uses in else of negative check.
+func guarded_neg_else(s string) (string, string) {
+	before, after, ok := strings.Cut(s, ":") // want "strings.Index can be simplified using strings.Cut"
+	if !ok {
+		return "", s
+	} else {
+		return before, after
+	}
+}
