@@ -940,7 +940,7 @@ func implFuncs(pkg *cache.Package, curSel inspector.Cursor, start, end token.Pos
 			if inToken(n.Lparen, "(", start, end) {
 				t := dynamicFuncCallType(info, n)
 				if t == nil {
-					return nil, fmt.Errorf("not a dynamic function call")
+					return nil, errNotHandled
 				}
 				// Case 2b: dynamic call of function value.
 				// Report declarations of corresponding concrete functions.
