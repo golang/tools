@@ -54,12 +54,12 @@ func fmtappendf(pass *analysis.Pass) (any, error) {
 					if len(call.Args) == 0 {
 						continue
 					}
-					// fmt.Sprintf and fmt.Appendf have different nil semantics
+					// fmt.Sprint(f) and fmt.Append(f) have different nil semantics
 					// when the format produces an empty string:
-					// ([]byte(fmt.Sprintf("")) returns an empty but non-nil
+					// []byte(fmt.Sprintf("")) returns an empty but non-nil
 					// []byte{}, while fmt.Appendf(nil, "") returns nil) so we
 					// should skip these cases.
-					if fn.Name() == "Sprintf" {
+					if fn.Name() == "Sprint" || fn.Name() == "Sprintf" {
 						format := info.Types[call.Args[0]].Value
 						if format != nil && mayFormatEmpty(constant.StringVal(format)) {
 							continue
@@ -78,13 +78,18 @@ func fmtappendf(pass *analysis.Pass) (any, error) {
 					old, new := fn.Name(), strings.Replace(fn.Name(), "Sprint", "Append", 1)
 					edits := []analysis.TextEdit{
 						{
-							// delete "[]byte("
+							// Delete "[]byte(", including any spaces before the first argument.
 							Pos: conv.Pos(),
-							End: conv.Lparen + 1,
+							End: conv.Args[0].Pos(), // always exactly one argument in a valid byte slice conversion
 						},
 						{
-							// remove ")"
-							Pos: conv.Rparen,
+							// Delete ")", including any non-args (space or
+							// commas) that come before the right parenthesis.
+							// Leaving an extra comma here produces invalid
+							// code. (See golang/go#74709)
+							// Unfortunately, this and the edit above may result
+							// in deleting some comments.
+							Pos: conv.Args[0].End(),
 							End: conv.Rparen + 1,
 						},
 						{
@@ -96,20 +101,6 @@ func fmtappendf(pass *analysis.Pass) (any, error) {
 							Pos:     call.Lparen + 1,
 							NewText: []byte("nil, "),
 						},
-					}
-					if len(conv.Args) == 1 {
-						arg := conv.Args[0]
-						// Determine if we have T(fmt.SprintX(...)<non-args,
-						// like a space or a comma>). If so, delete the non-args
-						// that come before the right parenthesis. Leaving an
-						// extra comma here produces invalid code. (See
-						// golang/go#74709)
-						if arg.End() < conv.Rparen {
-							edits = append(edits, analysis.TextEdit{
-								Pos: arg.End(),
-								End: conv.Rparen,
-							})
-						}
 					}
 					if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_19) {
 						continue

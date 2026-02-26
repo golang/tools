@@ -33,19 +33,17 @@ func comma() {
 	type S struct{ Bytes []byte }
 	var _ = struct{ A S }{
 		A: S{
-			Bytes: // want "Replace .*Sprint.* with fmt.Appendf"
-				fmt.Appendf(nil, "%d", 0),
+			Bytes: fmt.Appendf(nil, "%d", 0),
 		},
 	}
-	_ = // want "Replace .*Sprint.* with fmt.Appendf" 
-		fmt.Appendf(nil, "%d", 0)          
+	_ = fmt.Appendf(nil, "%d", 0)          
 }
 
 func emptystring() {
 	// empty string edge case only applies to Sprintf
 	_ = fmt.Appendln(nil, "")  // want "Replace .*Sprintln.* with fmt.Appendln"
 	// nope - these return []byte{}, while the fmt.Append version returns nil
-	_ = []byte(fmt.Sprintf(""))
+	_ = []byte(fmt.Sprint(""))
 	_ = []byte(fmt.Sprintf("%s", ""))
 	_ = []byte(fmt.Sprintf("%#s", ""))
 	_ = []byte(fmt.Sprintf("%s%v", "", getString()))
@@ -54,6 +52,12 @@ func emptystring() {
 	_ = []byte(fmt.Sprintf("%v", "nonempty"))
 	// has non-operation characters
 	_ = fmt.Appendf(nil, "%vother", "") // want "Replace .*Sprint.* with fmt.Appendf"
+}
+
+func multiline() []byte {
+	_ = fmt.Appendf(nil, "str %d", 1)
+
+	return fmt.Appendf(nil, "str %d", 1)
 }
 
 func getString() string {
