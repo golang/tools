@@ -14,19 +14,22 @@ var (
 	x any
 	a A
 	b B[int]
-	_ = reflect.TypeOf(x)                 // nope (dynamic)
-	_ = reflect.TypeOf(0)                 // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(nil)               // nope (likely a mistake)
-	_ = reflect.TypeOf(uint(0))           // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(error(nil))        // nope (likely a mistake)
-	_ = reflect.TypeOf((*error)(nil))     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(io.Reader(nil))    // nope (likely a mistake)
-	_ = reflect.TypeOf((*io.Reader)(nil)) // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(*new(time.Time))   // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(time.Time{})       // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(time.Duration(0))  // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(&a)                // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(&b)                // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(x)                        // nope (dynamic)
+	_ = reflect.TypeOf(0)                        // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(nil)                      // nope (likely a mistake)
+	_ = reflect.TypeOf(uint(0))                  // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(error(nil))               // nope (likely a mistake)
+	_ = reflect.TypeOf((*error)(nil))            // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(io.Reader(nil))           // nope (likely a mistake)
+	_ = reflect.TypeOf((*io.Reader)(nil))        // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(*new(time.Time))          // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(time.Time{})              // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(time.Duration(0))         // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(&a)                       // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(&b)                       // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf([]io.Reader(nil)).Elem()  // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf([]*io.Reader(nil)).Elem() // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf((*io.Reader)(nil)).Elem() // want "reflect.TypeOf call can be simplified using TypeFor"
 )
 
 // Eliminate local var if we deleted its last use.

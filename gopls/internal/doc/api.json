@@ -1606,7 +1606,7 @@
 						},
 						{
 							"Name": "\"reflecttypefor\"",
-							"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the construction below, which uses\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
+							"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the constructions below, which use\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nor:\n\n\treflect.TypeOf([]io.Reader(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3535,7 +3535,7 @@
 		},
 		{
 			"Name": "reflecttypefor",
-			"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the construction below, which uses\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
+			"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the constructions below, which use\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nor:\n\n\treflect.TypeOf([]io.Reader(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypefor",
 			"Default": true
 		},

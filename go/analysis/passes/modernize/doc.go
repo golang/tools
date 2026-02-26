@@ -263,10 +263,14 @@ is known at compile time, for example:
 	reflect.TypeOf(uint32(0))        -> reflect.TypeFor[uint32]()
 	reflect.TypeOf((*ast.File)(nil)) -> reflect.TypeFor[*ast.File]()
 
-It also offers a fix to simplify the construction below, which uses
+It also offers a fix to simplify the constructions below, which use
 reflect.TypeOf to return the runtime type for an interface type,
 
 	reflect.TypeOf((*io.Reader)(nil)).Elem()
+
+or:
+
+	reflect.TypeOf([]io.Reader(nil)).Elem()
 
 to:
 
