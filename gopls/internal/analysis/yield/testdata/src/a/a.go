@@ -145,3 +145,21 @@ func tricky6() iter.Seq[int] {
 		}
 	}
 }
+
+// Regression test for issue #77681. A boolean switch is now
+// handled just like an if/else chain in the SSA builder.
+func switchShortCircuit(seq iter.Seq[int]) iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for item := range seq {
+			isZero := item == 0
+			switch {
+			case !isZero && !yield(item): // ok
+				return
+			case !isZero:
+				continue
+			case !yield(0): // ok
+				return
+			}
+		}
+	}
+}

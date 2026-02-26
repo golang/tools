@@ -1467,13 +1467,14 @@ func (b *builder) switchStmt(fn *Function, s *ast.SwitchStmt, label *lblock) {
 		var nextCond *BasicBlock
 		for _, cond := range cc.List {
 			nextCond = fn.newBasicBlock("switch.next")
-			// TODO(adonovan): opt: when tag==vTrue, we'd
-			// get better code if we use b.cond(cond)
-			// instead of BinOp(EQL, tag, b.expr(cond))
-			// followed by If.  Don't forget conversions
-			// though.
-			cond := emitCompare(fn, token.EQL, tag, b.expr(fn, cond), cond.Pos())
-			emitIf(fn, cond, body, nextCond)
+			// For boolean switches, emit short-circuit control flow,
+			// just like an if/else-chain.
+			if tag == vTrue && !isNonTypeParamInterface(fn.info.Types[cond].Type) {
+				b.cond(fn, cond, body, nextCond)
+			} else {
+				c := emitCompare(fn, token.EQL, tag, b.expr(fn, cond), cond.Pos())
+				emitIf(fn, c, body, nextCond)
+			}
 			fn.currentBlock = nextCond
 		}
 		fn.currentBlock = body
