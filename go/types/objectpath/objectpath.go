@@ -28,9 +28,28 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/internal/typesinternal"
 )
+
+// pathBufPool reduces allocations by reusing path buffers.
+var pathBufPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 0, 128)
+		return &buf
+	},
+}
+
+// smallInts contains pre-computed string representations of integers 0-99
+// to avoid strconv.AppendInt allocations for common method/field indices.
+var smallInts [100]string
+
+func init() {
+	for i := range smallInts {
+		smallInts[i] = strconv.Itoa(i)
+	}
+}
 
 // TODO(adonovan): think about generic aliases.
 
@@ -267,7 +286,12 @@ func (enc *Encoder) For(obj types.Object) (Path, error) {
 	// In the presence of path aliases, these give
 	// the best paths because non-types may
 	// refer to types, but not the reverse.
-	empty := make([]byte, 0, 48) // initial space
+
+	// Get a buffer from the pool to reduce allocations.
+	bufPtr := pathBufPool.Get().(*[]byte)
+	empty := (*bufPtr)[:0]
+	defer pathBufPool.Put(bufPtr)
+
 	objs := enc.scopeObjects(scope)
 	for _, o := range objs {
 		tname, ok := o.(*types.TypeName)
@@ -343,7 +367,12 @@ func (enc *Encoder) For(obj types.Object) (Path, error) {
 
 func appendOpArg(path []byte, op byte, arg int) []byte {
 	path = append(path, op)
-	path = strconv.AppendInt(path, int64(arg), 10)
+	// Use pre-computed strings for small integers to avoid allocations.
+	if arg >= 0 && arg < len(smallInts) {
+		path = append(path, smallInts[arg]...)
+	} else {
+		path = strconv.AppendInt(path, int64(arg), 10)
+	}
 	return path
 }
 
@@ -442,6 +471,16 @@ func (enc *Encoder) concreteMethod(meth *types.Func) (Path, bool) {
 	// panic(fmt.Sprintf("couldn't find method %s on type %s; methods: %#v", meth, named, enc.namedMethods(named)))
 }
 
+// finderPool reduces allocations by reusing finder structs.
+var finderPool = sync.Pool{
+	New: func() interface{} {
+		return &finder{
+			seenTParamNames: make(map[*types.TypeName]bool),
+			seenMethods:     make(map[*types.Func]bool),
+		}
+	},
+}
+
 // find finds obj within type T, returning the path to it, or nil if not found.
 //
 // The seen map is used to short circuit cycles through type parameters. If
@@ -454,7 +493,14 @@ func (enc *Encoder) concreteMethod(meth *types.Func) (Path, bool) {
 //
 // See golang/go#68046 for details.
 func find(obj types.Object, T types.Type, path []byte) []byte {
-	return (&finder{obj: obj}).find(T, path)
+	f := finderPool.Get().(*finder)
+	f.obj = obj
+	// Clear maps but keep allocated backing storage
+	clear(f.seenTParamNames)
+	clear(f.seenMethods)
+	result := f.find(T, path)
+	finderPool.Put(f)
+	return result
 }
 
 // finder closes over search state for a call to find.
@@ -560,7 +606,13 @@ func (f *finder) find(T types.Type, path []byte) []byte {
 }
 
 func findTypeParam(obj types.Object, list *types.TypeParamList, path []byte, op byte) []byte {
-	return (&finder{obj: obj}).findTypeParam(list, path, op)
+	f := finderPool.Get().(*finder)
+	f.obj = obj
+	clear(f.seenTParamNames)
+	clear(f.seenMethods)
+	result := f.findTypeParam(list, path, op)
+	finderPool.Put(f)
+	return result
 }
 
 func (f *finder) findTypeParam(list *types.TypeParamList, path []byte, op byte) []byte {
