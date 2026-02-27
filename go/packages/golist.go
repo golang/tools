@@ -915,7 +915,8 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 		}
 
 		// Old go version?
-		if strings.Contains(stderr.String(), "flag provided but not defined") {
+		if strings.Contains(stderr.String(), "flag provided but not defined") ||
+			strings.Contains(stderr.String(), "is an unknown flag") {
 			return nil, goTooOldError{fmt.Errorf("unsupported version of go: %s: %s", exitErr, stderr)}
 		}
 
