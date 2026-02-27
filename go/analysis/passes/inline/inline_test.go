@@ -64,6 +64,10 @@ func TestAnalyzer(t *testing.T) {
 		dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue78994.txtar")
 		analysistest.RunWithSuggestedFixes(t, dir, Analyzer, "example.com/a")
 	})
+	t.Run("Union", func(t *testing.T) {
+		dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/union.txtar")
+		analysistest.Run(t, dir, Analyzer, "example.com/main")
+	})
 }
 
 func TestAllowBindingDeclFlag(t *testing.T) {
