@@ -3085,3 +3085,70 @@ func BenchmarkMatchesPath(b *testing.B) {
 		})
 	}
 }
+
+func TestRegroupImports(t *testing.T) {
+	const input = `package foo
+
+import (
+	"fmt"
+
+	"github.com/foo/a"
+	"github.com/foo/b"
+
+	"context"
+	"go.pkg.com/bar/x"
+	"go.pkg.com/bar/y"
+
+	"github.com/foo/c"
+	"go.pkg.com/bar/z"
+)
+
+var (
+	ctx  context.Context
+	fmt1 fmt.Formatter
+	a1   a.A
+	b1   b.A
+	c1   c.A
+	x1   x.A
+	y1   y.A
+	z1   z.A
+)
+`
+
+	const want = `package foo
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/foo/a"
+	"github.com/foo/b"
+	"github.com/foo/c"
+	"go.pkg.com/bar/x"
+	"go.pkg.com/bar/y"
+	"go.pkg.com/bar/z"
+)
+
+var (
+	ctx  context.Context
+	fmt1 fmt.Formatter
+	a1   a.A
+	b1   b.A
+	c1   c.A
+	x1   x.A
+	y1   y.A
+	z1   z.A
+)
+`
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "foo.com",
+			Files: fm{
+				"p/test.go": input,
+			},
+		},
+	}.processTest(t, "foo.com", "p/test.go", nil, &Options{
+		RegroupImports: true,
+	}, want)
+}
