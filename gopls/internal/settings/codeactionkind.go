@@ -100,6 +100,7 @@ const (
 	RefactorRewriteEliminateDotImport protocol.CodeActionKind = "refactor.rewrite.eliminateDotImport"
 	RefactorRewriteAddTags            protocol.CodeActionKind = "refactor.rewrite.addTags"
 	RefactorRewriteRemoveTags         protocol.CodeActionKind = "refactor.rewrite.removeTags"
+	RefactorRewriteVarDeclaration     protocol.CodeActionKind = "refactor.rewrite.varDeclaration"
 
 	// refactor.inline
 	RefactorInlineCall     protocol.CodeActionKind = "refactor.inline.call"

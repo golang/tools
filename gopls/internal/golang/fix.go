@@ -62,6 +62,7 @@ const (
 	fixCreateUndeclared        = "create_undeclared"
 	fixMissingInterfaceMethods = "stub_missing_interface_method"
 	fixMissingCalledFunction   = "stub_missing_called_function"
+	fixVarDeclaration          = "var_declaration"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -108,6 +109,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixCreateUndeclared:        singleFile(createUndeclared),
 		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
 		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
+		fixVarDeclaration:          singleFile(convertToVarDecl),
 	}
 	fixer, ok := fixers[fix]
 	if !ok {
