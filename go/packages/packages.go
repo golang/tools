@@ -1129,8 +1129,10 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 				Kind: UnknownError,
 			})
 
-			// If you see this error message, please file a bug.
-			log.Printf("internal error: error %q (%T) without position", err, err)
+			if err != context.Canceled {
+				// If you see this error message, please file a bug.
+				log.Printf("internal error: error %q (%T) without position", err, err)
+			}
 		}
 
 		lpkg.Errors = append(lpkg.Errors, errs...)
