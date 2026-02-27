@@ -42,6 +42,7 @@ const (
 	GCDetails               Command = "gopls.gc_details"
 	Generate                Command = "gopls.generate"
 	GoGetPackage            Command = "gopls.go_get_package"
+	GoToTest                Command = "gopls.go_to_test"
 	ListImports             Command = "gopls.list_imports"
 	ListKnownPackages       Command = "gopls.list_known_packages"
 	LSP                     Command = "gopls.lsp"
@@ -91,6 +92,7 @@ var Commands = []Command{
 	GCDetails,
 	Generate,
 	GoGetPackage,
+	GoToTest,
 	ListImports,
 	ListKnownPackages,
 	LSP,
@@ -234,6 +236,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.GoGetPackage(ctx, a0)
+	case GoToTest:
+		var a0 protocol.Location
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.GoToTest(ctx, a0)
 	case ListImports:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -527,6 +535,14 @@ func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) *protocol.Command
 	return &protocol.Command{
 		Title:     title,
 		Command:   GoGetPackage.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewGoToTestCommand(title string, a0 protocol.Location) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   GoToTest.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

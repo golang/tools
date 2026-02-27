@@ -2067,6 +2067,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"go_to_test\"",
+							"Doc": "`\"go_to_test\"`: Go to the functions's Test, Example, Benchmark, or Fuzz declarations\n\nThis codelens source annotates function and method declarations\nwith their corresponding Test, Example, Benchmark, and Fuzz functions.\n",
+							"Default": "false",
+							"Status": ""
+						},
+						{
 							"Name": "\"regenerate_cgo\"",
 							"Doc": "`\"regenerate_cgo\"`: Re-generate cgo declarations\n\nThis codelens source annotates an `import \"C\"` declaration\nwith a command to re-run the [cgo\ncommand](https://pkg.go.dev/cmd/cgo) to regenerate the\ncorresponding Go declarations.\n\nUse this after editing the C code in comments attached to\nthe import, or in C header files included by it.\n",
 							"Default": "true",
@@ -2279,6 +2285,14 @@
 			"Title": "Run `go generate`",
 			"Doc": "\nThis codelens source annotates any `//go:generate` comments\nwith commands to run `go generate` in this directory, on\nall directories recursively beneath this one.\n\nSee [Generating code](https://go.dev/blog/generate) for\nmore details.\n",
 			"Default": true,
+			"Status": ""
+		},
+		{
+			"FileType": "Go",
+			"Lens": "go_to_test",
+			"Title": "Go to the functions's Test, Example, Benchmark, or Fuzz declarations",
+			"Doc": "\nThis codelens source annotates function and method declarations\nwith their corresponding Test, Example, Benchmark, and Fuzz functions.\n",
+			"Default": false,
 			"Status": ""
 		},
 		{

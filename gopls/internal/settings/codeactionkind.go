@@ -83,6 +83,7 @@ const (
 	GoToggleCompilerOptDetails protocol.CodeActionKind = "source.toggleCompilerOptDetails"
 	AddTest                    protocol.CodeActionKind = "source.addTest"
 	OrganizeImports            protocol.CodeActionKind = "source.organizeImports"
+	GoToTest                   protocol.CodeActionKind = "source.go_to_test"
 
 	// gopls
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"

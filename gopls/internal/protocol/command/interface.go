@@ -325,6 +325,9 @@ type Interface interface {
 
 	// MoveType: Move a type declaration to a different package.
 	MoveType(context.Context, MoveTypeArgs) error
+
+	// GoToTest: Go to test declaration.
+	GoToTest(context.Context, protocol.Location) error
 }
 
 type RunTestsArgs struct {

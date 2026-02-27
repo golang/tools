@@ -247,7 +247,7 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 			for i, tests := range allTests {
 				pkg := &result.Packages[start+i]
 				fileByPath := map[protocol.DocumentURI]*command.TestFile{}
-				for _, test := range tests.All() {
+				for test := range tests.All() {
 					test := command.TestCase{
 						Name: test.Name,
 						Loc:  test.Location,
@@ -1807,6 +1807,15 @@ func optionsStringToMap(options string) (map[string][]string, error) {
 		optionsMap[key] = append(optionsMap[key], option)
 	}
 	return optionsMap, nil
+}
+
+func (c *commandHandler) GoToTest(ctx context.Context, loc protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		forURI: loc.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		showDocumentImpl(ctx, c.s.client, protocol.URI(loc.URI), &loc.Range, c.s.options)
+		return nil
+	})
 }
 
 func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs) error {

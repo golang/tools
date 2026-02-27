@@ -40,6 +40,17 @@ Default: on
 
 File type: Go
 
+## `go_to_test`: Go to the functions's Test, Example, Benchmark, or Fuzz declarations
+
+
+This codelens source annotates function and method declarations
+with their corresponding Test, Example, Benchmark, and Fuzz functions.
+
+
+Default: off
+
+File type: Go
+
 ## `regenerate_cgo`: Re-generate cgo declarations
 
 
