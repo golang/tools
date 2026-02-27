@@ -79,7 +79,11 @@ func TestClientLogging(t *testing.T) {
 		if !matched {
 			t.Errorf("got log %q, want a log containing %q", got, want)
 		}
-	case <-time.After(1 * time.Second):
+
+	case <-time.After(10 * time.Second):
+		// Any timeout we enforce here is at the mercy
+		// of the underlying operating system.
+		// 1s was occasionally flaky; 10s should be better.
 		t.Error("timeout waiting for client log")
 	}
 }
