@@ -266,6 +266,36 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 		s.mustPublishDiagnostics(mod.URI)
 	}
 
+	// Eagerly publish empty diagnostics for changed files so that stale
+	// diagnostics are not shown to the client between the edit and the
+	// completion of reanalysis. Only applies to direct in-editor edits
+	// (FromDidChange), not on-disk changes or other modification sources.
+	//
+	// publishFileDiagnosticsLocked filters byView entries by file version.
+	// Because the file version just changed, no existing view diagnostics
+	// will match the new version, so the published set will be empty.
+	// The real diagnostics will be published once reanalysis completes.
+	if cause == FromDidChange && s.Options().EagerDiagnosticsClear {
+		viewMap := make(viewSet)
+		for _, v := range s.session.Views() {
+			viewMap[v] = unit{}
+		}
+		s.diagnosticsMu.Lock()
+		for _, mod := range modifications {
+			uri := mod.URI
+			f, ok := s.diagnostics[uri]
+			if !ok {
+				continue // no prior diagnostics for this file; nothing to clear
+			}
+			fh, err := s.session.ReadFile(ctx, uri)
+			if err != nil {
+				continue
+			}
+			_ = s.publishFileDiagnosticsLocked(ctx, viewMap, uri, fh.Version(), f)
+		}
+		s.diagnosticsMu.Unlock()
+	}
+
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
 
 	wg.Go(func() {
