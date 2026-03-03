@@ -3175,6 +3175,16 @@ Default: on.
 
 Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
+<a id='gofmt'></a>
+## `gofmt`: report lines whose formatting differs from gofmt's
+
+This analyzer reports diagnostic warnings for lines in Go source files that are not formatted according to gofmt. Each diagnostic includes a suggested fix to apply the correct formatting.
+
+
+Default: off. Enable by setting `"analyses": {"gofmt": true}`.
+
+Package documentation: [gofmt](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/gofmt)
+
 <a id='hostport'></a>
 ## `hostport`: check format of addresses passed to net.Dial
 
