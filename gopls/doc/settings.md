@@ -472,8 +472,7 @@ eagerDiagnosticsClear controls whether gopls immediately publishes empty
 diagnostics for a file when it receives a textDocument/didChange
 notification, before reanalysis completes. This prevents stale
 diagnostics from persisting in the editor between an edit and the next
-diagnostic pass. Intended for non-UI rapid-edit workflows such as
-agentic coding tools.
+diagnostic pass.
 
 Default: `false`.
 
