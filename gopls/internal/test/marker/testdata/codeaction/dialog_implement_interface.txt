@@ -8,6 +8,7 @@ interface...' code action.
 
 -- flags --
 -ignore_extra_diags
+-errors_ok
 
 -- go.mod --
 module golang.org/lsptests/implementinterface
@@ -71,7 +72,7 @@ type aliasOfNamedStruct namedOfStruct //@codeaction("Struct", "refactor.rewrite.
 
 -- @aliasNamedBasic/good/good.go --
 @@ -20 +20,8 @@
--type aliasOfNamedBasic namedOfBasic //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=aliasNamedBasic)
+-type aliasOfNamedBasic namedOfBasic //@codeaction("Basic", "refactor.rewrite.implementInterface", edit=aliasNamedBasic, form0="error")
 +type aliasOfNamedBasic namedOfBasic
 +
 +// Error implements [error].
@@ -171,3 +172,43 @@ type aliasOfNamedStruct namedOfStruct //@codeaction("Struct", "refactor.rewrite.
 +//@codeaction("Type", "refactor.rewrite.implementInterface", edit=struct, form0="error")
 @@ -23 +30 @@
 -
+-- cycle/a/a.go --
+package a
+
+import "golang.org/lsptests/implementinterface/cycle/b"
+
+var _ int = b.B
+
+type Bar struct{}
+
+type A interface {
+    Foo(b Bar)
+}
+
+-- cycle/b/b.go --
+package b
+
+import "golang.org/lsptests/implementinterface/cycle/named"
+
+var _ int = named.C
+
+const B = 1
+
+-- cycle/named/named.go --
+package named
+
+const C = 1
+
+// Package a -> b -> named -x-> a.
+type Named struct {} //@codeaction("Named", "refactor.rewrite.implementInterface", err=re"import cycle", form0="golang.org/lsptests/implementinterface/cycle/a.A")
+
+-- cycle/alias/alias.go --
+package alias
+
+import "golang.org/lsptests/implementinterface/cycle/named"
+
+var _ int = named.C
+
+// Method should be added to the named type [named.Named].
+// Package  a -> b -> named -x-> a.
+type Alias = named.Named //@codeaction("Alias", "refactor.rewrite.implementInterface", err=re"import cycle", form0="golang.org/lsptests/implementinterface/cycle/a.A")

@@ -31,7 +31,23 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 		return nil, err
 	}
 
-	var iface *types.TypeName
+	metadataPkgForPath := func(pkgPath string) (*metadata.Package, error) {
+		mps, ok := snapshot.MetadataGraph().ForPackagePath[metadata.PackagePath(pkgPath)]
+		if !ok {
+			return nil, fmt.Errorf("package %q is not in the workspace", pkgPath)
+		}
+
+		if len(mps) == 0 {
+			return nil, fmt.Errorf("no package metadata for package %q", pkgPath)
+		}
+
+		return mps[0], nil
+	}
+
+	var (
+		iface    *types.TypeName
+		ifacePkg *cache.Package
+	)
 	{
 		if ifaceStr == "error" {
 			iface = types.Universe.Lookup("error").(*types.TypeName)
@@ -46,28 +62,24 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 				pkgPath := ifaceStr[:lastDot]
 				symName := ifaceStr[lastDot+1:]
 
-				mps, ok := snapshot.MetadataGraph().ForPackagePath[metadata.PackagePath(pkgPath)]
-				if !ok {
-					return nil, fmt.Errorf("package %q is not in the workspace", pkgPath)
+				mp, err := metadataPkgForPath(pkgPath)
+				if err != nil {
+					return nil, err
 				}
 
-				if len(mps) == 0 {
-					return nil, fmt.Errorf("no package metadata for package %q", pkgPath)
-				}
-
-				mp := mps[0]
 				pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
 				if err != nil {
 					return nil, err
 				}
 
-				ifacePkg := pkgs[0]
+				ifacePkg = pkgs[0]
 
 				obj := ifacePkg.Types().Scope().Lookup(symName)
 				if obj == nil {
 					return nil, fmt.Errorf("symbol %q not found in package %q", symName, pkgPath)
 				}
 
+				var ok bool
 				iface, ok = obj.(*types.TypeName)
 				if !ok {
 					return nil, fmt.Errorf("%s.%s is a %s, not a type", pkgPath, symName, typesinternal.ObjectKind(obj))
@@ -81,11 +93,13 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 	}
 
 	// TODO(hxjiang): validity verification:
-	// - whether introduce circle dependency.
 	// - whether the interface is visible.
 	// - whether the interface's methods / type of parameters are visible.
 
-	var named *types.Named
+	var (
+		named    *types.Named
+		namedPkg *metadata.Package
+	)
 	{
 		start, end, err := pgf.RangePos(loc.Range)
 		if err != nil {
@@ -117,6 +131,40 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 		}
 
 		named = t
+		namedPkgPath := t.Obj().Pkg().Path()
+
+		namedPkg, err = metadataPkgForPath(namedPkgPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Reject cases that would add cycle-forming or disallowed internal imports
+	// for types mentioned in the added methods.
+	if ifaceStr != "error" && namedPkg != ifacePkg.Metadata() {
+		// extraPackages maps each referenced package to the method that introduced it.
+		extraPackages := make(map[*types.Package]*types.Func)
+		dependingOnX := snapshot.MetadataGraph().ReverseReflexiveTransitiveClosure(namedPkg.ID)
+		for m := range iface.Type().Underlying().(*types.Interface).Methods() {
+			if !m.Exported() {
+				return nil, fmt.Errorf("cannot add unexported method %s from package %s to type %s", m.Name(), namedPkg.Name, named.Obj().Name())
+			}
+			// Extract all packages referenced in the method signature.
+			_ = types.TypeString(m.Type(), func(p *types.Package) string {
+				extraPackages[p] = m
+				return ""
+			})
+		}
+		for p, method := range extraPackages {
+			mp, err := metadataPkgForPath(p.Path())
+			if err != nil {
+				return nil, err
+			}
+
+			if _, ok := dependingOnX[mp.ID]; ok {
+				return nil, fmt.Errorf("adding method %s to type %s would create an import cycle", method.Name(), named.Obj().Name())
+			}
+		}
 	}
 
 	si := stubmethods.IfaceStubInfo{
