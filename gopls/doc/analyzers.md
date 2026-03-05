@@ -2780,12 +2780,13 @@ Go allows importing the same package multiple times, as long as different import
 	    "fmt"
 	    fumpt "fmt"
 	    format "fmt"
-	    _ "fmt"
 	)
 
 However, this is very rarely done on purpose. Usually, it is a sign of code that got refactored, accidentally adding duplicate import statements. It is also a rarely known feature, which may contribute to confusion.
 
 Do note that sometimes, this feature may be used intentionally (see for example [https://github.com/golang/go/commit/3409ce39bfd7584523b7a8c150a310cea92d879d](https://github.com/golang/go/commit/3409ce39bfd7584523b7a8c150a310cea92d879d)) – if you want to allow this pattern in your code base, you're advised to disable this check.
+
+It is acceptable to import the same package twice if one of the imports uses the blank identifier. This is allowed in order to increase resilience against erroneous changes when using the same package for its side effects as well as its exported API.
 
 Available since
 
