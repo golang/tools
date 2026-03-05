@@ -13,7 +13,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/loader"
-	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -332,7 +331,7 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 
 		case *ast.SelectorExpr:
 			// don't visit n.Sel
-			astutil.PreorderStack(n.X, stack, visit)
+			ast.PreorderStack(n.X, stack, visit)
 			return false // don't descend
 
 		case *ast.CompositeLit:
@@ -341,13 +340,13 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 			tv := info.Types[n]
 			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
-					astutil.PreorderStack(n.Type, stack, visit)
+					ast.PreorderStack(n.Type, stack, visit)
 				}
 				for _, elt := range n.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
-						astutil.PreorderStack(kv.Value, stack, visit)
+						ast.PreorderStack(kv.Value, stack, visit)
 					} else {
-						astutil.PreorderStack(elt, stack, visit)
+						ast.PreorderStack(elt, stack, visit)
 					}
 				}
 				return false // don't descend
@@ -357,7 +356,7 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 	}
 
 	for _, f := range info.Files {
-		astutil.PreorderStack(f, nil, visit)
+		ast.PreorderStack(f, nil, visit)
 		if !ok {
 			break
 		}

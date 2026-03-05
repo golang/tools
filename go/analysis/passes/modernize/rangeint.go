@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -142,15 +141,12 @@ func rangeint(pass *analysis.Pass) (any, error) {
 
 						// Find references to i within the loop body.
 						v := info.ObjectOf(index).(*types.Var)
-						// TODO(adonovan): use go1.25 v.Kind() == types.PackageVar
-						if typesinternal.IsPackageLevel(v) {
+						switch v.Kind() {
+						case types.PackageVar:
 							continue nextLoop
-						}
-
-						// If v is a named result, it is implicitly
-						// used after the loop (go.dev/issue/76880).
-						// TODO(adonovan): use go1.25 v.Kind() == types.ResultVar.
-						if moreiters.Contains(enclosingSignature(curLoop, info).Results().Variables(), v) {
+						case types.ResultVar:
+							// If v is a named result, it is implicitly
+							// used after the loop (go.dev/issue/76880).
 							continue nextLoop
 						}
 

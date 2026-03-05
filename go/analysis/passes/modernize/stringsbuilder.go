@@ -22,7 +22,6 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
-	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -57,7 +56,7 @@ func stringsbuilder(pass *analysis.Pass) (any, error) {
 		assign := curAssign.Node().(*ast.AssignStmt)
 		if assign.Tok == token.ADD_ASSIGN && is[*ast.Ident](assign.Lhs[0]) {
 			if v, ok := pass.TypesInfo.Uses[assign.Lhs[0].(*ast.Ident)].(*types.Var); ok &&
-				!typesinternal.IsPackageLevel(v) && // TODO(adonovan): in go1.25, use v.Kind() == types.LocalVar &&
+				v.Kind() == types.LocalVar &&
 				types.Identical(v.Type(), builtinString.Type()) {
 				candidates[v] = true
 			}

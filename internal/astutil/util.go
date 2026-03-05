@@ -15,40 +15,6 @@ import (
 	"golang.org/x/tools/internal/moreiters"
 )
 
-// PreorderStack traverses the tree rooted at root,
-// calling f before visiting each node.
-//
-// Each call to f provides the current node and traversal stack,
-// consisting of the original value of stack appended with all nodes
-// from root to n, excluding n itself. (This design allows calls
-// to PreorderStack to be nested without double counting.)
-//
-// If f returns false, the traversal skips over that subtree. Unlike
-// [ast.Inspect], no second call to f is made after visiting node n.
-// In practice, the second call is nearly always used only to pop the
-// stack, and it is surprisingly tricky to do this correctly; see
-// https://go.dev/issue/73319.
-//
-// TODO(adonovan): replace with [ast.PreorderStack] when go1.25 is assured.
-func PreorderStack(root ast.Node, stack []ast.Node, f func(n ast.Node, stack []ast.Node) bool) {
-	before := len(stack)
-	ast.Inspect(root, func(n ast.Node) bool {
-		if n != nil {
-			if !f(n, stack) {
-				// Do not push, as there will be no corresponding pop.
-				return false
-			}
-			stack = append(stack, n) // push
-		} else {
-			stack = stack[:len(stack)-1] // pop
-		}
-		return true
-	})
-	if len(stack) != before {
-		panic("push/pop mismatch")
-	}
-}
-
 // NodeContains reports whether the Pos/End range of node n encloses
 // the given range.
 //

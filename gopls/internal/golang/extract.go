@@ -998,7 +998,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 		var branchStmts []*ast.BranchStmt
 		// Add the zero "ctrl" value to each return statement in the extracted block.
-		astutil.PreorderStack(extractedBlock, nil, func(n ast.Node, stack []ast.Node) bool {
+		ast.PreorderStack(extractedBlock, nil, func(n ast.Node, stack []ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.ReturnStmt:
 				n.Results = append(n.Results, zeroValExpr)
