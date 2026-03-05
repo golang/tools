@@ -31,13 +31,14 @@ import (
 )
 
 var (
-	flagCount   = flag.Int("count", 0, "stop after `N` runs (default never stop)")
-	flagFailure = flag.String("failure", "", "fail only if output matches `regexp`")
-	flagIgnore  = flag.String("ignore", "", "ignore failure if output matches `regexp`")
-	flagKill    = flag.Bool("kill", true, "kill timed out processes if true, otherwise just print pid (to attach with gdb)")
-	flagOutput  = flag.String("o", defaultPrefix(), "output failure logs to `path` plus a unique suffix")
-	flagP       = flag.Int("p", runtime.NumCPU(), "run `N` processes in parallel")
-	flagTimeout = flag.Duration("timeout", 10*time.Minute, "timeout each process after `duration`")
+	flagCount    = flag.Int("count", 0, "stop after `N` runs (default never stop)")
+	flagFailfast = flag.Bool("failfast", false, "exit on first failure and write failure output to stderr")
+	flagFailure  = flag.String("failure", "", "fail only if output matches `regexp`")
+	flagIgnore   = flag.String("ignore", "", "ignore failure if output matches `regexp`")
+	flagKill     = flag.Bool("kill", true, "kill timed out processes if true, otherwise just print pid (to attach with gdb)")
+	flagOutput   = flag.String("o", defaultPrefix(), "output failure logs to `path` plus a unique suffix")
+	flagP        = flag.Int("p", runtime.NumCPU(), "run `N` processes in parallel")
+	flagTimeout  = flag.Duration("timeout", 10*time.Minute, "timeout each process after `duration`")
 )
 
 func init() {
@@ -158,6 +159,10 @@ func main() {
 			runs++
 			if len(out) > 0 {
 				fails++
+				if *flagFailfast {
+					os.Stderr.Write(out)
+					os.Exit(1)
+				}
 				dir, path := filepath.Split(*flagOutput)
 				f, err := os.CreateTemp(dir, path)
 				if err != nil {
