@@ -240,6 +240,7 @@ type codeActionProducer struct {
 var codeActionProducers = [...]codeActionProducer{
 	{kind: protocol.QuickFix, fn: quickFix, needPkg: true},
 	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
+	{kind: settings.GoToTest, fn: goToTestCodeAction, needPkg: true},
 	{kind: settings.AddTest, fn: addTest, needPkg: true},
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
@@ -1164,6 +1165,41 @@ func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
 	if _, _, _, typeName, ok := selectionContainsType(curSel); ok {
 		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", typeName), command.MoveTypeArgs{Location: req.loc})
 		req.addCommandAction(cmd, false)
+	}
+	return nil
+}
+
+// goToTestCodeAction produces "Go to TestXxx" code action.
+// See [server.commandHandler.GoToTest] for command implementation.
+func goToTestCodeAction(ctx context.Context, req *codeActionsRequest) error {
+	if !req.snapshot.Options().ClientOptions.ShowDocumentSupported {
+		// GoToTest command uses 'window/showDocument' request. Don't generate
+		// code actions for clients that won't be able to use them.
+		return nil
+	}
+
+	path, _ := goastutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
+	if len(path) < 2 {
+		return nil
+	}
+	fn, ok := path[len(path)-2].(*ast.FuncDecl)
+	if !ok {
+		return nil
+	}
+	fnRng, err := req.pgf.NodeRange(fn)
+	if err != nil {
+		return fmt.Errorf("couldn't get node range: %w", err)
+	}
+
+	matches, err := matchFunctionsWithTests(ctx, req.snapshot, req.fh)
+	if err != nil {
+		return err
+	}
+	for _, m := range matches {
+		if m.FuncPos == fnRng.Start {
+			cmd := command.NewGoToTestCommand("Go to "+m.Name, m.Loc)
+			req.addCommandAction(cmd, false)
+		}
 	}
 	return nil
 }
