@@ -23,6 +23,7 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 )
@@ -700,7 +701,7 @@ func trimSpeakerNote(s string) string {
 }
 
 func renderMarkdown(input []byte) (template.HTML, error) {
-	md := goldmark.New(goldmark.WithRendererOptions(html.WithUnsafe()))
+	md := goldmark.New(goldmark.WithRendererOptions(html.WithUnsafe()), goldmark.WithExtensions(extension.Table))
 	reader := text.NewReader(input)
 	doc := md.Parser().Parse(reader)
 	fixupMarkdown(doc)
