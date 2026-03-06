@@ -104,6 +104,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						DiagnosticsDelay:          1 * time.Second,
 						DiagnosticsTrigger:        DiagnosticsOnEdit,
 						AnalysisProgressReporting: true,
+						EagerDiagnosticsClear:     false,
 					},
 					InlayHintOptions: InlayHintOptions{
 						Hints: map[InlayHint]bool{},
