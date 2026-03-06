@@ -55,23 +55,23 @@ package a
 import "testing"
 
 func TestF(t *testing.T) {
-	F() // not inlined
-	G() // want "Call of a.G should be inlined"
+	F()        // not inlined
+	print("G") // want "Call of a.G should be inlined"
 }
 
 func TestG_comment(t *testing.T) {
-	F() // want "Call of a.G should be inlined"
-	G() // not inlined
+	print("F") // want "Call of a.F should be inlined"
+	G()        // not inlined
 }
 
 func TestT_F(t *testing.T) {
-	T(0).F() // not inlined
-	T(0).G() // want "Call of a.G should be inlined"
+	T(0).F()     // not inlined
+	print("T.G") // want `Call of \(a.T\).G should be inlined`
 }
 
 func TestT_G(t *testing.T) {
-	T(0).F() // want "Call of a.G should be inlined"
-	T(0).G() // not inlined
+	print("T.F") // want `Call of \(a.T\).F should be inlined`
+	T(0).G()     // not inlined
 }
 
 -- a/a_x_test.go --
@@ -111,23 +111,23 @@ import (
 )
 
 func TestF(t *testing.T) {
-	a.F() // not inlined
-	a.G() // want "Call of a.G should be inlined"
+	a.F() 	   // not inlined
+	print("G") // want "Call of a.G should be inlined"
 }
 
 func TestG_comment(t *testing.T) {
-	a.F() // want "Call of a.G should be inlined"
-	a.G() // not inlined
+	print("F") // want "Call of a.F should be inlined"
+	a.G()      // not inlined
 }
 
 func TestT_F(t *testing.T) {
-	a.T(0).F() // not inlined
-	a.T(0).G() // want "Call of a.G should be inlined"
+	a.T(0).F()   // not inlined
+	print("T.G") // want `Call of \(a.T\).G should be inlined`
 }
 
 func TestT_G(t *testing.T) {
-	a.T(0).F() // want "Call of a.G should be inlined"
-	a.T(0).G() // not inlined
+	print("T.F") // want `Call of \(a.T\).F should be inlined`
+	a.T(0).G()   // not inlined
 }
 
 -- b/b_test.go --
@@ -146,10 +146,9 @@ func TestF(t *testing.T) {
 package b_test
 
 import (
-	"example.com/a"
 	"testing"
 )
 
 func TestF(t *testing.T) {
-	print() // want "Call of a.F should be inlined"
+	print("F") // want "Call of a.F should be inlined"
 }

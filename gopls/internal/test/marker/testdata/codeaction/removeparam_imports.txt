@@ -89,8 +89,6 @@ func _() {
 -- @b/a/a1.go --
 package a
 
-import "mod.test/c"
-
 import "mod.test/b"
 
 func _() {
@@ -104,7 +102,6 @@ package a
 import (
 	"mod.test/b"
 	. "mod.test/b"
-	"mod.test/c"
 )
 
 func _() {

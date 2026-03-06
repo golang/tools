@@ -101,8 +101,6 @@ func _() {
 -- b2 --
 package a
 
-import "testdata/c"
-
 import "testdata/b"
 
 func _() {
