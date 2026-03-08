@@ -212,3 +212,42 @@ var _ int = named.C
 // Method should be added to the named type [named.Named].
 // Package  a -> b -> named -x-> a.
 type Alias = named.Named //@codeaction("Alias", "refactor.rewrite.implementInterface", err=re"import cycle", form0="golang.org/lsptests/implementinterface/cycle/a.A")
+
+-- visibility/foo/ok.go --
+package foo
+
+// We can implement an internal interface without importing its package, as long
+// as its methods only use built-in or accessible types.
+type Ok struct{} //@codeaction("Ok", "refactor.rewrite.implementInterface", edit=visible, form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.VisibleTypes")
+
+-- visibility/foo/notok.go --
+package foo
+
+// We cannot implement this interface because its method signature requires
+// importing the internal, inaccessible type bar.Bar.
+type NotOk struct{} //@codeaction("NotOk", "refactor.rewrite.implementInterface", err=re"can not import package", form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.InvisibleTypes")
+
+-- visibility/bar/internal/bar/bar.go --
+package bar
+
+type VisibleTypes interface {
+    Bar(string) error
+}
+
+type Bar struct{}
+
+type InvisibleTypes interface {
+    Bar(Bar) error
+}
+
+-- @visible/visibility/foo/ok.go --
+@@ -5 +5,6 @@
+-type Ok struct{} //@codeaction("Ok", "refactor.rewrite.implementInterface", edit=visible, form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.VisibleTypes")
++type Ok struct{}
++
++// Bar implements [bar.VisibleTypes].
++func (o *Ok) Bar(string) error {
++	panic("unimplemented")
++}
+@@ -7 +12 @@
++//@codeaction("Ok", "refactor.rewrite.implementInterface", edit=visible, form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.VisibleTypes")

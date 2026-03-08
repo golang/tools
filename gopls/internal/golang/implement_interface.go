@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -92,10 +93,6 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 		}
 	}
 
-	// TODO(hxjiang): validity verification:
-	// - whether the interface is visible.
-	// - whether the interface's methods / type of parameters are visible.
-
 	var (
 		named    *types.Named
 		namedPkg *metadata.Package
@@ -164,9 +161,16 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 			if _, ok := dependingOnX[mp.ID]; ok {
 				return nil, fmt.Errorf("adding method %s to type %s would create an import cycle", method.Name(), named.Obj().Name())
 			}
+
+			if !packagepath.CanImport(namedPkg.String(), p.Path()) {
+				return nil, fmt.Errorf("can not import package %s", p.Path())
+			}
 		}
 	}
 
+	// TODO(hxjiang): if the package contains the interface is visible and
+	// importable from the package contains the named type, consider add:
+	//    var _ Interface = (*Type)(nil)
 	si := stubmethods.IfaceStubInfo{
 		Fset:      pkg.FileSet(),
 		Interface: iface,
