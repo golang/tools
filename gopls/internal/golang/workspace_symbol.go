@@ -28,6 +28,34 @@ import (
 // sent in response to a client.
 const maxSymbols = 100
 
+// WorkspaceSymbolsOptions defines optional parameters of the [WorkspaceSymbols]
+// function.
+type WorkspaceSymbolsOptions struct {
+	// Filter is an optional predicate used to exclude symbols from the result.
+	//
+	// Note: The standard LSP 'workspace/symbol' request does not currently
+	// support server-side filtering. Clients are expected to receive all
+	// matches and filter locally. This field is intended for internal or
+	// experimental use (see microsoft/language-server-protocol#941).
+	Filter SymbolFilter
+
+	// Matcher determines how well a symbol string matches a query.
+	//
+	// It must return a non-negative score indicating the quality of the match,
+	// where a score of 0 indicates no match.
+	Matcher settings.SymbolMatcher
+
+	// Style controls how the symbol's name is formatted and extracted.
+	//
+	// This determines the string representation (e.g., fully qualified vs.
+	// package-qualified) used for both matching against the query and for
+	// the final presentation.
+	Style settings.SymbolStyle
+}
+
+// SymbolFilter returns whether the symbol we want to keep.
+type SymbolFilter func(sym symbols.Symbol) bool
+
 // WorkspaceSymbols matches symbols across all views using the given query,
 // according to the match semantics parameterized by matcherType and style.
 //
@@ -45,26 +73,14 @@ const maxSymbols = 100
 // with a different configured SymbolMatcher per View. Therefore we assume that
 // Session level configuration will define the SymbolMatcher to be used for the
 // WorkspaceSymbols method.
-func WorkspaceSymbols(ctx context.Context, matcher settings.SymbolMatcher, style settings.SymbolStyle, snapshots []*cache.Snapshot, query string) ([]protocol.SymbolInformation, error) {
+func WorkspaceSymbols(ctx context.Context, snapshots []*cache.Snapshot, query string, opts WorkspaceSymbolsOptions) ([]protocol.SymbolInformation, error) {
 	ctx, done := event.Start(ctx, "golang.WorkspaceSymbols")
 	defer done()
 	if query == "" {
 		return nil, nil
 	}
 
-	var s symbolizer
-	switch style {
-	case settings.DynamicSymbols:
-		s = dynamicSymbolMatch
-	case settings.FullyQualifiedSymbols:
-		s = fullyQualifiedSymbolMatch
-	case settings.PackageQualifiedSymbols:
-		s = packageSymbolMatch
-	default:
-		panic(fmt.Errorf("unknown symbol style: %v", style))
-	}
-
-	return collectSymbols(ctx, snapshots, matcher, s, query)
+	return collectSymbols(ctx, snapshots, query, opts)
 }
 
 // A matcherFunc returns the index and score of a symbol match.
@@ -280,17 +296,16 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 	return first, score
 }
 
-// collectSymbols calls snapshot.Symbols to walk the syntax trees of
-// all files in the views' current snapshots, and returns a sorted,
-// scored list of symbols that best match the parameters.
+// collectSymbols searches all files in the provided snapshots for symbols
+// matching the query.
 //
-// How it matches symbols is parameterized by two interfaces:
-//   - A matcherFunc determines how well a string symbol matches a query. It
-//     returns a non-negative score indicating the quality of the match. A score
-//     of zero indicates no match.
-//   - A symbolizer determines how we extract the symbol for an object. This
-//     enables the 'symbolStyle' configuration option.
-func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
+// It walks the syntax trees of the views' current snapshots and returns a
+// list of symbols, sorted by match quality.
+//
+// The search behavior (scoring, filtering, and formatting) is governed by
+// the provided options. See [WorkspaceSymbolsOptions] for details on how
+// matches are calculated and styled.
+func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, query string, opts WorkspaceSymbolsOptions) ([]protocol.SymbolInformation, error) {
 	// Extract symbols from all files.
 	var work []symbolFile
 	seen := make(map[protocol.DocumentURI]*metadata.Package) // only scan each file once
@@ -384,6 +399,18 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 		}
 	}
 
+	var symbolizer symbolizer
+	switch opts.Style {
+	case settings.DynamicSymbols:
+		symbolizer = dynamicSymbolMatch
+	case settings.FullyQualifiedSymbols:
+		symbolizer = fullyQualifiedSymbolMatch
+	case settings.PackageQualifiedSymbols:
+		symbolizer = packageSymbolMatch
+	default:
+		panic(fmt.Sprintf("unknown symbol style: %v", opts.Style))
+	}
+
 	// Match symbols in parallel.
 	// Each worker has its own symbolStore,
 	// which we merge at the end.
@@ -391,11 +418,11 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 	results := make(chan *symbolStore)
 	for i := range nmatchers {
 		go func(i int) {
-			matcher := buildMatcher(matcherType, query)
+			matcher := buildMatcher(opts.Matcher, query)
 			store := new(symbolStore)
 			// Assign files to workers in round-robin fashion.
 			for j := i; j < len(work); j += nmatchers {
-				matchFile(store, symbolizer, matcher, work[j])
+				matchFile(store, symbolizer, matcher, opts.Filter, work[j])
 			}
 			results <- store
 		}(i)
@@ -423,9 +450,14 @@ type symbolFile struct {
 }
 
 // matchFile scans a symbol file and adds matching symbols to the store.
-func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, f symbolFile) {
+func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, filter SymbolFilter, f symbolFile) {
 	space := make([]string, 0, 3)
 	for _, sym := range f.syms {
+		// Check if the symbol should be filtered out.
+		if filter != nil && !filter(sym) {
+			continue
+		}
+
 		symbolParts, score := symbolizer(space, sym.Name, f.mp, matcher)
 
 		// Check if the score is too low before applying any downranking.

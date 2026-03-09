@@ -37,5 +37,5 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 		defer release()
 		snapshots = append(snapshots, snapshot)
 	}
-	return golang.WorkspaceSymbols(ctx, matcher, style, snapshots, params.Query)
+	return golang.WorkspaceSymbols(ctx, snapshots, params.Query, golang.WorkspaceSymbolsOptions{Matcher: matcher, Style: style})
 }

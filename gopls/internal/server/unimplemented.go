@@ -62,10 +62,6 @@ func (s *server) InlineValue(context.Context, *protocol.InlineValueParams) ([]pr
 	return nil, notImplemented("InlineValue")
 }
 
-func (s *server) InteractiveListEnum(context.Context, *protocol.InteractiveListEnumParams) ([]protocol.FormEnumEntry, error) {
-	return nil, notImplemented("InteractiveListEnum")
-}
-
 func (s *server) LinkedEditingRange(context.Context, *protocol.LinkedEditingRangeParams) (*protocol.LinkedEditingRanges, error) {
 	return nil, notImplemented("LinkedEditingRange")
 }

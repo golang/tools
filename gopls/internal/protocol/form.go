@@ -222,7 +222,7 @@ type InteractiveListEnumParams struct {
 	//
 	// The client treats this as opaque data and echoes it back in the
 	// 'interactive/listEnum' request.
-	Config *json.RawMessage `json:"config,omitempty"`
+	Config json.RawMessage `json:"config,omitempty"`
 
 	// A query string to filter enum entries by.
 	//

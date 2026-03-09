@@ -208,7 +208,7 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 		if sym.kind == protocol.Constant {
 			continue
 		}
-		detail := kindStr(sym.kind)
+		detail := fmt.Sprint(sym.kind)
 		if detail == "Namespace" {
 			detail = "Template"
 		}
@@ -230,42 +230,4 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 		})
 	}
 	return ans, nil
-}
-
-func kindStr(k protocol.SymbolKind) string {
-	n := int(k)
-	if n < 1 || n >= len(kindNames) {
-		return fmt.Sprintf("?SymbolKind %d?", n)
-	}
-	return kindNames[n]
-}
-
-var kindNames = []string{
-	"",
-	"File",
-	"Module",
-	"Namespace",
-	"Package",
-	"Class",
-	"Method",
-	"Property",
-	"Field",
-	"Constructor",
-	"Enum",
-	"Interface",
-	"Function",
-	"Variable",
-	"Constant",
-	"String",
-	"Number",
-	"Boolean",
-	"Array",
-	"Object",
-	"Key",
-	"Null",
-	"EnumMember",
-	"Struct",
-	"Event",
-	"Operator",
-	"TypeParameter",
 }

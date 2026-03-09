@@ -703,12 +703,13 @@ const WorkDoneProgressStyleLog WorkDoneProgressStyle = "log"
 type InteractiveInputType string
 
 const (
-	InteractiveInputTypeString  InteractiveInputType = "string"
-	InteractiveInputTypeFileURI InteractiveInputType = "fileURI"
-	InteractiveInputTypeBool    InteractiveInputType = "bool"
-	InteractiveInputTypeNumber  InteractiveInputType = "number"
-	InteractiveInputTypeEnum    InteractiveInputType = "enum"
-	InteractiveInputTypeList    InteractiveInputType = "list"
+	InteractiveInputTypeString   InteractiveInputType = "string"
+	InteractiveInputTypeFileURI  InteractiveInputType = "fileURI"
+	InteractiveInputTypeBool     InteractiveInputType = "bool"
+	InteractiveInputTypeNumber   InteractiveInputType = "number"
+	InteractiveInputTypeEnum     InteractiveInputType = "enum"
+	InteractiveInputTypeLazyEnum InteractiveInputType = "lazyEnum"
+	InteractiveInputTypeList     InteractiveInputType = "list"
 )
 
 // InternalOptions contains settings that are not intended for use by the
