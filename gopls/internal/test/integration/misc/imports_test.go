@@ -255,6 +255,24 @@ var _, _ = x.X, y.Y
 
 		// Apply suggested fix via OrganizeImports.
 		env.SaveBuffer("main.go") // => OrganizeImports
+		if true {
+			// according to https://github.com/golang/go/issues/77894
+			// this test is flaky. Print some possibly helpful diagnostic
+			// information.
+			ix, err := modindex.Read(modcache)
+			if err != nil {
+				t.Logf("could not read modcache index: %v", err)
+			} else if len(ix.Entries) != 2 {
+				t.Logf("%d modcache entries", len(ix.Entries))
+				if len(ix.Entries) == 0 {
+					fis, err := os.ReadDir(modcache)
+					if err != nil {
+						t.Logf("could not read modcache dir: %v", err)
+					}
+					t.Logf("%d modcache files", len(fis))
+				}
+			}
+		}
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 
 		// Verify that y.Y is defined within the module cache.
