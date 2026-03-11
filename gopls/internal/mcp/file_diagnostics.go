@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -103,75 +102,82 @@ func (h *handler) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, ur
 	return diagnostics, fixes, nil
 }
 
-func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w io.Writer, diagnostics []*cache.Diagnostic, fixes map[*cache.Diagnostic]*protocol.CodeAction) error {
+func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w *strings.Builder, diagnostics []*cache.Diagnostic, fixes map[*cache.Diagnostic]*protocol.CodeAction) error {
 	for _, d := range diagnostics {
 		fmt.Fprintf(w, "%d:%d-%d:%d: [%s] %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Range.End.Line, d.Range.End.Character, d.Severity, d.Message)
 
 		fix, ok := fixes[d]
 		if ok && fix.Edit != nil {
-			diff, err := toUnifiedDiff(ctx, snapshot, fix.Edit.DocumentChanges)
-			if err != nil {
+			w.WriteString("Fix:\n")
+			if err := writeUnifiedDiff(ctx, snapshot, w, fix.Edit.DocumentChanges); err != nil {
 				return err
 			}
-
-			fmt.Fprintf(w, "Fix:\n%s\n", diff)
+			w.WriteString("\n")
 		}
 	}
 	return nil
 }
 
-// toUnifiedDiff converts each [protocol.DocumentChange] into a separate
-// unified diff.
+// writeUnifiedDiff converts each [protocol.DocumentChange] into a separate
+// unified diff and write to the input writer.
+//
 // All returned diffs use forward slash ('/') as the file path separator for
 // consistency, regardless of the original system's separator.
 // Multiple changes targeting the same file are not consolidated.
+//
 // TODO(hxjiang): consolidate diffs to the same file.
-func toUnifiedDiff(ctx context.Context, snapshot *cache.Snapshot, changes []protocol.DocumentChange) (string, error) {
-	var res strings.Builder
+func writeUnifiedDiff(ctx context.Context, snapshot *cache.Snapshot, w *strings.Builder, changes []protocol.DocumentChange) error {
 	for _, change := range changes {
+		// The before-and-after states for the file change.
+		var (
+			oldFile, newFile       string
+			oldContent, newContent string
+		)
 		switch {
 		case change.CreateFile != nil:
-			res.WriteString(diff.Unified("/dev/null", filepath.ToSlash(change.CreateFile.URI.Path()), "", ""))
+			oldFile, newFile = "/dev/null", filepath.ToSlash(change.CreateFile.URI.Path())
+			oldContent, newContent = "", ""
 		case change.DeleteFile != nil:
 			fh, err := snapshot.ReadFile(ctx, change.DeleteFile.URI)
 			if err != nil {
-				return "", err
+				return err
 			}
 			content, err := fh.Content()
 			if err != nil {
-				return "", err
+				return err
 			}
-			res.WriteString(diff.Unified(filepath.ToSlash(change.DeleteFile.URI.Path()), "/dev/null", string(content), ""))
+			oldFile, newFile = filepath.ToSlash(change.DeleteFile.URI.Path()), "/dev/null"
+			oldContent, newContent = string(content), ""
 		case change.RenameFile != nil:
 			fh, err := snapshot.ReadFile(ctx, change.RenameFile.OldURI)
 			if err != nil {
-				return "", err
+				return err
 			}
 			content, err := fh.Content()
 			if err != nil {
-				return "", err
+				return err
 			}
-			res.WriteString(diff.Unified(filepath.ToSlash(change.RenameFile.OldURI.Path()), filepath.ToSlash(change.RenameFile.NewURI.Path()), string(content), string(content)))
+			oldFile = filepath.ToSlash(change.RenameFile.OldURI.Path())
+			newFile = filepath.ToSlash(change.RenameFile.NewURI.Path())
+			oldContent, newContent = string(content), string(content)
 		case change.TextDocumentEdit != nil:
+			fh, err := snapshot.ReadFile(ctx, change.TextDocumentEdit.TextDocument.URI)
+			if err != nil {
+				return err
+			}
+
 			// Assumes gopls never return AnnotatedTextEdit.
 			sorted := protocol.AsTextEdits(change.TextDocumentEdit.Edits)
 
 			// As stated by the LSP, text edits ranges must never overlap.
 			// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
-			slices.SortFunc(sorted, func(a, b protocol.TextEdit) int {
-				if a.Range.Start.Line != b.Range.Start.Line {
-					return int(a.Range.Start.Line) - int(b.Range.Start.Line)
-				}
-				return int(a.Range.Start.Character) - int(b.Range.Start.Character)
+			slices.SortStableFunc(sorted, func(a, b protocol.TextEdit) int {
+				return protocol.CompareRange(a.Range, b.Range)
 			})
 
-			fh, err := snapshot.ReadFile(ctx, change.TextDocumentEdit.TextDocument.URI)
-			if err != nil {
-				return "", err
-			}
 			content, err := fh.Content()
 			if err != nil {
-				return "", err
+				return err
 			}
 
 			var newSrc bytes.Buffer
@@ -182,7 +188,7 @@ func toUnifiedDiff(ctx context.Context, snapshot *cache.Snapshot, changes []prot
 				for _, edit := range sorted {
 					l, r, err := mapper.RangeOffsets(edit.Range)
 					if err != nil {
-						return "", err
+						return err
 					}
 
 					newSrc.Write(content[start:l])
@@ -193,11 +199,13 @@ func toUnifiedDiff(ctx context.Context, snapshot *cache.Snapshot, changes []prot
 				newSrc.Write(content[start:])
 			}
 
-			res.WriteString(diff.Unified(filepath.ToSlash(fh.URI().Path()), filepath.ToSlash(fh.URI().Path()), string(content), newSrc.String()))
+			oldFile, newFile = filepath.ToSlash(fh.URI().Path()), filepath.ToSlash(fh.URI().Path())
+			oldContent, newContent = string(content), newSrc.String()
 		default:
 			continue // this shouldn't happen
 		}
-		res.WriteString("\n")
+		w.WriteString(diff.Unified(oldFile, newFile, oldContent, newContent))
+		w.WriteString("\n")
 	}
-	return res.String(), nil
+	return nil
 }

@@ -5,10 +5,9 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -42,19 +41,19 @@ func (h *handler) renameSymbolHandler(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	var buf bytes.Buffer
-	if err := formatRenameChanges(ctx, snapshot, &buf, changes); err != nil {
+	var builder strings.Builder
+	if err := formatRenameChanges(ctx, snapshot, &builder, changes); err != nil {
 		return nil, nil, err
 	}
-	return textResult(buf.String()), nil, nil
+	return textResult(builder.String()), nil, nil
 }
 
 // formatRenameChanges converts the list of DocumentChange to a unified diff and writes them to the specified buffer.
-func formatRenameChanges(ctx context.Context, snapshot *cache.Snapshot, w io.Writer, changes []protocol.DocumentChange) error {
-	diff, err := toUnifiedDiff(ctx, snapshot, changes)
-	if err != nil {
+func formatRenameChanges(ctx context.Context, snapshot *cache.Snapshot, w *strings.Builder, changes []protocol.DocumentChange) error {
+	w.WriteString("The following changes are necessary to rename the symbol:\n")
+	if err := writeUnifiedDiff(ctx, snapshot, w, changes); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "The following changes are necessary to rename the symbol:\n%s\n", diff)
+	w.WriteString("\n")
 	return nil
 }
