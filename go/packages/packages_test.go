@@ -3455,6 +3455,57 @@ func main() {
 	t.Logf("Packages: %+v", pkgs)
 }
 
+// TestCompiledGoFilesIncludesDepsErrors ensures that when CompiledGoFiles
+// is missing, errors reported by go/packages include underlying dependency
+// errors from go list, rather than only a generic message.
+//
+// See golang/go#78083.
+func TestCompiledGoFilesIncludesDepsErrors(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	dir := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+/*
+#cgo CFLAGS: -I/nonexistent
+#include <missing.h>
+*/
+import "C"
+
+func Foo() {}
+`)
+	pkgs, err := packages.Load(&packages.Config{
+		Dir:  dir,
+		Mode: packages.LoadAllSyntax,
+		Env: append(os.Environ(),
+			"CGO_ENABLED=1",
+		),
+	}, "example.com/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("no packages loaded")
+	}
+	found := false
+	// Expected error should include something like:
+	//   fatal error: missing.h: No such file or directory
+	// We assert only "missing.h" for portability across systems.
+	for _, err := range pkgs[0].Errors {
+		if strings.Contains(err.Msg, "missing.h") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message to include underlying dependency errors, got: %+v", pkgs[0].Errors)
+	}
+}
+
 // TestMainPackagePathInModeTypes tests (*types.Package).Path() for
 // main packages in mode NeedTypes, a regression test for #70742, a
 // bug in cmd/compile's export data that caused them to appear as
