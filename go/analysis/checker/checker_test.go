@@ -12,12 +12,15 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
 // TestPassModule checks that an analyzer observes the correct Pass.Module
 // fields (GoMod, Dir, Path, Main, GoVersion) when run on a module.
 func TestPassModule(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
 	const src = `
 -- go.mod --
 module example.com/hello
