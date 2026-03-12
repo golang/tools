@@ -121,13 +121,13 @@ func TestFalconMapKeys(t *testing.T) {
 }`,
 		},
 		{
-			"Array keys", // not a map; shouldn't crash (golang/go$74393)
+			"Array keys", // not a map; shouldn't crash (golang/go#74393)
 			`func f(x int) { _ = [2]int{1: 0} }`,
 			`func _() { f(0) }`,
 			`func _() { _ = [2]int{1: 0} }`,
 		},
 		{
-			"Slice keys", // not a map; shouldn't crash (golang/go$74393)
+			"Slice keys", // not a map; shouldn't crash (golang/go#74393)
 			`func f(x int) { _ = []int{1: 0} }`,
 			`func _() { f(0) }`,
 			`func _() { _ = []int{1: 0} }`,
