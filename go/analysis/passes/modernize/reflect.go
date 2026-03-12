@@ -73,19 +73,13 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 					// reflect.TypeOf(expr).Elem()
 					//                     -------
 					// reflect.TypeOf(expr)
-					removeElem := []analysis.TextEdit{{
-						Pos: call.End(),
-						End: call2.End(),
-					}}
-					switch typ := t.(type) {
-					case *types.Pointer:
-						// Have: TypeOf(expr).Elem() where expr : *T
+					if typ, hasElem := t.(interface{ Elem() types.Type }); hasElem {
+						// Have: TypeOf(expr).Elem() where expr is *T, []T, [k]T, chan T, map[K]T, etc.
 						t = typ.Elem()
-						edits = removeElem
-					case *types.Slice:
-						// Have: TypeOf(expr).Elem() where expr : []T
-						t = typ.Elem()
-						edits = removeElem
+						edits = []analysis.TextEdit{{
+							Pos: call.End(),
+							End: call2.End(),
+						}}
 					}
 				}
 			}

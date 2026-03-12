@@ -21,6 +21,7 @@ var (
 	_ = reflect.TypeOf(error(nil))       // nope (likely a mistake)
 	_ = reflect.TypeFor[*error]()        // want "reflect.TypeOf call can be simplified using TypeFor"
 	_ = reflect.TypeOf(io.Reader(nil))   // nope (likely a mistake)
+	_ = reflect.TypeOf((io.Reader)(nil)) // nope (likely a mistake)
 	_ = reflect.TypeFor[*io.Reader]()    // want "reflect.TypeOf call can be simplified using TypeFor"
 	_ = reflect.TypeFor[time.Time]()     // want "reflect.TypeOf call can be simplified using TypeFor"
 	_ = reflect.TypeFor[time.Time]()     // want "reflect.TypeOf call can be simplified using TypeFor"
@@ -30,6 +31,12 @@ var (
 	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
 	_ = reflect.TypeFor[*io.Reader]()    // want "reflect.TypeOf call can be simplified using TypeFor"
 	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[int]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeFor[int]()     // want "reflect.TypeOf call can be simplified using TypeFor"
 )
 
 // Eliminate local var if we deleted its last use.
