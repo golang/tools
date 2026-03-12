@@ -227,6 +227,8 @@ func TestGoToStdlibDefinition_Issue37045(t *testing.T) {
 	})
 }
 
+// This test depends on the internal symbol fmt.newPrinter.
+// It may need updating as the fmt package evolves.
 func TestUnexportedStdlib_Issue40809(t *testing.T) {
 	Run(t, stdlibDefinition, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
@@ -234,7 +236,7 @@ func TestUnexportedStdlib_Issue40809(t *testing.T) {
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		env.OpenFile(name)
 
-		loc = env.RegexpSearch(name, `:=\s*(newPrinter)\(\)`)
+		loc = env.RegexpSearch(name, `:=\s*(newPrinter)\(.*\)`)
 
 		// Check that we can find references on a reference
 		refs := env.References(loc)
