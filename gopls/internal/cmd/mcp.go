@@ -14,9 +14,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/filewatcher"
-	"golang.org/x/tools/gopls/internal/mcp"
+	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -48,7 +49,7 @@ Examples:
 
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	if m.Instructions {
-		fmt.Println(mcp.Instructions)
+		fmt.Println(internalmcp.Instructions)
 		return nil
 	}
 	if m.Address != "" && m.RPCTrace {
@@ -131,18 +132,69 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	}
 	defer w.Close()
 
-	// TODO(hxjiang): replace this with LSP initial param workspace root.
-	dir, err := os.Getwd()
-	if err != nil {
-		return err
+	// TODO(hxjiang): in LSP's use case, the file watcher should watch for LSP
+	// initial param workspace root.
+
+	// TODO(hxjiang): refactor the queue pattern into a helper function to avoid
+	// repetition.
+	var (
+		watchStop          = make(chan struct{}) // closed to broadcast "stop" event
+		watchQueueNonempty = make(chan struct{}) // each send indicates "nonempty"
+		watchQueueMu       sync.Mutex
+		watchQueue         []string
+	)
+	// The watchStop event occurs when this function returns,
+	// for any reason (cancellation or completion).
+	defer close(watchStop)
+
+	// TODO(hxjiang): memorize the roots and stop watching when the previously
+	// watched roots are removed.
+	// TODO(hxjiang): implement [filewatcher.Watcher]'s method StopWatchDir.
+
+	// watchRoots is the callback triggered when the MCP client reports workspace
+	// roots. We do not call w.WatchDir directly from this callback, but spawn a
+	// goroutine for it because WatchDir performs OS-level filesystem operations
+	// which can be slow. Blocking this callback would block the MCP server's
+	// JSON-RPC message loop and stall the entireconnection.
+	watchRoots := func(res *mcp.ListRootsResult, err error) {
+		if err != nil {
+			errHandler(err)
+			return
+		}
+		watchQueueMu.Lock()
+		for _, r := range res.Roots {
+			watchQueue = append(watchQueue, protocol.DocumentURI(r.URI).Path())
+		}
+		watchQueueMu.Unlock()
+
+		select {
+		case watchQueueNonempty <- struct{}{}:
+		default:
+		}
 	}
-	if err := w.WatchDir(dir); err != nil {
-		return err
-	}
+	go func() {
+		for {
+			select {
+			case <-watchStop:
+				return
+			case <-watchQueueNonempty:
+				watchQueueMu.Lock()
+				queue := watchQueue
+				watchQueue = nil
+				watchQueueMu.Unlock()
+
+				for _, dir := range queue {
+					if err := w.WatchDir(dir); err != nil {
+						errHandler(err)
+					}
+				}
+			}
+		}
+	}()
 
 	if m.Address != "" {
 		countHeadlessMCPSSE.Inc()
-		return mcp.Serve(ctx, m.Address, &staticSessions{sess, cli.server}, false)
+		return internalmcp.Serve(ctx, m.Address, &staticSessions{sess, cli.server}, false, watchRoots)
 	} else {
 		countHeadlessMCPStdIO.Inc()
 		var rpcLog io.Writer
@@ -150,11 +202,11 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 			rpcLog = log.Writer() // possibly redirected by -logfile above
 		}
 		log.Printf("Listening for MCP messages on stdin...")
-		return mcp.StartStdIO(ctx, sess, cli.server, rpcLog)
+		return internalmcp.StartStdIO(ctx, sess, cli.server, rpcLog, watchRoots)
 	}
 }
 
-// staticSessions implements the [mcp.Sessions] interface for a single gopls
+// staticSessions implements the [internalmcp.Sessions] interface for a single gopls
 // session.
 type staticSessions struct {
 	session *cache.Session

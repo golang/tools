@@ -42,10 +42,16 @@ type Sessions interface {
 }
 
 // Serve starts an MCP server serving at the input address.
+//
 // The server receives LSP session events on the specified channel, which the
 // caller is responsible for closing. The server runs until the context is
 // canceled.
-func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool) error {
+//
+// The rootsHandler callback is invoked immediately after initialization and
+// subsequently whenever the MCP client signals a change to the workspace roots.
+// It is passed the list roots result returned by the MCP client, or an error
+// if the roots could not be retrieved. rootsHandler may be called concurrently.
+func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRootsResult, error)) error {
 	log.Printf("Gopls MCP server: starting up on http")
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -60,7 +66,7 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 	defer log.Printf("Gopls MCP server: exiting")
 
 	svr := http.Server{
-		Handler: HTTPHandler(sessions, isDaemon),
+		Handler: HTTPHandler(sessions, isDaemon, rootsHandler),
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -76,8 +82,8 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 }
 
 // StartStdIO starts an MCP server over stdio.
-func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer) error {
-	s := newServer(session, server)
+func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer, rootsHandler func(*mcp.ListRootsResult, error)) error {
+	s := NewServer(session, server, rootsHandler)
 	if rpcLog != nil {
 		return s.Run(ctx, &mcp.LoggingTransport{
 			Transport: &mcp.StdioTransport{},
@@ -89,7 +95,7 @@ func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Ser
 
 }
 
-func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
+func HTTPHandler(sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRootsResult, error)) http.Handler {
 	var (
 		mu          sync.Mutex                         // lock for mcpHandlers.
 		mcpHandlers = make(map[string]*mcp.SSEHandler) // map from lsp session ids to MCP sse handlers.
@@ -107,7 +113,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 			if !ok {
 				if s, svr := sessions.Session(sessionID); s != nil {
 					handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-						return newServer(s, svr)
+						return NewServer(s, svr, rootsHandler)
 					}, nil)
 					mcpHandlers[sessionID] = handler
 				}
@@ -130,7 +136,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 			if !ok {
 				s, svr := sessions.FirstSession()
 				handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-					return newServer(s, svr)
+					return NewServer(s, svr, rootsHandler)
 				}, nil)
 				mcpHandlers[s.ID()] = handler
 			}
@@ -154,7 +160,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 	return mux
 }
 
-func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
+func NewServer(session *cache.Session, lspServer protocol.Server, rootsHandler func(*mcp.ListRootsResult, error)) *mcp.Server {
 	h := handler{
 		session:   session,
 		lspServer: lspServer,
@@ -211,6 +217,50 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 	for _, tool := range tools {
 		addToolByName(mcpServer, h, tool)
 	}
+
+	// Subscribe to the roots change.
+	if rootsHandler != nil {
+		mcpServer.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+				result, err := next(ctx, method, req)
+
+				// Read roots list after initialized once and every time roots
+				// list changes and pass them to handler.
+				//
+				// See MCP spec:
+				//
+				//  The server SHOULD NOT send requests other than pings
+				//  and logging before receiving the initialized notification.
+				//
+				// https://modelcontextprotocol.info/specification/2024-11-05/basic/lifecycle/#initialization
+				if method == "notifications/initialized" || method == "notifications/roots/list_changed" {
+					go func() {
+						var session *mcp.ServerSession
+						for s := range mcpServer.Sessions() {
+							if s.ID() == req.GetSession().ID() {
+								session = s
+								break
+							}
+						}
+
+						if session == nil { // session terminated.
+							return
+						}
+
+						if session.InitializeParams().Capabilities.RootsV2 == nil {
+							return // client does not support roots
+						}
+
+						roots, err := session.ListRoots(context.Background(), &mcp.ListRootsParams{})
+						rootsHandler(roots, err)
+					}()
+				}
+
+				return result, err
+			}
+		})
+	}
+
 	return mcpServer
 }
 

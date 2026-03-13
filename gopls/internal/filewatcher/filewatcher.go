@@ -7,6 +7,7 @@ package filewatcher
 import (
 	"errors"
 	"io/fs"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -292,6 +293,7 @@ func skipFile(fileName string) bool {
 // WatchDir walks through the directory and all its subdirectories, adding
 // them to the watcher.
 func (w *Watcher) WatchDir(path string) error {
+	log.Printf("Watching %s", path)
 	return filepath.WalkDir(filepath.Clean(path), func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			if skipDir(d.Name()) {

@@ -1030,7 +1030,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 
 	var mcpServer *httptest.Server
 	if enableMCP {
-		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(ss, false))
+		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(ss, false, nil))
 	}
 
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)

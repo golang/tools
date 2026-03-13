@@ -131,7 +131,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 				}
 			}()
 
-			return mcp.Serve(ctx, s.MCPAddress, sessions, isDaemon)
+			return mcp.Serve(ctx, s.MCPAddress, sessions, isDaemon, nil)
 		})
 	}
 
