@@ -1827,8 +1827,8 @@
 							"Status": ""
 						},
 						{
-							"Name": "\"waitgroup\"",
-							"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroup analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
+							"Name": "\"waitgroupgo\"",
+							"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroupgo analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3768,9 +3768,9 @@
 			"Default": true
 		},
 		{
-			"Name": "waitgroup",
-			"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroup analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroup",
+			"Name": "waitgroupgo",
+			"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroupgo analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroupgo",
 			"Default": true
 		},
 		{

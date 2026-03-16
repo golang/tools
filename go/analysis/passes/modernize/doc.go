@@ -544,11 +544,11 @@ where ptr is an unsafe.Pointer, is replaced by:
 
 	unsafe.Add(ptr, n)
 
-# Analyzer waitgroup
+# Analyzer waitgroupgo
 
-waitgroup: replace wg.Add(1)/go/wg.Done() with wg.Go
+waitgroupgo: replace wg.Add(1)/go/wg.Done() with wg.Go
 
-The waitgroup analyzer simplifies goroutine management with `sync.WaitGroup`.
+The waitgroupgo analyzer simplifies goroutine management with `sync.WaitGroup`.
 It replaces the common pattern
 
 	wg.Add(1)

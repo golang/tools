@@ -275,7 +275,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.StringsSeqAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.TestingContextAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: goplsexport.UnsafeFuncsModernizer, severity: protocol.SeverityHint},
-	{analyzer: modernize.WaitGroupAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.WaitGroupGoAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: goplsexport.AtomicTypesModernizer, severity: protocol.SeverityHint},
 
 	// type-error analyzers

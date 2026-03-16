@@ -125,6 +125,6 @@ func TestUnsafeFuncs(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), goplsexport.UnsafeFuncsModernizer, "unsafefuncs")
 }
 
-func TestWaitGroup(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), modernize.WaitGroupAnalyzer, "waitgroup")
+func TestWaitGroupGo(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), modernize.WaitGroupGoAnalyzer, "waitgroupgo")
 }

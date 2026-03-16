@@ -4458,10 +4458,10 @@ Default: on.
 
 Package documentation: [waitgroup](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/waitgroup)
 
-<a id='waitgroup'></a>
-## `waitgroup`: replace wg.Add(1)/go/wg.Done() with wg.Go
+<a id='waitgroupgo'></a>
+## `waitgroupgo`: replace wg.Add(1)/go/wg.Done() with wg.Go
 
-The waitgroup analyzer simplifies goroutine management with \`sync.WaitGroup\`. It replaces the common pattern
+The waitgroupgo analyzer simplifies goroutine management with \`sync.WaitGroup\`. It replaces the common pattern
 
 	wg.Add(1)
 	go func() {
@@ -4478,7 +4478,7 @@ which was added in Go 1.25.
 
 Default: on.
 
-Package documentation: [waitgroup](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroup)
+Package documentation: [waitgroupgo](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroupgo)
 
 <a id='writestring'></a>
 ## `writestring`: detect inefficient string concatenation in uses of WriteString

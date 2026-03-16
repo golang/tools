@@ -57,7 +57,7 @@ var Suite = []*analysis.Analyzer{
 	StringsBuilderAnalyzer,
 	TestingContextAnalyzer,
 	unsafeFuncsAnalyzer,
-	WaitGroupAnalyzer,
+	WaitGroupGoAnalyzer,
 }
 
 // -- helpers --
