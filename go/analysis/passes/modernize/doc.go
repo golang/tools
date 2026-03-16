@@ -65,11 +65,11 @@ This analyzer is currently disabled by default as the
 transformation does not preserve the nilness of the base slice in
 all cases; see https://go.dev/issue/73557.
 
-# Analyzer atomic
+# Analyzer atomictypes
 
-atomic: replace basic types in sync/atomic calls with atomic types
+atomictypes: replace basic types in sync/atomic calls with atomic types
 
-The atomic analyzer suggests replacing the primitive sync/atomic functions with
+The atomictypes analyzer suggests replacing the primitive sync/atomic functions with
 the strongly typed atomic wrapper types introduced in Go1.19 (e.g.
 atomic.Int32). For example,
 

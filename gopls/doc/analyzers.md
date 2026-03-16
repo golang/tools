@@ -2937,10 +2937,19 @@ Default: on.
 
 Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic)
 
-<a id='atomic'></a>
-## `atomic`: replace basic types in sync/atomic calls with atomic types
+<a id='atomicalign'></a>
+## `atomicalign`: check for non-64-bits-aligned arguments to sync/atomic functions
 
-The atomic analyzer suggests replacing the primitive sync/atomic functions with the strongly typed atomic wrapper types introduced in Go1.19 (e.g. atomic.Int32). For example,
+
+
+Default: on.
+
+Package documentation: [atomicalign](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomicalign)
+
+<a id='atomictypes'></a>
+## `atomictypes`: replace basic types in sync/atomic calls with atomic types
+
+The atomictypes analyzer suggests replacing the primitive sync/atomic functions with the strongly typed atomic wrapper types introduced in Go1.19 (e.g. atomic.Int32). For example,
 
 	var x int32
 	atomic.AddInt32(&x, 1)
@@ -2955,16 +2964,7 @@ The atomic types are safer because they don't allow non-atomic access, which is 
 
 Default: on.
 
-Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic)
-
-<a id='atomicalign'></a>
-## `atomicalign`: check for non-64-bits-aligned arguments to sync/atomic functions
-
-
-
-Default: on.
-
-Package documentation: [atomicalign](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomicalign)
+Package documentation: [atomictypes](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomictypes)
 
 <a id='bloop'></a>
 ## `bloop`: replace for-range over b.N with b.Loop

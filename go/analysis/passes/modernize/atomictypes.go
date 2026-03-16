@@ -26,20 +26,20 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-var atomicAnalyzer = &analysis.Analyzer{
-	Name: "atomic",
-	Doc:  analyzerutil.MustExtractDoc(doc, "atomic"),
+var atomicTypesAnalyzer = &analysis.Analyzer{
+	Name: "atomictypes",
+	Doc:  analyzerutil.MustExtractDoc(doc, "atomictypes"),
 	Requires: []*analysis.Analyzer{
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
 	Run: runAtomic,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomictypes",
 }
 
 func init() {
 	// Export to gopls until this is a published modernizer.
-	goplsexport.AtomicModernizer = atomicAnalyzer
+	goplsexport.AtomicTypesModernizer = atomicTypesAnalyzer
 }
 
 // TODO(mkalil): support the Pointer variants.

@@ -1377,14 +1377,14 @@
 							"Status": ""
 						},
 						{
-							"Name": "\"atomic\"",
-							"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+							"Name": "\"atomicalign\"",
+							"Doc": "check for non-64-bits-aligned arguments to sync/atomic functions",
 							"Default": "true",
 							"Status": ""
 						},
 						{
-							"Name": "\"atomicalign\"",
-							"Doc": "check for non-64-bits-aligned arguments to sync/atomic functions",
+							"Name": "\"atomictypes\"",
+							"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomictypes analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3318,15 +3318,15 @@
 			"Default": true
 		},
 		{
-			"Name": "atomic",
-			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomic analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomic",
-			"Default": true
-		},
-		{
 			"Name": "atomicalign",
 			"Doc": "check for non-64-bits-aligned arguments to sync/atomic functions",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomicalign",
+			"Default": true
+		},
+		{
+			"Name": "atomictypes",
+			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomictypes analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomictypes",
 			"Default": true
 		},
 		{
