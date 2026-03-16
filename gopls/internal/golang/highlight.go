@@ -701,7 +701,7 @@ func highlightIdentifier(cur inspector.Cursor, info *types.Info, result map[astu
 			}
 		case *ast.ImportSpec:
 			pkgname := info.PkgNameOf(n)
-			if pkgname == obj {
+			if obj != nil && pkgname == obj {
 				if n.Name != nil {
 					highlightNode(result, n.Name, protocol.Text)
 				} else {

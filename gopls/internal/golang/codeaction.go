@@ -722,7 +722,11 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 	}
 
 	// dotImported package path and its imported name after removing the dot.
-	imported := req.pkg.TypesInfo().PkgNameOf(importSpec).Imported()
+	pkgname := req.pkg.TypesInfo().PkgNameOf(importSpec)
+	if pkgname == nil {
+		return nil // e.g. import . "C"
+	}
+	imported := pkgname.Imported()
 	newName := imported.Name()
 
 	rng, err := req.pgf.PosRange(importSpec.Name.Pos(), importSpec.Path.Pos())
