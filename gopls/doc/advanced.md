@@ -36,12 +36,12 @@ go install golang.org/x/tools/gopls
 
 If you are working on the [Go project] itself, the `go` command that `gopls`
 invokes will have to correspond to the version of the source you are working
-on. That is, if you have checked out the Go project to `$HOME/go`, your `go`
-command should be the `$HOME/go/bin/go` executable that you built with
-`make.bash` or equivalent.
+on. That is, if you have checked out the Go project to `$HOME/go-tip`, your
+`go` command should be the `$HOME/go-tip/bin/go` executable that you built
+with `make.bash` or equivalent.
 
 You can achieve this by adding the right version of `go` to your `PATH`
-(`export PATH=$HOME/go/bin:$PATH` on Unix systems) or by configuring your
+(`export PATH=$HOME/go-tip/bin:$PATH` on Unix systems) or by configuring your
 editor.
 
 To work on both `std` and `cmd` simultaneously, add a `go.work` file to
