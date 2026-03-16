@@ -1106,28 +1106,13 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 			// collect receiver struct fields
 			if node.Recv != nil {
-				obj := c.pkg.TypesInfo().Defs[node.Name]
-				switch obj.(type) {
-				case nil:
-					report := func() {
-						bug.Reportf("missing def for func %s", node.Name)
-					}
-					// Debugging golang/go#71273.
-					if !slices.Contains(c.pkg.CompiledGoFiles(), c.pgf) {
-						if c.snapshot.View().Type() == cache.GoPackagesDriverView {
-							report()
-						} else {
-							report()
-						}
-					} else {
-						report()
-					}
+				fn, ok := c.pkg.TypesInfo().Defs[node.Name].(*types.Func)
+				if !ok {
+					// A duplicate FuncDecl may lack a Defs entry.
+					// Avoid panicking in this case; see go.dev/issue/71273.
 					continue
-				case *types.Func:
-				default:
-					bug.Reportf("unexpected func obj type %T for %s", obj, node.Name)
 				}
-				sig := obj.(*types.Func).Signature()
+				sig := fn.Signature()
 				recv := sig.Recv()
 				if recv == nil {
 					continue // may be nil if ill-typed

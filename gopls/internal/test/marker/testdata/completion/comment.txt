@@ -85,3 +85,10 @@ func Multiline() int { //@item(multiline, "Multiline", "func() int", "func")
 //
 // //@complete(re"() ")
 func () _() {}
+
+
+// This test checks that gopls does not panic if there is a duplicate declaration.
+func f() {}
+
+// //@complete(re"() ")
+func () f() {}
