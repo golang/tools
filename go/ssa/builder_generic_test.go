@@ -723,7 +723,12 @@ func TestInstructionString(t *testing.T) {
 		p.Set(0)
 	}
 
-	//@ instrs("f15", "*ssa.MakeClosure", "make closure (interface{Set(int); *T}).Set$bound [t1]")
+	//	t0 = new T (t)
+	//	t1 = changetype PT <- *T (t0)
+	//	t2 = changetype interface{Set(int); *T} <- PT (t1)
+	//	t3 = make closure (interface{Set(int); *T}).Set$bound [t2]
+	//
+	//@ instrs("f15", "*ssa.MakeClosure", "make closure (interface{Set(int); *T}).Set$bound [t2]")
 	func f15[T any, PT interface {
 		Set(int)
 		*T

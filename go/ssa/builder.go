@@ -100,6 +100,7 @@ var (
 	// Type constants.
 	tBool       = types.Typ[types.Bool]
 	tByte       = types.Typ[types.Byte]
+	tRune       = types.Universe.Lookup("rune").Type() // prints as "rune" (Typ[Rune] is same as Int32)
 	tInt        = types.Typ[types.Int]
 	tInvalid    = types.Typ[types.Invalid]
 	tString     = types.Typ[types.String]
@@ -891,6 +892,10 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			}
 			bound := createBound(fn.Prog, obj)
 			b.enqueue(bound)
+
+			// The assignment may widen a type parameter to its
+			// interface bound (case #3 of go.dev/issue.78110).
+			v = emitConv(fn, v, bound.FreeVars[0].Type())
 
 			c := &MakeClosure{
 				Fn:       bound,
@@ -2150,13 +2155,6 @@ func (b *builder) rangeIter(fn *Function, x Value, tk, tv types.Type, pos token.
 	// done:                                   (target of break)
 	//
 
-	if tk == nil {
-		tk = tInvalid
-	}
-	if tv == nil {
-		tv = tInvalid
-	}
-
 	rng := &Range{X: x}
 	rng.setPos(pos)
 	rng.setType(tRangeIter)
@@ -2166,14 +2164,29 @@ func (b *builder) rangeIter(fn *Function, x Value, tk, tv types.Type, pos token.
 	emitJump(fn, loop)
 	fn.currentBlock = loop
 
+	var ak, av types.Type
+	isString := false
+	if m, ok := typeparams.CoreType(x.Type()).(*types.Map); ok {
+		ak, av = m.Key(), m.Elem()
+	} else {
+		isString = true
+		ak, av = tInt, tRune
+	}
+	if tk == nil {
+		ak = tInvalid
+	}
+	if tv == nil {
+		av = tInvalid
+	}
+
 	okv := &Next{
 		Iter:     it,
-		IsString: isBasic(typeparams.CoreType(x.Type())),
+		IsString: isString,
 	}
 	okv.setType(types.NewTuple(
 		varOk,
-		newVar("k", tk),
-		newVar("v", tv),
+		newVar("k", ak),
+		newVar("v", av),
 	))
 	fn.emit(okv)
 
@@ -2182,11 +2195,14 @@ func (b *builder) rangeIter(fn *Function, x Value, tk, tv types.Type, pos token.
 	emitIf(fn, emitExtract(fn, okv, 0), body, done)
 	fn.currentBlock = body
 
-	if tk != tInvalid {
-		k = emitExtract(fn, okv, 1)
+	// The assignment may widen a map or string
+	// key/value to a variable's interface type
+	// (cases #1 and #2 of go.dev/issue/78110).
+	if tk != nil {
+		k = emitConv(fn, emitExtract(fn, okv, 1), tk)
 	}
-	if tv != tInvalid {
-		v = emitExtract(fn, okv, 2)
+	if tv != nil {
+		v = emitConv(fn, emitExtract(fn, okv, 2), tv)
 	}
 	return
 }

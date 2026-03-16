@@ -16,6 +16,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 type sanity struct {
@@ -154,12 +156,17 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *Lookup:
 	case *MakeChan:
 	case *MakeClosure:
-		numFree := len(instr.Fn.(*Function).FreeVars)
-		numBind := len(instr.Bindings)
-		if numFree != numBind {
+		fn := instr.Fn.(*Function)
+		if numFree, numBind := len(fn.FreeVars), len(instr.Bindings); numFree != numBind {
 			s.errorf("MakeClosure has %d Bindings for function %s with %d free vars",
 				numBind, instr.Fn, numFree)
-
+		} else {
+			for i, fv := range fn.FreeVars {
+				if !types.Identical(instr.Bindings[i].Type(), fv.Type()) {
+					s.errorf("MakeClosure binding %d for %s has type %s, expected %s",
+						i, fv.Name(), instr.Bindings[i].Type(), fv.Type())
+				}
+			}
 		}
 		if recv := instr.Type().(*types.Signature).Recv(); recv != nil {
 			s.errorf("MakeClosure's type includes receiver %s", recv.Type())
@@ -170,12 +177,42 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *MakeSlice:
 	case *MapUpdate:
 	case *Next:
+		rng, ok := instr.Iter.(*Range)
+		if !ok {
+			s.errorf("Next: Iter is %T, not *Range", instr.Iter)
+		}
+		if rng.Type() != tRangeIter {
+			s.errorf("Next: Iter has type %s, expected %s", rng.Type(), tRangeIter)
+		}
+		var ek, ev types.Type
+		switch xt := typeparams.CoreType(rng.X.Type()).(type) {
+		case *types.Basic:
+			if types.Default(xt) != tString {
+				s.errorf("Next: basic operand of Next.Iter (Range) is %s, want string or untyped string", xt)
+			}
+			ek, ev = tInt, tRune
+		case *types.Map:
+			ek, ev = xt.Key(), xt.Elem()
+		}
+
+		res := instr.Type().(*types.Tuple) // (ok bool, k K, v V), but K or V may be invalid if unused
+		if !types.Identical(res.At(1).Type(), ek) && res.At(1).Type() != tInvalid {
+			s.errorf("Next: key type %s does not match map key type %s", res.At(1).Type(), ek)
+		}
+		if !types.Identical(res.At(2).Type(), ev) && res.At(2).Type() != tInvalid {
+			s.errorf("Next: value type %s does not match map value type %s", res.At(2).Type(), ev)
+		}
+
 	case *Range:
 	case *RunDefers:
 	case *Select:
 	case *Send:
 	case *Slice:
 	case *Store:
+		if !types.Identical(instr.Val.Type(), typeparams.CoreType(instr.Addr.Type()).(*types.Pointer).Elem()) {
+			s.errorf("Store: value type %s does not match address type %s",
+				instr.Val.Type(), instr.Addr.Type())
+		}
 	case *TypeAssert:
 	case *UnOp:
 	case *DebugRef:
