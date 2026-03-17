@@ -243,7 +243,7 @@ package foo
 			errHandler := func(err error) {
 				t.Errorf("error from watcher: %v", err)
 			}
-			w, err := filewatcher.New(50*time.Millisecond, nil, eventsHandler, errHandler)
+			w, err := filewatcher.New("fsnotify", 50*time.Millisecond, nil, eventsHandler, errHandler)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +351,7 @@ func TestBrokenSymlink(t *testing.T) {
 	errHandler := func(err error) {
 		t.Errorf("error from watcher: %v", err)
 	}
-	w, err := filewatcher.New(50*time.Millisecond, nil, eventsHandler, errHandler)
+	w, err := filewatcher.New("fsnotify", 50*time.Millisecond, nil, eventsHandler, errHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func TestStress(t *testing.T) {
 	errHandler := func(err error) {
 		t.Errorf("error from watcher: %v", err)
 	}
-	w, err := filewatcher.New(delay, nil, eventsHandler, errHandler)
+	w, err := filewatcher.New("fsnotify", delay, nil, eventsHandler, errHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
