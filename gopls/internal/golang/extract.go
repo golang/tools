@@ -1042,7 +1042,6 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 					Value: strconv.Itoa(i + 1), // start with 1 because 0 is reserved for base case
 				}),
 			})
-
 		}
 		retVars = append(retVars, &returnVariable{
 			name:    ast.NewIdent(ctrlVar),
@@ -1100,10 +1099,12 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	}
 	if ifReturn != nil {
 		if isErrHandlingReturnsCase {
-			errName := retVars[len(retVars)-1]
-			fmt.Fprintf(&ifBuf, "if %s != nil ", errName.name.String())
-			if err := format.Node(&ifBuf, fset, ifReturn.Body); err != nil {
-				return nil, nil, err
+			if len(retVars) > 0 {
+				errName := retVars[len(retVars)-1]
+				fmt.Fprintf(&ifBuf, "if %s != nil ", errName.name.String())
+				if err := format.Node(&ifBuf, fset, ifReturn.Body); err != nil {
+					return nil, nil, err
+				}
 			}
 		} else {
 			if err := format.Node(&ifBuf, fset, ifReturn); err != nil {

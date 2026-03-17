@@ -1,0 +1,34 @@
+This test verifies the fix for golang/go#78142: a crash in function extraction
+when a function with no result types has a return statement.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- a.go --
+package a
+
+func f() {
+    var err error
+    if err != nil { //@codeaction("if", "refactor.extract.function", end=ifend, edit=a)
+        return err
+    } //@loc(ifend, "}")
+    println("reachable")
+}
+-- @a/a.go --
+@@ -5,3 +5 @@
+-    if err != nil { //@codeaction("if", "refactor.extract.function", end=ifend, edit=a)
+-        return err
+-    } //@loc(ifend, "}")
++    newFunction(err) //@loc(ifend, "}")
+@@ -10 +8,6 @@
++
++func newFunction(err error) {
++	if err != nil { //@codeaction("if", "refactor.extract.function", end=ifend, edit=a)
++		return err
++	}
++}
