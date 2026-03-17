@@ -65,7 +65,10 @@ const B = 2
 	}
 	defer func() {
 		if err := mcpSession.Close(); err != nil {
-			t.Errorf("closing MCP connection: %v", err)
+			// TODO(mkalil): Logf instead of Errof is a workaround for a
+			// potential mcp shutdown race:
+			// https://github.com/modelcontextprotocol/go-sdk/issues/855
+			t.Logf("closing MCP connection: %v", err)
 		}
 	}()
 	var (
@@ -120,8 +123,13 @@ func TestMCPCommandLogging(t *testing.T) {
 		want     string
 		dontWant string
 	}{
-		{"notrace.log", false, "stdin", "initialized"},
-		{"trace.log", true, "initialized", ""},
+		// The log "initialize" appears at least twice in the RPC logs, first as
+		// an "initialize" request and then as a notification
+		// "notifications/initialized". Waiting for the initialized notification
+		// could result in a race, so instead verify we see the initialize
+		// request log.
+		{"notrace.log", false, "stdin", "initialize"},
+		{"trace.log", true, "initialize", ""},
 	}
 
 	dir := t.TempDir()
@@ -152,9 +160,14 @@ package p
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := mcpSession.Close(); err != nil {
-				t.Errorf("closing MCP connection: %v", err)
-			}
+			defer func() {
+				if err := mcpSession.Close(); err != nil {
+					// TODO(mkalil): Logf instead of Errof is a workaround for a
+					// potential mcp shutdown race:
+					// https://github.com/modelcontextprotocol/go-sdk/issues/855
+					t.Logf("closing MCP connection: %v", err)
+				}
+			}()
 			logs, err := os.ReadFile(logFile)
 			if err != nil {
 				t.Fatal(err)
@@ -248,7 +261,10 @@ func MyFun() {}
 	}
 	defer func() {
 		if err := mcpSession.Close(); err != nil {
-			t.Errorf("closing MCP connection: %v", err)
+			// TODO(mkalil): Logf instead of Errof is a workaround for a
+			// potential mcp shutdown race:
+			// https://github.com/modelcontextprotocol/go-sdk/issues/855
+			t.Logf("closing MCP connection: %v", err)
 		}
 	}()
 
@@ -349,7 +365,10 @@ func main() {
 	}
 	defer func() {
 		if err := mcpSession.Close(); err != nil {
-			t.Errorf("closing MCP connection: %v", err)
+			// TODO(mkalil): Logf instead of Errof is a workaround for a
+			// potential mcp shutdown race:
+			// https://github.com/modelcontextprotocol/go-sdk/issues/855
+			t.Logf("closing MCP connection: %v", err)
 		}
 	}()
 
