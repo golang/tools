@@ -7,9 +7,9 @@ package filewatcher
 import (
 	"fmt"
 	"log/slog"
-	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // Watcher monitors file system events.
@@ -23,6 +23,9 @@ type Watcher interface {
 	// Poke signals the watcher to prioritize a scan, if applicable.
 	// This is used to implement adaptive polling.
 	Poke()
+
+	// Mode returns the current mode of the file watcher.
+	Mode() settings.FileWatcherMode
 }
 
 // New creates a new file watcher and starts its event-handling loop. The
@@ -31,14 +34,12 @@ type Watcher interface {
 // The provided event handler is called sequentially with a batch of file events,
 // but the error handler is called concurrently. The watcher blocks until the
 // handler returns, so the handlers should be fast and non-blocking.
-//
-// TODO(hxjiang): replace mode string to enum.
-func New(mode string, interval time.Duration, logger *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) (Watcher, error) {
+func New(mode settings.FileWatcherMode, logger *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) (Watcher, error) {
 	switch mode {
-	case "poll":
-		return NewPollWatcher(interval, logger, onEvents, onError), nil
-	case "fsnotify":
-		return NewFSNotifyWatcher(interval, logger, onEvents, onError)
+	case settings.FileWatcherPoll:
+		return NewPollWatcher(logger, onEvents, onError), nil
+	case settings.FileWatcherFSNotify:
+		return NewFSNotifyWatcher(logger, onEvents, onError)
 	}
 	// TODO(hxjiang): support "auto" mode.
 	return nil, fmt.Errorf("unknown FileWatcher mode: %q", mode)

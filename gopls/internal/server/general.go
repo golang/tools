@@ -24,7 +24,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	debuglog "golang.org/x/tools/gopls/internal/debug/log"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -35,6 +37,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
@@ -406,12 +409,23 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 	}
 }
 
-// updateWatchedDirectories compares the current set of directories to watch
-// with the previously registered set of directories. If the set of directories
-// has changed, we unregister and re-register for file watching notifications.
-// updatedSnapshots is the set of snapshots that have been updated.
+// updateWatchedDirectories syncs the server-side file watcher and client-side
+// registrations with the current workspace patterns. If the directories to
+// watch have changed, it unregisters and re-registers client notifications.
 func (s *server) updateWatchedDirectories(ctx context.Context) error {
 	patterns := s.session.FileWatchingGlobPatterns(ctx)
+
+	// Note: Currently, the server-side watcher acts as a complement to the
+	// client-side watcher (which is registered below). This dual-watching
+	// setup is safe, though it means gopls may receive redundant file
+	// events (one from the client, one from the server-side watcher).
+	//
+	// TODO(hxjiang): If the user enables the server-side file watcher, the
+	// server can eventually skip the client-side registration entirely and
+	// rely solely on the server-side watcher to avoid this redundancy.
+	if err := s.updateServerSideWatcher(ctx, patterns); err != nil {
+		return fmt.Errorf("failed to update server-side file watcher: %w", err)
+	}
 
 	s.watchedGlobPatternsMu.Lock()
 	defer s.watchedGlobPatternsMu.Unlock()
@@ -437,6 +451,70 @@ func (s *server) updateWatchedDirectories(ctx context.Context) error {
 				Method: "workspace/didChangeWatchedFiles",
 			}},
 		})
+	}
+	return nil
+}
+
+// updateServerSideWatcher synchronizes the file watcher's lifecycle with the
+// current session settings (creating, replacing, or closing it as needed)
+// and updates the directories it monitors based on the provided patterns.
+func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
+	wantMode := s.Options().FileWatcher
+	s.fileWatcherMu.Lock()
+	defer s.fileWatcherMu.Unlock()
+
+	// Close file watcher if the file watcher is not the desired mode.
+	if s.fileWatcher != nil && s.fileWatcher.Mode() != wantMode {
+		if err := s.fileWatcher.Close(); err != nil {
+			event.Error(ctx, "failed to close the file watcher", err)
+		}
+		s.fileWatcher = nil
+	}
+
+	if wantMode == settings.FileWatcherOff {
+		return nil
+	}
+
+	// Create new file watcher based on the desired mode.
+	if s.fileWatcher == nil {
+		// TODO(hxjiang): ensure gopls don't process events after shutdown.
+		watcherCtx := xcontext.Detach(ctx)
+		onChange := func(events []protocol.FileEvent) {
+			modifications := make([]file.Modification, len(events))
+			for i, e := range events {
+				modifications[i] = file.Modification{
+					URI:    e.URI,
+					Action: changeTypeToFileAction(e.Type),
+					OnDisk: true,
+				}
+			}
+			if err := s.didModifyFiles(watcherCtx, modifications, FromDidChangeWatchedFiles); err != nil {
+				event.Error(watcherCtx, "failed to process file changes", err)
+			}
+		}
+		onErr := func(err error) {
+			event.Error(watcherCtx, "file watcher error", err)
+		}
+
+		w, err := filewatcher.New(wantMode, nil, onChange, onErr)
+		if err != nil {
+			return err
+		}
+		s.fileWatcher = w
+	}
+
+	// Inv: s.fileWatcher.Mode() == want
+	dirs := make(map[string]struct{})
+	for pattern := range patterns {
+		if pattern.BaseURI != "" {
+			dirs[pattern.BaseURI.Path()] = struct{}{}
+		}
+	}
+	for dir := range dirs {
+		if err := s.fileWatcher.WatchDir(dir); err != nil {
+			// Log warning but continue watching other directories.
+			event.Log(ctx, fmt.Sprintf("failed to watch directory %s: %v", dir, err))
+		}
 	}
 	return nil
 }

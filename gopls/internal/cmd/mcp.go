@@ -12,7 +12,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -112,7 +111,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	}
 
 	// TODO(hxjiang): enable file watcher based on the gopls setting.
-	w, err := filewatcher.New("fsnotify", 500*time.Millisecond, nil, func(events []protocol.FileEvent) {
+	w, err := filewatcher.New("fsnotify", nil, func(events []protocol.FileEvent) {
 		if len(events) == 0 {
 			return
 		}

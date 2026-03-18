@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/splitpkg"
 	"golang.org/x/tools/gopls/internal/progress"
@@ -110,6 +111,9 @@ type server struct {
 	watchedGlobPatternsMu  sync.Mutex
 	watchedGlobPatterns    map[protocol.RelativePattern]unit
 	watchRegistrationCount int
+
+	fileWatcherMu sync.Mutex
+	fileWatcher   filewatcher.Watcher
 
 	diagnosticsMu sync.Mutex // guards map and its values
 	diagnostics   map[protocol.DocumentURI]*fileDiagnostics

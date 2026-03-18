@@ -792,7 +792,16 @@ type InternalOptions struct {
 	// issue.
 	SubdirWatchPatterns SubdirWatchPatterns
 
-	// TODO(hxjiang): create setting for enable file watcher.
+	// FileWatcher specifies the server-side file watching strategy used by gopls.
+	//
+	// By default, this is set to "off", meaning gopls relies exclusively on the
+	// language client (e.g., the editor) to send file change notifications.
+	//
+	// Available options:
+	//   - "off"      : Client-driven watching (default)
+	//   - "fsnotify" : OS-level event notifications
+	//   - "poll"     : Periodic directory scanning
+	FileWatcher FileWatcherMode
 
 	// ReportAnalysisProgressAfter sets the duration for gopls to wait before starting
 	// progress reporting for ongoing go/analysis passes.
@@ -827,6 +836,14 @@ type InternalOptions struct {
 	// allowing pull diagnostics by default.
 	PullDiagnostics bool
 }
+
+type FileWatcherMode string
+
+const (
+	FileWatcherOff      FileWatcherMode = "off"
+	FileWatcherFSNotify FileWatcherMode = "fsnotify"
+	FileWatcherPoll     FileWatcherMode = "poll"
+)
 
 type SubdirWatchPatterns string
 
@@ -1399,6 +1416,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "renameMovesSubpackages":
 		return setBool(&o.RenameMovesSubpackages, value)
+
+	case "fileWatcher":
+		return setEnum(&o.FileWatcher, value, FileWatcherOff, FileWatcherFSNotify, FileWatcherPoll)
 
 	// deprecated and renamed settings
 	//

@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
@@ -45,7 +46,10 @@ Key lessons and design decisions from its implementation:
 // NewPollWatcher creates a new watcher that actively polls the file tree to
 // detect changes. It uses an adaptive back-off strategy to reduce scans of the
 // file tree and save battery; it is thus only eventually consistent.
-func NewPollWatcher(interval time.Duration, log *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) *pollWatcher {
+func NewPollWatcher(log *slog.Logger, onEvents func([]protocol.FileEvent), onError func(error)) *pollWatcher {
+	if log != nil {
+		log = log.With("watcher", "poll")
+	}
 	w := &pollWatcher{
 		log:      log,
 		onEvents: onEvents,
@@ -54,17 +58,23 @@ func NewPollWatcher(interval time.Duration, log *slog.Logger, onEvents func([]pr
 		stop:     make(chan struct{}),
 		poke:     make(chan struct{}, 1),
 		roots:    make(map[string]*promise[fileState]),
-		interval: interval,
 	}
 	w.loops.Go(w.loop)
 	return w
 }
 
+// pollInterval is the baseline polling frequency for the fallback file watcher.
+//
+// A 1-second interval prioritizes Developer Experience by ensuring the editor
+// feels highly responsive to external file system changes (like branch
+// switches). The watcher relies on its adaptive backoff mechanism to conserve
+// CPU and disk I/O when the workspace is idle.
+const pollInterval = time.Second
+
 type pollWatcher struct {
 	log      *slog.Logger
 	onEvents func([]protocol.FileEvent)
 	onError  func(error)
-	interval time.Duration // polling interval
 
 	// TODO(hxjiang): accept ctx from constructor and use ctx.Done() for Close.
 	ctx context.Context
@@ -108,7 +118,15 @@ type fileInfo struct {
 	IsDir   bool
 }
 
+func (w *pollWatcher) Mode() settings.FileWatcherMode {
+	return settings.FileWatcherPoll
+}
+
 func (w *pollWatcher) WatchDir(dir string) error {
+	if w.log != nil {
+		w.log.Info("Watching", "dir", dir)
+	}
+
 	// TODO(hxjiang): prevent watching for a dir if the parent dir is already
 	// being watched.
 
@@ -180,7 +198,7 @@ func (w *pollWatcher) Poke() {
 // A call to [pollWatcher.Poke] interrupts any long sleep and resets the timer
 // to the fast polling interval.
 func (w *pollWatcher) loop() {
-	delay := w.interval
+	delay := pollInterval
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 
@@ -190,7 +208,7 @@ func (w *pollWatcher) loop() {
 			return
 
 		case <-w.poke:
-			delay = w.interval
+			delay = pollInterval
 			timer.Reset(delay)
 
 		case <-timer.C:
@@ -240,7 +258,7 @@ func (w *pollWatcher) loop() {
 
 			if changed {
 				// If changes found, keep polling fast for a bit.
-				delay = w.interval
+				delay = pollInterval
 			} else {
 				// No changes, backoff.
 				delay = min(delay*2, 2*time.Hour)

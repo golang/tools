@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/robustio"
 	"golang.org/x/tools/internal/testfiles"
@@ -161,10 +162,10 @@ package foo
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, mode := range []string{"fsnotify", "poll"} {
-				t.Run(mode, func(t *testing.T) {
+			for _, mode := range []settings.FileWatcherMode{settings.FileWatcherFSNotify, settings.FileWatcherPoll} {
+				t.Run(string(mode), func(t *testing.T) {
 					// "poll" mode is portable, so we can run it on all OS.
-					if mode == "fsnotify" {
+					if mode == settings.FileWatcherFSNotify {
 						switch runtime.GOOS {
 						case "darwin", "linux", "windows":
 						default:
@@ -211,13 +212,7 @@ package foo
 						t.Errorf("error from watcher: %v", err)
 					}
 
-					// Use shorter delay for poll watcher to make test faster.
-					delay := 50 * time.Millisecond
-					if mode == "poll" {
-						delay = 10 * time.Millisecond
-					}
-
-					w, err := filewatcher.New(mode, delay, nil, eventsHandler, errHandler)
+					w, err := filewatcher.New(mode, nil, eventsHandler, errHandler)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -235,7 +230,7 @@ package foo
 					// cases use os.WriteFile which updates mtime. However, if the
 					// test runs too fast, mtime might not change (if resolution
 					// is low). Poll watcher checks mtime.
-					if mode == "poll" {
+					if mode == settings.FileWatcherPoll {
 						time.Sleep(10 * time.Millisecond)
 					}
 					// The poll watcher periodically scans the directory in the
@@ -346,7 +341,7 @@ func TestBrokenSymlink(t *testing.T) {
 	errHandler := func(err error) {
 		t.Errorf("error from watcher: %v", err)
 	}
-	w, err := filewatcher.New("fsnotify", 50*time.Millisecond, nil, eventsHandler, errHandler)
+	w, err := filewatcher.New(settings.FileWatcherFSNotify, nil, eventsHandler, errHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,10 +456,10 @@ package b
 }
 
 func TestStress(t *testing.T) {
-	for _, mode := range []string{"poll", "fsnotify"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, mode := range []settings.FileWatcherMode{settings.FileWatcherPoll, settings.FileWatcherFSNotify} {
+		t.Run(string(mode), func(t *testing.T) {
 			// "poll" mode is portable, so we can run it on all OS.
-			if mode == "fsnotify" {
+			if mode == settings.FileWatcherFSNotify {
 				switch runtime.GOOS {
 				case "darwin", "linux", "windows":
 				default:
@@ -472,13 +467,7 @@ func TestStress(t *testing.T) {
 				}
 			}
 
-			const (
-				parallelism = 100 // number of parallel instances of each kind of operation
-			)
-			delay := 50 * time.Millisecond
-			if mode == "poll" {
-				delay = 10 * time.Millisecond
-			}
+			const parallelism = 100 // number of parallel instances of each kind of operation
 
 			root := t.TempDir()
 
@@ -546,7 +535,7 @@ func TestStress(t *testing.T) {
 			errHandler := func(err error) {
 				t.Errorf("error from watcher: %v", err)
 			}
-			w, err := filewatcher.New(mode, delay, nil, eventsHandler, errHandler)
+			w, err := filewatcher.New(mode, nil, eventsHandler, errHandler)
 			if err != nil {
 				t.Fatal(err)
 			}
