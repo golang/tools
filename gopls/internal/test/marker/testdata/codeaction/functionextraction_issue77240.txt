@@ -1,5 +1,5 @@
-This test verifies the fix for golang/go#44813: extraction failure when there
-are blank identifiers.
+This test verifies the fix for golang/go#77240: type-aware variable naming
+when expanding multi-value function call returns during extraction.
 
 -- go.mod --
 module mod.test/extract
@@ -43,12 +43,12 @@ func Fun(v2 int) (int, int, error) {
 func newFunction(v2 int) (int, int, error, bool) {
 	switch v2 { //@codeaction("switch", "refactor.extract.function", end=end, result=ext)
 	case 1:
-		v1, // also a comment!
-		v3, v4 := doOne()
-		return v1, v3, v4, true // a comment!
+		i, // also a comment!
+		i1, err := doOne()
+		return i, i1, err, true // a comment!
 	case 2:
-		v1, v3, v4 := doTwo()
-		return v1, v3, v4, true
+		i, i1, err := doTwo()
+		return i, i1, err, true
 	}
 	return 0, 0, nil, false
 }
@@ -60,4 +60,60 @@ func doOne() (int, int, error) {
 func doTwo() (int, int, error) {
 	return 0, 2, nil
 }
+
+-- p2/p.go --
+package extract
+
+import "fmt"
+
+func Fun(v2 int) (int, int, error) {
+	switch v2 { //@codeaction("switch", "refactor.extract.function", end=end2, result=ext2)
+	case 1:
+		i := v2 + 1
+		i1 := v2 + 2
+		err := fmt.Errorf("foo")
+		fmt.Println(i, i1, err)
+		return doOne()
+	case 2:
+		return doTwo()
+	} //@loc(end2, "}")
+
+	return 1, 3, nil
+}
+
+func doOne() (int, int, error) { return 0, 1, nil }
+func doTwo() (int, int, error) { return 0, 2, nil }
+
+-- @ext2/p2/p.go --
+package extract
+
+import "fmt"
+
+func Fun(v2 int) (int, int, error) {
+	i, i1, err, shouldReturn := newFunction(v2)
+	if shouldReturn {
+		return i, i1, err
+	} //@loc(end2, "}")
+
+	return 1, 3, nil
+}
+
+func newFunction(v2 int) (int, int, error, bool) {
+	switch v2 { //@codeaction("switch", "refactor.extract.function", end=end2, result=ext2)
+	case 1:
+		i := v2 + 1
+		i1 := v2 + 2
+		err := fmt.Errorf("foo")
+		fmt.Println(i, i1, err)
+		i2, i3, err1 := doOne()
+		return i2, i3, err1, true
+	case 2:
+		i, i1, err := doTwo()
+		return i, i1, err, true
+	}
+	return 0, 0, nil, false
+}
+
+func doOne() (int, int, error) { return 0, 1, nil }
+func doTwo() (int, int, error) { return 0, 2, nil }
 

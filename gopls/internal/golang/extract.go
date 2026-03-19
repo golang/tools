@@ -630,6 +630,8 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		allReturnsFinalErr = true  // all ReturnStmts have final 'err' expression
 		hasReturn          = false // selection contains a ReturnStmt
 		filter             = []ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}
+
+		origRetStmts []*ast.ReturnStmt // return stmts in source order, for type lookups
 	)
 	curEnclosing.Inspect(filter, func(cur inspector.Cursor) (descend bool) {
 		if funcLit, ok := cur.Node().(*ast.FuncLit); ok {
@@ -642,6 +644,8 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			return false // not part of the extracted block
 		}
 		hasReturn = true
+
+		origRetStmts = append(origRetStmts, ret)
 
 		if cur.Parent() == curStart.Parent() {
 			hasNonNestedReturn = true
@@ -1117,19 +1121,9 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// Expand multi-value function calls in return statements.
 	// If a return contains a single CallExpr that is being augmented with new
 	// return values, the call return values must be expanded to maintain valid syntax.
-	ast.Inspect(extractedBlock, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.BlockStmt:
-			n.List = expandFunctionCallReturnValues(n.List, info, newFuncResults, file, start)
-		case *ast.CaseClause:
-			n.Body = expandFunctionCallReturnValues(n.Body, info, newFuncResults, file, start)
-		case *ast.FuncLit:
-			// Don't descend into nested functions.
-			return false
-		}
-
-		return true
-	})
+	if err := expandMultiValueCallReturns(extractedBlock, info, newFuncResults, file, start, origRetStmts); err != nil {
+		return nil, nil, err
+	}
 
 	// Build the extracted function. We format the function declaration and body
 	// separately, so that comments are printed relative to the extracted
@@ -1231,21 +1225,68 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	}, nil
 }
 
-// expandFunctionCallReturnValues expands the return value of function calls when necessary.
-func expandFunctionCallReturnValues(stmts []ast.Stmt, info *types.Info, newFuncResults *ast.FieldList, file *ast.File, start token.Pos) []ast.Stmt {
+// expandMultiValueCallReturns expands multi-value function calls in return
+// statements within the extracted block.
+func expandMultiValueCallReturns(extractedBlock *ast.BlockStmt, info *types.Info, newFuncResults *ast.FieldList, file *ast.File, start token.Pos, origRetStmts []*ast.ReturnStmt) error {
+	// The re-parsed AST has no type information, so we pair its return stmts
+	// with the original (type-checked) ones to look up types for naming.
+	//
+	// The pairing is done as a separate pass because the second pass doesn't
+	// exactly visit the ReturnStmt in the same way as how the origRetStmts
+	// is collected (via ast.Inspect).
+	origRetMap := map[*ast.ReturnStmt]*ast.ReturnStmt{}
+	origIdx := 0
+	ast.Inspect(extractedBlock, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.ReturnStmt:
+			if origIdx < len(origRetStmts) {
+				origRetMap[n] = origRetStmts[origIdx]
+				origIdx++
+			} else {
+				// The re-parsed AST may have injected returns appended
+				// at the end with no original counterpart but it is ok since
+				// we can guarantee it will not have CallExpr in it.
+				return false
+			}
+		case *ast.FuncLit:
+			return false // don't descend into closures.
+		}
+
+		return true
+	})
+
+	// Traverse the extracted block again and do the actual expansion.
+	var expandErr error
+	ast.Inspect(extractedBlock, func(n ast.Node) bool {
+		if expandErr != nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.BlockStmt:
+			n.List, expandErr = expandFunctionCallReturnValues(n.List, info, newFuncResults, file, start, origRetMap)
+		case *ast.CaseClause:
+			n.Body, expandErr = expandFunctionCallReturnValues(n.Body, info, newFuncResults, file, start, origRetMap)
+		case *ast.FuncLit:
+			return false // don't descend into closures.
+		}
+
+		return true
+	})
+	return expandErr
+}
+
+// expandFunctionCallReturnValues expands the return value of function calls
+// in the given statement list when necessary.
+func expandFunctionCallReturnValues(stmts []ast.Stmt, info *types.Info, newFuncResults *ast.FieldList, file *ast.File, start token.Pos, origRetMap map[*ast.ReturnStmt]*ast.ReturnStmt) ([]ast.Stmt, error) {
 	result := make([]ast.Stmt, 0, len(stmts))
 	for _, stmt := range stmts {
 		result = append(result, stmt)
 
-		retStmt, ok := stmt.(*ast.ReturnStmt)
-		if !ok {
-			continue
-		}
-
-		// when we have multiple return statement results, we can't have a CallExpr in it.
-		// in that case, we need to splat the values of that CallExpr into variable(s)
+		// When we have multiple return statement results, we can't have a CallExpr in it.
+		// In that case, we need to splat the values of that CallExpr into variable(s)
 		// and return them.
-		if len(retStmt.Results) <= 1 {
+		retStmt, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(retStmt.Results) <= 1 {
 			continue
 		}
 
@@ -1261,13 +1302,32 @@ func expandFunctionCallReturnValues(stmts []ast.Stmt, info *types.Info, newFuncR
 		// type information here. This should be correct assuming the original code
 		// is valid to begin with.
 		expandedVars := make([]ast.Expr, len(newFuncResults.List)-len(retStmt.Results)+1) // plus one to replace the CallExpr
-		prevIdx := 1
+
+		// Use type information from the original return statement to
+		// generate type-aware names and detect scope collisions.
+		origRet := origRetMap[retStmt]
+		if origRet == nil {
+			return nil, bug.Errorf("no original return statement for re-parsed return")
+		}
+
+		scopePos := origRet.Pos()
+		origCallExpr := origRet.Results[0].(*ast.CallExpr)
+		sig := info.TypeOf(origCallExpr.Fun).Underlying().(*types.Signature)
+		tup := sig.Results()
+
+		// Generate type-aware names for each expanded return values.
+		prevIdxByPrefix := map[string]int{}
 		for i := range expandedVars {
-			// ideally we want to generate a better name (e.g. `errX` for error values)
-			// but we don't have type info at this stage.
-			name, idx := freshName(info, file, start, "v", prevIdx)
+			prefix := "v"
+			if name, ok := varNameForType(tup.At(i).Type()); ok {
+				prefix = name
+			}
+
+			prev := prevIdxByPrefix[prefix]
+			name, next := freshName(info, file, scopePos, prefix, prev)
+			prevIdxByPrefix[prefix] = next
+
 			expandedVars[i] = ast.NewIdent(name)
-			prevIdx = idx
 		}
 
 		result[len(result)-1] = ast.Stmt(&ast.AssignStmt{
@@ -1282,7 +1342,7 @@ func expandFunctionCallReturnValues(stmts []ast.Stmt, info *types.Info, newFuncR
 		})
 	}
 
-	return result
+	return result, nil
 }
 
 // isSelector reports if e is the selector expr <x>, <sel>. It works for pointer and non-pointer selector expressions.
