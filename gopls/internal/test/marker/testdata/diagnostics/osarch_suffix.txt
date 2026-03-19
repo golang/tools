@@ -9,11 +9,16 @@ The two p/*.go files below are written to trigger the same diagnostic
 In the q test, a single location in the common code q.go has two
 diagnostics, one of which is tagged.
 
-This test would fail on openbsd/riscv64 because it will be
-the same as the default build, so we skip that platform.
+This test would fail on openbsd/riscv64 because it will be the same as
+the default build, so we skip that platform. And it would fail on
+*/riscv64 merely because it produces a diagnostic that doesn't include
+the riscv64 component (since it's the default). So we disable it for
+that GOOS or GOARCH. But the purpose of the test is not coverage
+across all configurations, only to test the mechanism in some configs.
 
 -- flags --
 -skip_goos=openbsd
+-skip_goarch=riscv64
 
 -- go.mod --
 module example.com
