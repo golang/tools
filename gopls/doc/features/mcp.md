@@ -50,6 +50,62 @@ be printed, so that you can do, for example:
 gopls mcp -instructions > /path/to/contextFile.md
 ```
 
+## Coding assistant setup
+
+To use the gopls MCP server with an LLM-based coding assistant,
+you need to configure the assistant's MCP client to talk to `gopls`.
+Below are guides for popular assistants.
+
+First ensure that gopls v0.20 or higher is installed and available in
+your `$PATH`. Use this command to install the latest version:
+
+```bash
+$ go install golang.org/x/tools/gopls@latest
+```
+
+### Gemini CLI
+
+For Gemini CLI, add the following configuration to
+`$HOME/.gemini/extensions/go/gemini-extension.json`:
+
+```json
+{
+  "name": "go",
+  "version": "0.0.1",
+  "mcpServers": {
+    "go": {
+      "command": "gopls",
+      "args": ["mcp"]
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}
+```
+
+Then run this command to emit the model instructions:
+
+```bash
+$ gopls mcp -instructions > ~/.gemini/extensions/go/GEMINI.md
+```
+
+To verify the connection, use the `/mcp list` command in your Gemini
+session to view available tools. Alternatively, run `gemini mcp list`
+from your shell to inspect active MCP servers and connection status.
+
+### Claude Code
+
+For Claude Code, run the following command to add `gopls` as an MCP server:
+
+```bash
+$ claude mcp add gopls -- gopls mcp
+```
+
+To verify the connection and explore available tools:
+
+*   Type `/mcp` inside your Claude session to view the list of tools offering.
+*   Run `claude mcp list` to inspect currently active MCP servers.
+*   Run `claude mcp get gopls` to inspect the configuration details of the server.
+
 ## Security considerations
 
 The gopls MCP server is a wrapper around the functionality ordinarily exposed
