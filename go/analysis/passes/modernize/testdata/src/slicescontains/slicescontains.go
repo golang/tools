@@ -1,6 +1,9 @@
 package slicescontains
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 var _ = slices.Contains[[]int] // force import of "slices" to avoid duplicate import edits
 
@@ -231,4 +234,20 @@ func issue77677emptybody(slice []int, needle int) {
 			break
 		}
 	}
+}
+
+type Object struct{}
+
+func (o Object) Do() Object { return Object{} }
+func (o Object) Print()     { fmt.Println("Hello, World!") }
+
+func issue78149nonboolassign(obj Object, opts ...string) {
+	o := obj
+	for _, opt := range opts { // want "Loop can be simplified using slices.Contains"
+		if opt == "something" {
+			o = o.Do()
+			break
+		}
+	}
+	o.Print()
 }

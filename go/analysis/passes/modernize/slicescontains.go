@@ -327,12 +327,13 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 					len(assign.Rhs) == 1 {
 
 					// Have: body={ lhs = rhs; break }
+					assignBool := isTrueOrFalse(info, assign.Rhs[0])
 					if prevAssign, ok := prevStmt.(*ast.AssignStmt); ok &&
 						len(prevAssign.Lhs) == 1 &&
 						len(prevAssign.Rhs) == 1 &&
+						assignBool != 0 && // non-bool assignments don't apply in this case
 						astutil.EqualSyntax(prevAssign.Lhs[0], assign.Lhs[0]) &&
-						isTrueOrFalse(info, assign.Rhs[0]) ==
-							-isTrueOrFalse(info, prevAssign.Rhs[0]) {
+						assignBool == -isTrueOrFalse(info, prevAssign.Rhs[0]) {
 
 						// Have:
 						//    lhs = false
@@ -343,7 +344,7 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 						// TODO(adonovan):
 						// - support "var lhs bool = false" and variants.
 						// - allow the break to be omitted.
-						neg := cond(isTrueOrFalse(info, assign.Rhs[0]) < 0, "!", "")
+						neg := cond(assignBool < 0, "!", "")
 						report([]analysis.TextEdit{
 							// Replace "rhs" of previous assignment by [!]slices.Contains(...)
 							{
