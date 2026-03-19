@@ -1,6 +1,9 @@
 This test checks that gopls does not panic when requesting code actions
 for an import that fails to resolve a package name (such as renaming "C").
 
+-- flags --
+-cgo
+
 -- go.mod --
 module example.com
 
@@ -10,3 +13,4 @@ go 1.18
 package p //@ diag(re"^", re`cannot rename import "C"`), diag(re"^", re"go list failed")
 
 import . "C" //@ codeaction(".", "refactor.rewrite.eliminateDotImport", err="found 0 CodeActions"), diag(re`[.]`, re`cannot rename import "C"`)
+
