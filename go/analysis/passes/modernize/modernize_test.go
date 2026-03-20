@@ -50,7 +50,7 @@ func TestMapsLoop(t *testing.T) {
 }
 
 func TestMinMax(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), modernize.MinMaxAnalyzer, "minmax", "minmax/userdefined", "minmax/wrongoperators", "minmax/nonstrict", "minmax/wrongreturn")
+	RunWithSuggestedFixes(t, TestData(), modernize.MinMaxAnalyzer, "minmax", "minmax/userdefined", "minmax/wrongoperators", "minmax/nonstrict", "minmax/wrongreturn", "minmax/go120")
 }
 
 func TestNewExpr(t *testing.T) {

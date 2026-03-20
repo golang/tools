@@ -1,0 +1,11 @@
+//go:build !go1.21
+
+package go120
+
+func min(a, b int) int { // can't be removed because we don't have at least go1.21
+	if a <= b {
+		return a
+	} else {
+		return b
+	}
+}
