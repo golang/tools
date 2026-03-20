@@ -213,3 +213,8 @@ func TestTypesWithNames(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbeddedAlias(t *testing.T) {
+	dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/embedded_alias.txtar")
+	analysistest.Run(t, dir, Analyzer, "example.com")
+}
