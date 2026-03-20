@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build goexperiment.synctest || go1.25
-
 package mcp
 
 import (
@@ -85,12 +83,7 @@ func TestServerConformance(t *testing.T) {
 			// By comparison, gopls has a complicated framework based on progress
 			// reporting and careful accounting to detect when all 'expected' work
 			// on the server is complete.
-			runSyncTest(t, func(t *testing.T) { runServerTest(t, test) })
-
-			// TODO: in 1.25, use the following instead:
-			// synctest.Test(t, func(t *testing.T) {
-			// 	runServerTest(t, test)
-			// })
+			synctest.Test(t, func(t *testing.T) { runServerTest(t, test) })
 		})
 	}
 }
