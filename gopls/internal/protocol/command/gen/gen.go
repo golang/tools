@@ -66,7 +66,7 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		{{end -}}
-		return {{if not .Result}}nil, {{end}}s.{{.MethodName}}(ctx{{range $i, $v := .Args}}, a{{$i}}{{end}})
+		return {{if not .Result}}nil, {{end}}s.{{.MethodName}}(ctx{{range $i, $v := .Args}}, a{{$i}}{{end}}{{if .Interactive}}, &params.InteractiveParams{{end}})
 	{{- end}}
 	}
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
@@ -141,7 +141,11 @@ func Generate() ([]byte, error) {
 				log.Println("Command.Args has fallible type", t)
 				return true
 			}
-			for _, arg := range args {
+			for i, arg := range args {
+				if i == len(args)-1 && typesinternal.IsPointerToNamed(arg.Type, "golang.org/x/tools/gopls/internal/protocol", "InteractiveParams") {
+					continue
+				}
+
 				if fallible(arg.Type) {
 					return true
 				}

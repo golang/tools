@@ -101,29 +101,33 @@ type C struct {
 				Start: protocol.Position{Line: 2, Character: 0},
 				End:   protocol.Position{Line: 8, Character: 0},
 			},
-			Add:        "json",
-			AddOptions: "json=omitempty",
+			Modification: "add",
+			Add:          "json",
+			AddOptions:   "json=omitempty",
 		}, want: wantAddTagsEntireStruct},
 		{file: "b.go", args: command.ModifyTagsArgs{
 			Range: protocol.Range{
 				Start: protocol.Position{Line: 3, Character: 2},
 				End:   protocol.Position{Line: 4, Character: 6},
 			},
-			Remove: "json",
+			Modification: "remove",
+			Remove:       "json",
 		}, want: wantRemoveTags},
 		{file: "a.go", args: command.ModifyTagsArgs{
 			Range: protocol.Range{
 				Start: protocol.Position{Line: 5, Character: 0},
 				End:   protocol.Position{Line: 5, Character: 7},
 			},
-			Add:        "json",
-			AddOptions: "json=omitempty",
+			Modification: "add",
+			Add:          "json",
+			AddOptions:   "json=omitempty",
 		}, want: wantAddTagsSingleLine},
 		{file: "c.go", args: command.ModifyTagsArgs{
 			Range: protocol.Range{
 				Start: protocol.Position{Line: 3, Character: 0},
 				End:   protocol.Position{Line: 7, Character: 0},
 			},
+			Modification:  "remove",
 			RemoveOptions: "json=omitempty",
 		}, want: wantRemoveOptions},
 	}
@@ -135,6 +139,7 @@ type C struct {
 				command.ModifyTagsArgs{
 					URI:           uri,
 					Range:         test.args.Range,
+					Modification:  test.args.Modification,
 					Add:           test.args.Add,
 					AddOptions:    test.args.AddOptions,
 					Remove:        test.args.Remove,

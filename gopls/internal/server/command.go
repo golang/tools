@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/fatih/gomodifytags/modifytags"
 	"golang.org/x/mod/modfile"
@@ -1809,12 +1810,17 @@ func optionsStringToMap(options string) (map[string][]string, error) {
 	return optionsMap, nil
 }
 
-func (c *commandHandler) ImplementInterface(ctx context.Context, args command.ImplementInterfaceArgs) error {
+func (c *commandHandler) ImplementInterface(ctx context.Context, args command.ImplementInterfaceArgs, params *protocol.InteractiveParams) error {
 	return c.run(ctx, commandConfig{
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := golang.ImplementInterface(ctx, deps.snapshot, args.Location, args.Interface)
+		iface, err := formAnswer[string](params, 0)
+		if err != nil {
+			return err
+		}
+
+		edits, err := golang.ImplementInterface(ctx, deps.snapshot, args.Location, iface)
 		if err != nil {
 			return err
 		}
@@ -1822,11 +1828,66 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 	})
 }
 
-func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs) error {
+// sanitizeTags cleans up comma-separated tags and ensures they are valid.
+func sanitizeTags(tags string) (string, error) {
+	parts := strings.Split(tags, ",")
+	var clean []string
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		// Use strings.ContainsFunc instead of a manual byte loop.
+		// It returns true if any rune in the string matches the condition.
+		if strings.ContainsFunc(p, func(r rune) bool {
+			// Space, colon, quote, or any non-printable character (like control chars)
+			return r == ' ' || r == ':' || r == '"' || !unicode.IsPrint(r)
+		}) {
+			return "", fmt.Errorf("illegal tag %q: cannot contain spaces, quotes, colons, or control characters", p)
+		}
+
+		clean = append(clean, p)
+	}
+
+	return strings.Join(clean, ","), nil
+}
+
+func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs, params *protocol.InteractiveParams) error {
 	return c.run(ctx, commandConfig{
 		progress: "Modifying tags",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		if len(params.FormAnswers) > 0 {
+			switch args.Modification {
+			case "add":
+				tags, err := formAnswer[string](params, 0)
+				if err != nil {
+					return err
+				}
+				args.Add, err = sanitizeTags(tags)
+				if err != nil {
+					return err
+				}
+				args.Transform, err = formAnswer[string](params, 1)
+				if err != nil {
+					return err
+				}
+			case "remove":
+				tags, err := formAnswer[string](params, 0)
+				if err != nil {
+					return err
+				}
+				args.Remove, err = sanitizeTags(tags)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unsupported modify tags operation: %s", args.Modification)
+			}
+		}
+
 		m := &modifytags.Modification{
 			Clear:        args.Clear,
 			ClearOptions: args.ClearOptions,

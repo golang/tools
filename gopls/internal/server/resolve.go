@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"go/token"
 	"slices"
-	"strings"
-	"unicode"
 
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -33,10 +31,9 @@ import (
 // 5. Client return ApplyWorkspaceEditResult with applied = true
 // 6. Client sends a textDocument/didChange notification, with the edits applied (optional)
 
-// In vscode-go, because it is a standard LSP client,
-// cannot do step 4 as described. Instead
-// it calls "workspace/executeCommand" with command 'gopls.lsp'
-// and parameter.Method "command/resolve".
+// In vscode-go, because it is a standard LSP client, cannot do step 4 as
+// described. Instead it calls "workspace/executeCommand" with command
+// 'gopls.lsp' and parameter.Method "command/resolve".
 //
 // ExecuteCommand() calls command.Dispatch() which calls LSP()
 // which calls protocol.ServerDispatchCall("command/resolve")
@@ -104,32 +101,6 @@ func (s *server) ResolveCommand(ctx context.Context, param *protocol.ExecuteComm
 }
 
 func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
-	// sanitizeTags cleans up comma-separated tags and ensures they are valid.
-	var sanitizeTags = func(tags string) (string, error) {
-		parts := strings.Split(tags, ",")
-		var clean []string
-
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-
-			// Use strings.ContainsFunc instead of a manual byte loop.
-			// It returns true if any rune in the string matches the condition.
-			if strings.ContainsFunc(p, func(r rune) bool {
-				// Space, colon, quote, or any non-printable character (like control chars)
-				return r == ' ' || r == ':' || r == '"' || !unicode.IsPrint(r)
-			}) {
-				return "", fmt.Errorf("illegal tag %q: cannot contain spaces, quotes, colons, or control characters", p)
-			}
-
-			clean = append(clean, p)
-		}
-
-		return strings.Join(clean, ","), nil
-	}
-
 	var a0 command.ModifyTagsArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
 		return err
@@ -147,27 +118,21 @@ func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
 		if err != nil {
 			return err
 		}
-		sanitized, err := sanitizeTags(v0)
-		if err != nil {
+		if _, err = sanitizeTags(v0); err != nil {
 			form := slices.Clone(AddTagsForm)
 			form[0].Error = err.Error()
 			param.FormFields = form
 			return nil
 		}
 
-		a0.Add = sanitized
-
 		// User parameter 1.
-		v1, err := formAnswer[string](&param.InteractiveParams, 1)
+		_, err = formAnswer[string](&param.InteractiveParams, 1)
 		if err != nil {
 			return err
 		}
 		// PJW: what happens when the user enters a bad value? (i think the client handles it)
-		a0.Transform = v1
 
-		param.FormAnswers = nil
 		param.FormFields = nil
-		param.Arguments = command.MustMarshalArgs(a0)
 		return nil
 	case "remove":
 		// First call, return the form
@@ -181,19 +146,14 @@ func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
 		if err != nil {
 			return err
 		}
-		sanitized, err := sanitizeTags(v)
-		if err != nil {
+		if _, err := sanitizeTags(v); err != nil {
 			form := slices.Clone(AddTagsForm)
 			form[0].Error = err.Error()
 			param.FormFields = form
 			return nil
 		}
 
-		a0.Remove = sanitized
-
-		param.FormAnswers = nil
 		param.FormFields = nil
-		param.Arguments = command.MustMarshalArgs(a0)
 		return nil
 	default:
 		return fmt.Errorf("unsupported modify tags operation: %s", a0.Modification)
@@ -258,11 +218,7 @@ func resolveImplementInterface(param *protocol.ExecuteCommandParams) error {
 		return nil
 	}
 
-	a0.Interface = v
-
-	param.FormAnswers = nil
 	param.FormFields = nil
-	param.Arguments = command.MustMarshalArgs(a0)
 	return nil
 }
 

@@ -137,21 +137,58 @@ type FormField struct {
 	Error string `json:"error,omitempty"`
 }
 
-// InteractiveParams allow the server and client to exchange interactive
-// questions and answers during an LSP request.
+// InteractiveParams facilitates a multi-step, interactive dialogue between the
+// client and server during a Language Server Protocol (LSP) request.
 //
-// The server populates FormFields to define the schema. The server may
-// optionally populate FormAnswers to preserve previous user input; if
-// provided, the client may present these as default values.
+// It implements a non-standard protocol extension microsoft/language-server-protocol#1164
+// . By embedding this type into standard request parameters (such as
+// [ExecuteCommandParams] or [RenameParams]) and pairing them with dedicated
+// resolution methods (like [Server.ResolveCommand] or other ResolveXXX handlers),
+// standard operations can be transformed into interactive workflows.
 //
-// When the client responds, it must provide FormAnswers. The client is not
-// required to send FormFields back to the server.
+// Standard LSP resolution methods (like "codeAction/resolve") cannot be used
+// for these interactive forms because editors often trigger them eagerly to
+// render previews, which would prematurely present UI forms to the user.
+// The dedicated ResolveXXX pattern ensures the interactive dialogue strictly
+// begins only *after* the user has explicitly indicated intent (for example,
+// by clicking a specific Code Action).
+//
+// The following sequence illustrates the typical handshake, using a code action
+// that resolves to a command as an example:
+//
+//  1. The client requests code actions for the current text selection.
+//  2. The server responds with a code action containing a standard LSP Command
+//     (title, command, and arguments).
+//  3. The client calls [Server.ResolveCommand] with the initial command details
+//     wrapped in an [ExecuteCommandParams] to determine if the execution requires
+//     interactive input.
+//  4. The server responds with an [ExecuteCommandParams]. If user input is
+//     required, the server populates the FormFields array with the required schema.
+//  5. The client observes the non-empty FormFields and presents a corresponding
+//     user interface.
+//  6. The user submits their input, and the client issues another
+//     [Server.ResolveCommand] request, this time populating the FormAnswers array.
+//  7. The server validates the answers. If invalid, it returns a form with error
+//     messages attached to specific FormFields. Steps 5-7 repeat until the server
+//     omits FormFields entirely, indicating the answers are valid and complete.
+//  8. The client calls [Server.ExecuteCommand] with the finalized FormAnswers to
+//     execute the action.
+//
+// The server populates FormFields to define the input schema. If FormFields is
+// omitted or empty, the interactive phase is considered complete and the provided
+// FormAnswers have been fully validated.
+//
+// The server may optionally populate FormAnswers alongside FormFields to preserve
+// previous user input or provide default values for the client to render.
 type InteractiveParams struct {
 	// FormFields defines the questions and validation errors in previous
 	// answers to the same questions.
 	//
 	// This is a server-to-client field. The language server defines these, and
 	// the client uses them to render the form.
+	//
+	// The interactive phase is considered complete when the server returns a
+	// response where this slice is omitted.
 	//
 	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
 	FormFields []FormField `json:"formFields,omitempty"`
@@ -161,9 +198,10 @@ type InteractiveParams struct {
 	// When sent by the language server, this field is optional but recommended
 	// to support editing previous values.
 	//
-	// When sent by the language client, this field is required. The slice must
-	// have the same length as FormFields (one answer per question), where the
-	// answer at index i corresponds to the field at index i.
+	// When sent by the language client as part of the ResolveXXX request, this
+	// field is required. The slice must have the same length as FormFields (one
+	// answer per question), where the answer at index i corresponds to the
+	// field at index i.
 	//
 	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
 	FormAnswers []any `json:"formAnswers,omitempty"`

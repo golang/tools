@@ -31,27 +31,22 @@ type Server interface {
 	ResolveCodeAction(context.Context, *CodeAction) (*CodeAction, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLens_resolve
 	ResolveCodeLens(context.Context, *CodeLens) (*CodeLens, error)
-	// To support microsoft/language-server-protocol#1164, the language server
-	// need to read the form with client-supplied answers and either returns an
-	// ExecuteCommandParams with errors in the form surfacing the error to the
-	// client, or an ExecuteCommandParams with interactive properties empty (e.g
-	// formFields, formAnswers) and user information integrated in original
-	// properties.
+	// ResolveCommand handles the interactive resolution of a command prior to
+	// its execution.
 	//
-	// The language client may call "command/resolve" if the language server
-	// returns an ExecuteCommandParams with errors or try asking the user for
-	// completing the form again.
-	// The language client may call "command/resolve" multiple times with user
-	// filled (re-filled) answers in the form until it obtains an
-	// ExecuteCommandParams with interactive properties empty (e.g. formFields,
-	// formAnswers). by then the original properties contains all information,
-	// the client can call "workspace/executeCommand" with the same param.
+	// It processes an [ExecuteCommandParams] to determine if the command requires
+	// interactive input, or to validate user-provided answers submitted via the
+	// embedded [InteractiveParams].
 	//
-	// Standard resolution (e.g., "codeAction/resolve") cannot be used here because
-	// it is often triggered eagerly (e.g., for previews), prohibiting interactive
-	// forms. "command/resolve" is introduced to handle the interactive flow
-	// strictly *after* the user has explicitly indicated intention (e.g., by
-	// clicking), making it safe for Code Actions and other refactorings.
+	// If the command requires user input (e.g., the initial probe) or if the
+	// provided answers are invalid, it returns a modified [ExecuteCommandParams]
+	// populated with FormFields to prompt the user. If the input is valid and
+	// complete, or if the command requires no interaction at all, it returns an
+	// [ExecuteCommandParams] with an empty form, signaling the client to proceed
+	// with execution.
+	//
+	// See [InteractiveParams] for the complete multi-step client-server handshake
+	// and the architectural reasoning behind dedicated ResolveXXX methods.
 	//
 	// Note: This is a non-standard protocol extension.
 	ResolveCommand(context.Context, *ExecuteCommandParams) (*ExecuteCommandParams, error)

@@ -21,17 +21,19 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/typesinternal"
 	// (does not depend on gopls itself)
 )
 
 // A Command describes a workspace/executeCommand extension command.
 type Command struct {
-	MethodName string // e.g. "RunTests"
-	Name       string // e.g. "gopls.run_tests"
-	Title      string
-	Doc        string
-	Args       []*Field
-	Result     *Field
+	MethodName  string // e.g. "RunTests"
+	Name        string // e.g. "gopls.run_tests"
+	Title       string
+	Doc         string
+	Args        []*Field
+	Interactive bool
+	Result      *Field
 }
 
 type Field struct {
@@ -133,6 +135,17 @@ func (l *fieldLoader) loadMethod(pkg *packages.Package, m *types.Func) (*Command
 				return nil, fmt.Errorf("first method parameter must be context.Context")
 			}
 			// Skip the context argument, as it is implied.
+			continue
+		}
+
+		// SPECIAL CASE: InteractiveParams contains FormAnswers []any, making it
+		// inherently fallible. However, we explicitly exempt it from this check
+		// because it is not parsed via UnmarshalArgs from the JSON Arguments array.
+		// Instead, the generator passes it directly from the top-level
+		// InteractiveParams, and the command handlers are responsible for
+		// manually type-asserting the user-provided answers at runtime.
+		if i == sig.Params().Len()-1 && typesinternal.IsPointerToNamed(fld.Type, "golang.org/x/tools/gopls/internal/protocol", "InteractiveParams") {
+			c.Interactive = true
 			continue
 		}
 		c.Args = append(c.Args, fld)
