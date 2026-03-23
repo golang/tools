@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -1787,11 +1788,11 @@ func (e *Editor) SemanticTokensFull(ctx context.Context, path string) ([]Semanti
 	if err != nil {
 		return nil, err
 	}
-	content, ok := e.BufferText(path)
-	if !ok {
-		return nil, fmt.Errorf("buffer %s is not open", path)
+	m, err := e.Mapper(path)
+	if err != nil {
+		return nil, fmt.Errorf("can't get mapper for buffer %s: %v", path, err)
 	}
-	return e.interpretTokens(resp.Data, content), nil
+	return e.interpretTokens(m, resp.Data)
 }
 
 // SemanticTokensRange invokes textDocument/semanticTokens/range, and
@@ -1807,11 +1808,11 @@ func (e *Editor) SemanticTokensRange(ctx context.Context, loc protocol.Location)
 	}
 	path := e.sandbox.Workdir.URIToPath(loc.URI)
 	// As noted above: buffers should be keyed by protocol.DocumentURI.
-	content, ok := e.BufferText(path)
-	if !ok {
-		return nil, fmt.Errorf("buffer %s is not open", path)
+	m, err := e.Mapper(path)
+	if err != nil {
+		return nil, fmt.Errorf("can't get mapper for buffer %s: %v", path, err)
 	}
-	return e.interpretTokens(resp.Data, content), nil
+	return e.interpretTokens(m, resp.Data)
 }
 
 // A SemanticToken is an interpreted semantic token value.
@@ -1823,30 +1824,60 @@ type SemanticToken struct {
 
 // Note: previously this function elided comment, string, and number tokens.
 // Instead, filtering of token types should be done by the caller.
-func (e *Editor) interpretTokens(x []uint32, contents string) []SemanticToken {
-	legend := e.semTokOpts.Legend
-	lines := strings.Split(contents, "\n")
-	ans := []SemanticToken{}
-	line, col := 1, 1
+func (e *Editor) interpretTokens(m *protocol.Mapper, x []uint32) ([]SemanticToken, error) {
+	var (
+		legend     = e.semTokOpts.Legend
+		ans        []SemanticToken
+		line, char uint32 // zero-based UTF-16
+	)
 	for i := 0; i < len(x); i += 5 {
-		line += int(x[i])
-		col += int(x[i+1])
-		if x[i] != 0 { // new line
-			col = int(x[i+1]) + 1 // 1-based column numbers
+		deltaLine, deltaChar, length16, t, modifiers := x[i], x[i+1], x[i+2], x[i+3], x[i+4]
+
+		line += deltaLine
+
+		if deltaLine == 0 {
+			char += deltaChar
+		} else {
+			char = deltaChar
 		}
-		sz := x[i+2]
-		t := legend.TokenTypes[x[i+3]]
-		l := x[i+4]
+
 		var mods []string
 		for i, mod := range legend.TokenModifiers {
-			if l&(1<<i) != 0 {
+			if modifiers&(1<<i) != 0 {
 				mods = append(mods, mod)
 			}
 		}
-		// Preexisting note: "col is a utf-8 offset"
-		// TODO(rfindley): is that true? Or is it UTF-16, like other columns in the LSP?
-		tok := lines[line-1][col-1 : col-1+int(sz)]
-		ans = append(ans, SemanticToken{tok, t, strings.Join(mods, " ")})
+
+		// Extract token text.
+		start, err := m.PositionOffset(protocol.Position{Line: line, Character: char})
+		if err != nil {
+			return nil, fmt.Errorf("invalid line/char in semantic token: %v", err)
+		}
+		// Advance by 'length' UTF-16 code units.
+		end := start + utf16IndexToBytes(m.Content[start:], int(length16))
+		text := string(m.Content[start:end])
+
+		ans = append(ans, SemanticToken{
+			Token:     text,
+			TokenType: legend.TokenTypes[t],
+			Mod:       strings.Join(mods, " "),
+		})
 	}
-	return ans
+	return ans, nil
+}
+
+// utf16IndexToBytes returns the length of the prefix of s whose
+// UTF-16 transcoding has length n.
+//
+// Inv: protocol.UTF16Len(UTF16Bytes(s, n)) == n.
+func utf16IndexToBytes(s []byte, n int) int {
+	prefix := 0
+	for i := 0; i < n; i++ {
+		r, size := utf8.DecodeRune(s[prefix:])
+		if r >= 0x10000 {
+			i++ // surrogate pair
+		}
+		prefix += size
+	}
+	return prefix
 }

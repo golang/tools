@@ -236,3 +236,86 @@ const bad = `
 		}
 	})
 }
+
+// Check delta-encoding of token line is sound even when the first
+// token is discarded (go.dev/issue/78269).
+func TestSemanticTokens_firstSuppressed(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+go 1.21
+
+-- p.go --
+// comment
+package p
+
+// imports
+import _ "fmt"
+
+func F()
+`
+	WithOptions(
+		Modes(Default),
+		Settings{
+			"semanticTokens": true,
+			"semanticTokenTypes": map[string]any{
+				"keyword":   false,
+				"namespace": false,
+				"comment":   false,
+			},
+		},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		seen := env.SemanticTokensFull("p.go")
+		want := []fake.SemanticToken{
+			// These tokens are suppressed by the settings above:
+			//  {Token: "// comment", TokenType: "comment"},
+			//  {Token: "package", TokenType: "keyword"},
+			//  {Token: "p", TokenType: "namespace"},
+			//  {Token: "// imports", TokenType: "comment"},
+			//  {Token: "import", TokenType: "keyword"},
+			//  {Token: "func", TokenType: "keyword"},
+			// This first token must be reported at "F":
+			{Token: "F", TokenType: "function", Mod: "definition signature"},
+		}
+		if x := cmp.Diff(want, seen); x != "" {
+			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+		}
+	})
+}
+
+// This test exercises the UTF-16 logic in Editor.interpretTokens.
+func TestSemanticTokens_multiline(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+go 1.21
+
+-- p.go --
+package p
+` + "const _ = `世\n😃`"
+
+	WithOptions(
+		Modes(Default),
+		Settings{
+			"semanticTokens": true,
+			"semanticTokenTypes": map[string]any{
+				"package":   false,
+				"keyword":   false,
+				"namespace": false,
+				"variable":  false,
+				"string":    true,
+			},
+		},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		seen := env.SemanticTokensFull("p.go")
+		want := []fake.SemanticToken{
+			{Token: "`世", TokenType: "string"},
+			{Token: "😃`", TokenType: "string"},
+		}
+		if x := cmp.Diff(want, seen); x != "" {
+			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+		}
+	})
+}
