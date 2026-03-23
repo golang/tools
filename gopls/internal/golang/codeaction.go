@@ -40,7 +40,7 @@ import (
 // offered, e.g. to avoid UI distractions after mere cursor motion.
 //
 // See ../protocol/codeactionkind.go for some code action theory.
-func CodeActions(ctx context.Context, snapshot *cache.Snapshot, opts *settings.Options, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
+func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
 	loc := fh.URI().Location(rng)
 
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -85,7 +85,6 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, opts *settings.O
 		actions:     &actions,
 		lazy:        make(map[reflect.Type]any),
 		snapshot:    snapshot,
-		options:     *opts,
 		fh:          fh,
 		pgf:         pgf,
 		loc:         loc,
@@ -130,7 +129,6 @@ type codeActionsRequest struct {
 	// inputs to the producer function:
 	kind        protocol.CodeActionKind
 	snapshot    *cache.Snapshot
-	options     settings.Options
 	fh          file.Handle
 	pgf         *parsego.File
 	loc         protocol.Location
@@ -894,7 +892,7 @@ func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, remo
 func supportsDialog(req *codeActionsRequest, need ...settings.InteractiveInputType) bool {
 	// TODO(pjw): this would be better if it checked the actual form, e.g., server.AddTagsForm
 	// rather than the types, but that would cause an imports loop.
-	o := req.options.ClientOptions.SupportedInteractiveInputTypes
+	o := req.snapshot.Options().ClientOptions.SupportedInteractiveInputTypes
 	if o == nil {
 		return false
 	}
