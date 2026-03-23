@@ -946,9 +946,11 @@ func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsReques
 // interface." code actions.
 // See [server.commandHandler.ImplementInterface] for command implementation.
 func refactorRewriteImplementInterface(_ context.Context, req *codeActionsRequest) error {
-	// TODO(hxjiang): when enum is implemented, either lazy enum or string
-	// input is possible.
-	if !supportsDialog(req, settings.InteractiveInputTypeString) {
+	// The "Implement Interface" interaction requires either lazy enum support
+	// (for rich workspace symbol search) or at least string support (as a fallback
+	// text prompt). We disable the action if the client supports neither.
+	if !supportsDialog(req, settings.InteractiveInputTypeString) &&
+		!supportsDialog(req, settings.InteractiveInputTypeLazyEnum) {
 		return nil
 	}
 

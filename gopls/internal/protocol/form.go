@@ -97,7 +97,7 @@ type FormFieldTypeLazyEnum struct {
 	// Config contains the static settings for the source.
 	// The client treats this as opaque data and echoes it back in the
 	// 'interactive/listEnum' request.
-	Config *json.RawMessage `json:"config,omitempty"`
+	Config json.RawMessage `json:"config,omitempty"`
 }
 
 // FormFieldTypeList defines a homogenous list of items.

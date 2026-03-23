@@ -6,6 +6,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/token"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
@@ -89,11 +91,12 @@ var RemoveTagsForm = []protocol.FormField{
 
 // ResolveComamnd is called indirectly from WorkspaceCommand(), explained above.
 func (s *server) ResolveCommand(ctx context.Context, param *protocol.ExecuteCommandParams) (*protocol.ExecuteCommandParams, error) {
+	supported := s.Options().ClientOptions.SupportedInteractiveInputTypes
 	switch param.Command {
 	case "gopls.modify_tags":
 		resolveModifyTags(param)
 	case "gopls.implement_interface":
-		resolveImplementInterface(param)
+		resolveImplementInterface(supported, param)
 	default:
 		return nil, notImplemented(fmt.Sprintf("ResolveCommand(%s)", param.Command))
 	}
@@ -160,24 +163,58 @@ func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
 	}
 }
 
-var implementInterfaceForm = []protocol.FormField{
+func mustMarshal(x any) json.RawMessage {
+	data, err := json.Marshal(x)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
+}
+
+var implementInterfaceFormLazyEnum = []protocol.FormField{
 	{
-		// TODO(hxjiang): replace form field with lazy resolving enum.
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
-		Type:        protocol.FormFieldTypeString{Kind: "string"},
-		Default:     "error",
+		Type: protocol.FormFieldTypeLazyEnum{
+			Kind:   "lazyEnum",
+			Source: "workspaceSymbol",
+			Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
+				Kinds: []protocol.SymbolKind{protocol.Interface},
+			}),
+		},
+		Default: "error",
 	},
 }
 
-func resolveImplementInterface(param *protocol.ExecuteCommandParams) error {
+var implementInterfaceFormString = []protocol.FormField{
+	{
+		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
+		Type: protocol.FormFieldTypeString{
+			Kind: "string",
+		},
+		Default: "error",
+	},
+}
+
+func resolveImplementInterface(supported map[settings.InteractiveInputType]bool, param *protocol.ExecuteCommandParams) error {
 	var a0 command.ImplementInterfaceArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
 		return err
 	}
 
+	var form []protocol.FormField
+	if ok := supported[settings.InteractiveInputTypeLazyEnum]; ok {
+		form = implementInterfaceFormLazyEnum
+	} else if ok := supported[settings.InteractiveInputTypeString]; ok {
+		form = implementInterfaceFormString
+	} else {
+		// This should not happen, as the gopls should not offer such code
+		// action if the language client does not support any kind above.
+		return fmt.Errorf("internal error: unsupported interactive input types: %v", supported)
+	}
+
 	// First call, return the empty form.
 	if len(param.FormAnswers) == 0 {
-		param.FormFields = implementInterfaceForm
+		param.FormFields = form
 		return nil
 	}
 
@@ -212,7 +249,7 @@ func resolveImplementInterface(param *protocol.ExecuteCommandParams) error {
 		// The client only sends back answers, not the original form fields.
 		// Clone the static form template so we can attach the validation
 		// error and send the complete form back for the client to re-render.
-		form := slices.Clone(implementInterfaceForm)
+		form := slices.Clone(form)
 		form[0].Error = err.Error()
 		param.FormFields = form
 		return nil
