@@ -1,0 +1,5 @@
+package spansfiles
+
+import "sync/atomic"
+
+var v atomic.Int32 // want `var v int32 may be simplified using atomic.Int32`

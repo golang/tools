@@ -1,0 +1,5 @@
+package spansfiles
+
+func f() {
+	_ = v.Load()
+}
