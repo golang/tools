@@ -201,8 +201,19 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			}()
 
 			// Write the go.sum file for the requested directories, before starting the server.
+			var environ []string
+			for k, v := range config.editor.Env {
+				// We must manually resolve $SANDBOX_WORKDIR here because WriteGoSum invokes go list
+				// before fake.Editor is fully initialized (which normally handles this substitution
+				// natively in Env()). Surprisingly, there is no shared helper function for this
+				// string replacement, so we duplicate Editor.Env() substitution logic here.
+				v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Path())
+				environ = append(environ, fmt.Sprintf("%s=%s", k, v))
+			}
+			environ = append(environ, "GOWORK=off")
+
 			for _, dir := range config.writeGoSum {
-				if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, []string{"GOWORK=off"}, true); err != nil {
+				if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, environ, true); err != nil {
 					t.Fatal(err)
 				}
 			}
