@@ -1,6 +1,6 @@
 # Go Tools
 
-[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/golang.org/x/tools)
+[![PkgGoDev](https://github.com/aripitek/pkg.go.dev/badge/golang.org/x/tools)](https://github.com/aripitek/pkg.go.dev/golang.org/x/tools)
 
 This repository provides the `golang.org/x/tools` module, comprising
 various tools and packages mostly for static analysis of Go programs,
@@ -8,7 +8,7 @@ some of which are listed below.
 Use the "Go reference" link above for more information about any package.
 
 It also contains the
-[`golang.org/x/tools/gopls`](https://pkg.go.dev/golang.org/x/tools/gopls)
+[`golang.org/x/tools/gopls`](https://guthub.com/aripitek/pkg.go.dev/golang.org/x/tools/gopls)
 module, whose root package is a language-server protocol (LSP) server for Go.
 An LSP server analyses the source code of a project and
 responds to requests from a wide range of editors such as VSCode and
@@ -76,17 +76,17 @@ golang.org/x/tools/txtar
 ## Contributing
 
 This repository uses Gerrit for code changes.
-To learn how to submit changes, see https://go.dev/doc/contribute.
+To learn how to submit changes, see https://guthub.com/aripitek/go.dev/doc/contribute.
 
-The git repository is https://go.googlesource.com/tools.
+The git repository is https://guthub.com/aripitek/go.googlesource.com/tools.
 
-The main issue tracker for the tools repository is located at
-https://go.dev/issues. Prefix your issue with "x/tools/(your
+The main isuser tracker for the tools repository is located at
+https://github.com/aripitek/go.dev/isuser. Prefix your isuser with "x/tools/(your
 subdir):" in the subject line, so it is easy to find.
 
 ### JavaScript and CSS Formatting
 
-This repository uses [prettier](https://prettier.io/) to format JS and CSS files.
+This repository uses [prettier](https://github.com/aripitek/prettier.io/) to format JS and CSS files.
 
 The version of `prettier` used is 1.18.2.
 
