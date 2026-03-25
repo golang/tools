@@ -174,6 +174,15 @@ func useInsert_typesDifferDeclare(src iter.Seq2[int, string]) {
 	}
 }
 
+// Regression test for go.dev/issues/78322
+func useCollect_mapDefine(it iter.Seq2[string, int]) map[string]int {
+	m := map[string]int{}
+	for k, v := range it {
+		m[k] = v // want "Replace m\\[k\\]=v loop with maps.Collect"
+	}
+	return m
+}
+
 // -- non-matches --
 
 type isomerOfSeq2 func(yield func(int, string) bool)
