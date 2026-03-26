@@ -82,3 +82,10 @@ func SortedFunc[M ~map[K]V, K comparable, V any](m M, cmp func(x, y K) int) iter
 		}
 	}
 }
+
+// Delete is like delete(m, k) but reports whether deletion occurred.
+func Delete[M ~map[K]V, K comparable, V any](m M, k K) bool {
+	pre := len(m)
+	delete(m, k)
+	return pre != len(m)
+}
