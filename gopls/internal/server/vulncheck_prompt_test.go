@@ -228,6 +228,19 @@ func TestCheckDependencyChanges(t *testing.T) {
 			wantHashUpdated: true,
 		},
 		{
+			name:          "go.mod: user says yes (lowercase)",
+			filename:      "go.mod",
+			vulncheckMode: settings.ModeVulncheckPrompt,
+			oldContent:    "module example.com",
+			newContent: `
+			module example.com
+			require golang.org/x/tools v0.1.0
+			`,
+			userAction:      "yes", // lowercase
+			wantPrompt:      true,
+			wantHashUpdated: true,
+		},
+		{
 			name:          "go.work: user says yes",
 			filename:      "go.work",
 			vulncheckMode: settings.ModeVulncheckPrompt,
@@ -373,6 +386,25 @@ func TestVulncheckPreference(t *testing.T) {
 		t.Fatalf("getVulncheckPreference() failed: %v", err)
 	}
 
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	path, err := vulncheckFilename()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"vulncheck": "always"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = getVulncheckPreference()
+	if err != nil {
+		t.Fatalf("getVulncheckPreference() failed: %v", err)
+	}
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

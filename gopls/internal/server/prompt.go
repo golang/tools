@@ -346,7 +346,7 @@ Would you like to enable Go telemetry?
 	}
 }
 
-// showMessageRequest causes the client to show a prompt that the user can respond to.
+// showMessageRequest causes the client to show a plain-text prompt that the user can respond to.
 // It returns the title of the action the user selected, or "" if the user dismissed the prompt.
 func showMessageRequest(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string, actions ...string) (string, error) {
 	var actionItems []protocol.MessageActionItem

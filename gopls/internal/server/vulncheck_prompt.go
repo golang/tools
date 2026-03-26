@@ -43,7 +43,6 @@ const (
 	vulncheckActionNo     vulncheckAction = "No"
 	vulncheckActionAlways vulncheckAction = "Always"
 	vulncheckActionNever  vulncheckAction = "Never"
-	vulncheckActionEmpty  vulncheckAction = ""
 )
 
 type vulnupgradeAction string
@@ -148,31 +147,34 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 	oldHash := string(oldHashBytes)
 
 	if oldHash != newHash {
-		fileLink := fmt.Sprintf("[%s](%s)", uri.Path(), string(uri))
-		govulncheckLink := "[govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck)"
-		message := fmt.Sprintf("Dependencies have changed in %s, would you like to run %s to check for vulnerabilities?", fileLink, govulncheckLink)
+		if err := filecache.Set(dependencyHashKind, pathHash, []byte(newHash)); err != nil {
+			event.Error(ctx, "writing new dependency hash to filecache failed", err)
+		}
 
 		action, err := getVulncheckPreference()
 		if err != nil {
 			event.Error(ctx, "reading vulncheck preference failed", err)
 		}
 
-		switch action {
-		case vulncheckActionAlways:
-			go s.handleVulncheck(ctx, uri)
-		case vulncheckActionNever:
-			return
-		case vulncheckActionEmpty:
-			// no previous preference stored, prompt the user.
-			fallthrough
-		default:
-			// invalid value, clear preference and prompt the user again.
-			choice, err := showMessageRequest(ctx, s.client, protocol.Info, message, string(vulncheckActionYes), string(vulncheckActionNo), string(vulncheckActionAlways), string(vulncheckActionNever))
+		if !(action == vulncheckActionAlways || action == vulncheckActionNever) {
+			// No valid saved prior preference. Prompt.
+			message := fmt.Sprintf("Dependencies changed in %s. Run govulncheck to check for vulnerabilities?", uri.Path())
+			actions := []string{
+				string(vulncheckActionYes),
+				string(vulncheckActionNo),
+				string(vulncheckActionAlways),
+				string(vulncheckActionNever),
+			}
+			choice, err := showMessageRequest(ctx, s.client, protocol.Info, message, actions...)
 			if err != nil {
 				event.Error(ctx, "showing dependency changed notification failed", err)
 				return
 			}
-			action = vulncheckAction(choice)
+			action, ok := parseVulncheckAction(choice)
+			if !ok {
+				event.Error(ctx, "parsing vulncheck action failed", fmt.Errorf("unexpected action: %s", choice))
+				return
+			}
 			recordVulncheckAction(action)
 			if action == vulncheckActionAlways || action == vulncheckActionNever {
 				if err := setVulncheckPreference(action); err != nil {
@@ -180,19 +182,13 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 					showMessage(ctx, s.client, protocol.Error, fmt.Sprintf("Failed to save vulncheck preference: %v", err))
 				}
 			}
-			if action == vulncheckActionYes || action == vulncheckActionAlways {
-				go s.handleVulncheck(ctx, uri)
-			}
-			if action == vulncheckActionEmpty {
-				// No user input gathered from prompt.
-				return
-			}
 		}
 
-		if err := filecache.Set(dependencyHashKind, pathHash, []byte(newHash)); err != nil {
-			event.Error(ctx, "writing new dependency hash to filecache failed", err)
+		if !(action == vulncheckActionYes || action == vulncheckActionAlways) {
 			return
 		}
+
+		go s.handleVulncheck(ctx, uri)
 	}
 }
 
@@ -245,7 +241,6 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 	}
 
 	affectingOSVs := slices.Sorted(maps.Keys(affecting))
-	sort.Strings(affectingOSVs)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Found %d actionable vulnerabilities and %d standard library vulnerabilities affecting your dependencies:\n\n", len(affectingOSVs), numStdLib)
@@ -285,7 +280,11 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 		event.Error(ctx, "vulncheck remediation failed", err)
 		return
 	}
-	upgradeAction := vulnupgradeAction(action)
+	upgradeAction, ok := parseVulnupgradeAction(action)
+	if !ok {
+		event.Error(ctx, "parsing vulncheck remediation action failed", fmt.Errorf("unexpected action: %s", action))
+		return
+	}
 	recordVulncheckupgradeAction(upgradeAction)
 
 	if upgradeAction == vulnupgradeActionUpgradeAll {
@@ -402,12 +401,28 @@ type vulncheckConfig struct {
 	VulncheckMode string `json:"vulncheck"`
 }
 
+func parseVulncheckAction(s string) (vulncheckAction, bool) {
+	return parseAction(s, []vulncheckAction{vulncheckActionYes, vulncheckActionNo, vulncheckActionAlways, vulncheckActionNever})
+}
+
+func parseVulnupgradeAction(s string) (vulnupgradeAction, bool) {
+	return parseAction(s, []vulnupgradeAction{vulnupgradeActionUpgradeAll, vulnupgradeActionIgnore})
+}
+
+func parseAction[T ~string](s string, actions []T) (T, bool) {
+	for _, a := range actions {
+		if strings.EqualFold(string(a), s) {
+			return a, true
+		}
+	}
+	return "", false
+}
+
 func getVulncheckPreference() (vulncheckAction, error) {
-	configDir, err := os.UserConfigDir()
+	path, err := vulncheckFilename()
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(configDir, "gopls", "vulncheck", "settings.json")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -419,23 +434,33 @@ func getVulncheckPreference() (vulncheckAction, error) {
 	if err := json.Unmarshal(content, &config); err != nil {
 		return "", err
 	}
-	return vulncheckAction(config.VulncheckMode), nil
+	action, ok := parseVulncheckAction(config.VulncheckMode)
+	if !ok {
+		return "", fmt.Errorf("unexpected vulncheck mode in config: %s", config.VulncheckMode)
+	}
+	return action, nil
 }
 
 func setVulncheckPreference(preference vulncheckAction) error {
-	configDir, err := os.UserConfigDir()
+	path, err := vulncheckFilename()
 	if err != nil {
 		return err
 	}
-	goplsDir := filepath.Join(configDir, "gopls", "vulncheck")
-	if err := os.MkdirAll(goplsDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	path := filepath.Join(goplsDir, "settings.json")
 	config := vulncheckConfig{VulncheckMode: string(preference)}
 	content, err := json.Marshal(config)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, content, 0644)
+}
+
+func vulncheckFilename() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "gopls", "vulncheck", "settings.json"), nil
 }
