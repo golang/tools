@@ -272,8 +272,27 @@ var _, _ = x.X, y.Y
 					t.Logf("%d modcache files", len(fis))
 				}
 			}
+			// because this test is flaky, replace the simple check with a detailed one
+			// env.AfterChange(NoDiagnostics(ForFile("main.go")))
+			diags := make(map[string]*protocol.PublishDiagnosticsParams)
+			env.AfterChange(ReadAllDiagnostics(&diags))
+			dump := false
+			for k, v := range diags {
+				if len(v.Diagnostics) != 0 {
+					t.Errorf("Unexpected diagnostics for %s: %#v", k, v)
+					dump = true
+				}
+			}
+			if dump {
+				/* the correct result is
+					0: example.com/x, example.com@v1.2.3/x, ["X C"]
+				   	1: example.com/y, example.com@v1.2.3/y, ["Y C"]
+				*/
+				for i, e := range ix.Entries {
+					t.Logf("%d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
+				}
+			}
 		}
-		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 
 		// Verify that y.Y is defined within the module cache.
 		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
