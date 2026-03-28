@@ -15,4 +15,5 @@ var (
 	StringsCutModernizer   *analysis.Analyzer // = modernize.stringscutAnalyzer
 	UnsafeFuncsModernizer  *analysis.Analyzer // = modernize.unsafeFuncsAnalyzer
 	AtomicTypesModernizer  *analysis.Analyzer // = modernize.atomicTypesAnalyzer
+	GofmtAnalyzer          *analysis.Analyzer // = gofmt.analyzer
 )
