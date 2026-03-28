@@ -6,6 +6,9 @@ a3: the type argument is shadowed in the callee
 a4: ditto, with a more complicated arg
 a5: a free identifier in the callee is captured by a global
     in the caller's scope (covered elsewhere; verifying for generics)
+a7: return type of a generic function is generic interface requiring explicit conversion.
+a8, a9: same as a7, but for parameters.
+a10: inline declares a variable whose type is a type parameter
 -- go.mod --
 module testdata
 go 1.18
@@ -92,4 +95,89 @@ func (G[T]) f(x T) { print(x) }
 
 func _() {
 	G[int]{}.f[bool]() //@ inline(re"f", re"generic methods not yet supported")
+}
+
+-- a/a7.go --
+package a
+
+type Iface[T any] interface{ foo() }
+
+func newIface[T any]() Iface[T] { return nil }
+
+func _() {
+	bar := newIface[int]() //@ inline(re"newIface", a7out)
+	_ = bar
+}
+
+-- a7out --
+package a
+
+type Iface[T any] interface{ foo() }
+
+func newIface[T any]() Iface[T] { return nil }
+
+func _() {
+	bar := Iface[int](nil) //@ inline(re"newIface", a7out)
+	_ = bar
+}
+
+-- a/a8.go --
+package a
+
+func acceptsIface[T any](val Iface[T]) { print(val); append([]T, val) }
+
+func _() {
+	acceptsIface[int](Iface[int](nil)) //@ inline(re"acceptsIface", a8out)
+}
+
+-- a8out --
+package a
+
+func acceptsIface[T any](val Iface[T]) { print(val); append([]T, val) }
+
+func _() {
+	print(Iface[int](nil))
+	append([]int, Iface[int](nil)) //@ inline(re"acceptsIface", a8out)
+}
+
+-- a/a9.go --
+package a
+
+type ifaceImpl struct{}
+
+func (ifaceImpl) foo() {}
+
+func _() {
+	acceptsIface[int](ifaceImpl{}) //@ inline(re"acceptsIface", a9out)
+}
+
+-- a9out --
+package a
+
+type ifaceImpl struct{}
+
+func (ifaceImpl) foo() {}
+
+func _() {
+	print(ifaceImpl{})
+	append([]int, Iface[int](ifaceImpl{})) //@ inline(re"acceptsIface", a9out)
+}
+-- a/a10.go --
+package a
+
+func f2[T any](x, y T) { panic(x) }
+func id(x int) int     { return x }
+
+func _() {
+	f2[int](id(1), id(2)) //@ inline(re"f2", a10out)
+}
+-- a10out --
+package a
+
+func f2[T any](x, y T) { panic(x) }
+func id(x int) int     { return x }
+
+func _() {
+	var x, _ int = id(1), id(2)
+	panic(x) //@ inline(re"f2", a10out)
 }
