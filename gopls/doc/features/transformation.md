@@ -410,7 +410,7 @@ newly created declaration that contains the selected code:
   ![Before extracting a var](../assets/extract-var-before.png)
   ![After extracting a var](../assets/extract-var-after.png)
 
-- **`refactor.extract.constant** does the same thing for a constant
+- **`refactor.extract.constant`** does the same thing for a constant
   expression, introducing a local const declaration.
 - **`refactor.extract.variable-all`** replaces all occurrences of the selected expression
 within the function with a reference to a new local variable named `newVar`.
@@ -419,7 +419,7 @@ This extracts the expression once and reuses it wherever it appears in the funct
   ![Before extracting all occurrences of EXPR](../assets/extract-var-all-before.png)
   ![After extracting all occurrences of EXPR](../assets/extract-var-all-after.png)
 
-  - **`refactor.extract.constant-all** does the same thing for a constant
+  - **`refactor.extract.constant-all`** does the same thing for a constant
   expression, introducing a local const declaration.
 If the default name for the new declaration is already in use, gopls
 generates a fresh name.
