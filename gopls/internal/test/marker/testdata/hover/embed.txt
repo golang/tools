@@ -64,6 +64,19 @@ type Z struct{
 	z int
 }
 
+type E[T any] struct {
+	Value T
+}
+
+type F struct {
+	E[string]
+}
+
+func _() {
+	var f F
+	f.Value = "hello" //@hover("Value", "Value", Value)
+}
+
 var a A
 var _ = a.E //@hover("E", "E", E)
 
@@ -116,6 +129,14 @@ field E int // through *B, *C, *D
 ---
 
 [`(p.D).E` on pkg.go.dev](https://pkg.go.dev/example.com#D.E)
+-- @Value --
+```go
+field Value string // through E[string]
+```
+
+---
+
+[`(p.E).Value` on pkg.go.dev](https://pkg.go.dev/example.com#E.Value)
 -- @Z --
 ```go
 field z int // through *X, *Y, *Z

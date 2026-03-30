@@ -112,7 +112,7 @@ var _ = S1{ //@def("S1", S1),hover("S1", "S1", S1)
 
 -- @AHi --
 ```go
-func (a.A) Hi()
+func (a.A) Hi() // through *a.A
 ```
 
 ---
@@ -133,7 +133,7 @@ field F int // through embed
 [`(b.Embed).F` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.F)
 -- @HGoodbye --
 ```go
-func (a.H) Goodbye()
+func (a.H) Goodbye() // through a.S, a.H
 ```
 
 ---
@@ -146,7 +146,7 @@ func (a.H) Goodbye()
 [`(a.H).Goodbye` on pkg.go.dev](https://pkg.go.dev/mod.com/a#H.Goodbye)
 -- @IB --
 ```go
-func (a.I) B()
+func (a.I) B() // through a.I
 ```
 
 ---
@@ -159,7 +159,7 @@ func (a.I) B()
 [`(a.I).B` on pkg.go.dev](https://pkg.go.dev/mod.com/a#I.B)
 -- @JHello --
 ```go
-func (a.J) Hello()
+func (a.J) Hello() // through a.I
 ```
 
 ---
@@ -172,7 +172,7 @@ func (a.J) Hello()
 [`(a.J).Hello` on pkg.go.dev](https://pkg.go.dev/mod.com/a#J.Hello)
 -- @M --
 ```go
-func (embed) M()
+func (embed) M() // through embed
 ```
 
 ---
@@ -180,7 +180,7 @@ func (embed) M()
 [`(b.Embed).M` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.M)
 -- @RField2 --
 ```go
-field Field2 int // through S, R
+field Field2 int // through a.S, a.R
 ```
 
 ---
@@ -193,7 +193,7 @@ field Field2 int // through S, R
 [`(a.R).Field2` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Field2)
 -- @RHey --
 ```go
-func (r a.R) Hey()
+func (r a.R) Hey() // through a.S, a.R
 ```
 
 ---
@@ -286,7 +286,7 @@ field F2 int // through S2
 [`(b.S2).F2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F2)
 -- @SField --
 ```go
-field Field int // through S
+field Field int // through a.S
 ```
 
 ---

@@ -1,0 +1,60 @@
+This test checks that hover reports the embedding path for methods, like it does for struct fields.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a.go --
+package a
+
+type A struct {
+	B
+}
+
+type B struct {
+	Foo int
+}
+
+func (B) Bar() int { return 0 }
+
+var (
+	_ = A{}.Bar() //@hover("Bar", "Bar", BarMethodCall)
+	_ = A{}.Bar //@hover("Bar", "Bar", BarMethodExpr)
+
+	_ func(A) int  = A.Bar //@hover("Bar", "Bar", BarMethodVal)
+	_ func(*A) int = (*A).Bar //@hover("Bar", "Bar", BarMethodValPtr)
+)
+
+-- @BarMethodCall --
+```go
+func (B) Bar() int // through B
+```
+
+---
+
+[`(a.B).Bar` on pkg.go.dev](https://pkg.go.dev/example.com#B.Bar)
+-- @BarMethodExpr --
+```go
+func (B) Bar() int // through B
+```
+
+---
+
+[`(a.B).Bar` on pkg.go.dev](https://pkg.go.dev/example.com#B.Bar)
+-- @BarMethodVal --
+```go
+func (B) Bar() int // through B
+```
+
+---
+
+[`(a.B).Bar` on pkg.go.dev](https://pkg.go.dev/example.com#B.Bar)
+-- @BarMethodValPtr --
+```go
+func (B) Bar() int // through B
+```
+
+---
+
+[`(a.B).Bar` on pkg.go.dev](https://pkg.go.dev/example.com#B.Bar)

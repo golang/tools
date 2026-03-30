@@ -54,7 +54,7 @@ Lock locks m.
 [`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync#Mutex.Lock)
 -- @hoverName --
 ```go
-func (obj *types.object) Name() string
+func (obj *types.object) Name() string // through types.object
 ```
 
 ---

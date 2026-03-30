@@ -451,33 +451,40 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	// By default, types.ObjectString provides a reasonable signature.
 	signature := objectString(obj, qual, declPos, declPGF.Tok, spec)
 
-	// When hovering over a reference to a promoted struct field,
+	// When hovering over a reference to a promoted struct field or method,
 	// show the implicitly selected intervening fields.
-	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
+	isFieldOrMethod := false
+	switch obj := obj.(type) {
+	case *types.Var:
+		isFieldOrMethod = obj.IsField()
+	case *types.Func:
+		isFieldOrMethod = true
+	}
+
+	if isFieldOrMethod {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
-			sel, ok := pkg.TypesInfo().Selections[selExpr]
-			if ok && len(sel.Index()) > 1 {
-				var buf bytes.Buffer
-				buf.WriteString(" // through ")
+			if sel, ok := pkg.TypesInfo().Selections[selExpr]; ok && len(sel.Index()) > 1 {
+				var s strings.Builder
+				s.WriteString(" // through ")
 				t := typesinternal.Unpointer(sel.Recv())
 				for i, index := range sel.Index()[:len(sel.Index())-1] {
+					if _, ok := t.Underlying().(*types.Struct); !ok {
+						break
+					}
 					if i > 0 {
-						buf.WriteString(", ")
+						s.WriteString(", ")
 					}
 					field := typesinternal.Unpointer(t.Underlying()).(*types.Struct).Field(index)
 					t = field.Type()
 					// Inv: fieldType is N or *N for some NamedOrAlias type N.
 					if ptr, ok := t.(*types.Pointer); ok {
-						buf.WriteString("*")
+						s.WriteString("*")
 						t = ptr.Elem()
 					}
-					// Be defensive in case of ill-typed code:
-					if named, ok := t.(typesinternal.NamedOrAlias); ok {
-						buf.WriteString(named.Obj().Name())
-					}
+					s.WriteString(types.TypeString(t, qual))
 				}
 				// Update signature to include embedded struct info.
-				signature += buf.String()
+				signature += s.String()
 			}
 		}
 	}
