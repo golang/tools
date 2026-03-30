@@ -6,6 +6,7 @@ package golang
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -401,10 +402,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		return protocol.Range{}, nil, err
 	}
 
-	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
+	decl, spec, field, assign := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^4
 
 	var docText string
-	if docComment := chooseDocComment(decl, spec, field); docComment != nil {
+	if docComment := chooseDocComment(declPGF, decl, spec, field, assign); docComment != nil {
 		docBuf := new(strings.Builder)
 		docBuf.WriteString(docComment.Text())
 
@@ -802,7 +803,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 
 // typeDeclContent returns a well formatted type definition.
 func typeDeclContent(declPGF *parsego.File, declPos token.Pos, name string) (string, *ast.TypeSpec, error) {
-	_, spec, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
+	_, spec, _, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^4
 	// Don't duplicate comments.
 	spec1, ok := spec.(*ast.TypeSpec)
 	if !ok {
@@ -1357,11 +1358,31 @@ func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *toke
 		return nil, fmt.Errorf("re-parsing: %v", err)
 	}
 
-	decl, spec, field := findDeclInfo([]*ast.File{pgf.File}, pos)
-	return chooseDocComment(decl, spec, field), nil
+	decl, spec, field, assign := findDeclInfo([]*ast.File{pgf.File}, pos)
+	return chooseDocComment(pgf, decl, spec, field, assign), nil
 }
 
-func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.CommentGroup {
+// chooseDocComment returns the best doc comment for the given declaration
+// information.
+func chooseDocComment(pgf *parsego.File, decl ast.Decl, spec ast.Spec, field *ast.Field, assign *ast.AssignStmt) *ast.CommentGroup {
+	if assign != nil {
+		// AssignStmt lacks a Doc field; locate the comment on the line above.
+		tokFile := pgf.Tok
+		compare := func(cg *ast.CommentGroup, line int) int {
+			return cmp.Compare(safetoken.Line(tokFile, cg.End()), line-1)
+		}
+		assignLine := safetoken.Line(tokFile, assign.Pos())
+		i, _ := slices.BinarySearchFunc(pgf.File.Comments, assignLine, compare)
+		if i >= 0 && i < len(pgf.File.Comments) {
+			// The comment must start at the beginning of the line, otherwise it may
+			// be a comment on a previous assignment.
+			comment := pgf.File.Comments[i]
+			lineStart := pgf.Tok.LineStart(safetoken.Position(tokFile, comment.Pos()).Line)
+			if comment.Pos()-lineStart <= 1 {
+				return comment
+			}
+		}
+	}
 	if field != nil {
 		if field.Doc != nil {
 			return field.Doc
@@ -1651,23 +1672,24 @@ func formatLink(h *hoverResult, options *settings.Options, pkgURL func(path Pack
 // types.Object with position pos, searching the given list of file syntax
 // trees.
 //
-// Pos may be the position of the name-defining identifier in a FuncDecl,
-// ValueSpec, TypeSpec, Field, or as a special case the position of
+// Pos may be the position of the name-defining identifier in an AssignStmt,
+// FuncDecl, ValueSpec, TypeSpec, Field, or as a special case the position of
 // Ellipsis.Elt in an ellipsis field.
 //
-// If found, the resulting decl, spec, and field will be the inner-most
+// If found, the resulting decl, spec, field and assign will be the inner-most
 // instance of each node type surrounding pos.
 //
 // If field is non-nil, pos is the position of a field Var. If field is nil and
 // spec is non-nil, pos is the position of a Var, Const, or TypeName object. If
 // both field and spec are nil and decl is non-nil, pos is the position of a
-// Func object.
+// Func object. If assign is non-nil, pos is the position of the assignment of a
+// function literal.
 //
 // It returns a nil decl if no object-defining node is found at pos.
 //
 // TODO(rfindley): this function has tricky semantics, and may be worth unit
 // testing and/or refactoring.
-func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spec, field *ast.Field) {
+func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spec, field *ast.Field, assign *ast.AssignStmt) {
 	found := false
 
 	// Visit the files in search of the node at pos.
@@ -1685,6 +1707,17 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 		}
 
 		switch n := n.(type) {
+		case *ast.AssignStmt:
+			if len(n.Lhs) != 1 {
+				return false
+			}
+			lhs := n.Lhs[0]
+			if lhs.Pos() == pos {
+				assign = n
+				found = true
+				return false
+			}
+
 		case *ast.Field:
 			findEnclosingDeclAndSpec := func() {
 				for _, n := range slices.Backward(stack) {
@@ -1764,11 +1797,11 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 	for _, file := range files {
 		ast.PreorderStack(file, stack, f)
 		if found {
-			return decl, spec, field
+			return decl, spec, field, assign
 		}
 	}
 
-	return nil, nil, nil
+	return nil, nil, nil, nil
 }
 
 type promotedField struct {

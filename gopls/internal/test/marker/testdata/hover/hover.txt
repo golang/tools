@@ -22,6 +22,49 @@ package aa //@hover("aa", "aa", aa)
 
 const abc = 0x2a //@hover("b", "abc", abc),hover(re"() =", "abc", abc)
 
+func _() {
+	// hover over foo should include this comment
+	foo := func() {} //@hover("foo", "foo", foo)
+
+	// hover over buzz should include this comment
+	buzz := 10 //@hover("buzz", "buzz", buzz)
+
+	notbazz := 10 // hover over bazz should not include this comment
+	bazz := 10 //@hover("bazz", "bazz", bazz)
+	println(foo, buzz, bazz, notbazz)
+}
+
+// hover over bar should include this comment
+var bar = func() {} //@hover("bar", "bar", bar)
+
+-- @bar --
+```go
+var bar func()
+```
+
+---
+
+hover over bar should include this comment
+-- @bazz --
+```go
+var bazz int
+```
+-- @buzz --
+```go
+var buzz int
+```
+
+---
+
+hover over buzz should include this comment
+-- @foo --
+```go
+var foo func()
+```
+
+---
+
+hover over foo should include this comment
 -- a2.go --
 
 //go:build go1.21

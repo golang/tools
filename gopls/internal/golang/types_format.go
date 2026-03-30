@@ -305,7 +305,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 		return "", bug.Errorf("failed to find file %q in deps of %q", targetpgf.URI, srcpkg.Metadata().ID)
 	}
 
-	decl, spec, field := findDeclInfo([]*ast.File{targetpgf.File}, pos)
+	decl, spec, field, _ := findDeclInfo([]*ast.File{targetpgf.File}, pos)
 
 	// We can't handle type parameters correctly, so we fall back on TypeString
 	// for parameterized decls.
