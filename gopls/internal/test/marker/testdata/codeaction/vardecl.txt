@@ -1,0 +1,50 @@
+This test exercises the 'Replace := with var declaration' code action.
+
+-- go.mod --
+module example.com/vardecl
+
+go 1.21
+
+-- basic.go --
+package vardecl
+
+func SingleInt() {
+	x := 42 //@codeaction("x :=", "refactor.rewrite.varDeclaration", edit=single_int)
+	_ = x
+}
+
+func StringVar() {
+	s := "hello" //@codeaction("s :=", "refactor.rewrite.varDeclaration", edit=string_var)
+	_ = s
+}
+
+func BoolVar() {
+	b := true //@codeaction("b :=", "refactor.rewrite.varDeclaration", edit=bool_var)
+	_ = b
+}
+
+func FloatVar() {
+	f := 3.14 //@codeaction("f :=", "refactor.rewrite.varDeclaration", edit=float_var)
+	_ = f
+}
+
+-- @single_int/basic.go --
+@@ -4 +4,2 @@
+-	x := 42 //@codeaction("x :=", "refactor.rewrite.varDeclaration", edit=single_int)
++	var x int
++	x = 42 //@codeaction("x :=", "refactor.rewrite.varDeclaration", edit=single_int)
+-- @string_var/basic.go --
+@@ -9 +9,2 @@
+-	s := "hello" //@codeaction("s :=", "refactor.rewrite.varDeclaration", edit=string_var)
++	var s string
++	s = "hello" //@codeaction("s :=", "refactor.rewrite.varDeclaration", edit=string_var)
+-- @bool_var/basic.go --
+@@ -14 +14,2 @@
+-	b := true //@codeaction("b :=", "refactor.rewrite.varDeclaration", edit=bool_var)
++	var b bool
++	b = true //@codeaction("b :=", "refactor.rewrite.varDeclaration", edit=bool_var)
+-- @float_var/basic.go --
+@@ -19 +19,2 @@
+-	f := 3.14 //@codeaction("f :=", "refactor.rewrite.varDeclaration", edit=float_var)
++	var f float64
++	f = 3.14 //@codeaction("f :=", "refactor.rewrite.varDeclaration", edit=float_var)
