@@ -407,8 +407,42 @@ func (T) X() { }
 			t.Errorf("Object(%s) failed in a2: %v", test.path, err)
 			continue
 		}
-		if pobj.Name() != pobj.Name() {
+		if pobj.Name() != pobj.Name() { // TODO(adonovan): investigate why this test fails when qobj is used.
 			t.Errorf("Objects(%s) not equal, got a1 = %v, a2 = %v", test.path, pobj.Name(), qobj.Name())
 		}
+	}
+}
+
+func TestIssue70418(t *testing.T) {
+	// This cyclic structure exhibited a bug (go.dev/issues/70418)
+	// with the seenMethods map that causes a lot of gopls crashes.
+	// objectpath would inspect the methods of I:
+	// - First we see I.A, which leads to Anon, to F, which is marked as seen.
+	// - Second we see I.F, embedded via alias Anon.
+	//   Since we've already seen F, we break ouf the the interface method loop.
+	// - Third, we fail to visit I.Z.
+	// The solution is to skip only I.F, not the rest of the interface.
+
+	const src = `
+-- go.mod --
+module example.com
+
+-- p/p.go --
+package p
+
+type Anon = interface{ F() }
+
+type I interface {
+	A(Anon)
+	Z()
+	Anon
+}
+`
+	pkgmap := loadPackages(t, src, "./p")
+	pkg := pkgmap["example.com/p"].Types
+	Z, _ := types.LookupSelection(pkg.Scope().Lookup("I").Type(), false, pkg, "Z")
+	_, err := objectpath.For(Z.Obj())
+	if err != nil {
+		t.Fatalf("objectpath.For(Z) failed: %v", err)
 	}
 }
