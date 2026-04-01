@@ -14,6 +14,7 @@ import (
 	"regexp"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/expect"
 )
@@ -126,45 +127,54 @@ func exactlyOneNamedArg(mark marker, names ...string) bool {
 }
 
 func applyCodeActionForm(mark marker, _ string, action *protocol.CodeAction) ([]protocol.DocumentChange, error) {
-	// Send an ExecuteCommand with command: "gopls/lsp" and a single argument
-	// the argument has a "method": "command/resolve" and a "param", which
-	// is the action with only the Command and Arguments field
-	// Some types are not known to the protocol package
-	type truncatedCodeAction struct {
-		Command     string            `json:"command,omitempty"`
-		Arguments   []json.RawMessage `json:"arguments,omitempty"`
-		FormAnswers []string          `json:"formAnswers,omitempty"`
-	}
-	type resolveCommand struct {
-		Method string
-		Param  truncatedCodeAction
-	}
-	resolve := resolveCommand{
-		Method: "command/resolve",
-		Param: truncatedCodeAction{
-			Command:   action.Command.Command,
-			Arguments: action.Command.Arguments,
-		},
-	}
-	// ExecuteCommand is called twice with a "gopls.lps" containing a resolveCommand,
-	// the second time with the user response filled in. lspCmd factors out the
-	// common code.
-	lspCmd := func() (any, error) {
-		buf, err := json.Marshal(resolve)
+	// resolveCommand simulates how a client (like vscode-go) resolves interactive
+	// commands using a tunneling mechanism.
+	//
+	// Because some clients cannot send custom JSON-RPC methods directly, they tunnel
+	// a "command/resolve" request via the standard "workspace/executeCommand"
+	// method (specifically using the "gopls.lsp" command). This function replicates
+	// that JSON tunneling rather than calling [protocol.Server.ResolveCommand]
+	// directly, ensuring the actual over-the-wire pipeline is tested.
+	resolveCommand := func(unresolved *protocol.ExecuteCommandParams) (resolved *protocol.ExecuteCommandParams, err error) {
+		unresolvedJSON, err := json.Marshal(unresolved)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to marshal unresolved command: %v", err)
 		}
-		exCmd := &protocol.ExecuteCommandParams{
+
+		lspArgJSON, err := json.Marshal(command.LSPArgs{
+			Method: "command/resolve",
+			Param:  unresolvedJSON,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal LSPArgs wrapper: %v", err)
+		}
+
+		lspCmd := &protocol.ExecuteCommandParams{
 			Command:   "gopls.lsp",
-			Arguments: []json.RawMessage{buf},
+			Arguments: []json.RawMessage{lspArgJSON},
 		}
-		ans, err := mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, exCmd)
+
+		rawResponse, err := mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, lspCmd)
 		if err != nil {
-			return nil, fmt.Errorf("%v %#v", err, ans)
+			return nil, fmt.Errorf("server.ExecuteCommand failed: %v", err)
 		}
-		return ans, nil
+
+		responseJSON, err := json.Marshal(rawResponse)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal server response: %v", err)
+		}
+
+		if err := json.Unmarshal(responseJSON, &resolved); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal resolved command: %v", err)
+		}
+
+		return resolved, nil
 	}
-	_, err := lspCmd()
+
+	cmd, err := resolveCommand(&protocol.ExecuteCommandParams{
+		Command:   action.Command.Command,
+		Arguments: action.Command.Arguments,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -176,17 +186,21 @@ func applyCodeActionForm(mark marker, _ string, action *protocol.CodeAction) ([]
 			if err != nil || (false && len(buf) == 0) {
 				return nil, fmt.Errorf("failed to marshal string %s, %v", fm, err)
 			}
-			resolve.Param.FormAnswers = append(resolve.Param.FormAnswers, fm.(string))
+			// TODO(hxjiang): support other kind of inputs.
+			cmd.FormAnswers = append(cmd.FormAnswers, fm.(string))
 		} else {
 			break // only want some of the form slots
 		}
 	}
-	got, err := lspCmd()
+
+	cmd, err = resolveCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
-	// got should have "command" which is the command out of the argument in second
-	// and a single argument which describes what was done
+
+	if len(cmd.FormFields) > 0 {
+		return nil, fmt.Errorf("got %v question after providing answers, expect 0", len(cmd.FormFields))
+	}
 
 	// catch the changes from the forthcoming ExecuteCommand
 	var changes []protocol.DocumentChange
@@ -195,33 +209,8 @@ func applyCodeActionForm(mark marker, _ string, action *protocol.CodeAction) ([]
 		return nil
 	})
 	defer restore()
-	// send the third ExecuteCommand with what we just got back in got
-	mgot, ok := got.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("got %T from ExecuteCommand, expect map[string]any", got)
-	}
-	cmd, ok := mgot["command"].(string)
-	if !ok {
-		return nil, fmt.Errorf("expected command to be a string, got %T", mgot["command"])
-	}
-	gargs, ok := mgot["arguments"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("expecte arguments to be []any, got %T", mgot["arguments"])
-	}
-	var args []json.RawMessage
-	for _, g := range gargs {
-		buf, err := json.Marshal(g)
-		if err != nil {
-			return nil, fmt.Errorf("Marshal failed, %v", err) // and maybe print g?
-		}
-		args = append(args, buf)
-	}
-	third := &protocol.ExecuteCommandParams{
-		Command:   cmd,
-		Arguments: args,
-	}
-	_, err = mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, third)
-	if err != nil {
+
+	if _, err = mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, cmd); err != nil {
 		return nil, fmt.Errorf("third ExecuteCommand failed %v", err)
 	}
 	// the edits were a side effect captured by the ApplyEditHandler
