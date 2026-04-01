@@ -533,6 +533,13 @@ func TestStress(t *testing.T) {
 				}
 			}
 			errHandler := func(err error) {
+				// Work around test flake go.dev/issue/78366 due to Windows'
+				// regrettable locking of files during reads.
+				if runtime.GOOS == "windows" && strings.Contains(err.Error(), "being used by another process") {
+					t.Log(err)
+					return
+				}
+
 				t.Errorf("error from watcher: %v", err)
 			}
 			w, err := filewatcher.New(mode, nil, eventsHandler, errHandler)
