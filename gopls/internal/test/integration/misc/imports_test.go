@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -350,7 +349,6 @@ return nil
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 
@@ -609,22 +607,20 @@ type Foo struct {
 	bar notbar.NotBar
 	baz baz.Baz
 }`
-	WithOptions(
-		Settings{"importsSource": settings.ImportsSourceGopls}).
-		Run(t, files, func(t *testing.T, env *Env) {
-			env.OpenFile("foo/foo.go")
-			var d protocol.PublishDiagnosticsParams
-			env.AfterChange(ReadDiagnostics("foo/foo.go", &d))
-			env.ApplyQuickFixes("foo/foo.go", d.Diagnostics)
-			// at this point 'import notbar "mod.com/bar"' has been added
-			// but it's still missing the import of "mod.com/baz"
-			y := env.BufferText("foo/foo.go")
-			if !strings.Contains(y, `notbar "mod.com/bar"`) {
-				t.Error("quick fix did not find notbar")
-			}
-			env.SaveBuffer("foo/foo.go")
-			env.AfterChange(NoDiagnostics(ForFile("foo/foo.go")))
-		})
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo/foo.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(ReadDiagnostics("foo/foo.go", &d))
+		env.ApplyQuickFixes("foo/foo.go", d.Diagnostics)
+		// at this point 'import notbar "mod.com/bar"' has been added
+		// but it's still missing the import of "mod.com/baz"
+		y := env.BufferText("foo/foo.go")
+		if !strings.Contains(y, `notbar "mod.com/bar"`) {
+			t.Error("quick fix did not find notbar")
+		}
+		env.SaveBuffer("foo/foo.go")
+		env.AfterChange(NoDiagnostics(ForFile("foo/foo.go")))
+	})
 }
 
 // Test for golang/go#52784
@@ -713,7 +709,6 @@ var A int
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.SaveBuffer("main.go")
@@ -796,9 +791,7 @@ var _ = foo.Bar
 package bar
 func Bar() {}
 `
-	WithOptions(
-		Settings{"importsSource": settings.ImportsSourceGopls},
-	).Run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("hello.go")
 		env.AfterChange(env.DoneWithOpen())
 		env.SaveBuffer("hello.go")

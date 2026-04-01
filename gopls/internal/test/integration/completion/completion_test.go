@@ -19,7 +19,6 @@ import (
 	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/server"
-	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -371,7 +370,6 @@ func _() {
 	WithOptions(
 		WriteGoSum("."),
 		ProxyFiles(proxy),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Make sure the dependency is in the module cache and accessible for
 		// unimported completions, and then remove it before proceeding.
@@ -436,7 +434,6 @@ const Name = "mainmod"
 `
 	WithOptions(
 		WriteGoSum("."),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 		ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("import.go", "package pkg\nvar _ = mainmod.Name\n")
 		env.SaveBuffer("import.go")
@@ -610,7 +607,6 @@ func main() {
 	WithOptions(
 		WindowsLineEndings(),
 		Settings{"ui.completion.usePlaceholders": true},
-		Settings{"importsSource": settings.ImportsSourceGopls},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		// Trigger unimported completions for the mod.com package.
 		env.OpenFile("main.go")
@@ -665,7 +661,6 @@ var Lower = ""
 			capabilities := fmt.Sprintf(`{ "textDocument": { "completion": { "completionItem": {"insertReplaceSupport":%t, "snippetSupport": false } } } }`, supportInsertReplace)
 			runner := WithOptions(
 				CapabilitiesJSON([]byte(capabilities)),
-				Settings{"importsSource": settings.ImportsSourceGopls},
 			)
 			runner.Run(t, src, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
@@ -744,8 +739,7 @@ func F3[K comparable, V any](map[K]V, chan V) {}
 `
 	WithOptions(
 		WindowsLineEndings(),
-		Settings{"ui.completion.usePlaceholders": true,
-			"importsSource": settings.ImportsSourceGopls},
+		Settings{"ui.completion.usePlaceholders": true},
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 		env.Await(env.DoneWithOpen())
@@ -1436,7 +1430,6 @@ func Join() {}
 
 	WithOptions(
 		ProxyFiles(proxy),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.RunGoCommand("mod", "download", "golang.org/toolchain@v0.0.1-go1.21.1.linux-amd64")
 		env.OpenFile("foo.go")
@@ -1509,7 +1502,6 @@ var _ = blah.
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
-		Settings{"importsSource": settings.ImportsSourceGopls},
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
@@ -1656,7 +1648,6 @@ func _() {
 	WithOptions(
 		WriteGoSum("."),
 		ProxyFiles(proxy), // providing example.com through GOPROXY to the go command
-		Settings{"importsSource": settings.ImportsSourceGopls},
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		// We need example.com in the module cache, but not
 		// otherwise available to the completion logic.
