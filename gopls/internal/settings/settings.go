@@ -1195,10 +1195,16 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 	case "completionBudget":
 		return nil, setDuration(&o.CompletionBudget, value)
 	case "importsSource":
-		return setEnum(&o.ImportsSource, value,
+		res, err := setEnum(&o.ImportsSource, value,
 			ImportsSourceOff,
 			ImportsSourceGopls,
 			ImportsSourceGoimports)
+		if err != nil {
+			return nil, err
+		}
+		return res, &SoftError{
+			msg: "importsSource is deprecated as it is no longer needed",
+		}
 	case "matcher":
 		return setEnum(&o.Matcher, value,
 			Fuzzy,

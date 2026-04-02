@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -837,4 +838,77 @@ func Bar() {}
 			t.Errorf(`expected import "hello/internal/foo" but got %q`, buf)
 		}
 	})
+}
+
+// Test behavior if there is no module cache index.
+// There are two cases, one where the index dir is
+// unwritable, and one where it doesn't exist.
+// In both cases, import "fmt" should be found,
+// a missing import should run to completion and not crash.
+func TestNoIndex(t *testing.T) {
+	const files = `-- go.mod --
+module foo
+go 1.24
+-- ok.go --
+package main
+var x = fmt.Println
+-- fail.go --
+package main
+var x = foo.Var
+`
+	modcache := t.TempDir()
+	// make it unwritable
+	if err := os.Chmod(modcache, 0555); err != nil {
+		t.Fatal(err)
+	}
+	// a function testing that std lib imports are found
+	ok := func(t *testing.T, env *Env) {
+		env.OpenFile("ok.go")
+		env.AfterChange(env.DoneWithOpen())
+		env.OrganizeImports("ok.go")
+		env.AfterChange(NoDiagnostics(ForFile("a.go")))
+		buf := env.BufferText("ok.go")
+		if !strings.Contains(buf, `import "fmt"`) {
+			t.Errorf(`expected import "fmt" but got %q`, buf)
+		}
+	}
+	// a function testing missing imports don't crash
+	notok := func(t *testing.T, env *Env) {
+		env.OpenFile("fail.go")
+		env.AfterChange(env.DoneWithOpen())
+		obuf := env.BufferText("fail.go")
+		env.OrganizeImports("fail.go")
+		buf := env.BufferText("fail.go")
+		if !cmp.Equal(buf, obuf) {
+			t.Errorf("unexpected change %q\n%s", obuf, cmp.Diff(obuf, buf))
+		}
+	}
+
+	dir := t.TempDir()
+
+	// create an unwritable index dir
+	modindex.IndexDir = filepath.Join(dir, "nope")
+	if err := os.MkdirAll(modindex.IndexDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+
+	// This should pass
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, ok)
+	// This should do nothing and not crash
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, notok)
+
+	// now with empty index dir
+	modindex.IndexDir = ""
+
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, ok)
+	// This should do nothing and not crash
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, notok)
 }

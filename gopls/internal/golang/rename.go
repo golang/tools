@@ -283,7 +283,7 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 
 // renameFuncSignature computes and applies the effective change signature
 // operation resulting from a 'renamed' (=rewritten) signature.
-func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.File, start, end token.Pos, snapshot *cache.Snapshot, cursor inspector.Cursor, f file.Handle, rng protocol.Range, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
+func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.File, start, end token.Pos, snapshot *cache.Snapshot, cursor inspector.Cursor, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
 	fdecl := funcKeywordDecl(start, end, cursor)
 	if fdecl == nil {
 		return nil, nil
@@ -428,7 +428,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, rng pr
 		return nil, fmt.Errorf("can't find cursor for selection")
 	}
 
-	if edits, err := renameFuncSignature(ctx, pkg, pgf, start, end, snapshot, cur, f, rng, newName); err != nil {
+	if edits, err := renameFuncSignature(ctx, pkg, pgf, start, end, snapshot, cur, newName); err != nil {
 		return nil, err
 	} else if edits != nil {
 		return editsToDocChanges(ctx, snapshot, edits)
