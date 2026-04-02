@@ -124,6 +124,8 @@ func stringscut(pass *analysis.Pass) (any, error) {
 		bytesIndexByte   = index.Object("bytes", "IndexByte")
 	)
 
+	stringsplitCut(pass, index)
+
 	scopeFixCount := make(map[*types.Scope]int) // the number of times we have offered a fix within a given scope in the current pass
 
 	for _, obj := range []types.Object{
@@ -365,6 +367,141 @@ func stringscut(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
+}
+
+// stringsplitCut reports patterns where strings.Split or strings.SplitN with
+// n=2 is immediately indexed at [0], which can be simplified to strings.Cut.
+// The transformation is always semantics-preserving because for all values of
+// s and sep, strings.Split(s,sep)[0] and strings.SplitN(s,sep,2)[0] are both
+// equal to the "before" return value of strings.Cut(s,sep).
+//
+// For example:
+//
+//	x := strings.SplitN(s, sep, 2)[0]
+//	              ------             --
+//	x, _, _ := strings.Cut(s, sep)
+//
+// Requires Go 1.18 (when strings.Cut was added).
+func stringsplitCut(pass *analysis.Pass, index *typeindex.Index) {
+	info := pass.TypesInfo
+
+	stringsSplit := index.Object("strings", "Split")
+	stringsSplitN := index.Object("strings", "SplitN")
+
+	for _, obj := range []types.Object{stringsSplit, stringsSplitN} {
+		if obj == nil {
+			continue
+		}
+		for curCall := range index.Calls(obj) {
+			// strings.Cut requires Go 1.18.
+			if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
+				continue
+			}
+
+			callExpr := curCall.Node().(*ast.CallExpr)
+
+			if obj.Name() == "SplitN" {
+				// Third argument must be the integer constant 2.
+				if len(callExpr.Args) != 3 {
+					continue
+				}
+				tv := info.Types[callExpr.Args[2]]
+				if tv.Value == nil {
+					continue
+				}
+				n, ok := constant.Int64Val(tv.Value)
+				if !ok || n != 2 {
+					continue
+				}
+			} else {
+				// strings.Split must have exactly two arguments.
+				if len(callExpr.Args) != 2 {
+					continue
+				}
+			}
+
+			// The call must be the X of an IndexExpr.
+			if curCall.ParentEdgeKind() != edge.IndexExpr_X {
+				continue
+			}
+			indexExpr := curCall.Parent().Node().(*ast.IndexExpr)
+
+			// The index must be the integer constant 0.
+			tv := info.Types[indexExpr.Index]
+			if tv.Value == nil {
+				continue
+			}
+			if val, ok := constant.Int64Val(tv.Value); !ok || val != 0 {
+				continue
+			}
+
+			// The IndexExpr must be the sole RHS of an assignment statement.
+			if curCall.Parent().ParentEdgeKind() != edge.AssignStmt_Rhs {
+				continue
+			}
+			assign := curCall.Parent().Parent().Node().(*ast.AssignStmt)
+			if len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+				continue
+			}
+
+			// The LHS must be a single non-blank identifier.
+			lhsIdent, ok := assign.Lhs[0].(*ast.Ident)
+			if !ok || lhsIdent.Name == "_" {
+				continue
+			}
+
+			// Build the fix.
+			//
+			//  x  := strings.SplitN(s, sep, 2)[0]
+			//  ---           ------             ---
+			//  x, _, _ := strings.Cut(s, sep)
+			callFunIdent := typesinternal.UsedIdent(info, callExpr.Fun)
+
+			var edits []analysis.TextEdit
+
+			// LHS: x → x, _, _
+			edits = append(edits, analysis.TextEdit{
+				Pos:     lhsIdent.Pos(),
+				End:     lhsIdent.End(),
+				NewText: fmt.Appendf(nil, "%s, _, _", lhsIdent.Name),
+			})
+
+			// Function name: Split/SplitN → Cut
+			edits = append(edits, analysis.TextEdit{
+				Pos:     callFunIdent.Pos(),
+				End:     callFunIdent.End(),
+				NewText: []byte("Cut"),
+			})
+
+			// For SplitN: remove the ", 2" third argument.
+			if obj.Name() == "SplitN" {
+				edits = append(edits, analysis.TextEdit{
+					Pos:     callExpr.Args[1].End(), // after sep
+					End:     callExpr.Rparen,        // before )
+					NewText: []byte(""),
+				})
+			}
+
+			// Remove the "[0]" index expression.
+			edits = append(edits, analysis.TextEdit{
+				Pos:     indexExpr.Lbrack,
+				End:     indexExpr.End(),
+				NewText: []byte(""),
+			})
+
+			srcFunc := obj.Pkg().Name() + "." + obj.Name()
+			pass.Report(analysis.Diagnostic{
+				Pos:      callExpr.Fun.Pos(),
+				End:      callExpr.Fun.End(),
+				Message:  srcFunc + "[0] can be simplified using strings.Cut",
+				Category: "stringscut",
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message:   "Simplify " + srcFunc + "[0] using strings.Cut",
+					TextEdits: edits,
+				}},
+			})
+		}
+	}
 }
 
 // indexArgValid reports whether expr is a valid strings.Index(_, _) arg

@@ -413,3 +413,51 @@ func guarded_neg_else(s string) (string, string) {
 		return before, after
 	}
 }
+
+// -- strings.Split/SplitN [0] → strings.Cut --
+
+// Should fire: SplitN(s, sep, 2)[0] in short var decl.
+func splitn_zero_define(s, sep string) string {
+	x, _, _ := strings.Cut(s, sep) // want `strings.SplitN\[0\] can be simplified using strings.Cut`
+	return x
+}
+
+// Should fire: Split(s, sep)[0] in short var decl.
+func split_zero_define(s, sep string) string {
+	x, _, _ := strings.Cut(s, sep) // want `strings.Split\[0\] can be simplified using strings.Cut`
+	return x
+}
+
+// Should fire: regular assignment (not :=).
+func split_zero_assign(s, sep string) string {
+	var x string
+	x, _, _ = strings.Cut(s, sep) // want `strings.Split\[0\] can be simplified using strings.Cut`
+	return x
+}
+
+// Should NOT fire: index is 1, not 0.
+func split_index_one(s, sep string) string {
+	return strings.Split(s, sep)[1]
+}
+
+// Should NOT fire: SplitN with n != 2.
+func splitn_n3(s, sep string) string {
+	return strings.SplitN(s, sep, 3)[0]
+}
+
+// Should NOT fire: result stored in variable first (not inline).
+func split_variable_first(s, sep string) string {
+	parts := strings.Split(s, sep)
+	return parts[0]
+}
+
+// Should NOT fire: LHS is blank identifier.
+func split_blank_lhs(s, sep string) {
+	_ = strings.Split(s, sep)[0]
+}
+
+// Should NOT fire: multiple values on LHS.
+func split_multi_lhs(s, sep string) (string, string) {
+	x, y := strings.Split(s, sep)[0], strings.Split(s, sep)[0]
+	return x, y
+}
