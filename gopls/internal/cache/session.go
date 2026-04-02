@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/util/persistent"
@@ -245,14 +244,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
-	}
-
-	// Keep this in sync with golang.computeImportEdits.
-	//
-	// TODO(rfindley): encapsulate the imports state logic so that the handling
-	// for Options.ImportsSource is in a single location.
-	if def.folder.Options.ImportsSource == settings.ImportsSourceGopls {
-		v.modcacheState = newModcacheState(def.folder.Env.GOMODCACHE)
+		modcacheState:        newModcacheState(def.folder.Env.GOMODCACHE),
 	}
 
 	s.snapshotWG.Add(1)

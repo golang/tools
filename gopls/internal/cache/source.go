@@ -6,7 +6,6 @@ package cache
 
 import (
 	"context"
-	"log"
 	"maps"
 	"slices"
 	"strings"
@@ -21,23 +20,21 @@ import (
 // goplsSource is an imports.Source that provides import information using
 // gopls and the module cache index.
 type goplsSource struct {
-	snapshot  *Snapshot
-	envSource *imports.ProcessEnvSource
+	snapshot *Snapshot
 
 	// set by each invocation of ResolveReferences
 	ctx context.Context
 }
 
-func (s *Snapshot) NewGoplsSource(is *imports.ProcessEnvSource) *goplsSource {
+func (s *Snapshot) NewGoplsSource() *goplsSource {
 	return &goplsSource{
-		snapshot:  s,
-		envSource: is,
+		snapshot: s,
 	}
 }
 
 func (s *goplsSource) LoadPackageNames(ctx context.Context, srcDir string, paths []imports.ImportPath) (map[imports.ImportPath]imports.PackageName, error) {
-	// TODO: use metadata graph. Aside from debugging, this is the only used of envSource
-	return s.envSource.LoadPackageNames(ctx, srcDir, paths)
+	// The goplsSource does not need to do this
+	return nil, nil
 }
 
 type result struct {
@@ -82,55 +79,6 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 		}
 		for k, v := range byPkgNm {
 			fromWS = append(fromWS, s.bestCache(k, v))
-		}
-	}
-	const debug = false
-	if debug { // debugging.
-		// what does the old one find?
-		old, err := s.envSource.ResolveReferences(ctx, filename, missing)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("fromCache:%d %s", len(fromCache), filename)
-		for i, c := range fromCache {
-			log.Printf("cans%d %#v %#v %v", i, c.res.Import, c.res.Package, c.deprecated)
-		}
-		for k, v := range missing {
-			for x := range v {
-				log.Printf("missing %s.%s", k, x)
-			}
-		}
-		for k, v := range needed {
-			for x := range v {
-				log.Printf("needed %s.%s", k, x)
-			}
-		}
-
-		dbgpr := func(hdr string, v []*imports.Result) {
-			for i := range v {
-				log.Printf("%s%d %+v %+v", hdr, i, v[i].Import, v[i].Package)
-			}
-		}
-
-		dbgpr("fromWS", fromWS)
-		dbgpr("old", old)
-		for k, v := range s.snapshot.workspacePackages.All() {
-			log.Printf("workspacePackages[%s]=%s", k, v)
-		}
-		// anything in ans with >1 matches?
-		seen := make(map[string]int)
-		for _, a := range fromWS {
-			seen[a.Package.Name]++
-		}
-		for k, v := range seen {
-			if v > 1 {
-				log.Printf("saw %d %s", v, k)
-				for i, x := range fromWS {
-					if x.Package.Name == k {
-						log.Printf("%d: %+v %+v", i, x.Package, x.Import)
-					}
-				}
-			}
 		}
 	}
 	return fromWS, nil

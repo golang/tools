@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/diff"
@@ -131,23 +130,7 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.
 	goroot := snapshot.View().Folder().Env.GOROOT
 	filename := pgf.URI.Path()
 
-	// Build up basic information about the original file.
-	isource, err := imports.NewProcessEnvSource(options.Env, filename, pgf.File.Name.Name)
-	if err != nil {
-		return nil, nil, err
-	}
-	var source imports.Source
-
-	// Keep this in sync with [cache.Session.createView] (see the TODO there: we
-	// should factor out the handling of the ImportsSource setting).
-	switch snapshot.Options().ImportsSource {
-	case settings.ImportsSourceGopls:
-		source = snapshot.NewGoplsSource(isource)
-	case settings.ImportsSourceOff: // for cider, which has no file system
-		source = nil
-	case settings.ImportsSourceGoimports:
-		source = isource
-	}
+	source := snapshot.NewGoplsSource()
 	// imports require a current metadata graph
 	// TODO(rfindley): improve the API
 	snapshot.WorkspaceMetadata(ctx) // ignore error

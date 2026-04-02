@@ -371,6 +371,9 @@ func (v *View) Env() []string {
 
 // ModcacheIndex returns the module cache index
 func (v *View) ModcacheIndex() (*modindex.Index, error) {
+	if v.modcacheState == nil {
+		return nil, fmt.Errorf("view %q has no module cache", v.id)
+	}
 	return v.modcacheState.getIndex()
 }
 

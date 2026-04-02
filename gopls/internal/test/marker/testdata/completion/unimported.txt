@@ -2,11 +2,6 @@
 -- flags --
 -ignore_extra_diags
 
--- settings.json --
-{
-	"importsSource": "gopls"
-}
-
 -- go.mod --
 module unimported.test
 
