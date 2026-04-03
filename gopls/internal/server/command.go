@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/fatih/gomodifytags/modifytags"
 	"golang.org/x/mod/modfile"
@@ -1815,7 +1814,7 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		iface, err := formAnswer[string](params, 0)
+		iface, err := golang.FormAnswer[string](params, 0)
 		if err != nil {
 			return err
 		}
@@ -1828,32 +1827,6 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 	})
 }
 
-// sanitizeTags cleans up comma-separated tags and ensures they are valid.
-func sanitizeTags(tags string) (string, error) {
-	parts := strings.Split(tags, ",")
-	var clean []string
-
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-
-		// Use strings.ContainsFunc instead of a manual byte loop.
-		// It returns true if any rune in the string matches the condition.
-		if strings.ContainsFunc(p, func(r rune) bool {
-			// Space, colon, quote, or any non-printable character (like control chars)
-			return r == ' ' || r == ':' || r == '"' || !unicode.IsPrint(r)
-		}) {
-			return "", fmt.Errorf("illegal tag %q: cannot contain spaces, quotes, colons, or control characters", p)
-		}
-
-		clean = append(clean, p)
-	}
-
-	return strings.Join(clean, ","), nil
-}
-
 func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs, params *protocol.InteractiveParams) error {
 	return c.run(ctx, commandConfig{
 		progress: "Modifying tags",
@@ -1862,24 +1835,24 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		if len(params.FormAnswers) > 0 {
 			switch args.Modification {
 			case "add":
-				tags, err := formAnswer[string](params, 0)
+				tags, err := golang.FormAnswer[string](params, 0)
 				if err != nil {
 					return err
 				}
-				args.Add, err = sanitizeTags(tags)
+				args.Add, err = golang.SanitizeTags(tags)
 				if err != nil {
 					return err
 				}
-				args.Transform, err = formAnswer[string](params, 1)
+				args.Transform, err = golang.FormAnswer[string](params, 1)
 				if err != nil {
 					return err
 				}
 			case "remove":
-				tags, err := formAnswer[string](params, 0)
+				tags, err := golang.FormAnswer[string](params, 0)
 				if err != nil {
 					return err
 				}
-				args.Remove, err = sanitizeTags(tags)
+				args.Remove, err = golang.SanitizeTags(tags)
 				if err != nil {
 					return err
 				}
