@@ -890,21 +890,56 @@ func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, remo
 }
 
 // supportsDialog reports whether the client supports interactive UI dialogs.
-// If specific [settings.InteractiveInputType]s are provided, it also verifies that
-// the client explicitly supports every requested input type.
-func supportsDialog(req *codeActionsRequest, need ...settings.InteractiveInputType) bool {
-	// TODO(pjw): this would be better if it checked the actual form, e.g., server.AddTagsForm
-	// rather than the types, but that would cause an imports loop.
-	o := req.snapshot.Options().ClientOptions.SupportedInteractiveInputTypes
-	if o == nil {
-		return false
+//
+// If more than one form is provided, they are treated as a prioritized list of
+// alternatives, typically ordered with decreasing demands for client protocol
+// support. The function returns true if the client explicitly supports all
+// field input types required by at least one of these alternative forms.
+//
+// If no forms are provided, the function panics.
+func supportsDialog(req *codeActionsRequest, forms ...[]protocol.FormField) bool {
+	if len(forms) == 0 {
+		panic("supportsDialog called with empty forms")
 	}
-	for _, n := range need {
-		if !o[n] {
-			return false
+
+	supported := req.snapshot.Options().ClientOptions.SupportedInteractiveInputTypes
+
+	// Ensure that at least one form does not depend on unsupported types.
+	for _, form := range forms {
+		if !slices.ContainsFunc(form, func(field protocol.FormField) bool {
+			return !supported[formFieldInputType(field.Type)]
+		}) {
+			return true // form is free of unsupported types
 		}
 	}
-	return true
+
+	return false
+}
+
+// formFieldInputType extracts the interactive input type from a
+// protocol.FormFieldType*.
+//
+// It panics if the type is unknown, as forms are generated internally by gopls.
+func formFieldInputType(typ any) settings.InteractiveInputType {
+	switch t := typ.(type) {
+	case protocol.FormFieldTypeString:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeDocumentURI:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeBool:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeNumber:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeEnum:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeLazyEnum:
+		return settings.InteractiveInputType(t.Kind)
+	case protocol.FormFieldTypeList:
+		return settings.InteractiveInputType(t.Kind)
+	default:
+		// A form field type was added to gopls without updating this function.
+		panic(fmt.Sprintf("gopls bug: unhandled FormFieldType %T", typ))
+	}
 }
 
 // refactorRewriteAddStructTags produces "Add struct tags" code actions.
@@ -912,7 +947,7 @@ func supportsDialog(req *codeActionsRequest, need ...settings.InteractiveInputTy
 func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) error {
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, false) {
 		add := ""
-		if !supportsDialog(req) {
+		if !supportsDialog(req, addTagsForm) {
 			add = "json" // default choice
 		}
 		cmdAdd := command.NewModifyTagsCommand("Add struct tags", command.ModifyTagsArgs{
@@ -930,7 +965,7 @@ func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) 
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsRequest) error {
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, true) {
-		clear := !supportsDialog(req) // clear the entry if there is no dialog
+		clear := !supportsDialog(req, removeTagsForm) // clear the entry if there is no dialog
 		cmdRemove := command.NewModifyTagsCommand("Remove struct tags", command.ModifyTagsArgs{
 			Modification: "remove",
 			URI:          req.loc.URI,
@@ -949,8 +984,7 @@ func refactorRewriteImplementInterface(_ context.Context, req *codeActionsReques
 	// The "Implement Interface" interaction requires either lazy enum support
 	// (for rich workspace symbol search) or at least string support (as a fallback
 	// text prompt). We disable the action if the client supports neither.
-	if !supportsDialog(req, settings.InteractiveInputTypeString) &&
-		!supportsDialog(req, settings.InteractiveInputTypeLazyEnum) {
+	if !supportsDialog(req, implementInterfaceFormLazyEnum, implementInterfaceFormString) {
 		return nil
 	}
 
