@@ -163,7 +163,7 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 			}
 
 			if !packagepath.CanImport(namedPkg.String(), p.Path()) {
-				return nil, fmt.Errorf("can not import package %s", p.Path())
+				return nil, fmt.Errorf("adding method %s to type %s would require import of inaccessible package %s", method.Name(), named.Obj().Name(), p.Name())
 			}
 		}
 	}

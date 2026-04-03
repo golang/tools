@@ -225,7 +225,7 @@ package foo
 
 // We cannot implement this interface because its method signature requires
 // importing the internal, inaccessible type bar.Bar.
-type NotOk struct{} //@codeaction("NotOk", "refactor.rewrite.implementInterface", err=re"can not import package", form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.InvisibleTypes")
+type NotOk struct{} //@codeaction("NotOk", "refactor.rewrite.implementInterface", err=re"inaccessible package", form0="golang.org/lsptests/implementinterface/visibility/bar/internal/bar.InvisibleTypes")
 
 -- visibility/bar/internal/bar/bar.go --
 package bar
