@@ -229,6 +229,14 @@ Suffixes:
 	if cand.detail != "" {
 		detail = cand.detail
 	}
+
+	// When completing right after "//" (cursor at the slashes with no space),
+	// prepend a space so the result is "// Name" rather than "//Name".
+	if c.completionContext.commentNeedsLeadingSpace {
+		insert = " " + insert
+		snip.PrependText(" ")
+	}
+
 	item := CompletionItem{
 		Label:               label,
 		InsertText:          insert,

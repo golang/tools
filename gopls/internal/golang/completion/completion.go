@@ -366,6 +366,12 @@ type completionContext struct {
 	// commentCompletion is true if we are completing a comment.
 	commentCompletion bool
 
+	// commentNeedsLeadingSpace is true when completing a comment whose text
+	// is exactly "//" (cursor placed immediately after the slashes, with no
+	// space). Completion items should prepend a space so that accepting a
+	// suggestion produces "// Name" rather than "//Name".
+	commentNeedsLeadingSpace bool
+
 	// packageCompletion is true if we are completing a package name.
 	packageCompletion bool
 }
@@ -1048,6 +1054,16 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 	// comment is valid, set surrounding as word boundaries around cursor
 	c.setSurroundingForComment(comment)
+
+	// If the cursor is placed immediately after "//" with no following text,
+	// completions must prepend a space to produce proper Go doc comment style
+	// ("// Name" rather than "//Name").
+	for _, cmt := range comment.List {
+		if c.pos == cmt.Slash+2 && cmt.Text == "//" {
+			c.completionContext.commentNeedsLeadingSpace = true
+			break
+		}
+	}
 
 	// Using the next line pos, grab and parse the exported symbol on that line
 	for _, n := range c.pgf.File.Decls {
