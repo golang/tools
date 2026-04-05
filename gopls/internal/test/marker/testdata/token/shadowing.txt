@@ -1,0 +1,167 @@
+-- settings.json --
+{
+	"semanticTokens": true
+}
+-- universe/universe.go --
+package p
+
+func make() { //@token("make", "function", "definition signature shadowing")
+}
+
+type rune = byte //@token("rune", "type", "definition number shadowing")
+
+const true = false //@token("true", "variable", "definition readonly shadowing")
+
+func _() {
+	new := 3 //@token("new", "variable", "definition number shadowing")
+	len := 4 //@token("len", "variable", "definition number shadowing")
+	_, _ = new, len
+}
+-- top-level/f1.go --
+package p
+
+func _() {
+	foo := 1 //@token("foo", "variable", "definition number shadowing")
+	bar := 1 //@token("bar", "variable", "definition number shadowing")
+	baz := 1 //@token("baz", "variable", "definition number shadowing")
+	qux := 1 //@token("qux", "variable", "definition number shadowing")
+	_, _, _, _ = foo, bar, baz, qux
+}
+
+func _() {
+	other := 3 //@token("other", "variable", "definition number")
+	_ = other
+}
+
+var foo = 1
+
+func bar() {}
+
+type baz int
+
+const qux = 1
+
+func _() {
+	foo := 1 //@token("foo", "variable", "definition number shadowing")
+	bar := 1 //@token("bar", "variable", "definition number shadowing")
+	baz := 1 //@token("baz", "variable", "definition number shadowing")
+	qux := 1 //@token("qux", "variable", "definition number shadowing")
+	_, _, _, _ = foo, bar, baz, qux
+}
+
+func _() {
+	other := 3 //@token("other", "variable", "definition number")
+	_ = other
+}
+-- top-level/f2.go --
+package p
+
+func _() {
+	foo := 1 //@token("foo", "variable", "definition number shadowing")
+	bar := 1 //@token("bar", "variable", "definition number shadowing")
+	baz := 1 //@token("baz", "variable", "definition number shadowing")
+	qux := 1 //@token("qux", "variable", "definition number shadowing")
+	_, _, _, _ = foo, bar, baz, qux
+}
+
+func _() {
+	other := 3 //@token("other", "variable", "definition number")
+	_ = other
+}
+-- nested/nested.go --
+package p
+
+func _() {
+	{
+		foo := 3 //@token("foo", "variable", "definition number")
+		_ = foo
+	}
+
+	{
+		if foo := 3; true { //@token("foo", "variable", "definition number")
+			_ = foo
+		}
+	}
+
+	{
+		for foo := 3; true; { //@token("foo", "variable", "definition number")
+			_ = foo
+		}
+	}
+
+	foo := any(0)
+	bar := 1
+	_ = bar
+
+	switch foo := foo.(type) { //@token("foo", "variable", "definition shadowing")
+	case int:
+		_ = foo
+	}
+	switch bar := foo.(type) { //@token("bar", "variable", "definition shadowing")
+	case int:
+		_ = bar
+	}
+	switch baz := foo.(type) { //@token("baz", "variable", "definition")
+	case int:
+		_ = baz
+		{
+			baz := 3 //@token("baz", "variable", "definition number shadowing")
+			_ = baz
+		}
+	}
+
+	{
+		foo := 3 //@token("foo", "variable", "definition number shadowing")
+		_ = foo
+	}
+
+	if foo := 3; true { //@token("foo", "variable", "definition number shadowing")
+		_ = foo
+	}
+
+	for foo := 3; true; { //@token("foo", "variable", "definition number shadowing")
+		_ = foo
+	}
+}
+-- imports/imports.go --
+package p
+
+import "net/url"
+import url2 "net/url"
+
+func _() {
+	url, err := url.Parse("https://go.dev") //@token("url", "variable", "definition pointer shadowing")
+	_, _ = url, err
+
+	url2, err := url2.Parse("https://go.dev") //@token("url2", "variable", "definition pointer shadowing")
+	_, _ = url2, err
+}
+-- funcs/funcs.go --
+package p
+
+var foo = 1
+var bar = 1
+var baz = 1
+
+type _ func(foo int) (bar int) //@token("foo", "parameter", "definition number"), token("bar", "variable", "definition number")
+
+func f(foo int) (bar int) { //@token("foo", "parameter", "definition number shadowing"), token("bar", "variable", "definition number shadowing")
+	_ = foo
+	return 0
+}
+
+type s struct{}
+
+func (baz s) f(foo int) (bar int) { //@token("baz", "parameter", "definition struct shadowing"), token("foo", "parameter", "definition number shadowing"), token("bar", "variable", "definition number shadowing")
+	_ = foo
+	return 0
+}
+-- generics/generics.go --
+package p
+
+type T int
+
+type s[T any] struct{} //@token("T", "typeParameter", "definition shadowing"),
+
+func (s[T]) f() { //@token("T", "typeParameter", "definition shadowing"),
+}

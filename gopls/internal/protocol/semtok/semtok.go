@@ -115,6 +115,7 @@ const (
 	ModSlice     Modifier = "slice"
 	ModString    Modifier = "string"
 	ModStruct    Modifier = "struct"
+	ModShadowing Modifier = "shadowing" // shadowing definition
 )
 
 // Modifiers is a slice of modifiers gopls will return as its server capabilities.
@@ -137,6 +138,7 @@ var Modifiers = []Modifier{
 	ModSlice,
 	ModString,
 	ModStruct,
+	ModShadowing,
 }
 
 // Encode returns the LSP encoding of a sequence of tokens.

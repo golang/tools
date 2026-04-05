@@ -216,6 +216,21 @@ require('lspconfig').gopls.setup({
 })
 ```
 
+### <a href="#semantic-tokens" id="semantic-tokens">Semantic Tokens</a>
+
+Semantic tokens are disabled by default in gopls, to enable pass
+the [`semanticTokens`](../settings.md#semanticTokens) setting.
+
+#### <a href="#semantic-tokens-shadowing" id="semantic-tokens-shadowing">Shadowing semantic modifier</a>
+
+Gopls emits a `"shadowing"` semantic token modifier for each identifier that
+shadows an existing symbol from an outer scope. Such declarations can be
+highlighted with bold and underline with:
+
+```lua
+vim.api.nvim_set_hl(0, '@lsp.mod.shadowing', { bold = true, underline = true })
+```
+
 ### <a href="#neovim-links" id="neovim-links">Additional Links</a>
 
 * [Neovim's official LSP documentation][nvim-docs].

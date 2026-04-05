@@ -658,6 +658,49 @@ func appendTypeModifiers(mods []semtok.Modifier, t types.Type) []semtok.Modifier
 	return mods
 }
 
+// isShadowing reports whether id is shadowing some other definiton from outer scopes.
+func (tv *tokenVisitor) isShadowing(id *ast.Ident) bool {
+	if obj, ok := tv.info.Defs[id]; obj != nil {
+		// obj.Parent.Parent is the surrounding scope. If we can find another declaration
+		// starting from there id is a shadowing identifier.
+		if obj.Parent() != nil && obj.Parent().Parent() != nil {
+			if s, _ := obj.Parent().Parent().LookupParent(id.Name, id.Pos()); s != nil {
+				for i, n := range slices.Backward(tv.stack) {
+					// A FuncType may be the signature of a Func{Decl,Lit} or just a func type.
+					// Any object declared within a FuncType must be a TypeParam, Param, or Result.
+					// The only reference to such an object can be within a function body.
+					// Since a func type has no function body, there can be no references to the
+					// object, and shadowing is irrelevant. So omit the modifier in that case.
+					if is[*ast.FuncType](n) {
+						switch tv.stack[i-1].(type) {
+						case *ast.FuncDecl, *ast.FuncLit:
+							return true // parameter of function with body
+						}
+						return false // parameter in a func type
+					}
+				}
+				return true
+			}
+		}
+	} else if ok {
+		// Find the scope of the symbolic variable of the type-switch header.
+		// id := foo.(type)
+		for _, n := range slices.Backward(tv.stack) {
+			if typeSwitchStmt, ok := n.(*ast.TypeSwitchStmt); ok {
+				if assign, ok := typeSwitchStmt.Assign.(*ast.AssignStmt); ok && len(assign.Lhs) != 0 {
+					if ident, ok := assign.Lhs[0].(*ast.Ident); ok && ident == id {
+						if s, _ := tv.info.Scopes[n].LookupParent(id.Name, id.Pos()); s != nil {
+							return true
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (tv *tokenVisitor) ident(id *ast.Ident) {
 	var (
 		tok  semtok.Type
@@ -679,6 +722,10 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 
 	} else {
 		return
+	}
+
+	if tv.isShadowing(id) {
+		mods = append(mods, semtok.ModShadowing)
 	}
 
 	// Emit a token for the identifier's extent.

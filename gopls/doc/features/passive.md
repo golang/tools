@@ -257,6 +257,10 @@ constructor of each symbols's type:
 - `"string"`
 - `"struct"`
 
+Each identifier that refers to a symbol that shadows an existing symbol
+from an outer scope is marked with a non-standard `"shadowing"` modifier.
+This modifier allows editors to provide visual hints for shadowing declarations.
+
 Settings:
 - The [`semanticTokens`](../settings.md#semanticTokens) setting determines whether
   gopls responds to semantic token requests. This option allows users to disable

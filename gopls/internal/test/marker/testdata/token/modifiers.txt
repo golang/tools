@@ -32,7 +32,7 @@ func _() {
 	var b bool //@ token("b", "variable", "definition bool")
 	b = true //@ token("b", "variable", "bool")
 
-	var c chan string //@ token("c", "variable", "definition chan")
+	var c chan string //@ token("c", "variable", "definition chan shadowing")
 	c = make(chan string) //@ token("c", "variable", "chan")
 
 	type inter interface{} //@ token("inter", "type", "definition interface")
