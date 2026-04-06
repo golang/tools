@@ -1,0 +1,27 @@
+Test for Go to Definition on promoted fields in struct literals.
+Ref: go.dev/issues/78553
+
+-- flags --
+-min_go_command=go1.27
+
+-- go.mod --
+module mod.com
+
+go 1.27
+
+-- main.go --
+package main
+
+type E1 struct {
+	A int //@loc(defA, "A")
+}
+
+type T struct {
+	E1
+}
+
+func main() {
+	_ = T{
+		A: 1, //@def("A", defA)
+	}
+}

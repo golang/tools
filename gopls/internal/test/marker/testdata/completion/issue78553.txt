@@ -1,0 +1,36 @@
+Test for completion on promoted fields in struct literals.
+Ref: go.dev/issues/78553
+
+-- flags --
+-min_go_command=go1.27
+
+-- skip --
+Skipping as this feature is not yet implemented. Ref: go.dev/issues/78553
+
+-- go.mod --
+module mod.com
+
+go 1.27
+
+-- main.go --
+package main
+
+type E1 struct {
+	A int //@item(fieldA, "A", "int", "field")
+}
+
+type E2 struct {
+	E1
+	B int //@item(fieldB, "B", "int", "field")
+}
+
+type T struct {
+	E2    //@item(fieldE2, "E2", "E2", "field")
+	C int //@item(fieldC, "C", "int", "field")
+}
+
+func main() {
+	_ = T{
+		//@complete("", fieldA, fieldB, fieldC, fieldE2)
+	}
+}

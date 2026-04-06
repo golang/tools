@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // analyzer allows us to test the fillstruct code action using the analysistest
@@ -33,4 +34,11 @@ var analyzer = &analysis.Analyzer{
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, analyzer, "a", "typeparams")
+}
+
+func TestIssue78553(t *testing.T) {
+	testenv.NeedsGo1Point(t, 27)
+	t.Skip("Skipping as this feature is not yet implemented. Ref: go.dev/issues/78553")
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, analyzer, "issue78553")
 }
