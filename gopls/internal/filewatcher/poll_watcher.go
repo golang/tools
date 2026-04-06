@@ -348,17 +348,15 @@ func scan(root string, oldState fileState) ([]protocol.FileEvent, fileState, err
 
 func (w *pollWatcher) loadState(root string) (fileState, error) {
 	key := cacheKey(root)
-	data, err := filecache.Get(filewatcherKind, key)
-	if err != nil {
-		if err != filecache.ErrNotFound {
-			bug.Reportf("internal error reading shared cache: %v", err)
-		}
-		return nil, err
+	state, err := filecache.Get(filewatcherKind, key, func(data []byte) fileState {
+		var state fileState
+		codec.Decode(data, &state)
+		return state
+	})
+	if err != nil && err != filecache.ErrNotFound {
+		bug.Reportf("internal error reading shared cache: %v", err)
 	}
-
-	var state fileState
-	codec.Decode(data, &state)
-	return state, nil
+	return state, err
 }
 
 func (w *pollWatcher) saveState(root string, state fileState) {

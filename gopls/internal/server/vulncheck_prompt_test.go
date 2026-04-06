@@ -334,7 +334,7 @@ func TestCheckDependencyChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cachedHashBytes, err := filecache.Get(dependencyHashKind, pathHash)
+			cachedHashBytes, err := filecache.Get(dependencyHashKind, pathHash, filecache.Bytes)
 			if err != nil && err != filecache.ErrNotFound {
 				t.Fatal(err)
 			}

@@ -46,7 +46,7 @@ func main() {
 	// directory (for example at the start of every RPC) and
 	// either re-create it or just fail the RPC with an
 	// informative error and terminate the process.
-	if _, err := filecache.Get("nonesuch", [32]byte{}); err != nil && err != filecache.ErrNotFound {
+	if _, err := filecache.Get("nonesuch", [32]byte{}, filecache.Bytes); err != nil && err != filecache.ErrNotFound {
 		counter.Inc("gopls/nocache")
 		log.Fatalf("gopls cannot access its persistent index (disk full?): %v", err)
 	}

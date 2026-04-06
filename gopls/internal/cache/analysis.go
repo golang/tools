@@ -370,15 +370,10 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		return nil, err // cancelled, or failed to produce a package
 	}
 
-	// Inv: all root nodes now have a summary (#66732).
-	//
-	// We know this is falsified empirically. This means either
-	// the summary was "successfully" set to nil (above), or there
-	// is a problem with the graph such the enqueuing leaves does
-	// not lead to completion of roots (or an error).
+	// Inv: all root nodes now have a summary.
 	for _, root := range roots {
 		if root.summary == nil {
-			bug.Report("root analysisNode has nil summary")
+			panic("root analysisNode has nil summary")
 		}
 	}
 
@@ -413,7 +408,6 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			}
 
 			// Inv: root.summary is the successful result of run (via runCached).
-			// TODO(adonovan): fix: root.summary is sometimes nil! (#66732).
 			summary, ok := root.summary.Actions[stableNames[a]]
 			if summary == nil {
 				panic(fmt.Sprintf("analyzeSummary.Actions[%q] = (nil, %t); got %v (#60551)",
@@ -583,12 +577,9 @@ func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeS
 	// Access the cache.
 	var summary *analyzeSummary
 	const cacheKind = "analysis"
-	if data, err := filecache.Get(cacheKind, key); err == nil {
+	if data, err := filecache.Get(cacheKind, key, filecache.Bytes); err == nil {
 		// cache hit
 		analyzeSummaryCodec.Decode(data, &summary)
-		if summary == nil { // debugging #66732
-			bug.Reportf("analyzeSummaryCodec.Decode yielded nil *analyzeSummary")
-		}
 	} else if err != filecache.ErrNotFound {
 		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	} else {
@@ -597,9 +588,6 @@ func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeS
 			summary, err := an.run(ctx)
 			if err != nil {
 				return nil, err
-			}
-			if summary == nil { // debugging #66732 (can't happen)
-				bug.Reportf("analyzeNode.run returned nil *analyzeSummary")
 			}
 			go func() {
 				cacheLimit <- unit{}            // acquire token

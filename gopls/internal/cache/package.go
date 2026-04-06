@@ -59,7 +59,7 @@ type syntaxPackage struct {
 	importMap       map[PackagePath]*types.Package
 
 	xrefsOnce sync.Once
-	_xrefs    []byte // only used by the xrefs method
+	_xrefs    *xrefs.Index // only used by the xrefs method
 
 	methodsetsOnce sync.Once
 	_methodsets    *methodsets.Index // only used by the methodsets method
@@ -68,9 +68,9 @@ type syntaxPackage struct {
 	_tests    *testfuncs.Index // only used by the tests method
 }
 
-func (p *syntaxPackage) xrefs() []byte {
+func (p *syntaxPackage) xrefs() *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.NewIndex(p.compiledGoFiles, p.types, p.typesInfo)
 	})
 	return p._xrefs
 }

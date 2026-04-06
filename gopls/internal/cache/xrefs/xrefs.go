@@ -21,9 +21,9 @@ import (
 	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
-// Index constructs a serializable index of outbound cross-references
-// for the specified type-checked package.
-func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
+// NewIndex constructs an index of outbound cross-references for the
+// specified type-checked package.
+func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Index {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -132,17 +132,33 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 		return packages[i].PkgPath < packages[j].PkgPath
 	})
 
-	return packageCodec.Encode(packages)
+	return &Index{packages: packages}
 }
 
-// Lookup searches a serialized index produced by an indexPackage
-// operation on m, and returns the locations of all references from m
-// to any object in the target set. Each object is denoted by a pair
-// of (package path, object path).
-func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
+// An Index is an index of outbound symbol references for one
+// specific package.
+type Index struct {
+	packages []*gobPackage
+}
+
+// Encode encodes the index for storage.
+func (idx *Index) Encode() []byte {
+	return packageCodec.Encode(idx.packages)
+}
+
+// Decode decodes a serialized cross-reference index.
+// It is suitable for use as a filecache.Get decoder.
+func Decode(data []byte) *Index {
 	var packages []*gobPackage
 	packageCodec.Decode(data, &packages)
-	for _, gp := range packages {
+	return &Index{packages: packages}
+}
+
+// Lookup searches the index for references to any object in the target set,
+// returning their locations within the package described by mp.
+// Each target object is denoted by a pair of (package path, object path).
+func (idx *Index) Lookup(mp *metadata.Package, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
+	for _, gp := range idx.packages {
 		if objectSet, ok := targets[gp.PkgPath]; ok {
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {

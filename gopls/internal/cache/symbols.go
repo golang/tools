@@ -46,8 +46,8 @@ func (s *Snapshot) Symbols(ctx context.Context, ids ...PackageID) ([]*symbols.Pa
 				return err
 			}
 
-			if data, err := filecache.Get(symbolsKind, key); err == nil {
-				res[i] = symbols.Decode(data)
+			if pkg, err := filecache.Get(symbolsKind, key, symbols.Decode); err == nil {
+				res[i] = pkg
 				return nil
 			} else if err != filecache.ErrNotFound {
 				bug.Reportf("internal error reading symbol data: %v", err)

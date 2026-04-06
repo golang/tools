@@ -50,18 +50,32 @@ func Start() {
 	go getCacheDir()
 }
 
-// As an optimization, use a 100MB in-memory LRU cache in front of filecache
-// operations. This reduces I/O for operations such as diagnostics or
-// implementations that repeatedly access the same cache entries.
-var memCache = lru.New[memKey, []byte](100 * 1e6)
+// memCache is a 100MB in-memory LRU cache in front of filecache
+// operations. It holds either raw bytes (written by [Set]) or decoded
+// objects (written by [Get]). This avoids both repeated I/O and
+// repeated deserialization for operations such as references or
+// implementations that access the same entries many times.
+var memCache = lru.New[memKey, any](100 * 1e6)
 
 type memKey struct {
 	kind string
 	key  [32]byte
 }
 
-// Get retrieves from the cache and returns the value most recently
-// supplied to Set(kind, key), possibly by another process.
+// ErrNotFound is the distinguished error
+// returned by Get when the key is not found.
+var ErrNotFound = fmt.Errorf("not found")
+
+// Bytes is the identity decoder, for use with [Get] when the caller
+// wants the raw bytes.
+func Bytes(data []byte) []byte { return data }
+
+// Get retrieves from the cache the value most recently supplied to
+// Set(kind, key), possibly by another process, and passes it through
+// decode. The decoded result is cached in memory so that repeated
+// reads avoid both I/O and deserialization. On a memory-cache hit
+// holding raw bytes (from a recent [Set]), the entry is decoded once
+// and upgraded in place from raw bytes to the decoded value.
 //
 // Get returns ErrNotFound if the value was not found. The first call
 // to Get may fail due to ENOSPC or deletion of the process's
@@ -69,15 +83,47 @@ type memKey struct {
 // of the cache (by external meddling) while gopls is running, or
 // faulty hardware; see issue #67433.
 //
-// Callers should not modify the returned array.
-func Get(kind string, key [32]byte) ([]byte, error) {
+// Each kind must be used with exactly one decoded type T; mixing types
+// for the same kind is a programming error and will panic.
+// The returned value may be shared with other callers and must not be
+// mutated.
+func Get[T any](kind string, key [32]byte, decode func([]byte) T) (T, error) {
+	var zero T
+	mk := memKey{kind, key}
+
 	// First consult the read-through memory cache.
 	// Note that memory cache hits do not update the times
 	// used for LRU eviction of the file-based cache.
-	if value, ok := memCache.Get(memKey{kind, key}); ok {
-		return value, nil
+	var data []byte
+	if v, ok := memCache.Get(mk); ok {
+		if t, ok := v.(T); ok {
+			return t, nil
+		}
+		// Set stores the encoded bytes, so a hit may hold []byte rather
+		// than T until the first Get decodes and upgrades the entry.
+		// Alternatively, we could pass an encoder to Set, but the
+		// asymmetry here ensures that we don't rely on the intrinsic
+		// identity of our encoded values.
+		if data, ok = v.([]byte); !ok {
+			// Entry holds a decoded value of a different type; each
+			// kind must be used with exactly one accessor.
+			panic(fmt.Sprintf("filecache: kind %q used with multiple decoded types (got %T, want %T)", kind, v, zero))
+		}
+	} else {
+		var err error
+		if data, err = get(kind, key); err != nil {
+			return zero, err
+		}
 	}
 
+	result := decode(data)
+	memCache.Set(mk, result, len(data))
+	return result, nil
+}
+
+// get reads the value for (kind, key) from the file system, bypassing
+// the in-memory cache.
+func get(kind string, key [32]byte) ([]byte, error) {
 	iolimit <- struct{}{}        // acquire a token
 	defer func() { <-iolimit }() // release a token
 
@@ -127,14 +173,8 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// open or read operation entailing a metadata write.)
 	touch(indexName, casName)
 
-	memCache.Set(memKey{kind, key}, value, len(value))
-
 	return value, nil
 }
-
-// ErrNotFound is the distinguished error
-// returned by Get when the key is not found.
-var ErrNotFound = fmt.Errorf("not found")
 
 // Set updates the value in the cache.
 //
@@ -610,7 +650,7 @@ func BugReports() (string, []bug.Bug) {
 			if err != nil || n != len(key) {
 				return nil // ignore malformed file names
 			}
-			content, err := Get(bugKind, key)
+			content, err := Get(bugKind, key, Bytes)
 			if err == nil { // ignore read errors
 				var b bug.Bug
 				if err := json.Unmarshal(content, &b); err != nil {

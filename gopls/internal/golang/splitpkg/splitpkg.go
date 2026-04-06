@@ -123,7 +123,7 @@ type Web interface {
 func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 	// Retrieve package's most recent state from the file cache.
 	var comp ComponentsJSON
-	data, err := filecache.Get(cacheKind, cacheKey(pkg.Metadata().ID))
+	data, err := filecache.Get(cacheKind, cacheKey(pkg.Metadata().ID), filecache.Bytes)
 	if err != nil {
 		if err != filecache.ErrNotFound {
 			return nil, err

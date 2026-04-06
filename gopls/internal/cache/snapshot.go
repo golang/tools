@@ -545,10 +545,10 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 		}
 	}
 	pre := func(_ int, ph *packageHandle) bool {
-		data, err := filecache.Get(diagnosticsKind, ph.key)
+		diags, err := filecache.Get(diagnosticsKind, ph.key, decodeDiagnostics)
 		if err == nil { // hit
 			collect(ph.loadDiagnostics)
-			collect(decodeDiagnostics(data))
+			collect(diags)
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading diagnostics from filecache", err)
@@ -572,9 +572,9 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 
 	indexes := make([]xrefIndex, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
-		data, err := filecache.Get(xrefsKind, ph.key)
+		idx, err := filecache.Get(xrefsKind, ph.key, xrefs.Decode)
 		if err == nil { // hit
-			indexes[i] = xrefIndex{mp: ph.mp, data: data}
+			indexes[i] = xrefIndex{mp: ph.mp, idx: idx}
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading xrefs from filecache", err)
@@ -582,19 +582,19 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 		return true
 	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = xrefIndex{mp: pkg.metadata, data: pkg.pkg.xrefs()}
+		indexes[i] = xrefIndex{mp: pkg.metadata, idx: pkg.pkg.xrefs()}
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
 // An xrefIndex is a helper for looking up references in a given package.
 type xrefIndex struct {
-	mp   *metadata.Package
-	data []byte
+	mp  *metadata.Package
+	idx *xrefs.Index
 }
 
 func (index xrefIndex) Lookup(targets map[PackagePath]map[objectpath.Path]struct{}) []protocol.Location {
-	return xrefs.Lookup(index.mp, index.data, targets)
+	return index.idx.Lookup(index.mp, targets)
 }
 
 // MethodSets returns method-set indexes for the specified packages.
@@ -607,9 +607,12 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 
 	indexes := make([]*methodsets.Index, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
-		data, err := filecache.Get(methodSetsKind, ph.key)
+		pkgPath := ph.mp.PkgPath // capture for decode closure
+		idx, err := filecache.Get(methodSetsKind, ph.key, func(data []byte) *methodsets.Index {
+			return methodsets.Decode(pkgPath, data)
+		})
 		if err == nil { // hit
-			indexes[i] = methodsets.Decode(ph.mp.PkgPath, data)
+			indexes[i] = idx
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading methodsets from filecache", err)
@@ -633,9 +636,9 @@ func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.In
 
 	indexes := make([]*testfuncs.Index, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
-		data, err := filecache.Get(testsKind, ph.key)
+		idx, err := filecache.Get(testsKind, ph.key, testfuncs.Decode)
 		if err == nil { // hit
-			indexes[i] = testfuncs.Decode(data)
+			indexes[i] = idx
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading tests from filecache", err)

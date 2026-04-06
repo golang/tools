@@ -32,7 +32,7 @@ func TestBasics(t *testing.T) {
 	value := []byte("hello")
 
 	// Get of a never-seen key returns not found.
-	if _, err := filecache.Get(kind, key); err != filecache.ErrNotFound {
+	if _, err := filecache.Get(kind, key, filecache.Bytes); err != filecache.ErrNotFound {
 		if strings.Contains(err.Error(), "operation not supported") ||
 			strings.Contains(err.Error(), "not implemented") {
 			t.Skipf("skipping: %v", err)
@@ -46,14 +46,14 @@ func TestBasics(t *testing.T) {
 	}
 
 	// Get of the key returns a copy of the value.
-	if got, err := filecache.Get(kind, key); err != nil {
+	if got, err := filecache.Get(kind, key, filecache.Bytes); err != nil {
 		t.Errorf("Get after Set failed: %v", err)
 	} else if string(got) != string(value) {
 		t.Errorf("Get after Set returned different value: got %q, want %q", got, value)
 	}
 
 	// The kind is effectively part of the key.
-	if _, err := filecache.Get("different-kind", key); err != filecache.ErrNotFound {
+	if _, err := filecache.Get("different-kind", key, filecache.Bytes); err != filecache.ErrNotFound {
 		t.Errorf("Get with wrong kind returned err=%q, want not found", err)
 	}
 }
@@ -79,7 +79,7 @@ func TestConcurrency(t *testing.T) {
 	// get calls Get and verifies that the cache entry
 	// matches one of the values passed to Set.
 	get := func(mustBeFound bool) error {
-		got, err := filecache.Get(kind, key)
+		got, err := filecache.Get(kind, key, filecache.Bytes)
 		if err != nil {
 			if err == filecache.ErrNotFound && !mustBeFound {
 				return nil // not found
@@ -157,7 +157,7 @@ func TestIPC(t *testing.T) {
 	}
 
 	// Verify keyB.
-	got, err := filecache.Get(testIPCKind, keyB)
+	got, err := filecache.Get(testIPCKind, keyB, filecache.Bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func ipcChild() {
 	}
 
 	// Verify key A.
-	got, err := filecache.Get(testIPCKind, getenv("KEYA"))
+	got, err := filecache.Get(testIPCKind, getenv("KEYA"), filecache.Bytes)
 	if err != nil || string(got) != testIPCValueA {
 		log.Fatalf("child: Get(key) = %q, %v; want %q", got, err, testIPCValueA)
 	}
@@ -223,7 +223,7 @@ func BenchmarkUncontendedGet(b *testing.B) {
 	group.SetLimit(50)
 	for b.Loop() {
 		group.Go(func() error {
-			_, err := filecache.Get(kind, key)
+			_, err := filecache.Get(kind, key, filecache.Bytes)
 			return err
 		})
 	}

@@ -139,7 +139,7 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 		return
 	}
 
-	oldHashBytes, err := filecache.Get(dependencyHashKind, pathHash)
+	oldHashBytes, err := filecache.Get(dependencyHashKind, pathHash, filecache.Bytes)
 	if err != nil && err != filecache.ErrNotFound {
 		event.Error(ctx, "reading old dependency hash from filecache failed", err)
 		return

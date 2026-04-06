@@ -306,7 +306,7 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 			return types.Unsafe, nil
 		}
 
-		data, err := filecache.Get(exportDataKind, ph.key)
+		data, err := filecache.Get(exportDataKind, ph.key, filecache.Bytes)
 		if err == filecache.ErrNotFound {
 			// No cached export data: type-check as fast as possible.
 			return b.checkPackageForImport(ctx, ph)
@@ -414,7 +414,7 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 // The context is used only for logging; cancellation does not affect the operation.
 func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
 	toCache := map[string][]byte{
-		xrefsKind:       p.pkg.xrefs(),
+		xrefsKind:       p.pkg.xrefs().Encode(),
 		methodSetsKind:  p.pkg.methodsets().Encode(),
 		testsKind:       p.pkg.tests().Encode(),
 		diagnosticsKind: encodeDiagnostics(p.pkg.diagnostics),
@@ -1400,7 +1400,7 @@ func (s *Snapshot) typerefs(ctx context.Context, mp *metadata.Package, cgfs []fi
 // a cache miss.
 func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*metadata.Package, cgfs []file.Handle) ([]byte, error) {
 	key := typerefsKey(id, imports, cgfs)
-	if data, err := filecache.Get(typerefsKind, key); err == nil {
+	if data, err := filecache.Get(typerefsKind, key, filecache.Bytes); err == nil {
 		return data, nil
 	} else if err != filecache.ErrNotFound {
 		bug.Reportf("internal error reading typerefs data: %v", err)
