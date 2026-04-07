@@ -157,6 +157,27 @@ Client support for code actions:
 - **CLI**: `gopls codeaction -exec -kind k,... -diff file.go:#123-#456` executes code actions of the specified
   kinds (e.g. `refactor.inline`) on the selected range, specified using zero-based byte offsets, and displays the diff.
 
+### Interactive Code Actions
+
+Some code actions are **interactive**, meaning they require user input to complete. Unlike standard code actions, which can be applied immediately, these operations prompt the user for one or more additional pieces of information before proceeding.
+In effect, the server asks the client to fill in a form. Each form element may be a number, string, file path, or a selection from a set of options, and so on.
+
+When you invoke one of these actions, you will be prompted for the necessary parameters. If the provided input is invalid, the server returns the partially completed form along with error information about any invalid fields. A client may simply report the error, or offer the user a chance to amend the form. After valid input is received, the code action's command is executed as usual, which may involve updating your workspace or performing other actions.
+
+This allows for more sophisticated transformations and analyses that require specific inputs or choices from the user.
+
+For example, gopls's `refactor.rewrite.addTags` refactoring prompts the user to specify the set of struct field tags (`json`, `xml`, ...) to add, and its `refactor.rewrite.implementInterface` refactoring prompts for the name of an interface type.
+
+Caveats:
+
+Dialog support is a non-standard feature of LSP. It is currently supported only by gopls, but we plan to work with the broader LSP community toward a standard specification for dialogs and client support in a range of editors.
+
+Client support for interactive code actions:
+
+- **VS Code**: Interactive code actions integrate directly into the standard code action workflow.
+<!-- TODO(hxjiang): add neovim once PR ready -->
+<!-- TODO(adonovan): add emacs once PR ready -->
+
 <a name='formatting'></a>
 ## Formatting
 
@@ -920,9 +941,15 @@ struct tag that specifies its JSON name, using lower case with underscores
 (e.g. LinkTarget becomes link_target). For a highlighted selection, it only
 adds tags on selected fields.
 
+In editors that support interactive code actions, you can customize the operation:
+- Tags: The struct tags to add.
+- Transform rule: The casing rule for the generated tag values. Supported options are `camelCase` (default), `snake_case`, `lisp-case`, `PascalCase` and `Title Case`.
+
 <a name='refactor.rewrite.removeTags'></a>
 ### `refactor.rewrite.removeTags`: Remove struct tags
 
-When the cursor is within a struct, this code action clears struct tags on
+When the cursor is within a struct, this code action removes all struct tags on
 all struct fields. For a highlighted selection, it removes tags from only
 the selected fields.
+
+In editors that support interactive code actions, you can specify which struct tags to remove.
