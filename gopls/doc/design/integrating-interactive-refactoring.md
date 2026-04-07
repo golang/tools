@@ -32,7 +32,7 @@ Example:
 
 Common input types used by `gopls` include:
 - `"string"`: A simple text input.
-- `"documentURI"`: A file or directory URI picker.
+- `"file"`: A file or directory URI picker.
 - `"bool"`: A boolean checkbox or toggle.
 - `"number"`: A numeric input.
 - `"enum"`: A selection from a static set of options.
@@ -125,7 +125,30 @@ export interface FormFieldTypeString {
 	kind: 'string';
 }
 
-// FormFieldTypeDocumentURI defines an input for a file or directory URI.
+
+// FileExistence whether the file denoted by a DocumentURI exists.
+//
+// It is a bit set allowing combinations of existence states. For
+// example, New|Existing allows either state.
+export enum FileExistence {
+	// New indicates that file has not yet been created.
+	New = 1 << 0,
+	// Existing indicates that the file exists already.
+	Existing = 1 << 1
+}
+
+// FileType represents the expected filesystem resource type.
+//
+// It is a bit set allowing combinations of file types. For example, Regular|Directory
+// allows either types.
+export enum FileType {
+	// Regular indicates the resource could be a regular file.
+	Regular = 1 << 0,
+	// Directory indicates the resource could be a directory.
+	Directory = 1 << 1
+}
+
+// FormFieldTypeFile defines an input for a file or directory URI.
 //
 // The client determines the best mechanism to collect this information from
 // the user (e.g., a graphical file picker, a text input with autocomplete, etc).
@@ -133,9 +156,18 @@ export interface FormFieldTypeString {
 // The value returned by the client must be a valid "DocumentUri" as defined
 // in the LSP specification:
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentUri
-export interface FormFieldTypeDocumentURI {
-	kind: 'documentURI';
+export interface FormFieldTypeFile {
+	kind: 'file';
+
+	// Existence constraint.
+	existence: FileExistence;
+
+	// Type specifies the set of allowed file types (regular file, directory, etc).
+	//
+	// Only applicable against existing file.
+	type: FileType;
 }
+
 
 // FormFieldTypeBool defines a boolean input.
 export interface FormFieldTypeBool {
@@ -217,7 +249,7 @@ Response:
 The following input types are used in `gopls` forms. The client is responsible for collecting valid values for these types:
 
 - **`"string"`**: A simple text value.
-- **`"documentURI"`**: A valid Document URI string.
+- **`"file"`**: A valid Document URI string.
 - **`"bool"`**: A boolean value.
 - **`"number"`**: A numeric value.
 - **`"enum"`**: A selection from a static set of options provided by the server in the `entries` array.

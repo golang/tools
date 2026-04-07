@@ -19,7 +19,33 @@ type FormFieldTypeString struct {
 	Kind string `json:"kind"`
 }
 
-// FormFieldTypeDocumentURI defines an input for a file or directory URI.
+// FileExistence whether the file denoted by a DocumentURI exists.
+//
+// It is a bit set allowing combinations of existence states. For
+// example, New|Existing allows either state.
+type FileExistence uint32
+
+const (
+	// New indicates that file has not yet been created.
+	FileExistenceNew FileExistence = 1 << 0
+	// Existing indicates that the file exists already.
+	FileExistenceExisting FileExistence = 1 << 1
+)
+
+// FileType represents the expected filesystem resource type.
+//
+// It is a bit set allowing combinations of file types. For example, Regular|Directory
+// allows either types.
+type FileType uint32
+
+const (
+	// Regular indicates the resource could be a regular file.
+	FileTypeRegular FileType = 1 << 0
+	// Directory indicates the resource could be a directory.
+	FileTypeDirectory FileType = 1 << 1
+)
+
+// FormFieldTypeFile defines an input for a file or directory URI.
 //
 // The client determines the best mechanism to collect this information from
 // the user (e.g., a graphical file picker, a text input with autocomplete, etc).
@@ -27,9 +53,17 @@ type FormFieldTypeString struct {
 // The value returned by the client must be a valid "DocumentUri" as defined
 // in the LSP specification:
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentUri
-type FormFieldTypeDocumentURI struct {
-	// Kind must be "documentURI".
+type FormFieldTypeFile struct {
+	// Kind must be "file".
 	Kind string `json:"kind"`
+
+	// Existence constraint.
+	Existence FileExistence `json:"existence"`
+
+	// Type specifies the set of allowed file types (regular file, directory, etc).
+	//
+	// Only applicable against existing file.
+	Type FileType `json:"type"`
 }
 
 // FormFieldTypeBool defines a boolean input.

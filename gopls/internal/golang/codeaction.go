@@ -924,7 +924,7 @@ func formFieldInputType(typ any) settings.InteractiveInputType {
 	switch t := typ.(type) {
 	case protocol.FormFieldTypeString:
 		return settings.InteractiveInputType(t.Kind)
-	case protocol.FormFieldTypeDocumentURI:
+	case protocol.FormFieldTypeFile:
 		return settings.InteractiveInputType(t.Kind)
 	case protocol.FormFieldTypeBool:
 		return settings.InteractiveInputType(t.Kind)
