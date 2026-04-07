@@ -142,10 +142,12 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 
 	var (
 		needIDs []PackageID // ids to type-check
-		indexes []int       // original index of requested ids
+		indexes []int       // original index of needIDs[i] in ids
+		preDone []bool      // pre was already called for needIDs[i] (and returned true)
 	)
 
-	// Check for existing active packages.
+	// Check for existing active packages, or packages that can be served
+	// from the filecache without type-checking.
 	//
 	// Since gopls can't depend on package identity, any instance of the
 	// requested package must be ok to return.
@@ -160,10 +162,19 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 		s.mu.Unlock()
 		if ok && ph.state >= validPackage {
 			post(i, ph.pkgData.pkg)
-		} else {
-			needIDs = append(needIDs, id)
-			indexes = append(indexes, i)
+			continue
 		}
+		// If the handle already has a valid key, try the pre func
+		// (typically a filecache lookup) now: on a hit we can skip
+		// this package entirely without building the dependency
+		// graph.
+		called := ok && ph.state >= validKey && pre != nil
+		if called && !pre(i, ph) {
+			continue
+		}
+		needIDs = append(needIDs, id)
+		indexes = append(indexes, i)
+		preDone = append(preDone, called)
 	}
 
 	if len(needIDs) == 0 {
@@ -178,10 +189,14 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 		return err
 	}
 
-	// Wrap the pre- and post- funcs to translate indices.
+	// Wrap the pre- and post- funcs to translate indices, and to avoid
+	// calling pre a second time for packages already checked above.
 	var pre2 preTypeCheck
 	if pre != nil {
 		pre2 = func(i int, ph *packageHandle) bool {
+			if preDone[i] {
+				return true // already called above; it said "proceed"
+			}
 			return pre(indexes[i], ph)
 		}
 	}
