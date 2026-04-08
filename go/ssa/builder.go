@@ -1275,7 +1275,7 @@ func (b *builder) arrayLen(fn *Function, elts []ast.Expr) int64 {
 //	x := T{a: 1}
 //	x = T{a: x.a}
 //
-// all the reads must occur before all the writes.  Thus all stores to
+// all the reads must occur before all the writes. Thus all stores to
 // loc are emitted to the storebuf sb for later execution.
 //
 // A CompositeLit may have pointer type only in the recursive (nested)
@@ -1292,28 +1292,35 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 			sb.store(&address{addr, e.Lbrace, nil}, zeroConst(zt))
 			isZero = true
 		}
+		var fIndices []int
 		for i, e := range e.Elts {
-			fieldIndex := i
-			pos := e.Pos()
-			if kv, ok := e.(*ast.KeyValueExpr); ok {
+			var (
+				pos   token.Pos
+				fType types.Type
+			)
+
+			if kv, ok := e.(*ast.KeyValueExpr); ok { // tagged field
 				fname := kv.Key.(*ast.Ident).Name
-				for i, n := 0, t.NumFields(); i < n; i++ {
-					sf := t.Field(i)
-					if sf.Name() == fname {
-						fieldIndex = i
-						pos = kv.Colon
-						e = kv.Value
-						break
-					}
-				}
+				obj, index, _ := types.LookupFieldOrMethod(t, true, fn.declaredPackage().Pkg, fname)
+				fIndices = append(fIndices[:0], index...)
+				pos = kv.Colon
+				e = kv.Value
+				fType = obj.Type()
+			} else { // untagged field
+				fIndices = append(fIndices[:0], i)
+				pos = e.Pos()
+				fType = t.Field(i).Type()
 			}
-			sf := t.Field(fieldIndex)
+
+			last := len(fIndices) - 1
+			v := emitImplicitSelections(fn, addr, fIndices[:last], pos)
+
 			faddr := &FieldAddr{
-				X:     addr,
-				Field: fieldIndex,
+				X:     v,
+				Field: fIndices[last],
 			}
 			faddr.setPos(pos)
-			faddr.setType(types.NewPointer(sf.Type()))
+			faddr.setType(types.NewPointer(fType))
 			fn.emit(faddr)
 			b.assign(fn, &address{addr: faddr, pos: pos, expr: e}, e, isZero, sb)
 		}

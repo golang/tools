@@ -1,0 +1,40 @@
+// This test verifies that hover works correctly on promoted fields
+// in struct composite literals (a Go 1.27 feature).
+
+-- flags --
+-min_go_command=go1.27
+
+-- go.mod --
+module mod.com
+
+go 1.27
+-- main.go --
+package main
+
+type E1 struct {
+	A int
+}
+
+type T struct {
+	E1
+}
+
+func main() {
+	_ = T{
+		A: 1,//@ hover("A", "A", a)
+	}
+
+	_ = T{
+		E1: E1{
+			A: 1,//@ hover("A", "A", a)
+		},
+	}
+}
+-- @a --
+```go
+field A int
+```
+
+---
+
+[`(main.E1).A` on pkg.go.dev](https://pkg.go.dev/mod.com#E1.A)

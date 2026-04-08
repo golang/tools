@@ -141,6 +141,7 @@ var testdataTests = []string{
 	"slice2array.go",
 	"slice2arrayptr.go",
 	"static.go",
+	"structlitpromoted_go127.go",
 	"typeassert.go",
 	"width32.go",
 	"zeros.go",
