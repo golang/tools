@@ -48,8 +48,14 @@ func CodecFor[T any]() Codec[T] {
 	return Codec[T]{frobFor(reflect.TypeFor[T]())}
 }
 
-func (codec Codec[T]) Encode(v T) []byte          { return codec.frob.Encode(v) }
-func (codec Codec[T]) Decode(data []byte, ptr *T) { codec.frob.Decode(data, ptr) }
+func (codec Codec[T]) Encode(v T) []byte { return codec.frob.Encode(v) }
+
+// Decode decodes data and returns the result. It is suitable for use
+// as a filecache.Get decoder.
+func (codec Codec[T]) Decode(data []byte) (v T) {
+	codec.frob.Decode(data, &v)
+	return
+}
 
 var (
 	frobsMu sync.Mutex

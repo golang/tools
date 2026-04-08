@@ -579,7 +579,7 @@ func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeS
 	const cacheKind = "analysis"
 	if data, err := filecache.Get(cacheKind, key, filecache.Bytes); err == nil {
 		// cache hit
-		analyzeSummaryCodec.Decode(data, &summary)
+		summary = analyzeSummaryCodec.Decode(data)
 	} else if err != filecache.ErrNotFound {
 		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	} else {

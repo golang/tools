@@ -67,9 +67,7 @@ type Index struct {
 
 // Decode decodes the given gob-encoded data as an Index.
 func Decode(pkgpath metadata.PackagePath, data []byte) *Index {
-	var pkg gobPackage
-	packageCodec.Decode(data, &pkg)
-	return &Index{pkg: pkg, PkgPath: pkgpath}
+	return &Index{pkg: packageCodec.Decode(data), PkgPath: pkgpath}
 }
 
 // Encode encodes the receiver as gob-encoded data.

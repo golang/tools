@@ -149,9 +149,7 @@ func (idx *Index) Encode() []byte {
 // Decode decodes a serialized cross-reference index.
 // It is suitable for use as a filecache.Get decoder.
 func Decode(data []byte) *Index {
-	var packages []*gobPackage
-	packageCodec.Decode(data, &packages)
-	return &Index{packages: packages}
+	return &Index{packages: packageCodec.Decode(data)}
 }
 
 // Lookup searches the index for references to any object in the target set,

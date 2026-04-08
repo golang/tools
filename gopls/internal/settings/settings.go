@@ -1100,10 +1100,7 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 var codec = frob.CodecFor[*Options]()
 
 func (o *Options) Clone() *Options {
-	data := codec.Encode(o)
-	var clone *Options
-	codec.Decode(data, &clone)
-	return clone
+	return codec.Decode(codec.Encode(o))
 }
 
 // validateDirectoryFilter validates if the filter string

@@ -37,18 +37,16 @@ type Package struct {
 	Symbols [][]Symbol             // symbols in each file
 }
 
-var codec = frob.CodecFor[Package]()
+var codec = frob.CodecFor[*Package]()
 
 // Decode decodes data from [Package.Encode].
 func Decode(data []byte) *Package {
-	var pkg Package
-	codec.Decode(data, &pkg)
-	return &pkg
+	return codec.Decode(data)
 }
 
 // Encode encodes the package.
 func (pkg *Package) Encode() []byte {
-	return codec.Encode(*pkg)
+	return codec.Encode(pkg)
 }
 
 // New returns a new [Package] summarizing symbols in the given files.

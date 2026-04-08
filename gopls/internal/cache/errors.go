@@ -205,8 +205,7 @@ func encodeDiagnostics(srcDiags []*Diagnostic) []byte {
 
 // decodeDiagnostics decodes the given gob-encoded diagnostics.
 func decodeDiagnostics(data []byte) []*Diagnostic {
-	var gobDiags []gobDiagnostic
-	diagnosticsCodec.Decode(data, &gobDiags)
+	gobDiags := diagnosticsCodec.Decode(data)
 	var srcDiags []*Diagnostic
 	for _, gobDiag := range gobDiags {
 		var srcFixes []SuggestedFix

@@ -801,8 +801,7 @@ func encode(classNames map[int][]string, classes []symbolSet) []byte {
 }
 
 func decode(pkgIndex *PackageIndex, data []byte) []Class {
-	var payload gobClasses
-	classesCodec.Decode(data, &payload)
+	payload := classesCodec.Decode(data)
 
 	classes := make([]Class, len(payload.Classes))
 	for i, gobClass := range payload.Classes {
