@@ -72,6 +72,14 @@ func Function() int { //@item(function, "Function", "func() int", "func") //@com
 	return 0
 }
 
+// This tests that completing right after "//" (no space) above a declaration
+// suggests the identifier name, prepending a space for proper doc comment style.
+//@complete(re"//()", plainFunc)
+// This tests completing with a partial prefix after "//" (no space) also
+// prepends a space, covering the case where the user has typed "//Plain".
+//Plain//@complete(re"//Plain()", plainFunc)
+func PlainFunc() {} //@item(plainFunc, "PlainFunc", "func()", "func")
+
 // This tests multiline block comments and completion with prefix
 // Lorem Ipsum Multili//@complete(re"()Multi", multiline)
 // Lorem ipsum dolor sit ametom
