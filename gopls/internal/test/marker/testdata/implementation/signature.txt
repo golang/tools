@@ -68,12 +68,15 @@ func _(
 
 	struct{x Nullary}{}.x() //@ loc(fieldCall, "("), implementation("(", nullaryFunc)
 
-	// Calls that are not dynamic function calls:
-	_ = len("")          //@ implementation("(", err="not a dynamic function call")
-	_ = int(0)           //@ implementation("(", err="not a dynamic function call")
-	_ = error.Error(nil) //@ implementation("(", err="not a dynamic function call")
-	_ = err.Error()      //@ implementation("(", err="not a dynamic function call")
-	_ = f4(0)            //@ implementation("(", err="not a dynamic function call"), loc(f4Call, "(")
+	// Calls that are not dynamic function calls: implFuncs returns
+	// errNotHandled so the method-sets fallback runs, but finds no
+	// identifier at "(" and returns "no identifier found".
+	// Users should query on the method name instead (e.g. "Error").
+	_ = len("")          //@ implementation("(", err="no identifier found")
+	_ = int(0)           //@ implementation("(", err="no identifier found")
+	_ = error.Error(nil) //@ implementation("(", err="no identifier found")
+	_ = err.Error()      //@ implementation("(", err="no identifier found")
+	_ = f4(0)            //@ implementation("(", err="no identifier found"), loc(f4Call, "(")
 }
 
 
