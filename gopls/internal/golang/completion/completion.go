@@ -366,10 +366,11 @@ type completionContext struct {
 	// commentCompletion is true if we are completing a comment.
 	commentCompletion bool
 
-	// commentNeedsLeadingSpace is true when completing a comment whose text
-	// is exactly "//" (cursor placed immediately after the slashes, with no
-	// space). Completion items should prepend a space so that accepting a
-	// suggestion produces "// Name" rather than "//Name".
+	// commentNeedsLeadingSpace is true when the completion edit range starts
+	// immediately after "//" with no intervening space. Completion items should
+	// prepend a space so that accepting a suggestion produces "// Name" rather
+	// than "//Name". This applies both when the cursor is right after "//" and
+	// when the user has partially typed an identifier (e.g. "//Fo").
 	commentNeedsLeadingSpace bool
 
 	// packageCompletion is true if we are completing a package name.
@@ -1055,13 +1056,17 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 	// comment is valid, set surrounding as word boundaries around cursor
 	c.setSurroundingForComment(comment)
 
-	// If the cursor is placed immediately after "//" with no following text,
-	// completions must prepend a space to produce proper Go doc comment style
-	// ("// Name" rather than "//Name").
-	for _, cmt := range comment.List {
-		if c.pos == cmt.Slash+2 && cmt.Text == "//" {
-			c.completionContext.commentNeedsLeadingSpace = true
-			break
+	// If the edit range (what's being replaced) starts immediately after "//"
+	// with no space, completions must prepend a space to produce proper Go doc
+	// comment style ("// Name" rather than "//Name"). This covers both the case
+	// where the cursor is right after "//" and where the user has already typed
+	// some characters (e.g. "//Fo" completing to "// FooBar").
+	if c.surrounding != nil {
+		for _, cmt := range comment.List {
+			if c.surrounding.start == cmt.Slash+2 {
+				c.completionContext.commentNeedsLeadingSpace = true
+				break
+			}
 		}
 	}
 
