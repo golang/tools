@@ -152,9 +152,53 @@ func (tv *tokenVisitor) visit() {
 }
 
 // Matches (for example) "[F]", "[*p.T]", "[p.T.M]"
-// unless followed by a colon (exclude url link, e.g. "[go]: https://go.dev").
 // The first group is reference name. e.g. The first group of "[*p.T.M]" is "p.T.M".
-var docLinkRegex = regexp.MustCompile(`\[\*?([\pL_][\pL_0-9]*(\.[\pL_][\pL_0-9]*){0,2})](?:[^:]|$)`)
+var docLinkRegex = regexp.MustCompile(`\[\*?([\pL_][\pL_0-9]*(\.[\pL_][\pL_0-9]*){0,2})]`)
+
+// findDocLinkIndices finds the indices of the doc links in the line.
+// It will ignore the url link, e.g. "[go]: https://go.dev".
+// For a invalid url link, it would be considered as a doc link, e.g. "[go]: h://go.dev".
+func findDocLinkIndices(line string) [][]int {
+	indices := docLinkRegex.FindAllStringSubmatchIndex(line, -1)
+
+	ret := slices.DeleteFunc(
+		indices,
+		func(index []int) bool {
+			// end is the end index of the first submatch, which is the next pos of ']'
+			end := index[1]
+
+			if end < len(line) && line[end] == ':' {
+				url := strings.TrimSpace(line[end+1:])
+				before, _, found := strings.Cut(url, "://")
+				if found && isScheme(before) {
+					// Valid URL, skip this match
+					return true
+				}
+			}
+
+			return false
+		},
+	)
+
+	return ret
+}
+
+// isScheme reports whether s is a recognized URL scheme.
+// Note that if strings of new length (beyond 3-7)
+// are added here, the fast path at the top of autoURL will need updating.
+func isScheme(s string) bool {
+	switch s {
+	case "file",
+		"ftp",
+		"gopher",
+		"http",
+		"https",
+		"mailto",
+		"nntp":
+		return true
+	}
+	return false
+}
 
 // comment emits semantic tokens for a comment.
 // If the comment contains doc links or "go:" directives,
@@ -214,7 +258,7 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 	for line := range strings.SplitSeq(c.Text, "\n") {
 		last := 0
 
-		for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(line, -1) {
+		for _, idx := range findDocLinkIndices(line) {
 			// The first group is the reference name. e.g. "X", "p.T", "p.T.M".
 			name := line[idx[2]:idx[3]]
 			if objs := lookupObjects(name); len(objs) > 0 {

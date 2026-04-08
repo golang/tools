@@ -131,7 +131,7 @@ func commentDocLinks(cg *ast.CommentGroup) iter.Seq[docLink] {
 			// unfortunately its API provides no way to reliably reconstruct the
 			// position of each doc link from the parsed result.
 
-			for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(comment.Text, -1) {
+			for _, idx := range findDocLinkIndices(comment.Text) {
 				// [mstart, mend) identifies the first submatch, which is the
 				// reference name in the doc link (sans '*').
 				// e.g. The "[fmt.Println]" reference name is "fmt.Println".
