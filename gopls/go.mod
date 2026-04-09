@@ -9,13 +9,13 @@ require (
 	github.com/google/jsonschema-go v0.4.2
 	github.com/jba/templatecheck v0.7.1
 	github.com/modelcontextprotocol/go-sdk v1.4.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.34.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c
 	golang.org/x/text v0.35.0
 	golang.org/x/tools v0.42.0
 	golang.org/x/vuln v1.1.4
-	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.7.0
 	mvdan.cc/gofumpt v0.9.2
 	mvdan.cc/xurls/v2 v2.6.0
