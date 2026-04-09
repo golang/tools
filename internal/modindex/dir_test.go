@@ -93,8 +93,8 @@ func TestIncremental(t *testing.T) {
 	}
 	if index1, err := Update(dir); err != nil {
 		t.Fatalf("failed to update index: %v", err)
-	} else if len(index1.Entries) <= len(index0.Entries) {
-		t.Fatalf("updated index is not larger: %v", err)
+	} else if before, after := len(index0.Entries), len(index1.Entries); after <= before {
+		t.Fatalf("updated index is not larger (before %d, after %d)", before, after)
 	}
 	index2, err := Read(dir)
 	if err != nil {
