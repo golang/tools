@@ -218,6 +218,12 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 			if tv.Value != nil {
 				fmt.Fprintf(out, ", and constant value %v", tv.Value)
 			}
+			terms, err := typeparams.NormalTerms(tv.Type)
+			if err != nil {
+				fmt.Fprintf(out, ", NormalTerms=%q", err)
+			} else {
+				fmt.Fprintf(out, ", NormalTerms=%v", terms)
+			}
 		} else {
 			fmt.Fprintf(out, "%T has no type", innermostExpr)
 		}
