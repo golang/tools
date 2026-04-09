@@ -599,10 +599,20 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		return false
 	}
 
+	// Collect target names for fast pre-filtering:
+	// skip identifiers whose name can't match any target.
+	targetNames := make(map[string]struct{}, len(targets))
+	for obj := range targets {
+		targetNames[obj.Name()] = struct{}{}
+	}
+
 	// Scan through syntax looking for uses of one of the target objects.
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
+			if _, ok := targetNames[id.Name]; !ok {
+				continue
+			}
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 				report(mustLocation(pgf, id), false)
 			}
