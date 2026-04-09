@@ -350,3 +350,43 @@ func issue77891() {
 		println(ptr)
 	}
 }
+
+// Regression tests for golang/go#78571: the loop index cannot be a type
+// parameter constrained by multiple distinct integer types, nor a type
+// parameter constrained by a non-integer type.
+func issue78571[I ~int | ~uint](limit I) {
+	var i I
+	for i = 0; i < limit; i++ { // nope: int and uint have different underlying types.
+		println(i)
+	}
+}
+
+type MyInt int
+
+func issue78571_sameunderlying[T int | MyInt](limit T) {
+	var i T
+	for i = range limit { // want "for loop can be modernized using range over int"
+		println(i)
+	}
+}
+
+func issue78571_single[T ~int](limit T) {
+	var i T
+	for i = range limit { // want "for loop can be modernized using range over int"
+		println(i)
+	}
+}
+
+func issue78571_float[T ~float64](limit T) {
+	var i T
+	for i = 0; i < limit; i++ { // nope: can't range over a float
+		println(i)
+	}
+}
+
+func issue78571_floats[T float32 | float64](limit T) {
+	var i T
+	for i = 0; i < limit; i++ { // nope: can't range over a float
+		println(i)
+	}
+}
