@@ -30,7 +30,6 @@ type Support struct {
 
 // Supported maps Go versions to the gopls version in which support will
 // be deprecated, and the final gopls version supporting them without warnings.
-// Keep this in sync with gopls/doc/index.md.
 //
 // Must be sorted in ascending order of Go version.
 //

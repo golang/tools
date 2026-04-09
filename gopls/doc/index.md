@@ -129,47 +129,32 @@ and
 
 ### Supported Go versions
 
-`gopls` follows the
-[Go Release Policy](https://go.dev/doc/devel/release#policy), meaning
-that it officially supports only the two most recent major Go releases.
+When using gopls, there are three distinct versions of Go to be aware of:
+the `go` toolchain used to build gopls,
+the `go` toolchain on the `PATH` when gopls is running,
+and the version of Go in which your source code is written.
 
-When using gopls, there are three versions to be aware of:
-1. The _gopls build go version_: the version of Go used to build gopls.
-2. The _go command version_: the version of the go list command executed by
-   gopls to load information about your workspace.
-3. The _language version_: the version in the go directive of the current
-   file's enclosing go.mod file, which determines the file's Go language
-   semantics.
+To build gopls, you must use a toolchain supporting Go 1.21 or later.
+Go 1.21 was the first version of Go to support [forward
+compatibility](https://go.dev/blog/toolchain), which ensures that any
+necessary toolchain upgrades are handled automatically, just like any
+other dependency.
 
-Gopls supports the most recent Go version as the _gopls build go version_.
-However, due to the [forward compatibility](https://go.dev/blog/toolchain)
-support added in Go 1.21, as long as Go 1.21 or later are used to install
-gopls, any necessary toolchain upgrade will be handled automatically, just like
-any other dependency.
+While running, gopls executes the `go` command found using `$PATH` to
+obtain information about your workspace. Gopls follows the [Go Release
+Policy](https://go.dev/doc/devel/release#policy), meaning that we
+support only the two most recent major Go releases.
+Run `go version` to check this version.
+(Supporting older versions caused significant maintenance
+[friction](https://go.dev/issue/50825). If you are unable to use a
+supported toolchain, you can install an older version of gopls.)
 
-Gopls supports the two most recent major Go releases as the _go command version_.
-This is consistent with the Go Release Policy.
-
-Gopls supports **all** Go versions as its _language version_, by providing
-compiler errors based on the language version and filtering available standard
-library symbols based on the standard library APIs available at that Go
-version.
-
-Maintaining support for building gopls with legacy versions of Go caused
-[significant friction](https://go.dev/issue/50825) for gopls maintainers and
-held back other improvements. If you are unable to install a supported version
-of Go on your system, you can still install an older version of gopls. The
-following table shows the final gopls version that supports a given Go version.
-Go releases more recent than those in the table can be used with any version of
-gopls.
-
-| Go Version  | Final gopls version with support (without warnings) |
-| ----------- | --------------------------------------------------- |
-| Go 1.12     | [gopls@v0.7.5](https://github.com/golang/tools/releases/tag/gopls%2Fv0.7.5) |
-| Go 1.15     | [gopls@v0.9.5](https://github.com/golang/tools/releases/tag/gopls%2Fv0.9.5) |
-| Go 1.17     | [gopls@v0.11.0](https://github.com/golang/tools/releases/tag/gopls%2Fv0.11.0) |
-| Go 1.18     | [gopls@v0.14.2](https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.2) |
-| Go 1.20     | [gopls@v0.15.3](https://github.com/golang/tools/releases/tag/gopls%2Fv0.15.3) |
+Gopls can analyze code written using any version of Go, and will
+tailor its diagnostics and other behavior to the appropriate version
+of Go for each source file.
+The file's Go version is determined by the `go` directive in the
+enclosing go.mod file and by any build tags such as `//go:build
+go1.25` within the file itself.
 
 ### Supported build systems
 
