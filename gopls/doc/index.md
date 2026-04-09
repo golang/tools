@@ -141,15 +141,14 @@ When using gopls, there are three versions to be aware of:
    file's enclosing go.mod file, which determines the file's Go language
    semantics.
 
-Starting with the release of Go 1.23.0 and gopls@v0.17.0 in August 2024, we
-will only support the most recent Go version as the _gopls build go version_.
+Gopls supports the most recent Go version as the _gopls build go version_.
 However, due to the [forward compatibility](https://go.dev/blog/toolchain)
 support added in Go 1.21, as long as Go 1.21 or later are used to install
 gopls, any necessary toolchain upgrade will be handled automatically, just like
 any other dependency.
 
-Additionally, starting with gopls@v0.17.0, the _go command version_ will narrow
-from 4 versions to 3. This is more consistent with the Go Release Policy.
+Gopls supports the two most recent major Go releases as the _go command version_.
+This is consistent with the Go Release Policy.
 
 Gopls supports **all** Go versions as its _language version_, by providing
 compiler errors based on the language version and filtering available standard
