@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/golang"
@@ -268,9 +269,9 @@ func prevStmt(pos token.Pos, path []ast.Node) ast.Stmt {
 		}
 	}
 
-	for i := len(blockLines) - 1; i >= 0; i-- {
-		if blockLines[i].End() < pos {
-			return blockLines[i]
+	for _, stmt := range slices.Backward(blockLines) {
+		if stmt.End() < pos {
+			return stmt
 		}
 	}
 

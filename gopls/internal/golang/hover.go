@@ -1687,8 +1687,8 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 		switch n := n.(type) {
 		case *ast.Field:
 			findEnclosingDeclAndSpec := func() {
-				for i := len(stack) - 1; i >= 0; i-- {
-					switch n := stack[i].(type) {
+				for _, n := range slices.Backward(stack) {
+					switch n := n.(type) {
 					case ast.Spec:
 						spec = n
 					case ast.Decl:

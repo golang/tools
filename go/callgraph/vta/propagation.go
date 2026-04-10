@@ -155,9 +155,9 @@ func propagate(graph *vtaGraph, canon *typeutil.Map) propTypeMap {
 		sccToTypes[sccID] = &typeSet
 	}
 
-	for i := len(sccs) - 1; i >= 0; i-- {
+	for i, scc := range slices.Backward(sccs) {
 		nextSccs := make(map[int]empty)
-		for _, n := range sccs[i] {
+		for _, n := range scc {
 			for succ := range graph.successors(n) {
 				nextSccs[idxToSccID[succ]] = empty{}
 			}

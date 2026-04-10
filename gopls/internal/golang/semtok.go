@@ -321,8 +321,7 @@ func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.Type, modi
 // strStack converts the stack to a string, for debugging and error messages.
 func (tv *tokenVisitor) strStack() string {
 	msg := []string{"["}
-	for i := len(tv.stack) - 1; i >= 0; i-- {
-		n := tv.stack[i]
+	for _, n := range slices.Backward(tv.stack) {
 		msg = append(msg, strings.TrimPrefix(fmt.Sprintf("%T", n), "*ast."))
 	}
 	if len(tv.stack) > 0 {

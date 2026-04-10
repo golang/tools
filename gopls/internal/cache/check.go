@@ -17,6 +17,7 @@ import (
 	"go/types"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1866,8 +1867,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 	// we reach the workspace.
 	var errors []*Diagnostic
 	for _, depErr := range relevantErrors {
-		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
-			item := depErr.ImportStack[i]
+		for _, item := range slices.Backward(depErr.ImportStack) {
 			if snapshot.IsWorkspacePackage(PackageID(item)) {
 				break
 			}
@@ -1905,8 +1905,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 	// Add a diagnostic to the module that contained the lowest-level import of
 	// the missing package.
 	for _, depErr := range relevantErrors {
-		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
-			item := depErr.ImportStack[i]
+		for _, item := range slices.Backward(depErr.ImportStack) {
 			mp := snapshot.Metadata(PackageID(item))
 			if mp == nil || mp.Module == nil {
 				continue

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -148,9 +149,8 @@ func decorate(legend protocol.SemanticTokensLegend, file *cmdFile, data []uint32
 		return nil
 	}
 	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
-	for i := len(marks) - 1; i >= 0; i-- {
-		mx := marks[i]
-		markLine(mx, lines)
+	for _, mark := range slices.Backward(marks) {
+		markLine(mark, lines)
 	}
 	os.Stdout.Write(bytes.Join(lines, []byte{'\n'}))
 	return nil

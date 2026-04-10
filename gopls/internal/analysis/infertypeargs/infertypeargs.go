@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -74,7 +75,7 @@ func diagnose(fset *token.FileSet, inspect *inspector.Inspector, start, end toke
 		// Start removing argument expressions from the right, and check if we can
 		// still infer the call expression.
 		required := len(indices) // number of type expressions that are required
-		for i := len(indices) - 1; i >= 0; i-- {
+		for i := range slices.Backward(indices) {
 			var fun ast.Expr
 			if i == 0 {
 				// No longer an index expression: just use the parameterized operand.

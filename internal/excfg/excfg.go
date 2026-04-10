@@ -151,8 +151,7 @@ func New(cfg *cfg.CFG, fset *token.FileSet) *CFG {
 	//
 	// We do this backwards so that successor blocks are usually already visited
 	// and we can link them up eagerly.
-	for i := len(cfg.Blocks) - 1; i >= 0; i-- {
-		b := cfg.Blocks[i]
+	for _, b := range slices.Backward(cfg.Blocks) {
 		if b.Live {
 			eb.visitBlock(b)
 		}
@@ -265,9 +264,8 @@ func (eb *builder) visitBlock(cb *cfg.Block) {
 		next = eb.entry[cb.Succs[0].Index]
 	}
 	isIf := len(cb.Succs) == 2
-	for ni := len(cb.Nodes) - 1; ni >= 0; ni-- {
+	for _, node := range slices.Backward(cb.Nodes) {
 		eb.assertReverse()
-		node := cb.Nodes[ni]
 
 		if isIf {
 			next = eb.visitCond(node.(ast.Expr), next, eb.entry[cb.Succs[1].Index])

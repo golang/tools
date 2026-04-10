@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -380,8 +381,8 @@ func (s *Snapshot) matchErrorToModule(pm *ParsedModule, goCmdError string) (prot
 	var reference *modfile.Line
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 
-	for i := len(matches) - 1; i >= 0; i-- {
-		ver := module.Version{Path: matches[i][1], Version: matches[i][2]}
+	for _, match := range slices.Backward(matches) {
+		ver := module.Version{Path: match[1], Version: match[2]}
 		if err := module.Check(ver.Path, ver.Version); err != nil {
 			continue
 		}
@@ -412,8 +413,8 @@ func (s *Snapshot) matchErrorToModule(pm *ParsedModule, goCmdError string) (prot
 func (s *Snapshot) goCommandDiagnostic(pm *ParsedModule, loc protocol.Location, goCmdError string) (*Diagnostic, error) {
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 	var innermost *module.Version
-	for i := len(matches) - 1; i >= 0; i-- {
-		ver := module.Version{Path: matches[i][1], Version: matches[i][2]}
+	for _, match := range slices.Backward(matches) {
+		ver := module.Version{Path: match[1], Version: match[2]}
 		if err := module.Check(ver.Path, ver.Version); err != nil {
 			continue
 		}
