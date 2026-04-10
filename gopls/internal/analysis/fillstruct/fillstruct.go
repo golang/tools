@@ -76,24 +76,101 @@ func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package
 
 		// Inv: typ is the possibly-named struct type.
 
-		fieldCount := tStruct.NumFields()
-
-		// Skip any struct that is already populated or that has no fields.
-		if fieldCount == 0 || fieldCount == len(expr.Elts) {
-			continue
+		// fillableFields returns the number of fields in the struct that are
+		// accessible and thus can be filled in the current package.
+		fillableFields := func(t *types.Struct) (count int) {
+			for field := range t.Fields() {
+				if field.Pkg() == pkg || field.Exported() {
+					count++
+				}
+			}
+			return count
 		}
 
-		// Are any fields in need of filling?
-		var fillableFields []string
-		for i := range fieldCount {
-			field := tStruct.Field(i)
-			// Ignore fields that are not accessible in the current package.
-			if field.Pkg() != nil && field.Pkg() != pkg && !field.Exported() {
+		// fieldCount tracks the maximum number of fillable fields under the minimum
+		// required expansion of embedded structs.
+		//
+		// It starts as the number of direct fields of the struct.
+		//
+		// Example structure:
+		// A
+		// ├── A1
+		// ├── A2
+		// └── B (embedded)
+		//     ├── B1 (promoted to A)
+		//     ├── B2
+		//     └── C (embedded)
+		//         ├── C1
+		//         └── C2
+		//
+		// When a promoted field is filled (e.g., B1 in A{B1: 1}), we expand
+		// fieldCount to include the fields of that embedded struct (B1, B2, C),
+		// while removing the embedded struct B itself from the count.
+		//
+		// This means we need to fill all fields at B's level (B1, B2, C) and
+		// its parent levels (A1, A2), but we don't need to fill B anymore. C
+		// will be filled as C: C{} unless its own fields are accessed.
+		fieldCount := fillableFields(tStruct)
+
+		var seen map[*types.Var]bool
+
+	outer:
+		for _, el := range expr.Elts {
+			kv, ok := el.(*ast.KeyValueExpr)
+			if !ok {
 				continue
 			}
-			fillableFields = append(fillableFields, fmt.Sprintf("%s: %s", field.Name(), field.Type().String()))
+
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+
+			seln, _ := types.LookupSelection(typ, true, pkg, key.Name)
+			length := len(seln.Index())
+			if length == 0 {
+				continue
+			}
+
+			var (
+				fields = make([]*types.Var, length-1)
+				typs   = make([]*types.Struct, length-1)
+			)
+
+			i := 0
+			for field := range typesinternal.FieldSelections(seln) {
+				if i == length-1 {
+					break
+				}
+
+				t := field.Type()
+				ptr, isPtr := t.Underlying().(*types.Pointer)
+				if isPtr {
+					t = ptr.Elem()
+				}
+				structType, ok := t.Underlying().(*types.Struct)
+				if !ok {
+					continue outer // skip to next element
+				}
+
+				fields[i] = field
+				typs[i] = structType
+				i++
+			}
+
+			for i, field := range fields {
+				if !seen[field] {
+					if seen == nil {
+						seen = make(map[*types.Var]bool)
+					}
+					seen[field] = true
+					fieldCount += fillableFields(typs[i]) - 1
+				}
+			}
 		}
-		if len(fillableFields) == 0 {
+
+		// Skip any struct that is already populated or that has no fillable fields.
+		if fieldCount == 0 || fieldCount == len(expr.Elts) {
 			continue
 		}
 
@@ -104,21 +181,24 @@ func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package
 			name = types.TypeString(typ, typesinternal.NameRelativeTo(pkg))
 		} else {
 			// anonymous struct type
-			totalFields := len(fillableFields)
-			const maxLen = 20
-			// Find the index to cut off printing of fields.
-			var i, fieldLen int
-			for i = range fillableFields {
-				if fieldLen > maxLen {
-					break
+			var buf strings.Builder
+			buf.WriteString("anonymous struct{ ")
+
+			var printedCount int
+
+			for field := range tStruct.Fields() {
+				if field.Pkg() == pkg || field.Exported() {
+					if buf.Len() > 38 || printedCount > 3 {
+						buf.WriteString("...")
+						break
+					}
+					fmt.Fprintf(&buf, "%s: %s; ", field.Name(), field.Type().String())
+					printedCount++
 				}
-				fieldLen += len(fillableFields[i])
 			}
-			fillableFields = fillableFields[:i]
-			if i < totalFields {
-				fillableFields = append(fillableFields, "...")
-			}
-			name = fmt.Sprintf("anonymous struct{ %s }", strings.Join(fillableFields, ", "))
+
+			buf.WriteString(" }")
+			name = buf.String()
 		}
 
 		diags = append(diags, analysis.Diagnostic{

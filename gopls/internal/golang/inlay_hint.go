@@ -12,7 +12,6 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"iter"
 	"slices"
 	"strings"
 
@@ -355,7 +354,7 @@ func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qual
 
 					if seln, ok := types.LookupSelection(strct, true, pkg, id.Name); ok {
 						n := len(seln.Index())
-						for field := range fieldSelections(seln) {
+						for field := range typesinternal.FieldSelections(seln) {
 							n--
 							if n == 0 {
 								break // skip final (explicit) field
@@ -437,36 +436,4 @@ func labelPart(s string) []protocol.InlayHintLabelPart {
 		s = s[:maxLabelLength] + "..."
 	}
 	return []protocol.InlayHintLabelPart{{Value: s}}
-}
-
-// fieldSelection returns the sequence of fields selected by seln.
-// All but the final one are implicit.
-// The boolean component indicates an indirect field.
-//
-// TODO(adonovan): promote to typesinternal. And thence to a method of Selection.
-func fieldSelections(seln types.Selection) iter.Seq2[*types.Var, bool] {
-	return func(yield func(*types.Var, bool) bool) {
-		var (
-			t       = seln.Recv()
-			indices = seln.Index()
-		)
-		for i, idx := range indices {
-			ptr, isPtr := t.Underlying().(*types.Pointer)
-			if isPtr {
-				t = ptr.Elem()
-			}
-			structType, ok := t.Underlying().(*types.Struct)
-			if !ok {
-				break // e.g. final selection is a method
-			}
-			field := structType.Field(idx)
-			if !yield(field, isPtr) {
-				break
-			}
-			if i == len(indices)-1 {
-				break
-			}
-			t = field.Type()
-		}
-	}
 }

@@ -22,6 +22,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"iter"
 	"reflect"
 
 	"golang.org/x/tools/go/ast/inspector"
@@ -241,4 +242,34 @@ func ObjectKind(obj types.Object) string {
 		return "untyped nil"
 	}
 	return "unknown symbol"
+}
+
+// FieldSelections returns the sequence of fields selected by seln.
+// All but the final one are implicit.
+// The boolean component indicates an indirect field.
+func FieldSelections(seln types.Selection) iter.Seq2[*types.Var, bool] {
+	return func(yield func(*types.Var, bool) bool) {
+		var (
+			t       = seln.Recv()
+			indices = seln.Index()
+		)
+		for i, idx := range indices {
+			ptr, isPtr := t.Underlying().(*types.Pointer)
+			if isPtr {
+				t = ptr.Elem()
+			}
+			structType, ok := t.Underlying().(*types.Struct)
+			if !ok {
+				break // e.g. final selection is a method
+			}
+			field := structType.Field(idx)
+			if !yield(field, isPtr) {
+				break
+			}
+			if i == len(indices)-1 {
+				break
+			}
+			t = field.Type()
+		}
+	}
 }

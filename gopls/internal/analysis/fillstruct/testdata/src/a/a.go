@@ -5,7 +5,7 @@
 package fillstruct
 
 import (
-	data "b"
+	"b"
 	"go/ast"
 	"go/token"
 	"unsafe"
@@ -39,7 +39,9 @@ type nestedStruct struct {
 
 var _ = nestedStruct{} // want `nestedStruct literal has missing fields`
 
-var _ = data.B{} // want `fillstruct.B literal has missing fields`
+var _ = b.B{} // want `b.B literal has missing fields`
+
+var _ = b.B{ExportedInt: 0}
 
 type typedStruct struct {
 	m  map[string]int

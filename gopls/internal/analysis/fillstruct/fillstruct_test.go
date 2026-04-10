@@ -47,7 +47,6 @@ func Test(t *testing.T) {
 
 func TestIssue78553(t *testing.T) {
 	testenv.NeedsGo1Point(t, 27)
-	t.Skip("Skipping as this feature is not yet implemented. Ref: go.dev/issues/78553")
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, analyzer, "issue78553")
 }
