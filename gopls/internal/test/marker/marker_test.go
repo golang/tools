@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/expect"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/testenv"
@@ -53,6 +54,9 @@ import (
 var update = flag.Bool("update", false, "if set, update test data during marker tests")
 
 func TestMain(m *testing.M) {
+	// golang/go#54461: enable additional debugging around hanging Go commands.
+	gocommand.DebugHangingGoCommands = true
+
 	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
