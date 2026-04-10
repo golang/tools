@@ -47,6 +47,7 @@ or to serious problems being neglected.
 For more detail, see the Go project's
 [contribution guidelines](https://golang.org/doc/contribute.html).
 
+
 ## Finding issues
 
 All `gopls` issues are labeled as such (see the [`gopls` label][issue-gopls]).
@@ -62,6 +63,39 @@ claiming it.
 
 Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal` directory.
 See [design/implementation.md](./design/implementation.md) for an overview of the code organization.
+
+### Repository structure
+
+This repository provides two modules:
+- The root directory defines the `golang.org/x/tools` module, which provides importable packages.
+- The `gopls` subdirectory defines the `golang.org/x/tools/gopls` module, which provides the gopls application as its main package.
+
+The gopls/go.mod file contains a `replace` directive pointing to the parent directory to ensure that gopls uses the version of x/tools at the exact same git commit.
+
+We recommend creating a go.work file such as this in the root directory:
+
+```go
+go 1.25
+
+use .
+use ./gopls
+```
+
+so that the go command will allow you to specify gopls packages even when working outside the gopls directory. For example:
+
+```
+tools$ go test -short ./gopls/...
+```
+
+For more details on how to use workspaces, see the [Go workspace documentation](https://go.dev/doc/tutorial/workspaces) or run `go help work`.
+
+With this setup, you can run tests for all modules in the workspace from the root directory using:
+
+```bash
+go test work
+```
+
+This will run tests for both `golang.org/x/tools` and `golang.org/x/tools/gopls`.
 
 ## Build
 
