@@ -653,7 +653,7 @@ func (pr *pkgReader) objDictIdx(idx pkgbits.Index) *readerDict {
 		}
 
 		nreceivers := 0
-		if r.Version().Has(pkgbits.GenericMethods) && r.Bool() {
+		if r.Version().Has(pkgbits.GenericMethods) {
 			nreceivers = r.Len()
 		}
 		nexplicits := r.Len()
