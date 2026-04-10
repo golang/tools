@@ -419,7 +419,8 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 		case *types.Signature:
 			if tp := t.TypeParams(); tp != nil {
 				// Generic signatures only appear as the type of generic
-				// function declarations, so this isn't really reachable.
+				// function or method declarations, so this isn't really
+				// reachable.
 				for tparam := range tp.TypeParams() {
 					visit(tparam.Constraint())
 				}
