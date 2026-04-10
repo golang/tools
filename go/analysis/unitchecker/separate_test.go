@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/unitchecker"
 	"golang.org/x/tools/go/gcexportdata"
@@ -170,6 +171,7 @@ func MyPrintf(format string, args ...any) {
 			}
 			cfg.ModulePath = pkg.Module.Path
 			cfg.ModuleVersion = pkg.Module.Version
+			cfg.Module = analysisModuleFromPackagesModule(pkg.Module)
 		}
 
 		// Write the JSON configuration message to a file.
@@ -293,6 +295,28 @@ func exportTypes(cfg *unitchecker.Config, fset *token.FileSet, pkg *types.Packag
 }
 
 // -- helpers --
+
+func analysisModuleFromPackagesModule(mod *packages.Module) *analysis.Module {
+	if mod == nil {
+		return nil
+	}
+	var modErr *analysis.ModuleError
+	if mod.Error != nil {
+		modErr = &analysis.ModuleError{Err: mod.Error.Err}
+	}
+	return &analysis.Module{
+		Path:      mod.Path,
+		Version:   mod.Version,
+		Replace:   analysisModuleFromPackagesModule(mod.Replace),
+		Time:      mod.Time,
+		Main:      mod.Main,
+		Indirect:  mod.Indirect,
+		Dir:       mod.Dir,
+		GoMod:     mod.GoMod,
+		GoVersion: mod.GoVersion,
+		Error:     modErr,
+	}
+}
 
 type importerFunc func(path string) (*types.Package, error)
 
