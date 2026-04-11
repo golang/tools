@@ -1,0 +1,66 @@
+Variants of embed-crosspkg.txt: cross-package method promotion via
+pointer embedding, generic embedding, and interface embedding.
+All follow the same resolution path (methodsets.Index.LocationOf)
+as plain struct embedding; this test guards against regressions in
+those forms.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- iface/iface.go --
+package iface
+
+type I interface { //@loc(I, "I"),implementation("I", SP, SG, J)
+	// Implementations of M include J.M (same method set as I);
+	// J.M's position is resolved via LocationOf to iface.I.M (IM),
+	// since interface embedding shares the original *types.Func.
+	M() //@loc(IM, "M"),implementation("M", TM, GM, IM)
+	N() //@loc(IN, "N")
+}
+
+-- iface2/iface2.go --
+package iface2
+
+import "example.com/iface"
+
+// J embeds iface.I from another package: J.M and J.N are declared
+// in iface, so iface2's index records them with zero Posn. Querying
+// implementations of a concrete N must resolve J.N via iface's index;
+// the result location coincides with iface.I.N (same types.Func).
+type J interface { //@loc(J, "J"),implementation("J", I, SP, SG)
+	iface.I
+}
+
+-- impl/impl.go --
+package impl
+
+type T struct{}
+
+func (*T) M() {} //@loc(TM, "M")
+
+type G[X any] struct{}
+
+func (G[X]) M() {} //@loc(GM, "M")
+
+-- embed/embed.go --
+package embed
+
+import "example.com/impl"
+
+// SP embeds *impl.T: M is promoted from the pointer receiver.
+type SP struct { //@loc(SP, "SP")
+	*impl.T
+}
+
+// Querying implementations of SP.N (a concrete method) finds J.N as
+// well as I.N; J.N's position resolves to IN via iface's index.
+func (SP) N() {} //@implementation("N", IN)
+
+// SG embeds an instantiation of a generic type.
+// M's origin is impl.G[X].M; resolution must match impl's index entry.
+type SG struct { //@loc(SG, "SG")
+	impl.G[int]
+}
+
+func (SG) N() {}

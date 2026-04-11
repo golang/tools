@@ -206,14 +206,33 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 		pkgPath = PackagePath(obj.Pkg().Path())
 	}
 	for _, mp := range globalMetas {
-		if mp.PkgPath == pkgPath {
-			continue // declaring package is handled by local implementation
-		}
 		globalIDs = append(globalIDs, mp.ID)
 	}
 	indexes, err := snapshot.MethodSets(ctx, globalIDs...)
 	if err != nil {
 		return fmt.Errorf("querying method sets: %v", err)
+	}
+
+	// For method queries, results may include methods promoted via
+	// embedding from another package, whose positions are not stored
+	// in the index (see methodsets.Result.Location). Build a map of
+	// indexes by package path so we can resolve such positions in the
+	// declaring package's index.
+	//
+	// Type queries always return positions of types in the indexed
+	// package itself, so this map is not needed.
+	//
+	// Only non-test variants are included: a promoted method's
+	// declaring package is the one that was imported, and test
+	// variants are not importable.
+	var byPkgPath map[PackagePath]*methodsets.Index
+	if queryMethod != nil {
+		byPkgPath = make(map[PackagePath]*methodsets.Index, len(indexes))
+		for i, index := range indexes {
+			if globalMetas[i].ForTest == "" {
+				byPkgPath[index.PkgPath] = index
+			}
+		}
 	}
 
 	// Search local and global packages in parallel.
@@ -255,9 +274,30 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 	}
 	// global search
 	for _, index := range indexes {
+		if index.PkgPath == pkgPath {
+			continue // declaring package is handled by local implementation
+		}
 		group.Go(func() error {
 			for _, res := range index.Search(key, rel, queryMethod) {
 				loc := res.Location
+				if loc.Filename == "" {
+					// Method promoted from another package via
+					// embedding: resolve its position from the
+					// declaring package's index.
+					if declIdx, ok := byPkgPath[PackagePath(res.PkgPath)]; ok {
+						loc, _ = declIdx.LocationOf(res.ObjectPath)
+					}
+					if loc.Filename == "" {
+						// The declaring package wasn't in
+						// AllMetadata, or the method isn't in
+						// its index (e.g., unexported receiver
+						// type that isn't package-level).
+						// Neither should occur for a method
+						// promoted into a package-level type.
+						bug.Reportf("methodsets: no location for %s.%s", res.PkgPath, res.ObjectPath)
+						continue
+					}
+				}
 				// Map offsets to protocol.Locations in parallel (may involve I/O).
 				group.Go(func() error {
 					ploc, err := offsetToLocation(ctx, snapshot, loc.Filename, loc.Start, loc.End)
