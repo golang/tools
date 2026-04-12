@@ -73,6 +73,45 @@ func TestParsed(t *testing.T) {
 	}
 }
 
+// TestCompleteBoundsCheck tests that complete() does not panic
+// when c.offset > start (e.g. cursor between the two '{' characters).
+// This is a regression test for a DoS vulnerability where a crafted
+// cursor position within "{{" caused a slice bounds out of range panic.
+func TestCompleteBoundsCheck(t *testing.T) {
+	buf := []byte("hello {{ }}")
+	p := parseBuffer("", buf)
+	if p.parseErr != nil {
+		t.Logf("parseBuffer (expected): %v", p.parseErr)
+	}
+	// Simulate cursor at position 7 (between '{' and '{').
+	// This creates a situation where c.offset (= start + len("{{")) > cursorPos.
+	pos, err := p.mapper.OffsetPosition(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Manually construct a completer that triggers the problematic case:
+	// set offset to 8 (simulating tk.start=6, offset = 6 + len("{{") = 8)
+	// with cursor position 7 (start < c.offset).
+	c := &completer{
+		p:      p,
+		pos:    pos,
+		offset: 8,
+		ctx:    protocol.CompletionContext{TriggerKind: protocol.Invoked},
+		syms:   make(map[string]symbol),
+	}
+	// This must not panic.
+	ans, err := c.complete()
+	if err != nil {
+		t.Fatalf("complete returned error: %v", err)
+	}
+	if ans == nil {
+		t.Fatal("complete returned nil")
+	}
+	if len(ans.Items) != 0 {
+		t.Errorf("expected no completions, got %d", len(ans.Items))
+	}
+}
+
 func testCompleter(t *testing.T, tx tparse) *completer {
 	// seen chars up to ^
 	offset := strings.Index(tx.marked, "^")
