@@ -149,11 +149,20 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			switch ek, idx := curCall.ParentEdge(); ek {
 			case edge.ValueSpec_Values:
 				// Have: var i = strings.Index(...)
+				// If the call occurs in a multi-value declaration or assignment, don't suggest a fix because it would produce invalid code (See golang/go#78643).
+				spec := curCall.Parent().Node().(*ast.ValueSpec)
+				if len(spec.Names) != 1 {
+					continue
+				}
 				curName := curCall.Parent().ChildAt(edge.ValueSpec_Names, idx)
 				iIdent = curName.Node().(*ast.Ident)
 			case edge.AssignStmt_Rhs:
 				// Have: i := strings.Index(...)
 				// (Must be i's definition.)
+				assign := curCall.Parent().Node().(*ast.AssignStmt)
+				if len(assign.Lhs) != 1 {
+					continue
+				}
 				curLhs := curCall.Parent().ChildAt(edge.AssignStmt_Lhs, idx)
 				iIdent, _ = curLhs.Node().(*ast.Ident) // may be nil
 			}

@@ -219,6 +219,18 @@ func idx_aliased_var(s string) string {
 	return s[:idx]
 }
 
+// Regression test for golang/go#78643:
+// when Index is not the sole RHS in an assignment, rewriting to Cut
+// produces invalid Go (`x, before, _, ok := 0, strings.Cut(...)`).
+func multiAssign(s, sub string) int {
+	ret, idx := 0, strings.Index(s, sub) // don't modernize: Index is not the sole RHS
+	if idx >= 0 {
+		prefix := s[:idx]
+		_ = prefix
+	}
+	return ret
+}
+
 func s_modified(s string) string {
 	idx := strings.Index(s, "=") // don't modernize since s gets modified
 	s = "newstring"
