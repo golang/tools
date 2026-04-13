@@ -86,6 +86,7 @@ Gopls supports the following code actions:
 - [`refactor.rewrite.changeQuote`](#refactor.rewrite.changeQuote)
 - [`refactor.rewrite.fillStruct`](#refactor.rewrite.fillStruct)
 - [`refactor.rewrite.fillSwitch`](#refactor.rewrite.fillSwitch)
+- [`refactor.rewrite.implementInterface`](#refactor.rewrite.implementInterface)
 - [`refactor.rewrite.invertIf`](#refactor.rewrite.invertIf)
 - [`refactor.rewrite.joinLines`](#refactor.rewrite.joinLines)
 - [`refactor.rewrite.moveParamLeft`](#refactor.rewrite.moveParamLeft)
@@ -953,3 +954,16 @@ all struct fields. For a highlighted selection, it removes tags from only
 the selected fields.
 
 In editors that support interactive code actions, you can specify which struct tags to remove.
+
+<a name='refactor.rewrite.implementInterface'></a>
+### `refactor.rewrite.implementInterface`: Add methods to type T to implement an interface
+
+This code action adds method declarations to a named type so that it implements a specified interface. The method bodies are placeholders to be filled in by the user. Gopls offers this code action when the cursor is on a package-level type declaration on which methods can be declared.
+
+This code action is offered only in editors that support interactive code actions, a non-standard LSP protocol feature currently supported only by gopls. The server prompts the client to choose the interface. Defaults to `error`. Depending on your editor's support for dialog, it may provide a searchable list of interfaces types found in your workspace, or simply prompt the user to type it out.
+
+The screenshots below show the seqence of steps in an editor that supports interactive code actions with a searchable list:
+
+![Before "Implement interface"](../assets/implement-interface-before.png)
+![Selecting the interface](../assets/implement-interface-select-enum.png)
+![After "Implement interface"](../assets/implement-interface-after.png)
