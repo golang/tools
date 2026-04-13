@@ -176,3 +176,45 @@ func _() {
 	s += "extra" // nope: += after rvalue use
 	print(s)
 }
+
+// Regression test for go.dev/issue/78465.
+// Self-referencing += should be handled correctly.
+func _() string {
+	a := "12"
+	for range 2 {
+		a += a // want "using string \\+= string in a loop is inefficient"
+	}
+	return a
+}
+
+func _() string {
+	a := "12"
+	for range 2 {
+		a += "b" + a // want "using string \\+= string in a loop is inefficient"
+	}
+	return a
+}
+
+func _() string {
+	a := "12"
+	for range 2 {
+		a += a + "b" // want "using string \\+= string in a loop is inefficient"
+	}
+	return a
+}
+
+func _() string {
+	a := "12"
+	for range 2 {
+		a += a + a // want "using string \\+= string in a loop is inefficient"
+	}
+	return a
+}
+
+func _() string {
+	a := "12"
+	for range 2 {
+		a += (a) // want "using string \\+= string in a loop is inefficient"
+	}
+	return a
+}

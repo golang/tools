@@ -182,3 +182,51 @@ func _() {
 	s += "extra" // nope: += after rvalue use
 	print(s)
 }
+
+// Regression test for go.dev/issue/78465.
+// Self-referencing += should be handled correctly.
+func _() string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString(a.String()) // want "using string \\+= string in a loop is inefficient"
+	}
+	return a.String()
+}
+
+func _() string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString("b" + a.String()) // want "using string \\+= string in a loop is inefficient"
+	}
+	return a.String()
+}
+
+func _() string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString(a.String() + "b") // want "using string \\+= string in a loop is inefficient"
+	}
+	return a.String()
+}
+
+func _() string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString(a.String() + a.String()) // want "using string \\+= string in a loop is inefficient"
+	}
+	return a.String()
+}
+
+func _() string {
+	var a strings.Builder
+	a.WriteString("12")
+	for range 2 {
+		a.WriteString((a).String()) // want "using string \\+= string in a loop is inefficient"
+	}
+	return a.String()
+}
+
