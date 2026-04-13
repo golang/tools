@@ -521,7 +521,7 @@ func indexArgValid(info *types.Info, index *typeindex.Index, expr ast.Expr, afte
 	case *ast.Ident:
 		sObj := info.Uses[expr]
 		sUses := index.Uses(sObj)
-		return !hasModifyingUses(info, sUses, afterPos)
+		return !hasModifyingUses(sUses, afterPos)
 	default:
 		// For now, skip instances where s or substr are not
 		// identifers, basic lits, or call expressions of the form
@@ -621,18 +621,15 @@ func checkIdxUses(info *types.Info, uses iter.Seq[inspector.Cursor], s, substr a
 // hasModifyingUses reports whether any of the uses involve potential
 // modifications. Uses involving assignments before the "afterPos" won't be
 // considered.
-func hasModifyingUses(info *types.Info, uses iter.Seq[inspector.Cursor], afterPos token.Pos) bool {
+func hasModifyingUses(uses iter.Seq[inspector.Cursor], afterPos token.Pos) bool {
 	for curUse := range uses {
 		ek := curUse.ParentEdgeKind()
 		if ek == edge.AssignStmt_Lhs {
 			if curUse.Node().Pos() <= afterPos {
 				continue
 			}
-			assign := curUse.Parent().Node().(*ast.AssignStmt)
-			if sameObject(info, assign.Lhs[0], curUse.Node().(*ast.Ident)) {
-				// Modifying use because we are reassigning the value of the object.
-				return true
-			}
+			// Any use on the LHS is a modifying use.
+			return true
 		} else if ek == edge.UnaryExpr_X &&
 			curUse.Parent().Node().(*ast.UnaryExpr).Op == token.AND {
 			// Modifying use because we might be passing the object by reference (an explicit &).
