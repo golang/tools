@@ -416,22 +416,34 @@ func guarded_neg_else(s string) (string, string) {
 
 // -- strings.Split/SplitN [0] → strings.Cut --
 
-// Should fire: SplitN(s, sep, 2)[0] in short var decl.
-func splitn_zero_define(s, sep string) string {
-	x := strings.SplitN(s, sep, 2)[0] // want `strings.SplitN\[0\] can be simplified using strings.Cut`
+// Should fire: SplitN(s, ",", 2)[0] in short var decl.
+func splitn_zero_define(s string) string {
+	x := strings.SplitN(s, ",", 2)[0] // want `strings.SplitN call can be simplified using strings.Cut`
 	return x
 }
 
-// Should fire: Split(s, sep)[0] in short var decl.
-func split_zero_define(s, sep string) string {
-	x := strings.Split(s, sep)[0] // want `strings.Split\[0\] can be simplified using strings.Cut`
+// Should fire: Split(s, ",")[0] in short var decl.
+func split_zero_define(s string) string {
+	x := strings.Split(s, ",")[0] // want `strings.Split call can be simplified using strings.Cut`
 	return x
 }
 
-// Should fire: regular assignment (not :=).
-func split_zero_assign(s, sep string) string {
+// Should NOT fire: regular assignment (not :=).
+func split_zero_assign(s string) string {
 	var x string
-	x = strings.Split(s, sep)[0] // want `strings.Split\[0\] can be simplified using strings.Cut`
+	x = strings.Split(s, ",")[0]
+	return x
+}
+
+// Should NOT fire: sep is a variable (value unknown at analysis time).
+func split_variable_sep(s, sep string) string {
+	x := strings.Split(s, sep)[0]
+	return x
+}
+
+// Should NOT fire: sep is the empty string (different semantics from strings.Cut).
+func split_empty_sep(s string) string {
+	x := strings.Split(s, "")[0]
 	return x
 }
 
