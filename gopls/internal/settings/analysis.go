@@ -25,7 +25,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/errorsas"
 	"golang.org/x/tools/go/analysis/passes/fieldalignment"
 	"golang.org/x/tools/go/analysis/passes/framepointer"
-	"golang.org/x/tools/go/analysis/passes/gofmt"
+	_ "golang.org/x/tools/go/analysis/passes/gofmt"
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
 	"golang.org/x/tools/go/analysis/passes/ifaceassert"
@@ -220,7 +220,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: writestring.Analyzer},
 
 	// disabled by default
-	{analyzer: gofmt.Analyzer, severity: protocol.SeverityInformation, nonDefault: true},
+	{analyzer: goplsexport.GofmtAnalyzer, severity: protocol.SeverityInformation, nonDefault: true},
 
 	// disabled due to high false positives
 	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
