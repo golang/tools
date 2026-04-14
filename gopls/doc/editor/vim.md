@@ -6,6 +6,7 @@ title: "Gopls: Using Vim or Neovim"
 * [LanguageClient-neovim](#lcneovim)
 * [Ale](#ale)
 * [vim-lsp](#vimlsp)
+* [yegappan/lsp](#yegappanlsp)
 * [vim-lsc](#vimlsc)
 * [coc.nvim](#cocnvim)
 * [govim](#govim)
@@ -67,6 +68,25 @@ augroup LspGo
   "autocmd FileType go nmap <buffer> ,n <plug>(lsp-next-error)
   "autocmd FileType go nmap <buffer> ,p <plug>(lsp-previous-error)
 augroup END
+```
+
+## <a href="#yegappanlsp" id="yegappanlsp">yegappan/lsp</a>
+
+Use [yegappan/lsp] (requires Vim 9.0 or later), with the following
+configuration in Vim 9 script:
+
+```vim
+vim9script
+
+var lspServers = [{
+  name: 'gopls',
+  filetype: ['go'],
+  path: 'gopls',
+  args: ['serve'],
+  syncInit: true,
+}]
+
+autocmd User LspSetup call LspAddServer(lspServers)
 ```
 
 ## <a href="#vimlsc" id="vimlsc">vim-lsc</a>
@@ -240,6 +260,7 @@ vim.api.nvim_set_hl(0, '@lsp.mod.shadowing', { bold = true, underline = true })
 [ale]: https://github.com/w0rp/ale
 [ale-issue-2179]: https://github.com/w0rp/ale/issues/2179
 [prabirshrestha/vim-lsp]: https://github.com/prabirshrestha/vim-lsp/
+[yegappan/lsp]: https://github.com/yegappan/lsp/
 [natebosch/vim-lsc]: https://github.com/natebosch/vim-lsc/
 [natebosch/vim-lsc#180]: https://github.com/natebosch/vim-lsc/issues/180
 [coc.nvim]: https://github.com/neoclide/coc.nvim/
