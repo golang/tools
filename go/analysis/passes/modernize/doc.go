@@ -424,6 +424,16 @@ It also handles variants using [strings.IndexByte] instead of Index, or the byte
 
 Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
 
+It also replaces [strings.SplitN](s, sep, 2)[0] and [strings.Split](s, sep)[0] with the "before" result of strings.Cut, when sep is a non-empty string constant:
+
+	x := strings.SplitN(s, sep, 2)[0]
+
+is replaced by:
+
+	x, _, _ := strings.Cut(s, sep)
+
+The fix is only offered when sep is a non-empty string literal. When sep is a variable or the empty string, the semantics differ (strings.Split(s, "")[0] returns the first character of s, but strings.Cut(s, "").before is ""), so no fix is suggested.
+
 # Analyzer stringscutprefix
 
 stringscutprefix: replace HasPrefix/TrimPrefix with CutPrefix
