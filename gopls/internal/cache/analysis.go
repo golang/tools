@@ -32,6 +32,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
@@ -1012,6 +1013,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 		TypesInfo:    apkg.pkg.TypesInfo(),
 		TypesSizes:   apkg.pkg.TypesSizes(),
 		TypeErrors:   apkg.typeErrors,
+		Module:       analysisModuleFromPackagesModule(apkg.pkg.metadata.Module),
 		ResultOf:     inputs,
 		Report: func(d analysis.Diagnostic) {
 			// Assert that SuggestedFixes are well formed.
@@ -1430,4 +1432,31 @@ func stableName(a *analysis.Analyzer) string {
 	// it is unique, but making them always differ helps avoid
 	// name/stablename confusion.
 	return fmt.Sprintf("%s(%s:%d)", a.Name, filepath.Base(file), line)
+}
+
+// analysisModuleFromPackagesModule converts a packages.Module to an analysis.Module.
+func analysisModuleFromPackagesModule(mod *packages.Module) *analysis.Module {
+	if mod == nil {
+		return nil
+	}
+
+	var modErr *analysis.ModuleError
+	if mod.Error != nil {
+		modErr = &analysis.ModuleError{
+			Err: mod.Error.Err,
+		}
+	}
+
+	return &analysis.Module{
+		Path:      mod.Path,
+		Version:   mod.Version,
+		Replace:   analysisModuleFromPackagesModule(mod.Replace),
+		Time:      mod.Time,
+		Main:      mod.Main,
+		Indirect:  mod.Indirect,
+		Dir:       mod.Dir,
+		GoMod:     mod.GoMod,
+		GoVersion: mod.GoVersion,
+		Error:     modErr,
+	}
 }
