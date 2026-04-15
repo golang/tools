@@ -690,12 +690,12 @@ func TestIssue51836(t *testing.T) {
 	// Following the pattern of TestIssue13898, aa.go needs to be compiled from
 	// the output directory. We pass the full path to compile() so that we don't
 	// have to copy the file to that directory.
-	bpath, err := filepath.Abs(filepath.Join(dir, "aa.go"))
+	aapath, err := filepath.Abs(filepath.Join(dir, "aa.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	compilePkg(t, dir, "a.go", testoutdir, nil, apkg(testoutdir))
-	compile(t, testoutdir, bpath, testoutdir, map[string]string{apkg(testoutdir): filepath.Join(testoutdir, "a.o")})
+	compile(t, testoutdir, aapath, testoutdir, map[string]string{apkg(testoutdir): filepath.Join(testoutdir, "a.o")})
 
 	// import must succeed (test for issue at hand)
 	_ = importPkg(t, "./testdata/aa", tmpdir)
@@ -1061,4 +1061,27 @@ type S struct {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestGenericMethods(t *testing.T) {
+	t.SkipNow() // TODO(mark): Turn on with UIR V4.
+	// This package only handles gc export data.
+	needsCompiler(t, "gc")
+	skipWindows(t)
+
+	tmpdir := mktmpdir(t)
+	defer os.RemoveAll(tmpdir)
+	testoutdir := filepath.Join(tmpdir, "testdata")
+
+	// Following the pattern of TestIssue13898, b.go needs to be compiled from
+	// the output directory. We pass the full path to compile() so that we don't
+	// have to copy the file to that directory.
+	srcdir := filepath.Join("testdata", "genmeth")
+	bpath, err := filepath.Abs(filepath.Join(srcdir, "b.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compilePkg(t, srcdir, "a.go", testoutdir, nil, apkg(testoutdir))
+	compile(t, testoutdir, bpath, testoutdir, map[string]string{apkg(testoutdir): filepath.Join(testoutdir, "a.o")})
 }
