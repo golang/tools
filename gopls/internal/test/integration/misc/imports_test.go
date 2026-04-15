@@ -408,9 +408,38 @@ return nil
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
+		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.SaveBuffer("main.go")
+		if true {
+			// according to https://github.com/golang/go/issues/78680
+			// this test is flaky. Print some possibly helpful diagnostic
+			// information. Logf is fine as the test will fail later.
+			ix, err := modindex.Read(modcache)
+			if err != nil {
+				t.Logf("could not read modcache index: %v", err)
+			} else if len(ix.Entries) != 2 {
+				t.Logf("%d modcache entries", len(ix.Entries))
+				if len(ix.Entries) == 0 {
+					fis, err := os.ReadDir(modcache)
+					if err != nil {
+						t.Logf("could not read modcache dir: %v", err)
+					}
+					t.Logf("%d modcache files", len(fis))
+				}
+			}
+			out := env.BufferText("main.go")
+			if !strings.Contains(out, "github.com/mvdan/xurls") {
+				/* Perhaps the index is bad? The correct result is:
+					0: github.com/mvdan/xurls/a, github.com/mvdan/xurls@v1.1.0/a, ["Relaxed F 1"]
+				   1: mvdan.cc/xurls/v2/a, mvdan.cc/xurls/v2@v2.5.0/a, ["Relaxed F 1"]
+				*/
+				for i, e := range ix.Entries {
+					t.Errorf("%d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
+				}
+			}
+		}
 		out := env.BufferText("main.go")
 		if !strings.Contains(out, "github.com/mvdan/xurls") {
 			t.Errorf("did not get github.com/mvdan/xurls in %q", out)
