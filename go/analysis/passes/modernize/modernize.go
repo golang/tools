@@ -38,6 +38,7 @@ var Suite = []*analysis.Analyzer{
 	atomicTypesAnalyzer,
 	// AppendClippedAnalyzer, // not nil-preserving!
 	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
+	embedLitAnalyzer,
 	FmtAppendfAnalyzer,
 	ForVarAnalyzer,
 	MapsLoopAnalyzer,

@@ -29,6 +29,11 @@ func TestAny(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.AnyAnalyzer, "any")
 }
 
+func TestEmbedLit(t *testing.T) {
+	testenv.NeedsGo1Point(t, 27)
+	RunWithSuggestedFixes(t, TestData(), goplsexport.EmbedLitModernizer, "embedlit")
+}
+
 func TestErrorsAsType(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), goplsexport.ErrorsAsTypeModernizer, "errorsastype/...")
 }

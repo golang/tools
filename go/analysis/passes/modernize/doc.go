@@ -111,6 +111,31 @@ The any analyzer suggests replacing uses of the empty interface type,
 `interface{}`, with the `any` alias, which was introduced in Go 1.18.
 This is a purely stylistic change that makes code more readable.
 
+# Analyzer embedlit
+
+embedlit: simplify references to embedded fields in composite literals
+
+The embedlit analyzer suggests removing redundant embedded field type specifiers
+from composite literals. Go1.27 introduced the ability to directly initialize
+fields promoted from embedded struct types without a nested literal. For
+example, given the following structs:
+
+	type T struct {
+		U
+	}
+
+	type U struct {
+		x int
+	}
+
+A composite literal such as
+
+	t := T{U: U{x: 1}}
+
+would become
+
+	t := T{x: 1}
+
 # Analyzer errorsastype
 
 errorsastype: replace errors.As with errors.AsType[T]
