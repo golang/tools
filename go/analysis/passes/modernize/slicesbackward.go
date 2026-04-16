@@ -189,10 +189,14 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				// All uses of i are s[i]; drop the index variable.
 				header = fmt.Sprintf("_, %s := range %sBackward(%s)",
 					elemName, prefix, sliceStr)
-			} else {
-				// i is used for other purposes; keep both index and value.
+			} else if len(sliceIndexes) > 0 {
+				// i is used for other purposes and the slice value is also used; keep both.
 				header = fmt.Sprintf("%s, %s := range %sBackward(%s)",
 					indexIdent.Name, elemName, prefix, sliceStr)
+			} else {
+				// i is used for other purposes but the slice value is not used; drop v.
+				header = fmt.Sprintf("%s := range %sBackward(%s)",
+					indexIdent.Name, prefix, sliceStr)
 			}
 			edits = append(edits, analysis.TextEdit{
 				Pos:     loop.Init.Pos(),
