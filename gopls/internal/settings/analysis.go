@@ -53,6 +53,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
+	"golang.org/x/tools/gopls/internal/analysis/appendlen"
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
@@ -213,9 +214,10 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: yield.Analyzer},   // uses go/ssa
 	{analyzer: sortslice.Analyzer},
 	{analyzer: embeddirective.Analyzer},
-	{analyzer: waitgroup.Analyzer},     // to appear in cmd/vet@go1.25
-	{analyzer: hostport.Analyzer},      // to appear in cmd/vet@go1.25
-	{analyzer: recursiveiter.Analyzer}, // under evaluation
+	{analyzer: appendlen.Analyzer, nonDefault: true}, // under evaluation; see #73830
+	{analyzer: waitgroup.Analyzer},                   // to appear in cmd/vet@go1.25
+	{analyzer: hostport.Analyzer},                    // to appear in cmd/vet@go1.25
+	{analyzer: recursiveiter.Analyzer},               // under evaluation
 	{analyzer: writestring.Analyzer},
 
 	// disabled due to high false positives
