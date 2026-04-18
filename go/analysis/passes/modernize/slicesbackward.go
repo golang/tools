@@ -155,7 +155,14 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 					continue
 				}
 				// Is i in the Index position of an s[i] expression?
+				// If so, we also need to check whether s[i] is an lvalue. If we're
+				// mutating the slice or taking an element's address, a fix will not
+				// be offered.
 				if curUse.ParentEdgeKind() == edge.IndexExpr_Index {
+					if isScalarLvalue(pass.TypesInfo, curUse.Parent()) {
+						continue nextLoop
+					}
+
 					idxExpr := curUse.Parent().Node().(*ast.IndexExpr)
 					if astutil.EqualSyntax(idxExpr.X, sliceExpr) {
 						sliceIndexes = append(sliceIndexes, idxExpr)

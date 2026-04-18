@@ -84,3 +84,38 @@ func iAddressTakenBeforeLoop(s []int) {
 	}
 	_ = p
 }
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprAssign(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i] = 0
+	}
+}
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprAssignWithOp(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i] += 1
+		s[i] -= 1
+		s[i] *= 1
+		s[i] /= 1
+	}
+}
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprIncDec(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i]++
+		s[i]--
+	}
+}
+
+// Should NOT fire: an index expression is address-taken
+func indexExprAddr(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = &s[i]
+	}
+}
