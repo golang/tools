@@ -723,7 +723,8 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 		return
 	}
 
-	if tv.isShadowing(id) {
+	// The shadowing check is not appropriate for the fake builtin.go file.
+	if tv.isShadowing(id) && tv.metadata.PkgPath != "builtin" {
 		mods = append(mods, semtok.ModShadowing)
 	}
 
