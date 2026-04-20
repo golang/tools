@@ -185,7 +185,11 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 
 			// Replace the loop header with a range over slices.Backward.
 			var header string
-			if otherUses == 0 && len(sliceIndexes) > 0 {
+			if len(sliceIndexes) == 0 {
+				// s[i] never appears; the value from slices.Backward is unused.
+				header = fmt.Sprintf("for range %sBackward(%s)",
+					prefix, sliceStr)
+			} else if otherUses == 0 {
 				// All uses of i are s[i]; drop the index variable.
 				header = fmt.Sprintf("_, %s := range %sBackward(%s)",
 					elemName, prefix, sliceStr)

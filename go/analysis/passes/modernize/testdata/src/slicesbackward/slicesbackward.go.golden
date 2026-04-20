@@ -84,3 +84,10 @@ func iAddressTakenBeforeLoop(s []int) {
 	}
 	_ = p
 }
+
+// Issue #78629: value from slices.Backward is unused when s[i] never appears.
+func indexNeverUsedInBody(s []int) {
+	for range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println("hello")
+	}
+}
