@@ -165,9 +165,7 @@ func NewServer(session *cache.Session, lspServer protocol.Server, rootsHandler f
 		session:   session,
 		lspServer: lspServer,
 	}
-	opts := &mcp.ServerOptions{
-		Instructions: Instructions,
-	}
+	opts := &mcp.ServerOptions{}
 	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "gopls", Version: "v1.0.0"}, opts)
 
 	defaultTools := []string{

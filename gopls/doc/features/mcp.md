@@ -40,11 +40,12 @@ This runs a standalone gopls instance that speaks MCP over stdin/stdout.
 ## Instructions to the model
 
 This gopls MCP server includes model instructions for its usage, describing
-workflows for interacting with Go code using its available tools. These
-instructions are automatically published during the MCP server initialization,
-but you may want to also load them as additional context in your AI-assisted
-session, to emphasize their importance. The `-instructions` flag causes them to
-be printed, so that you can do, for example:
+workflows for interacting with Go code using its available tools. To avoid
+forcing the client into specific workflows, these instructions are not
+automatically published during initialization.
+
+You can load them as additional context in your AI-assisted session by using
+the `-instructions` flag to print them:
 
 ```
 gopls mcp -instructions > /path/to/contextFile.md
