@@ -12,12 +12,14 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -388,12 +390,13 @@ func objectString(obj types.Object) string {
 	return s
 }
 
-// TestOrdering uses objectpath over two Named types with the same method
-// names but in a different source order and checks that objectpath is the
-// same for methods with the same name.
+// TestOrdering verifies that the compiler and go/types emit methods in the same order.
+//
+// See golang/go#78495.
 func TestOrdering(t *testing.T) {
-	const src = `
--- go.mod --
+	testenv.NeedsGoPackages(t)
+
+	const src = `-- go.mod --
 module x.io
 
 -- p/p.go --
@@ -401,49 +404,80 @@ package p
 
 type T struct{ A int }
 
-func (T) M() { }
-func (T) N() { }
 func (T) X() { }
 func (T) Y() { }
-
--- q/q.go --
-package q
-
-type T struct{ A int }
-
-func (T) N() { }
 func (T) M() { }
-func (T) Y() { }
-func (T) X() { }
+func (T) N() { }
 `
+	fs, err := txtar.FS(txtar.Parse([]byte(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
 
-	pkgmap := loadPackages(t, src, "./p", "./q")
-	p := pkgmap["x.io/p"].Types
-	q := pkgmap["x.io/q"].Types
+	loadPackageWithMode := func(mode packages.LoadMode) *packages.Package {
+		cfg := &packages.Config{
+			Mode: mode,
+			Dir:  dir,
+			Env: append(os.Environ(),
+				"GO111MODULES=on",
+				"GOPATH=",
+				"GOWORK=off",
+				"GOPROXY=off"),
+		}
+		pkgs, err := packages.Load(cfg, "x.io/p")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if num := packages.PrintErrors(pkgs); num > 0 {
+			t.Fatalf("packages contained %d errors", num)
+		}
+		if len(pkgs) != 1 {
+			t.Fatalf("packages.Load returned %d packages, want 1", len(pkgs))
+		}
+		return pkgs[0]
+	}
 
-	// From here, the objectpaths generated for p and q should be the
-	// same. If they are not, then we are generating an ordering that is
-	// dependent on the declaration of the types within the file.
-	for _, test := range []struct {
-		path objectpath.Path
-	}{
-		{"T.M0"},
-		{"T.M1"},
-		{"T.M2"},
-		{"T.M3"},
-	} {
-		pobj, err := objectpath.Object(p, test.path)
+	// Load the package from compiler export data.
+	binpkg := loadPackageWithMode(packages.NeedExportFile | packages.NeedTypes)
+	// load the pacakge from typed syntax tree.
+	srcpkg := loadPackageWithMode(packages.LoadSyntax)
+
+	// objectpath encodes concrete methods by their go/types method index.
+	// Verify that paths produced from source-loaded types resolve to the same
+	// methods in compiler export data.
+	srcNamed := srcpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+
+	for srcMethod := range srcNamed.Methods() {
+		path, err := objectpath.For(srcMethod)
 		if err != nil {
-			t.Errorf("Object(%s) failed in a1: %v", test.path, err)
-			continue
+			t.Fatalf("For(%s): %v", srcMethod.Name(), err)
 		}
-		qobj, err := objectpath.Object(q, test.path)
+
+		binObj, err := objectpath.Object(binpkg.Types, path)
 		if err != nil {
-			t.Errorf("Object(%s) failed in a2: %v", test.path, err)
-			continue
+			t.Fatalf("Object(%q): %v", path, err)
 		}
-		if pobj.Name() != pobj.Name() { // TODO(adonovan): investigate why this test fails when qobj is used.
-			t.Errorf("Objects(%s) not equal, got a1 = %v, a2 = %v", test.path, pobj.Name(), qobj.Name())
+
+		if binObj.Name() != srcMethod.Name() {
+			t.Errorf("Object(%q) = %s, want %s", path, binObj.Name(), srcMethod.Name())
+		}
+	}
+
+	binNamed := binpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+	for binMethod := range binNamed.Methods() {
+		path, err := objectpath.For(binMethod)
+		if err != nil {
+			t.Fatalf("For(%s): %v", binMethod.Name(), err)
+		}
+
+		srcObj, err := objectpath.Object(srcpkg.Types, path)
+		if err != nil {
+			t.Fatalf("Object(%q): %v", path, err)
+		}
+
+		if srcObj.Name() != binMethod.Name() {
+			t.Errorf("Object(%q) = %s, want %s", path, srcObj.Name(), binMethod.Name())
 		}
 	}
 }
