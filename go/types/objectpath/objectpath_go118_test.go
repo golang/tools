@@ -59,8 +59,8 @@ func F[FP0 any, FP1 interface{ M() }](FP0, FP1) {}
 		{"b", "N.C", "", "invalid path: ends with 'C', want [AFMO]"},
 		{"b", "N.CO", "", "cannot apply 'C' to b.N (got *types.Named, want type parameter)"},
 		{"b", "N.T", "", `invalid path: bad numeric operand "" for code 'T'`},
-		{"b", "N.T0", "", "tuple index 0 out of range [0-0)"},
-		{"b", "T.T2O", "", "tuple index 2 out of range [0-2)"},
+		{"b", "N.T0", "", "type parameter index 0 out of range [0-0)"},
+		{"b", "T.T2O", "", "type parameter index 2 out of range [0-2)"},
 		{"b", "T.T1M0", "", "cannot apply 'M' to TP1 (got *types.TypeParam, want interface or named)"},
 		{"b", "C.T0", "", "cannot apply 'T' to int (got *types.Basic, want named or signature)"},
 	}

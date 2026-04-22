@@ -62,6 +62,10 @@ type S struct{t struct{x int}}
 type R []struct{y int}
 type Q [2]struct{z int}
 
+type I interface {
+	M()
+}
+
 -- a/a.go --
 package a
 
@@ -105,6 +109,7 @@ type Issue68046 interface { f(x int) interface{Issue68046} }
 		{"b", "T.M0", "func (b.T).M() *interface{f()}", ""}, // concrete method
 		{"b", "T.M0.RA0", "var  *interface{f()}", ""},       // parameter
 		{"b", "T.M0.RA0.EM0", "func (interface).f()", ""},   // interface method
+		{"b", "I.UM0", "func (b.I).M()", ""},
 		{"b", "unexportedType", "type b.unexportedType struct{}", ""},
 		{"b", "unexportedType.M0", "func (b.unexportedType).F()", ""},
 		{"b", "S.UF0.F0", "field x int", ""},
@@ -242,6 +247,36 @@ func testPath(pkgmap map[string]*packages.Package, test pathTest) error {
 	if obj2 != obj {
 		return fmt.Errorf("Object(%s, For(obj)) != obj: got %s, obj is %s (path1=%q, path2=%q)", pkg.Path(), obj2, obj, test.path, path2)
 	}
+
+	// We also call [objectpath.Encoder.For] three times to ensure it
+	// gives consistent results with [objectpath.For] in all states:
+	//  1: searching for symbol without index
+	//  2: building index and looking up symbol
+	//  3: looking up symbol in existing index.
+	{
+		enc := new(objectpath.Encoder)
+
+		epath1, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#1 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		epath2, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#2 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		epath3, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#3 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		if epath1 != path2 || epath2 != path2 || epath3 != path2 {
+			return fmt.Errorf("consistency error for %v: For path=%q, Encoder paths=(%q %q %q)",
+				obj, path2, epath1, epath2, epath3)
+		}
+	}
+
 	return nil
 }
 
