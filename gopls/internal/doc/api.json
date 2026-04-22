@@ -1473,6 +1473,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"errorsastype\"",
+							"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    use(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    use(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"fieldalignment\"",
 							"Doc": "find structs that would use less memory if their fields were sorted\n\nThis analyzer finds structs that can be rearranged to use less memory, and provides\na suggested edit with the most compact order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n\nBe aware that the most compact order is not always the most efficient.\nIn rare cases it may cause two variables each updated by its own goroutine\nto occupy the same CPU cache line, inducing a form of memory contention\nknown as \"false sharing\" that slows down both goroutines.\n\nUnlike most analyzers, which report likely mistakes, the diagnostics\nproduced by fieldanalyzer very rarely indicate a significant problem,\nso the analyzer is not included in typical suites such as vet or\ngopls. Use this standalone command to run it on your code:\n\n   $ go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest\n   $ fieldalignment [packages]\n\n",
 							"Default": "false",
@@ -3423,6 +3429,12 @@
 			"Name": "errorsastype",
 			"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
+			"Default": true
+		},
+		{
+			"Name": "errorsastype",
+			"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    use(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    use(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype",
 			"Default": true
 		},
 		{

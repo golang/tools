@@ -3169,6 +3169,25 @@ Default: on.
 
 Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype)
 
+<a id='errorsastype'></a>
+## `errorsastype`: Reports misuse of errors.AsType[T] in if/else chains.
+
+For example:
+
+	err := f()
+	if err, ok := errors.AsType[*FooErr](err); ok {
+	    use(err)
+	} else if err, ok := errors.AsType[*BarErr](err); ok {
+	    use(err)
+	}
+
+In this case, the second call to errors.AsType does not operate on the original error. Instead, its operand is the zero value of type \*FooErr produced by the first if statement; this is invariably a mistake.
+
+
+Default: on.
+
+Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype)
+
 <a id='fieldalignment'></a>
 ## `fieldalignment`: find structs that would use less memory if their fields were sorted
 

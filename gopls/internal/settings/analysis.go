@@ -56,6 +56,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
+	"golang.org/x/tools/gopls/internal/analysis/errorsastype"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/maprange"
@@ -289,6 +290,8 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: nonewvars.Analyzer},
 	{analyzer: noresultvalues.Analyzer},
 	{analyzer: unusedvariable.Analyzer},
+
+	{analyzer: errorsastype.Analyzer},
 }
 
 func init() {
