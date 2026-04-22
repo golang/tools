@@ -12,7 +12,7 @@ import (
 	"reflect"
 )
 
-// A Kind describes a field of an ast.Node struct.
+// A Kind describes a field of an [ast.Node] struct.
 type Kind uint8
 
 // String returns a description of the edge kind.
@@ -49,13 +49,14 @@ func (k Kind) Get(n ast.Node, idx int) ast.Node {
 	return v.Interface().(ast.Node) // may be nil
 }
 
+// Each [Kind] is named Type_Field, where Type is the
+// [ast.Node] struct type and Field is the name of the field
 const (
 	Invalid Kind = iota // for nodes at the root of the traversal
 
-	// Kinds are sorted alphabetically.
-	// Numbering is not stable.
-	// Each is named Type_Field, where Type is the
-	// ast.Node struct type and Field is the name of the field
+	// As of Go1.26 these kinds are sorted alphabetically, but
+	// numbering must be stable, so any new addition of const should
+	// use a new value (be added at the end of the list).
 
 	ArrayType_Elt
 	ArrayType_Len
