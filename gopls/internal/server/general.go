@@ -779,6 +779,7 @@ func recordClientInfo(clientName string) {
 		key = "gopls/client:helix"
 	case "Neovim":
 		// https://github.com/neovim/neovim/blob/42333ea98dfcd2994ee128a3467dfe68205154cd/runtime/lua/vim/lsp.lua#L1361
+		// https://github.com/neovim/neovim/blob/fe6026825883b44b09a8d3a03f2d49bfc8ed4725/runtime/lua/vim/lsp/client.lua#564
 		key = "gopls/client:neovim"
 	case "coc.nvim":
 		// https://github.com/neoclide/coc.nvim/blob/3dc6153a85ed0f185abec1deb972a66af3fbbfb4/src/language-client/client.ts#L994
