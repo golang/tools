@@ -3139,7 +3139,10 @@ Package documentation: [embedlit](https://pkg.go.dev/golang.org/x/tools/go/analy
 <a id='errorsas'></a>
 ## `errorsas`: report passing non-pointer or non-error values to errors.As
 
-The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error.
+The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error. For example:
+
+	var unwrappedErr net.DNSError
+	errors.As(err, unwrappedErr) // should use &unwrappedErr, DNSError.Error has a pointer reciever
 
 
 Default: on.

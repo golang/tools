@@ -1462,7 +1462,7 @@
 						},
 						{
 							"Name": "\"errorsas\"",
-							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
+							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.\nFor example:\n\n\tvar unwrappedErr net.DNSError\n\terrors.As(err, unwrappedErr) // should use \u0026unwrappedErr, DNSError.Error has a pointer reciever\n",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3421,7 +3421,7 @@
 		},
 		{
 			"Name": "errorsas",
-			"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
+			"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.\nFor example:\n\n\tvar unwrappedErr net.DNSError\n\terrors.As(err, unwrappedErr) // should use \u0026unwrappedErr, DNSError.Error has a pointer reciever\n",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas",
 			"Default": true
 		},
