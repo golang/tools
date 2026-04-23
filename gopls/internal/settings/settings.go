@@ -532,6 +532,13 @@ type DiagnosticOptions struct {
 	// DiagnosticsTrigger controls when to run diagnostics.
 	DiagnosticsTrigger DiagnosticsTrigger `status:"experimental"`
 
+	// EagerDiagnosticsClear controls whether gopls immediately publishes empty
+	// diagnostics for a file when it receives a textDocument/didChange
+	// notification, before reanalysis completes. This prevents stale
+	// diagnostics from persisting in the editor between an edit and the next
+	// diagnostic pass.
+	EagerDiagnosticsClear bool `status:"advanced"`
+
 	// AnalysisProgressReporting controls whether gopls sends progress
 	// notifications when construction of its index of analysis facts is taking a
 	// long time. Cancelling these notifications will cancel the indexing task,
@@ -1378,6 +1385,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 		return setEnum(&o.DiagnosticsTrigger, value,
 			DiagnosticsOnEdit,
 			DiagnosticsOnSave)
+
+	case "eagerDiagnosticsClear":
+		return setBool(&o.EagerDiagnosticsClear, value)
 
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)

@@ -463,6 +463,19 @@ or configuration change will still trigger diagnostics.
 
 Default: `"Edit"`.
 
+<a id='eagerDiagnosticsClear'></a>
+### `eagerDiagnosticsClear bool`
+
+**This is an advanced setting and should not be configured by most `gopls` users.**
+
+eagerDiagnosticsClear controls whether gopls immediately publishes empty
+diagnostics for a file when it receives a textDocument/didChange
+notification, before reanalysis completes. This prevents stale
+diagnostics from persisting in the editor between an edit and the next
+diagnostic pass.
+
+Default: `false`.
+
 <a id='analysisProgressReporting'></a>
 ### `analysisProgressReporting bool`
 

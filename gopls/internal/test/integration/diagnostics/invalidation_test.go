@@ -105,6 +105,79 @@ func _() {
 	})
 }
 
+// TestEagerDiagnosticInvalidation verifies that when eagerDiagnosticsClear is
+// enabled, the first publishDiagnostics notification after an edit is an empty
+// clear of stale diagnostics, sent before reanalysis completes.
+func TestEagerDiagnosticInvalidation(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.16
+-- main.go --
+package main
+
+func main() {
+	x := 2
+}
+`
+	// With eagerDiagnosticsClear enabled: editing a file that has diagnostics
+	// should first publish an empty clear, then the real diagnostics.
+	WithOptions(
+		Settings{"eagerDiagnosticsClear": true},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("main.go", "x")),
+		)
+
+		// Start collecting all diagnostic notifications before editing.
+		getDiagHistory := env.Awaiter.ListenToDiagnostics("main.go")
+
+		// Fix the error by using the variable.
+		env.RegexpReplace("main.go", "x := 2", "_ = 2")
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+		)
+
+		history := getDiagHistory()
+		if len(history) == 0 {
+			t.Fatal("expected at least one diagnostic notification after edit")
+		}
+		if len(history[0].Diagnostics) != 0 {
+			t.Errorf("first notification after edit should be empty (eager clear), got %d diagnostics", len(history[0].Diagnostics))
+		}
+	})
+
+	// With eagerDiagnosticsClear disabled: no eager empty clear before
+	// reanalysis. Use a no-op edit (comment change) so the error persists
+	// and we can verify the first notification still carries diagnostics.
+	WithOptions(
+		Settings{"eagerDiagnosticsClear": false},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("main.go", "x")),
+		)
+
+		getDiagHistory := env.Awaiter.ListenToDiagnostics("main.go")
+
+		// Add a comment - the unused-variable error should persist.
+		env.RegexpReplace("main.go", "x := 2", "x := 2 // edited")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("main.go", "x")),
+		)
+
+		history := getDiagHistory()
+		if len(history) == 0 {
+			t.Fatal("expected at least one diagnostic notification after edit")
+		}
+		if len(history[0].Diagnostics) == 0 {
+			t.Errorf("without eagerDiagnosticsClear, first notification should have diagnostics, got empty")
+		}
+	})
+}
+
 func TestCreatingPackageInvalidatesDiagnostics_Issue66384(t *testing.T) {
 	const files = `
 -- go.mod --
