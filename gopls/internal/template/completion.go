@@ -127,6 +127,9 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 	if err != nil {
 		return ans, err
 	}
+	if c.offset > start {
+		return ans, nil
+	}
 	sofar := c.p.buf[c.offset:start]
 	if len(sofar) == 0 || sofar[len(sofar)-1] == ' ' || sofar[len(sofar)-1] == '\t' {
 		return ans, nil
