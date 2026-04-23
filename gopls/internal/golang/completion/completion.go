@@ -424,6 +424,22 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 		return
 	}
 
+	// In invalid code, parser error recovery can produce *ast.Ident nodes
+	// whose Name spans more source text than the actual identifier token
+	// (e.g. by merging adjacent tokens during recovery). Using such a node's
+	// range as the completion replacement range would silently delete valid
+	// surrounding code. Guard against this by verifying that the source bytes
+	// at the ident's position exactly match its Name.
+	// See golang/go#77481.
+	startOff, err := safetoken.Offset(c.pgf.Tok, ident.Pos())
+	if err != nil {
+		return
+	}
+	endOff := startOff + len(ident.Name)
+	if endOff > len(c.pgf.Src) || string(c.pgf.Src[startOff:endOff]) != ident.Name {
+		return
+	}
+
 	c.surrounding = &Selection{
 		content: ident.Name,
 		cursor:  c.pos,
