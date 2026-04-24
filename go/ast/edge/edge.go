@@ -41,12 +41,15 @@ func (k Kind) Get(n ast.Node, idx int) ast.Node {
 		panic(fmt.Sprintf("%v.Get(%T): invalid node type", k, n))
 	}
 	v := reflect.ValueOf(n).Elem().Field(fieldInfos[k].index)
-	if idx != -1 {
-		v = v.Index(idx) // asserts valid index
-	} else {
-		// (The type assertion below asserts that v is not a slice.)
+
+	if v.Kind() == reflect.Slice {
+		v = v.Index(idx) // asserts valid idx
+	} else if idx != -1 {
+		panic(fmt.Sprintf("%v, Get(%T, %d): cannot index non-slice", v, n, idx))
 	}
-	return v.Interface().(ast.Node) // may be nil
+
+	out, _ := v.Interface().(ast.Node) // may be nil
+	return out
 }
 
 // Each [Kind] is named Type_Field, where Type is the
