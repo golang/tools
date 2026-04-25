@@ -274,11 +274,8 @@ nextcand:
 		)
 		for curUse := range index.Uses(v) {
 			// Strip enclosing parens around Ident.
+			curUse = astutil.UnparenEnclosingCursor(curUse)
 			ek := curUse.ParentEdgeKind()
-			for ek == edge.ParenExpr_X {
-				curUse = curUse.Parent()
-				ek = curUse.ParentEdgeKind()
-			}
 
 			// intervening reports whether cur has an ancestor of
 			// one of the given types that is within the scope of v.
