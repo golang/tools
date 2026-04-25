@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-func basic(s string) bool {
-	s = "reassigned"
+func basic() bool {
+	s := "value"
 	before, _, ok := strings.Cut(s, "=") // want "strings.Index can be simplified using strings.Cut"
 	if ok {
 		print(before)
@@ -14,8 +14,72 @@ func basic(s string) bool {
 	return ok
 }
 
-func basic_contains(s string) bool {
-	s = "reassigned"
+func basic_reassigned1() bool {
+	s := "value"
+	i := strings.Index(s, "=")
+	s = "foo"
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_reassigned2() bool {
+	s := "value"
+	i := strings.Index(s, "=")
+	_ = &(s)
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_reassigned3() bool {
+	s := "value"
+	i := strings.Index(s, "=")
+	(s) = "foo"
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_reassigned4() bool {
+	s := "value"
+	i := strings.Index(s, "=")
+	_ = &(s)
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_reassigned5() bool {
+	s := "value"
+	foo := func() {
+		s = "foo"
+	}
+	i := strings.Index(s, "=")
+	foo()
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_reassigned6() bool {
+	s := "value"
+	i := strings.Index(s, "=")
+	for s = range map[string]struct{}{} {
+	}
+	if i >= 0 {
+		print(s[:i])
+	}
+	return i >= 0
+}
+
+func basic_contains() bool {
+	s := "value"
 	found := strings.Contains(s, "=") // want "strings.Index can be simplified using strings.Contains"
 	return found
 }
