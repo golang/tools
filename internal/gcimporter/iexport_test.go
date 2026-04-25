@@ -15,8 +15,11 @@ import (
 	"go/token"
 	"go/types"
 	"math/big"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -35,8 +38,24 @@ func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, erro
 	return buf.Bytes(), nil
 }
 
+func skipIfModcacheGOROOT(t *testing.T) {
+	t.Helper()
+	modcache := os.Getenv("GOMODCACHE")
+	if modcache == "" {
+		out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		modcache = strings.TrimSpace(string(out))
+	}
+	if modcache != "" && strings.HasPrefix(runtime.GOROOT(), modcache) {
+		t.Skip("skipping test because GOROOT is in GOMODCACHE and cannot be overlaid")
+	}
+}
+
 func TestIExportData_stdlib(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	skipIfModcacheGOROOT(t)
 	if isRace {
 		t.Skipf("stdlib tests take too long in race mode and flake on builders")
 	}
