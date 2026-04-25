@@ -24,7 +24,7 @@ func indexUsedElsewhere(s []int) {
 
 // Index used only for non-slice purpose (no s[i] at all).
 func indexNoSliceAccess(s []int) {
-	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+	for i := len(s) - 1; i >= 0; i-- {
 		println(i)
 	}
 }
