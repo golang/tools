@@ -220,6 +220,7 @@ func (ix *Index) Calls(callee types.Object) iter.Seq[inspector.Cursor] {
 		for cur := range ix.Uses(callee) {
 			// The call may be of the form f() or x.f(),
 			// optionally with parens; ascend from f to call.
+			// See logic in [typesinternal.UsedIdent], to which this is dual.
 			//
 			// It is tempting but wrong to use the first
 			// CallExpr ancestor: we have to make sure the
@@ -230,8 +231,13 @@ func (ix *Index) Calls(callee types.Object) iter.Seq[inspector.Cursor] {
 			// inverse unparen: f -> (f)
 			cur = astutil.UnparenEnclosingCursor(cur)
 
-			// ascend selector: f -> x.f
+			// ascend selector (or qualified identifier): f -> x.f
 			if cur.ParentEdgeKind() == edge.SelectorExpr_Sel {
+				cur = astutil.UnparenEnclosingCursor(cur.Parent())
+			}
+
+			// ascend typeparams: f -> f[T]; f -> f[T1, T2]
+			if ek := cur.ParentEdgeKind(); ek == edge.IndexExpr_X || ek == edge.IndexListExpr_X {
 				cur = astutil.UnparenEnclosingCursor(cur.Parent())
 			}
 
