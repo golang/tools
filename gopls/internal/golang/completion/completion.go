@@ -838,12 +838,11 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 	}
 
 	pos, tkn, lit := c.scanToken(src)
-	if !pos.IsValid() {
-		return nil
-	}
-
 	if ok, lhs := c.inferSelector(src); ok {
 		c.inferredSelectorLHS = lhs
+	}
+	if !pos.IsValid() {
+		return nil
 	}
 
 	fakeIdent := &ast.Ident{Name: lit, NamePos: pos}

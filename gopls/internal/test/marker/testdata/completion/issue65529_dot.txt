@@ -1,0 +1,62 @@
+This test checks that completion works immediately after a dot
+in a selector expression when the AST is broken due to a syntax error.
+See https://github.com/golang/go/issues/65529.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test
+
+go 1.21
+
+-- dot_pkg.go --
+package main
+
+import "math"
+
+func main() {
+	math.Sqrt(, 0)
+	math. //@rank(re"\\.()", "Abs", "Sqrt"),acceptcompletion(re"\\.()", "Abs", dot_pkg)
+}
+
+-- @dot_pkg/dot_pkg.go --
+package main
+
+import "math"
+
+func main() {
+	math.Sqrt(, 0)
+	math.Abs(${1:}) //@rank(re"\\.()", "Abs", "Sqrt"),acceptcompletion(re"\\.()", "Abs", dot_pkg)
+}
+
+-- dot_field.go --
+package main
+
+import "fmt"
+
+type Foo struct {
+	BarInt int
+}
+
+func main() {
+	f := Foo{}
+	fmt.Println(, 0)
+	f. //@rank(re"\\.()", "BarInt"),acceptcompletion(re"\\.()", "BarInt", dot_field)
+}
+
+-- @dot_field/dot_field.go --
+package main
+
+import "fmt"
+
+type Foo struct {
+	BarInt int
+}
+
+func main() {
+	f := Foo{}
+	fmt.Println(, 0)
+	f.BarInt //@rank(re"\\.()", "BarInt"),acceptcompletion(re"\\.()", "BarInt", dot_field)
+}
+
