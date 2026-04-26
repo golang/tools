@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
 	goastutil "golang.org/x/tools/go/ast/astutil"
@@ -244,6 +245,10 @@ type completer struct {
 
 	// surrounding describes the identifier surrounding the position.
 	surrounding *Selection
+
+	// inferredSelectorLHS is the identifier before the dot in a selector
+	// expression, inferred from tokens when the AST is broken.
+	inferredSelectorLHS string
 
 	// inference contains information we've inferred about ideal
 	// candidates such as the candidate's type.
@@ -787,11 +792,40 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 		c.addKeywordCompletions()
 
 	default:
+		if c.tryInferredSelector() {
+			return nil
+		}
 		// fallback to lexical completions
 		return c.lexical(ctx)
 	}
 
 	return nil
+}
+
+// tryInferredSelector attempts to complete members of an inferred selector LHS.
+// It returns true if it successfully added completion items.
+func (c *completer) tryInferredSelector() bool {
+	if c.inferredSelectorLHS == "" {
+		return false
+	}
+	for _, scope := range c.scopes {
+		if scope == nil {
+			continue
+		}
+		obj := scope.Lookup(c.inferredSelectorLHS)
+		if obj == nil {
+			continue
+		}
+		if pkgName, ok := obj.(*types.PkgName); ok {
+			c.packageMembers(pkgName.Imported(), stdScore, nil, c.deepState.enqueue)
+			return true
+		}
+		if typeIsValid(obj.Type()) {
+			c.methodsAndFields(obj.Type(), isVar(obj), nil, c.deepState.enqueue)
+			return true
+		}
+	}
+	return false
 }
 
 // containingIdent returns the *ast.Ident containing pos, if any. It
@@ -808,6 +842,10 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		return nil
 	}
 
+	if ok, lhs := c.inferSelector(src); ok {
+		c.inferredSelectorLHS = lhs
+	}
+
 	fakeIdent := &ast.Ident{Name: lit, NamePos: pos}
 	if _, isBadDecl := c.path[0].(*ast.BadDecl); isBadDecl {
 		// You don't get *ast.Idents at the file level, so look for bad
@@ -822,6 +860,10 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		// Otherwise, manually extract the prefix if our containing token
 		// is a keyword. This improves completion after an "accidental
 		// keyword", e.g. completing to "variance" in "someFunc(var<>)".
+		return fakeIdent
+	} else if tkn == token.IDENT {
+		// If the token is an identifier but was not parsed as an *ast.Ident
+		// (likely due to syntax errors), use the scanned token.
 		return fakeIdent
 	} else if block, ok := c.path[0].(*ast.BlockStmt); ok && len(block.List) != 0 {
 		last := block.List[len(block.List)-1]
@@ -858,6 +900,50 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 			return tknPos, tkn, lit
 		}
 	}
+}
+
+// inferSelector attempts to infer if the cursor is at a selector expression
+// (IDENT . IDENT or IDENT .) in invalid code where the AST is broken.
+// It returns true and the literal of the LHS identifier if detected.
+func (c *completer) inferSelector(src []byte) (bool, string) {
+	offset, err := safetoken.Offset(c.pgf.Tok, c.pos)
+	if err != nil {
+		return false, ""
+	}
+
+	// scanBackIdent scans backward from src[:end] over valid Go identifier
+	// characters (Unicode letters, digits, '_') and returns the start offset.
+	scanBackIdent := func(end int) int {
+		i := end
+		for i > 0 {
+			r, size := utf8.DecodeLastRune(src[:i])
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+				break
+			}
+			i -= size
+		}
+		return i
+	}
+
+	// Skip past the identifier at cursor (if any).
+	beforeIdent := scanBackIdent(offset)
+
+	// Check for a dot.
+	if beforeIdent <= 0 || src[beforeIdent-1] != '.' {
+		return false, ""
+	}
+
+	// Find the identifier before the dot.
+	startOfLHS := scanBackIdent(beforeIdent - 1)
+	if startOfLHS == beforeIdent-1 {
+		return false, ""
+	}
+
+	lhs := string(src[startOfLHS : beforeIdent-1])
+	if !token.IsIdentifier(lhs) {
+		return false, ""
+	}
+	return true, lhs
 }
 
 func sortItems(items []CompletionItem) {

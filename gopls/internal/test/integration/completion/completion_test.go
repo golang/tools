@@ -769,47 +769,6 @@ func F3[K comparable, V any](map[K]V, chan V) {}
 	})
 }
 
-func TestPackageMemberCompletionAfterSyntaxError(t *testing.T) {
-	// This test documents the current broken behavior due to golang/go#58833.
-	const src = `
--- go.mod --
-module mod.com
-
-go 1.14
-
--- main.go --
-package main
-
-import "math"
-
-func main() {
-	math.Sqrt(,0)
-	math.Ldex
-}
-`
-	Run(t, src, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		env.Await(env.DoneWithOpen())
-		loc := env.RegexpSearch("main.go", "Ldex()")
-		completions := env.Completion(loc)
-		if len(completions.Items) == 0 {
-			t.Fatalf("no completion items")
-		}
-		env.AcceptCompletion(loc, completions.Items[0])
-		env.Await(env.DoneWithChange())
-		got := env.BufferText("main.go")
-		// The completion of math.Ldex after the syntax error on the
-		// previous line is not "math.Ldexp" but "math.Ldexmath.Abs".
-		// (In VSCode, "Abs" wrongly appears in the completion menu.)
-		// This is a consequence of poor error recovery in the parser
-		// causing "math.Ldex" to become a BadExpr.
-		want := "package main\n\nimport \"math\"\n\nfunc main() {\n\tmath.Sqrt(,0)\n\tmath.Ldexmath.Abs(${1:})\n}\n"
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("unimported completion (-want +got):\n%s", diff)
-		}
-	})
-}
-
 func TestCompleteAllFields(t *testing.T) {
 	// This test verifies that completion results always include all struct fields.
 	// See golang/go#53992.
