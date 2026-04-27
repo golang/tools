@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/go/analysis/passes/gofmt"
+	"golang.org/x/tools/internal/goplsexport"
+
+	_ "golang.org/x/tools/go/analysis/passes/gofmt"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, gofmt.Analyzer, "a")
+	analysistest.RunWithSuggestedFixes(t, testdata, goplsexport.GofmtAnalyzer, "a")
 }

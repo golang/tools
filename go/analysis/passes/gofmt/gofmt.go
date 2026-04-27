@@ -13,17 +13,23 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/goplsexport"
 )
 
 //go:embed doc.go
 var doc string
 
-var Analyzer = &analysis.Analyzer{
+var analyzer = &analysis.Analyzer{
 	Name:             "gofmt",
 	Doc:              analyzerutil.MustExtractDoc(doc, "gofmt"),
 	URL:              "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/gofmt",
 	Run:              run,
 	RunDespiteErrors: true,
+}
+
+func init() {
+	// Export to gopls until this is a published analyzer.
+	goplsexport.GofmtAnalyzer = analyzer
 }
 
 func run(pass *analysis.Pass) (any, error) {
