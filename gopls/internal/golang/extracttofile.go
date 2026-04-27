@@ -111,16 +111,16 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	end += token.Pos(spaces)
 	pgf.CheckPos(end) // #70553
 	if !(start <= end) {
-		bug.Reportf("start: not before end")
+		return nil, bug.Errorf("start: not before end")
 	}
 	// Inv: end is valid wrt pgf.Tok; env >= start.
 	fileStart := pgf.File.FileStart
 	pgf.CheckPos(fileStart) // #70553
-	if !(0 <= start-fileStart) {
-		bug.Reportf("start: out of bounds")
+	if !(0 <= int(start-fileStart)) {
+		return nil, bug.Errorf("start: out of bounds")
 	}
 	if !(int(end-fileStart) <= len(pgf.Src)) {
-		bug.Reportf("end: out of bounds")
+		return nil, bug.Errorf("end: out of bounds")
 	}
 	// Inv: 0 <= start-fileStart <= end-fileStart <= len(Src).
 	src := pgf.Src[start-fileStart : end-fileStart]
