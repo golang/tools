@@ -541,6 +541,9 @@ is replaced by:
 
 This avoids quadratic memory allocation and improves performance.
 
+No diagnostics are issued in tests, where data sizes are often
+small and asymptotic performance is not a security concern.
+
 The analyzer requires that all references to s before the final uses
 are += operations. To avoid warning about trivial cases, at least one
 must appear within a loop. The variable s must be a local

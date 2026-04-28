@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"maps"
 	"slices"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -99,6 +100,13 @@ nextcand:
 		// This fixes #76983 and is an ad-hoc mitigation of #76476.
 		file := astutil.EnclosingFile(def)
 		if file == lastEditFile && v.Pos() < lastEditEnd {
+			continue
+		}
+		filename := pass.Fset.File(file.FileStart).Name()
+		// Suppress diagnostics in test files, where suggested fixes may increase
+		// verbosity, and performance doesn't matter as much.
+		// See https://go.dev/issue/78613
+		if strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
 
