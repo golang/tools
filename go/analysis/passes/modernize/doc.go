@@ -167,6 +167,9 @@ The fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with
 by Sprintf, making the code more efficient. The suggestion also applies to
 fmt.Sprint and fmt.Sprintln.
 
+Since its fix is not a Pareto improvement, fmtappendf is disabled by default in
+the `go fix` analyzer suite; see golang/go#77581.
+
 # Analyzer forvar
 
 forvar: remove redundant re-declaration of loop variables

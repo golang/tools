@@ -38,7 +38,7 @@ var Suite = []*analysis.Analyzer{
 	// AppendClippedAnalyzer, // not nil-preserving!
 	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
 	embedLitAnalyzer,
-	FmtAppendfAnalyzer,
+	// FmtAppendfAnalyzer, // makes code less clear, see golang/go#77581
 	ForVarAnalyzer,
 	MapsLoopAnalyzer,
 	MinMaxAnalyzer,

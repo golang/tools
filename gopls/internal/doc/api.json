@@ -1480,7 +1480,7 @@
 						},
 						{
 							"Name": "\"fmtappendf\"",
-							"Doc": "replace []byte(fmt.Sprintf) with fmt.Appendf\n\nThe fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with\n`fmt.Appendf(nil, ...)`. This avoids the intermediate allocation of a string\nby Sprintf, making the code more efficient. The suggestion also applies to\nfmt.Sprint and fmt.Sprintln.",
+							"Doc": "replace []byte(fmt.Sprintf) with fmt.Appendf\n\nThe fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with\n`fmt.Appendf(nil, ...)`. This avoids the intermediate allocation of a string\nby Sprintf, making the code more efficient. The suggestion also applies to\nfmt.Sprint and fmt.Sprintln.\n\nSince its fix is not a Pareto improvement, fmtappendf is disabled by default in\nthe `go fix` analyzer suite; see golang/go#77581.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3427,7 +3427,7 @@
 		},
 		{
 			"Name": "fmtappendf",
-			"Doc": "replace []byte(fmt.Sprintf) with fmt.Appendf\n\nThe fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with\n`fmt.Appendf(nil, ...)`. This avoids the intermediate allocation of a string\nby Sprintf, making the code more efficient. The suggestion also applies to\nfmt.Sprint and fmt.Sprintln.",
+			"Doc": "replace []byte(fmt.Sprintf) with fmt.Appendf\n\nThe fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with\n`fmt.Appendf(nil, ...)`. This avoids the intermediate allocation of a string\nby Sprintf, making the code more efficient. The suggestion also applies to\nfmt.Sprint and fmt.Sprintln.\n\nSince its fix is not a Pareto improvement, fmtappendf is disabled by default in\nthe `go fix` analyzer suite; see golang/go#77581.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#fmtappendf",
 			"Default": true
 		},

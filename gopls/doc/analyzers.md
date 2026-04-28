@@ -3201,6 +3201,8 @@ Package documentation: [fillreturns](https://pkg.go.dev/golang.org/x/tools/gopls
 
 The fmtappendf analyzer suggests replacing \`\[]byte(fmt.Sprintf(...))\` with \`fmt.Appendf(nil, ...)\`. This avoids the intermediate allocation of a string by Sprintf, making the code more efficient. The suggestion also applies to fmt.Sprint and fmt.Sprintln.
 
+Since its fix is not a Pareto improvement, fmtappendf is disabled by default in the \`go fix\` analyzer suite; see golang/go#77581.
+
 
 Default: on.
 
