@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -179,7 +180,19 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 			//     _, v := range slices.Backward(s)      v
 			sliceStr := astutil.Format(pass.Fset, sliceExpr)
 			prefix, edits := refactor.AddImport(info, file, "slices", "slices", "Backward", loop.Pos())
-			elemName := freshName(info, index, info.Scopes[loop], loop.Pos(), bodyCur, bodyCur, token.NoPos, "v")
+			// A simple heuristic for choosing the name of the value variable: attempt
+			// to take the singular form of the of the variable used in the call to
+			// slices.Backward by trimming any suffix "s". If that fails, use the
+			// first character of that variable. If that fails, fallback to "v".
+			s := strings.TrimSuffix(sliceStr, "s")
+			if s == sliceStr {
+				s = sliceStr[0:1]
+			}
+			if s == "" || s == sliceStr {
+				s = "v"
+			}
+
+			elemName := freshName(info, index, info.Scopes[loop], loop.Pos(), bodyCur, bodyCur, token.NoPos, s)
 
 			// Replace each s[i] with elemName.
 			for _, sx := range sliceIndexes {
@@ -190,17 +203,20 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				})
 			}
 
-			// Replace the loop header with a range over slices.Backward.
-			var header string
-			if otherUses == 0 && len(sliceIndexes) > 0 {
+			// Replace the loop header with a range over slices.Backward. In
+			// well-typed code, at least one of the index or value variables must be
+			// referenced inside the loop body (otherUses + sliceIndexes > 0).
+			var vars string
+			if otherUses == 0 { // sliceIndexes > 0
 				// All uses of i are s[i]; drop the index variable.
-				header = fmt.Sprintf("_, %s := range %sBackward(%s)",
-					elemName, prefix, sliceStr)
-			} else {
-				// i is used for other purposes; keep both index and value.
-				header = fmt.Sprintf("%s, %s := range %sBackward(%s)",
-					indexIdent.Name, elemName, prefix, sliceStr)
+				vars = fmt.Sprintf("_, %s", elemName)
+			} else if len(sliceIndexes) == 0 { // otherUses > 0
+				// Index i is not used in any s[i] expressions; drop the value variable.
+				vars = indexIdent.Name
+			} else { // otherUses > 0 && sliceIndexes > 0, keep both variables.
+				vars = fmt.Sprintf("%s, %s", indexIdent.Name, elemName)
 			}
+			header := fmt.Sprintf("%s := range %sBackward(%s)", vars, prefix, sliceStr)
 			edits = append(edits, analysis.TextEdit{
 				Pos:     loop.Init.Pos(),
 				End:     loop.Post.End(),
