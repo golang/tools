@@ -128,6 +128,43 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	if suggestion == nil {
 		return nil, nil
 	}
+
+	// Refine #68818 so we learn which values of 'fix'
+	// break the assertion in suggestedFixToDocumentChange.
+	for _, edit := range suggestion.TextEdits {
+		if fixFset.File(edit.Pos) == nil {
+			switch fix {
+			case fillstruct.FixCategory:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractFunction:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractMethod:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractVariable:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractVariableAll:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInlineCall:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInlineVariable:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInvertIfCondition:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixSplitLines:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixJoinLines:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixCreateUndeclared:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixMissingInterfaceMethods:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixMissingCalledFunction:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			}
+			break
+		}
+	}
+
 	return suggestedFixToDocumentChange(ctx, snapshot, fixFset, suggestion)
 }
 
@@ -142,7 +179,7 @@ func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot,
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
 		if tokFile == nil {
-			return nil, bug.Errorf("no file for edit position")
+			return nil, bug.Errorf("no file for edit position (#68818)")
 		}
 		end := edit.End
 		if !end.IsValid() {
