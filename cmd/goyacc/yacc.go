@@ -107,7 +107,7 @@ const (
 )
 
 // output parser flags
-const yyFlag = -1000
+const yyFlag = math.MinInt16
 
 // parse tokens
 const (
@@ -132,7 +132,7 @@ const ENDFILE = 0
 const EMPTY = 1
 const WHOKNOWS = 0
 const OK = 1
-const NOMORE = -1000
+const NOMORE = math.MinInt16
 
 // macros for getting associativity and precedence levels
 func ASSOC(i int) int { return i & 3 }
@@ -2784,7 +2784,7 @@ func others() {
 	}
 	arout("R2", temp1, nprod)
 
-	aryfil(temp1, nstate, -1000)
+	aryfil(temp1, nstate, math.MinInt16)
 	for i = 0; i <= ntokens; i++ {
 		for j := tstates[i]; j != 0; j = mstates[j] {
 			temp1[j] = i
@@ -3257,7 +3257,7 @@ func $$NewParser() $$Parser {
 	return &$$ParserImpl{}
 }
 
-const $$Flag = -1000
+const $$Flag = -32768
 
 func $$Tokname(c int) string {
 	if c >= 1 && c-1 < len($$Toknames) {
