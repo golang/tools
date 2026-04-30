@@ -35,7 +35,6 @@ import (
 // Editor is a fake client editor.  It keeps track of client state and can be
 // used for writing LSP tests.
 type Editor struct {
-
 	// Server, client, and sandbox are concurrency safe and written only
 	// at construction time, so do not require synchronization.
 	Server     protocol.Server
@@ -1168,7 +1167,7 @@ func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		// command.Interface, but that should only be done if we're consolidating
 		// this part of the tsprotocol generation.
 		//
-		// TODO(rfindley): we could also improve this by having ExecuteCommand return
+		// TODO(hxjiang): we could also improve this by having ExecuteCommand return
 		// a json.RawMessage, similar to what we do with arguments.
 		data, err := json.Marshal(response)
 		if err != nil {

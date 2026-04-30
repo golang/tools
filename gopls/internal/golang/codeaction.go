@@ -897,17 +897,15 @@ func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, remo
 // field input types required by at least one of these alternative forms.
 //
 // If no forms are provided, the function panics.
-func supportsDialog(req *codeActionsRequest, forms ...[]protocol.FormField) bool {
+func supportsDialog(options settings.ClientOptions, forms ...[]protocol.FormField) bool {
 	if len(forms) == 0 {
 		panic("supportsDialog called with empty forms")
 	}
 
-	supported := req.snapshot.Options().ClientOptions.SupportedInteractiveInputTypes
-
 	// Ensure that at least one form does not depend on unsupported types.
 	for _, form := range forms {
 		if !slices.ContainsFunc(form, func(field protocol.FormField) bool {
-			return !supported[formFieldInputType(field.Type)]
+			return !options.SupportedInteractiveInputTypes[formFieldInputType(field.Type)]
 		}) {
 			return true // form is free of unsupported types
 		}
@@ -947,7 +945,7 @@ func formFieldInputType(typ any) settings.InteractiveInputType {
 func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) error {
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, false) {
 		add := ""
-		if !supportsDialog(req, addTagsForm) {
+		if !supportsDialog(req.snapshot.Options().ClientOptions, addTagsForm) {
 			add = "json" // default choice
 		}
 		cmdAdd := command.NewModifyTagsCommand("Add struct tags", command.ModifyTagsArgs{
@@ -965,7 +963,7 @@ func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) 
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsRequest) error {
 	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, true) {
-		clear := !supportsDialog(req, removeTagsForm) // clear the entry if there is no dialog
+		clear := !supportsDialog(req.snapshot.Options().ClientOptions, removeTagsForm) // clear the entry if there is no dialog
 		cmdRemove := command.NewModifyTagsCommand("Remove struct tags", command.ModifyTagsArgs{
 			Modification: "remove",
 			URI:          req.loc.URI,
@@ -984,7 +982,7 @@ func refactorRewriteImplementInterface(_ context.Context, req *codeActionsReques
 	// The "Implement Interface" interaction requires either lazy enum support
 	// (for rich workspace symbol search) or at least string support (as a fallback
 	// text prompt). We disable the action if the client supports neither.
-	if !supportsDialog(req, implementInterfaceFormLazyEnum, implementInterfaceFormString) {
+	if !supportsDialog(req.snapshot.Options().ClientOptions, implementInterfaceFormLazyEnum, implementInterfaceFormString) {
 		return nil
 	}
 

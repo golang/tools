@@ -91,26 +91,39 @@ var removeTagsForm = []protocol.FormField{
 	},
 }
 
-// ResolveComamnd is called indirectly from WorkspaceCommand(), explained above.
-func ResolveCommand(ctx context.Context, param *protocol.ExecuteCommandParams, supported map[settings.InteractiveInputType]bool) (*protocol.ExecuteCommandParams, error) {
-	switch param.Command {
+// ResolveCommand implements the interactive resolution step for workspace commands.
+// It inspects the command name within the provided [protocol.ExecuteCommandParams]
+// and delegates to the appropriate command-specific resolver (e.g., modify_tags,
+// implement_interface).
+//
+// For full details on the interactive protocol, the multi-step handshake, and the
+// conditions under which the parameter is modified or returned as-is, see the
+// official documentation on the protocol interface and [protocol.Server.ResolveCommand].
+func ResolveCommand(ctx context.Context, params *protocol.ExecuteCommandParams, options settings.ClientOptions) (*protocol.ExecuteCommandParams, error) {
+	switch params.Command {
 	case "gopls.modify_tags":
-		resolveModifyTags(param)
+		if err := resolveModifyTags(options, params); err != nil {
+			return nil, err
+		}
 	case "gopls.implement_interface":
-		resolveImplementInterface(supported, param)
-	default:
-		return nil, fmt.Errorf("ResolveCommand(%s) not implement", param.Command)
+		if err := resolveImplementInterface(options, params); err != nil {
+			return nil, err
+		}
 	}
-	return param, nil
+	return params, nil
 }
 
-func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
+func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
 	var a0 command.ModifyTagsArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
 		return err
 	}
 	switch a0.Modification {
 	case "add":
+		if !supportsDialog(options, addTagsForm) {
+			return nil
+		}
+
 		// First call, return the form.
 		if len(param.FormAnswers) == 0 {
 			param.FormFields = addTagsForm
@@ -139,6 +152,10 @@ func resolveModifyTags(param *protocol.ExecuteCommandParams) error {
 		param.FormFields = nil
 		return nil
 	case "remove":
+		if !supportsDialog(options, removeTagsForm) {
+			return nil
+		}
+
 		// First call, return the form
 		if len(param.FormAnswers) == 0 {
 			// TODO? show the user the current list of tags?
@@ -196,21 +213,21 @@ var implementInterfaceFormString = []protocol.FormField{
 	},
 }
 
-func resolveImplementInterface(supported map[settings.InteractiveInputType]bool, param *protocol.ExecuteCommandParams) error {
+func resolveImplementInterface(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
 	var a0 command.ImplementInterfaceArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
 		return err
 	}
 
 	var form []protocol.FormField
-	if ok := supported[settings.InteractiveInputTypeLazyEnum]; ok {
+	if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeLazyEnum]; ok {
 		form = implementInterfaceFormLazyEnum
-	} else if ok := supported[settings.InteractiveInputTypeString]; ok {
+	} else if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeString]; ok {
 		form = implementInterfaceFormString
 	} else {
 		// This should not happen, as the gopls should not offer such code
 		// action if the language client does not support any kind above.
-		return fmt.Errorf("internal error: unsupported interactive input types: %v", supported)
+		return fmt.Errorf("internal error: unsupported interactive input types: %v", options.SupportedInteractiveInputTypes)
 	}
 
 	// First call, return the empty form.
@@ -226,7 +243,7 @@ func resolveImplementInterface(supported map[settings.InteractiveInputType]bool,
 
 	// Gopls only validates the syntax of the string; it does not verify that
 	// the package or interface actually exists in the workspace.
-	var validInterface = func(ifaceStr string) error {
+	validInterface := func(ifaceStr string) error {
 		if ifaceStr == "error" {
 			return nil
 		}

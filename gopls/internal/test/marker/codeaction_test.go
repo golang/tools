@@ -76,12 +76,7 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 		return
 	}
 
-	var changes []protocol.DocumentChange
-	if namedArg(mark, "form0", "") != "" {
-		changes, err = applyCodeActionForm(mark, kind, action)
-	} else {
-		changes, err = applyCodeAction(mark.run.env, action)
-	}
+	changes, err := applyCodeAction(mark, action)
 	if err != nil {
 		if !wantErr.empty() {
 			wantErr.checkErr(mark, err)
@@ -126,98 +121,6 @@ func exactlyOneNamedArg(mark marker, names ...string) bool {
 	return true
 }
 
-func applyCodeActionForm(mark marker, _ string, action *protocol.CodeAction) ([]protocol.DocumentChange, error) {
-	// resolveCommand simulates how a client (like vscode-go) resolves interactive
-	// commands using a tunneling mechanism.
-	//
-	// Because some clients cannot send custom JSON-RPC methods directly, they tunnel
-	// a "command/resolve" request via the standard "workspace/executeCommand"
-	// method (specifically using the "gopls.lsp" command). This function replicates
-	// that JSON tunneling rather than calling [protocol.Server.ResolveCommand]
-	// directly, ensuring the actual over-the-wire pipeline is tested.
-	resolveCommand := func(unresolved *protocol.ExecuteCommandParams) (resolved *protocol.ExecuteCommandParams, err error) {
-		unresolvedJSON, err := json.Marshal(unresolved)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal unresolved command: %v", err)
-		}
-
-		lspArgJSON, err := json.Marshal(command.LSPArgs{
-			Method: "command/resolve",
-			Param:  unresolvedJSON,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal LSPArgs wrapper: %v", err)
-		}
-
-		lspCmd := &protocol.ExecuteCommandParams{
-			Command:   "gopls.lsp",
-			Arguments: []json.RawMessage{lspArgJSON},
-		}
-
-		rawResponse, err := mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, lspCmd)
-		if err != nil {
-			return nil, fmt.Errorf("server.ExecuteCommand failed: %v", err)
-		}
-
-		responseJSON, err := json.Marshal(rawResponse)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal server response: %v", err)
-		}
-
-		if err := json.Unmarshal(responseJSON, &resolved); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal resolved command: %v", err)
-		}
-
-		return resolved, nil
-	}
-
-	cmd, err := resolveCommand(&protocol.ExecuteCommandParams{
-		Command:   action.Command.Command,
-		Arguments: action.Command.Arguments,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// now send the same command with a filled in "formAnswers" field
-	for _, nm := range []string{"form0", "form1"} {
-		if fm, ok := mark.note.NamedArgs[nm]; ok {
-			buf, err := json.Marshal(fm)
-			if err != nil || (false && len(buf) == 0) {
-				return nil, fmt.Errorf("failed to marshal string %s, %v", fm, err)
-			}
-			// TODO(hxjiang): support other kind of inputs.
-			cmd.FormAnswers = append(cmd.FormAnswers, fm.(string))
-		} else {
-			break // only want some of the form slots
-		}
-	}
-
-	cmd, err = resolveCommand(cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(cmd.FormFields) > 0 {
-		return nil, fmt.Errorf("got %v question after providing answers, expect 0", len(cmd.FormFields))
-	}
-
-	// catch the changes from the forthcoming ExecuteCommand
-	var changes []protocol.DocumentChange
-	restore := mark.run.env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
-		changes = append(changes, wsedit.DocumentChanges...)
-		return nil
-	})
-	defer restore()
-
-	if _, err = mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, cmd); err != nil {
-		return nil, fmt.Errorf("third ExecuteCommand failed %v", err)
-	}
-	// the edits were a side effect captured by the ApplyEditHandler
-
-	return changes, nil
-}
-
 // not used for @codeaction, but codeactions
 
 // codeAction executes a textDocument/codeAction request for the specified
@@ -227,16 +130,16 @@ func applyCodeActionForm(mark marker, _ string, action *protocol.CodeAction) ([]
 // The resulting map contains resulting file contents after the code action is
 // applied. Currently, this function does not support code actions that return
 // edits directly; it only supports code action commands.
-func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) (map[string][]byte, error) {
-	action, err := resolveCodeAction(env, uri, rng, kind, diag)
+func codeAction(mark marker, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) (map[string][]byte, error) {
+	action, err := resolveCodeAction(mark.run.env, uri, rng, kind, diag)
 	if err != nil {
 		return nil, err
 	}
-	changes, err := applyCodeAction(env, action)
+	changes, err := applyCodeAction(mark, action)
 	if err != nil {
 		return nil, err
 	}
-	return changedFiles(env, changes)
+	return changedFiles(mark.run.env, changes)
 }
 
 // resolveCodeAction resolves the code action specified by the given location,
@@ -250,7 +153,7 @@ func resolveCodeAction(env *integration.Env, uri protocol.DocumentURI, rng proto
 		Range:        rng,
 		Context: protocol.CodeActionContext{
 			Only: []protocol.CodeActionKind{protocol.Empty}, // => all
-			//TriggerKind: protocol.CodeActionTriggerKind(1 /*Invoked*/),
+			// TriggerKind: protocol.CodeActionTriggerKind(1 /*Invoked*/),
 		},
 	}
 	if diag != nil {
@@ -301,22 +204,22 @@ func resolveCodeAction(env *integration.Env, uri protocol.DocumentURI, rng proto
 
 // applyCodeAction applies the given code action, and captures the resulting
 // document changes. This is not called for forms.
-func applyCodeAction(env *integration.Env, action *protocol.CodeAction) ([]protocol.DocumentChange, error) {
+func applyCodeAction(mark marker, action *protocol.CodeAction) ([]protocol.DocumentChange, error) {
+	if action.Edit == nil && action.Command == nil {
+		return nil, fmt.Errorf("bad action: the server returned a CodeAction %q with no Edit and no Command", action.Title)
+	}
+
 	// Collect any server-initiated changes created by workspace/applyEdit.
 	//
 	// We set up this handler immediately, not right before executing the code
 	// action command, so we can assert that neither the codeAction request nor
 	// codeAction resolve request cause edits as a side effect (golang/go#71405).
 	var changes []protocol.DocumentChange
-	restore := env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+	restore := mark.run.env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
 		changes = append(changes, wsedit.DocumentChanges...)
 		return nil
 	})
 	defer restore()
-
-	if action.Edit == nil && action.Command == nil {
-		panic("bad action")
-	}
 
 	// Apply the codeAction.
 	//
@@ -329,11 +232,11 @@ func applyCodeAction(env *integration.Env, action *protocol.CodeAction) ([]proto
 	// assert that actions return one or the other.
 	if action.Edit != nil {
 		if len(action.Edit.Changes) > 0 {
-			env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
+			mark.run.env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
 		}
 		if action.Edit.DocumentChanges != nil {
 			if action.Command != nil {
-				env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
+				mark.run.env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
 			}
 			return action.Edit.DocumentChanges, nil
 		}
@@ -353,10 +256,83 @@ func applyCodeAction(env *integration.Env, action *protocol.CodeAction) ([]proto
 		// whose WorkspaceEditFunc hook temporarily gathers the edits
 		// instead of applying them.
 
-		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+		// resolveCommand simulates how a client (like vscode-go) resolves interactive
+		// commands using a tunneling mechanism.
+		//
+		// Because some clients cannot send custom JSON-RPC methods directly, they tunnel
+		// a "command/resolve" request via the standard "workspace/executeCommand"
+		// method (specifically using the "gopls.lsp" command). This function replicates
+		// that JSON tunneling rather than calling [protocol.Server.ResolveCommand]
+		// directly, ensuring the actual over-the-wire pipeline is tested.
+		resolveCommand := func(unresolved *protocol.ExecuteCommandParams) (resolved *protocol.ExecuteCommandParams, err error) {
+			unresolvedJSON, err := json.Marshal(unresolved)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal unresolved command: %v", err)
+			}
+
+			lspArgJSON, err := json.Marshal(command.LSPArgs{
+				Method: "command/resolve",
+				Param:  unresolvedJSON,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal LSPArgs wrapper: %v", err)
+			}
+
+			lspCmd := &protocol.ExecuteCommandParams{
+				Command:   "gopls.lsp",
+				Arguments: []json.RawMessage{lspArgJSON},
+			}
+
+			rawResponse, err := mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, lspCmd)
+			if err != nil {
+				return nil, fmt.Errorf("server.ExecuteCommand failed: %v", err)
+			}
+
+			responseJSON, err := json.Marshal(rawResponse)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal server response: %v", err)
+			}
+
+			if err := json.Unmarshal(responseJSON, &resolved); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal resolved command: %v", err)
+			}
+
+			return resolved, nil
+		}
+
+		cmd, err := resolveCommand(&protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,
 			Arguments: action.Command.Arguments,
-		}); err != nil {
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Check if the command interactivity is required.
+		if len(cmd.FormFields) > 0 {
+			// Fill in "formAnswers" field from named arg "formX".
+			for _, name := range []string{"form0", "form1"} { // Test forms have at most two fields.
+				arg, ok := mark.note.NamedArgs[name]
+				if !ok {
+					break // No more answers provided by the test.
+				}
+
+				// TODO(hxjiang): support other kind of inputs.
+				cmd.FormAnswers = append(cmd.FormAnswers, arg.(string))
+			}
+
+			// Re-resolve command with the "formAnswers" field filled.
+			cmd, err = resolveCommand(cmd)
+			if err != nil {
+				return nil, err
+			}
+
+			if len(cmd.FormFields) > 0 {
+				return nil, fmt.Errorf("got %v question after providing answers, expect 0", len(cmd.FormFields))
+			}
+		}
+
+		if _, err := mark.run.env.Editor.Server.ExecuteCommand(mark.run.env.Ctx, cmd); err != nil {
 			return nil, err
 		}
 		return changes, nil // populated as a side effect of ExecuteCommand
