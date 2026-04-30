@@ -801,7 +801,7 @@ form.
 
 When the selection is within an `if`/`else` statement that is not
 followed by `else if`, gopls offers a code action to invert the
-statement, negating the condition and swapping the `if` and and `else`
+statement, negating the condition and swapping the `if` and `else`
 blocks.
 
 ![Before "Invert if condition"](../assets/invert-if-before.png)
