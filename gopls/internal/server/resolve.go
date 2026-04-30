@@ -12,5 +12,5 @@ import (
 )
 
 func (s *server) ResolveCommand(ctx context.Context, param *protocol.ExecuteCommandParams) (*protocol.ExecuteCommandParams, error) {
-	return golang.ResolveCommand(ctx, param, s.Options().ClientOptions.SupportedInteractiveInputTypes)
+	return golang.ResolveCommand(ctx, param, s.Options().ClientOptions)
 }

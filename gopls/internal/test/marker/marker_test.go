@@ -2307,7 +2307,7 @@ func quickfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golde
 	}
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
+	changed, err := codeAction(mark, loc.URI, diag.Range, "quickfix", &diag)
 	if err != nil {
 		mark.errorf("quickfix failed: %v. (Use @quickfixerr for expected errors.)", err)
 		return
@@ -2327,7 +2327,7 @@ func quickfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wa
 	}
 
 	// Apply the fix it suggests.
-	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
+	_, err := codeAction(mark, loc.URI, diag.Range, "quickfix", &diag)
 	wantErr.checkErr(mark, err)
 }
 
