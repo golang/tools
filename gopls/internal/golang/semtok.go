@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"go/types"
 	"log"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -82,12 +83,21 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 		start:          start,
 		end:            end,
 	}
+
 	tv.visit()
+
+	semanticTokenModifiers := snapshot.Options().EnabledSemanticTokenModifiers()
+	if snapshot.IsBuiltin(fh.URI()) {
+		// The shadowing modifier is not appropriate for the fake builtin.go file.
+		semanticTokenModifiers = maps.Clone(semanticTokenModifiers)
+		semanticTokenModifiers[semtok.ModShadowing] = false
+	}
+
 	return &protocol.SemanticTokens{
 		Data: semtok.Encode(
 			tv.tokens,
 			snapshot.Options().EnabledSemanticTokenTypes(),
-			snapshot.Options().EnabledSemanticTokenModifiers()),
+			semanticTokenModifiers),
 		ResultID: time.Now().String(), // for delta requests, but we've never seen any
 	}, nil
 }
@@ -723,8 +733,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 		return
 	}
 
-	// The shadowing check is not appropriate for the fake builtin.go file.
-	if tv.isShadowing(id) && tv.metadata.PkgPath != "builtin" {
+	if tv.isShadowing(id) {
 		mods = append(mods, semtok.ModShadowing)
 	}
 
