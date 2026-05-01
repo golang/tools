@@ -59,7 +59,7 @@ type ConnectionOptions struct {
 // Connection is bidirectional; it does not have a designated server or client
 // end.
 type Connection struct {
-	seq int64 // must only be accessed using atomic operations
+	seq atomic.Int64 // must only be accessed using atomic operations
 
 	stateMu sync.Mutex
 	state   inFlightState // accessed only in updateInFlight
@@ -330,7 +330,7 @@ func (c *Connection) Notify(ctx context.Context, method string, params any) (err
 // If sending the call failed, the response will be ready and have the error in it.
 func (c *Connection) Call(ctx context.Context, method string, params any) *AsyncCall {
 	// Generate a new request identifier.
-	id := Int64ID(atomic.AddInt64(&c.seq, 1))
+	id := Int64ID(c.seq.Add(1))
 
 	ac := &AsyncCall{
 		id:    id,

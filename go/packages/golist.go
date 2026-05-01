@@ -207,11 +207,10 @@ func goListDriver(cfg *Config, runner *gocommand.Runner, overlay string, pattern
 	// doesn't exist.
 extractQueries:
 	for _, pattern := range patterns {
-		eqidx := strings.Index(pattern, "=")
-		if eqidx < 0 {
+		query, value, ok := strings.Cut(pattern, "=")
+		if !ok {
 			restPatterns = append(restPatterns, pattern)
 		} else {
-			query, value := pattern[:eqidx], pattern[eqidx+len("="):]
 			switch query {
 			case "file":
 				containFiles = append(containFiles, value)

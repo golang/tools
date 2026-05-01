@@ -396,7 +396,7 @@ func TestLoadSamePackageMultipleChunks(t *testing.T) {
 	var files []string
 	files = append(files, defFile)
 
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		fillerPath := filepath.Join(filepath.Dir(defFile), fmt.Sprintf("filler_%03d.go", i))
 		if err := os.WriteFile(fillerPath, []byte("package a\n"), 0644); err != nil {
 			t.Fatal(err)

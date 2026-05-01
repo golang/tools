@@ -755,11 +755,9 @@ type K = StillBad[string]
 	for _, inst := range insts {
 		var wg sync.WaitGroup
 		for range 2 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				_ = types.NewMethodSet(inst)
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -1051,14 +1049,12 @@ type S struct {
 	}
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := check("p", pSrc, importer)
 			if err != nil {
 				t.Errorf("check failed: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
