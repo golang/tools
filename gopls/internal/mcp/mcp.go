@@ -6,13 +6,16 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -59,6 +62,8 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 	}
 	defer listener.Close()
 
+	handler := HTTPHandler(sessions, isDaemon, rootsHandler)
+
 	// TODO(hxjiang): expose the MCP server address to the LSP client.
 	if isDaemon {
 		log.Printf("Gopls MCP daemon: listening on address %s...", listener.Addr())
@@ -66,7 +71,7 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 	defer log.Printf("Gopls MCP server: exiting")
 
 	svr := http.Server{
-		Handler: HTTPHandler(sessions, isDaemon, rootsHandler),
+		Handler: handler,
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -95,6 +100,18 @@ func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Ser
 
 }
 
+// newSecret generates a cryptographically random URL-safe secret token.
+// This prevents local processes from connecting to the MCP server and
+// exfiltrating source code, matching the approach used by the gopls
+// web server (see server.go).
+func newSecret() string {
+	token := make([]byte, 16)
+	if _, err := rand.Read(token); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(token)
+}
+
 func HTTPHandler(sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRootsResult, error)) http.Handler {
 	var (
 		mu          sync.Mutex                         // lock for mcpHandlers.
@@ -102,10 +119,18 @@ func HTTPHandler(sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRo
 	)
 	mux := http.NewServeMux()
 
-	// In daemon mode, gopls serves mcp server at ADDRESS/sessions/$SESSIONID.
-	// Otherwise, gopls serves mcp server at ADDRESS.
+	// Use a random secret as the URL prefix to prevent unauthorized access.
+	// Without this, any local process (or a remote attacker via DNS rebinding)
+	// could connect to the MCP server and read source code from the workspace.
+	secret := newSecret()
+	log.Printf("Gopls MCP server: secret URL prefix: /%s/", secret)
+
+	// In daemon mode, gopls serves mcp server at ADDRESS/SECRET/sessions/$SESSIONID.
+	// Otherwise, gopls serves mcp server at ADDRESS/SECRET/.
+	// The secret prefix prevents unauthorized access from other local
+	// processes and mitigates DNS rebinding attacks.
 	if isDaemon {
-		mux.HandleFunc("/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/"+secret+"/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
 			sessionID := r.PathValue("id")
 
 			mu.Lock()
@@ -128,8 +153,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRo
 			handler.ServeHTTP(w, r)
 		})
 	} else {
-		// TODO(hxjiang): should gopls serve only at a specific path?
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/"+secret+"/", func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			// When not in daemon mode, gopls has at most one LSP session.
 			_, handler, ok := moremaps.Arbitrary(mcpHandlers)
@@ -157,7 +181,23 @@ func HTTPHandler(sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRo
 		// close their transports). Otherwise, we leak JSON-RPC goroutines.
 		delete(mcpHandlers, sessionID)
 	})
-	return mux
+
+	// Wrap the mux with Host header validation to mitigate DNS rebinding.
+	// Only allow requests with localhost Host headers.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if i := strings.LastIndex(host, ":"); i >= 0 {
+			host = host[:i]
+		}
+		switch host {
+		case "localhost", "127.0.0.1", "[::1]", "::1":
+			// OK
+		default:
+			http.Error(w, "forbidden: non-localhost Host header", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func NewServer(session *cache.Session, lspServer protocol.Server, rootsHandler func(*mcp.ListRootsResult, error)) *mcp.Server {
