@@ -41,7 +41,7 @@ to be executed by the server, which may have an effect such as:
 - changing the state of the server; or
 - requesting that the client open a document.
 
-The -kind and and -title flags filter the list of actions.
+The -kind and -title flags filter the list of actions.
 
 The -kind flag specifies a comma-separated list of LSP CodeAction kinds.
 Only actions of these kinds will be requested from the server.

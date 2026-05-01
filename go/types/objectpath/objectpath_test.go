@@ -488,7 +488,7 @@ func TestIssue70418(t *testing.T) {
 	// objectpath would inspect the methods of I:
 	// - First we see I.A, which leads to Anon, to F, which is marked as seen.
 	// - Second we see I.F, embedded via alias Anon.
-	//   Since we've already seen F, we break ouf the the interface method loop.
+	//   Since we've already seen F, we break out of the interface method loop.
 	// - Third, we fail to visit I.Z.
 	// The solution is to skip only I.F, not the rest of the interface.
 

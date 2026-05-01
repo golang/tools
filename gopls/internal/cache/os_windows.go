@@ -47,7 +47,7 @@ func windowsCheckPathValid(path string) error {
 	}
 	longstr := syscall.UTF16ToString(long)
 
-	// Check that the the path -> short -> long roundtrip was idempotent.
+	// Check that the path -> short -> long roundtrip was idempotent.
 	isRoot := func(p string) bool {
 		return p[len(p)-1] == filepath.Separator
 	}

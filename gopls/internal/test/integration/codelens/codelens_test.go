@@ -385,7 +385,7 @@ func Foo() {
 }
 `
 	Run(t, workspace, func(t *testing.T, env *Env) {
-		// Open the file. We have a nonexistant symbol that will break cgo processing.
+		// Open the file. We have a nonexistent symbol that will break cgo processing.
 		env.OpenFile("cgo.go")
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("cgo.go", ``), WithMessage("go list failed to return CompiledGoFiles")),

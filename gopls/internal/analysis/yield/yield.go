@@ -461,7 +461,7 @@ func (s state) update(num int, mask, sense bool) state {
 
 // -- SSA CFG as graph.Graph --
 
-// fnGraph adapts an [ssa.Function] to to the [graph.Graph] interface
+// fnGraph adapts an [ssa.Function] to the [graph.Graph] interface
 // required by the flow analysis framework.
 // Nodes are labelled by their block indices and connected by the
 // successor relation.
