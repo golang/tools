@@ -55,6 +55,16 @@ const zero = 0
 type K struct{ L }
 type L []int
 
+type T struct {
+	a int
+	b int
+	U
+}
+
+type U struct {
+	x int
+}
+
 var (
 	_ = A{B: B{b: 1}}                         // want "embedded field type can be removed from struct literal"
 	_ = A{a: 1, B: B{b: 1, C: C{c: 1}}}       // want "embedded field type can be removed from struct literal"
@@ -70,8 +80,9 @@ var (
 			b: 1,
 		},
 	}
-	// empty composite lit
-	_ = A{a: 1, B: B{}} // want "embedded field type can be removed from struct literal"
+
+	_ = A{a: 1, B: B{}} // nope: empty composite lit
+
 	// don't suggest a fix if it's too tricky to preserve comments
 	_ = A{ // nope: comments within range to delete
 		B: B{ // one
@@ -90,6 +101,78 @@ var (
 		},
 		a: 2,
 	}
+	_ = A{B: /* comment */ B{b: 1}}       // nope: comment in range to delete
 	_ = A{B: B{b: 1} /* comment */, a: 2} // want "embedded field type can be removed from struct literal"
 	_ = K{L: L{zero: 0}}                  // nope: cannot promote slice elements
+	_ = K{L: L{0: 100}}                   // nope: cannot promote slice elements
 )
+
+func _() {
+	t1 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t1.b = 2
+
+	var t2 A
+	t2 = A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t2.b = 2
+
+	var t3 = A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t3.b = 2
+
+	t4 := T{1, 2, U{x: 3}} // nope: can't mix keyed and unkeyed elements
+	t4.x = 4
+
+	t5 := A{a: 1}
+	_ = t5 // nope: intervening statement
+	t5.b = 2
+
+	t6 := A{a: 1} // nope: value assigned depends on t6 itself
+	t6.b = t6.a + 1
+
+	t7 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t7.b = foo()
+
+	// Only apply edits from pattern A first even though both patterns apply.
+	t8 := A{ // want "embedded field type can be removed from struct literal"
+		B: B{b: 1},
+	}
+	t8.a = 2
+
+	t9 := A{} // nope: multiple assignments not yet supported
+	t9.a, t9.b = 1, 2
+
+	t10 := A{} // want "embedded field assignment can be moved to struct literal"
+	t10.a = 1  // this comment is preserved
+	t10.b = 2  // this one too
+
+	t11 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t11.b = 2
+	t11.c = 3
+
+	t12 := A{} // want "embedded field assignment can be moved to struct literal"
+	t12.B = B{
+		b: 1, // this comment is preserved
+	}
+
+	t13 := A{} // want "embedded field assignment can be moved to struct literal"
+	t13.a = 1
+	// comment between assignments
+	t13.b = 2
+
+	t14 := A{} // want "embedded field assignment can be moved to struct literal"
+	t14.a = 1
+	t14.b =
+		foo() +
+			1
+
+	t15 := A{a: 1} // nope: += in field assignment
+	t15.b += 2
+
+	t16 := A{ // want "embedded field assignment can be moved to struct literal"
+		a: 1, // comment, with a comma
+	}
+	t16.b = 2
+}
+
+func foo() int {
+	return 0
+}
