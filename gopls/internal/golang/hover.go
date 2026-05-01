@@ -1372,8 +1372,8 @@ func chooseDocComment(pgf *parsego.File, decl ast.Decl, spec ast.Spec, field *as
 			return cmp.Compare(safetoken.Line(tokFile, cg.End()), line-1)
 		}
 		assignLine := safetoken.Line(tokFile, assign.Pos())
-		i, _ := slices.BinarySearchFunc(pgf.File.Comments, assignLine, compare)
-		if i >= 0 && i < len(pgf.File.Comments) {
+		i, found := slices.BinarySearchFunc(pgf.File.Comments, assignLine, compare)
+		if found {
 			// The comment must start at the beginning of the line, otherwise it may
 			// be a comment on a previous assignment.
 			comment := pgf.File.Comments[i]
