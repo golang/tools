@@ -81,6 +81,7 @@ func loadNetHTTP(tb testing.TB) *packages.Package {
 }
 
 func BenchmarkIndex(b *testing.B) {
+	testenv.NeedsGoPackages(b)
 	// Load net/http, a large package, and find calls to net.Dial.
 	//
 	// There is currently exactly one, which provides an extreme
@@ -259,6 +260,7 @@ func (n Named[_]) _() { n.g() }`,
 }
 
 func TestCalls(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	const file = `-- go.mod --
 module foo
 
