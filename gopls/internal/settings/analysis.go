@@ -258,6 +258,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.AppendClippedAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
 	{analyzer: modernize.AtomicTypesAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.EmbedLitAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ErrorsAsTypeAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},

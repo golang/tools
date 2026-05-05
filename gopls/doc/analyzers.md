@@ -3110,6 +3110,32 @@ Default: on.
 
 Package documentation: [embed](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective)
 
+<a id='embedlit'></a>
+## `embedlit`: simplify references to embedded fields in composite literals
+
+The embedlit analyzer suggests removing redundant embedded field type specifiers from composite literals. Go1.27 introduced the ability to directly initialize fields promoted from embedded struct types without a nested literal. For example, given the following structs:
+
+	type T struct {
+		U
+	}
+
+	type U struct {
+		x int
+	}
+
+A composite literal such as
+
+	t := T{U: U{x: 1}}
+
+would become
+
+	t := T{x: 1}
+
+
+Default: on.
+
+Package documentation: [embedlit](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit)
+
 <a id='errorsas'></a>
 ## `errorsas`: report passing non-pointer or non-error values to errors.As
 

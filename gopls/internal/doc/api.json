@@ -1455,6 +1455,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"embedlit\"",
+							"Doc": "simplify references to embedded fields in composite literals\n\nThe embedlit analyzer suggests removing redundant embedded field type specifiers\nfrom composite literals. Go1.27 introduced the ability to directly initialize\nfields promoted from embedded struct types without a nested literal. For\nexample, given the following structs:\n\n\ttype T struct {\n\t\tU\n\t}\n\n\ttype U struct {\n\t\tx int\n\t}\n\nA composite literal such as\n\n\tt := T{U: U{x: 1}}\n\nwould become\n\n\tt := T{x: 1}",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"errorsas\"",
 							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
 							"Default": "true",
@@ -3399,6 +3405,12 @@
 			"Name": "embed",
 			"Doc": "check //go:embed directive usage\n\nThis analyzer checks that the embed package is imported if //go:embed\ndirectives are present, providing a suggested fix to add the import if\nit is missing.\n\nThis analyzer also checks that //go:embed directives precede the\ndeclaration of a single variable.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",
+			"Default": true
+		},
+		{
+			"Name": "embedlit",
+			"Doc": "simplify references to embedded fields in composite literals\n\nThe embedlit analyzer suggests removing redundant embedded field type specifiers\nfrom composite literals. Go1.27 introduced the ability to directly initialize\nfields promoted from embedded struct types without a nested literal. For\nexample, given the following structs:\n\n\ttype T struct {\n\t\tU\n\t}\n\n\ttype U struct {\n\t\tx int\n\t}\n\nA composite literal such as\n\n\tt := T{U: U{x: 1}}\n\nwould become\n\n\tt := T{x: 1}",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit",
 			"Default": true
 		},
 		{
