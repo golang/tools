@@ -19,6 +19,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -230,6 +231,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 		if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
 			ifStmt.Init == nil &&
 			isInequality(compare.Op) != 0 &&
+			typesinternal.NoEffects(info, compare) &&
 			isAssignBlock(ifStmt.Body) {
 			// a blank var has no type.
 			if tLHS := info.TypeOf(ifStmt.Body.List[0].(*ast.AssignStmt).Lhs[0]); tLHS != nil && !maybeNaN(tLHS) {
