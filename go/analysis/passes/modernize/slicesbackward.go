@@ -24,7 +24,7 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-var slicesbackwardAnalyzer = &analysis.Analyzer{
+var slicesBackwardAnalyzer = &analysis.Analyzer{
 	Name: "slicesbackward",
 	Doc:  analyzerutil.MustExtractDoc(doc, "slicesbackward"),
 	Requires: []*analysis.Analyzer{
@@ -37,7 +37,7 @@ var slicesbackwardAnalyzer = &analysis.Analyzer{
 
 func init() {
 	// Export to gopls until this is a published modernizer.
-	goplsexport.SlicesBackwardModernizer = slicesbackwardAnalyzer
+	goplsexport.SlicesBackwardModernizer = slicesBackwardAnalyzer
 }
 
 // slicesbackward offers a fix to replace a manually-written backward loop:

@@ -21,14 +21,13 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
 
-var stringscutAnalyzer = &analysis.Analyzer{
+var StringsCutAnalyzer = &analysis.Analyzer{
 	Name: "stringscut",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stringscut"),
 	Requires: []*analysis.Analyzer{
@@ -37,11 +36,6 @@ var stringscutAnalyzer = &analysis.Analyzer{
 	},
 	Run: stringscut,
 	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscut",
-}
-
-func init() {
-	// Export to gopls until this is a published modernizer.
-	goplsexport.StringsCutModernizer = stringscutAnalyzer
 }
 
 // stringscut offers a fix to replace an occurrence of strings.Index{,Byte} with

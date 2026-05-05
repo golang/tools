@@ -34,25 +34,26 @@ var doc string
 // Suite lists all modernize analyzers.
 var Suite = []*analysis.Analyzer{
 	AnyAnalyzer,
-	atomicTypesAnalyzer,
+	AtomicTypesAnalyzer,
 	// AppendClippedAnalyzer, // not nil-preserving!
 	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
-	embedLitAnalyzer,
+	EmbedLitAnalyzer,
+	ErrorsAsTypeAnalyzer,
 	// FmtAppendfAnalyzer, // makes code less clear, see golang/go#77581
 	ForVarAnalyzer,
 	MapsLoopAnalyzer,
 	MinMaxAnalyzer,
 	NewExprAnalyzer,
 	OmitZeroAnalyzer,
-	plusBuildAnalyzer,
+	PlusBuildAnalyzer,
 	RangeIntAnalyzer,
 	ReflectTypeForAnalyzer,
-	slicesbackwardAnalyzer,
+	slicesBackwardAnalyzer,
 	SlicesContainsAnalyzer,
 	// SlicesDeleteAnalyzer, // not nil-preserving!
 	SlicesSortAnalyzer,
-	stditeratorsAnalyzer,
-	stringscutAnalyzer,
+	StdIteratorsAnalyzer,
+	StringsCutAnalyzer,
 	StringsCutPrefixAnalyzer,
 	StringsSeqAnalyzer,
 	StringsBuilderAnalyzer,

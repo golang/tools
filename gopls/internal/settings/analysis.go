@@ -256,29 +256,29 @@ var DefaultAnalyzers = []*Analyzer{
 	// the modernize suite
 	{analyzer: modernize.AnyAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.AppendClippedAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
+	{analyzer: modernize.AtomicTypesAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.ErrorsAsTypeModernizer, severity: protocol.SeverityHint},
+	{analyzer: modernize.ErrorsAsTypeAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.PlusBuildModernizer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.StdIteratorsModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.NewExprAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.OmitZeroAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.PlusBuildAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.RangeIntAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ReflectTypeForAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.SlicesContainsAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.SlicesDeleteAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
 	{analyzer: modernize.SlicesSortAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.StdIteratorsAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsBuilderAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.StringsCutModernizer, severity: protocol.SeverityHint},
+	{analyzer: modernize.StringsCutAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsCutPrefixAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsSeqAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.TestingContextAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: goplsexport.UnsafeFuncsModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.WaitGroupGoAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.AtomicTypesModernizer, severity: protocol.SeverityHint},
 
 	// type-error analyzers
 	// These analyzers enrich go/types errors with suggested fixes.

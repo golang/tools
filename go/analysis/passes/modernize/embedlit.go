@@ -16,12 +16,11 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/versions"
 )
 
-var embedLitAnalyzer = &analysis.Analyzer{
+var EmbedLitAnalyzer = &analysis.Analyzer{
 	Name: "embedlit",
 	Doc:  analyzerutil.MustExtractDoc(doc, "embedlit"),
 	Requires: []*analysis.Analyzer{
@@ -29,10 +28,6 @@ var embedLitAnalyzer = &analysis.Analyzer{
 	},
 	Run: runEmbedLit,
 	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit",
-}
-
-func init() {
-	goplsexport.EmbedLitModernizer = embedLitAnalyzer
 }
 
 // TODO(mkalil): Handle other patterns such as:

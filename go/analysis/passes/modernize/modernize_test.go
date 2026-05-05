@@ -18,7 +18,7 @@ func TestAppendClipped(t *testing.T) {
 }
 
 func TestAtomicTypes(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), goplsexport.AtomicTypesModernizer, "atomictypes/...")
+	RunWithSuggestedFixes(t, TestData(), modernize.AtomicTypesAnalyzer, "atomictypes/...")
 }
 func TestBloop(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.BLoopAnalyzer, "bloop")
@@ -31,11 +31,11 @@ func TestAny(t *testing.T) {
 
 func TestEmbedLit(t *testing.T) {
 	testenv.NeedsGo1Point(t, 27)
-	RunWithSuggestedFixes(t, TestData(), goplsexport.EmbedLitModernizer, "embedlit")
+	RunWithSuggestedFixes(t, TestData(), modernize.EmbedLitAnalyzer, "embedlit")
 }
 
 func TestErrorsAsType(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), goplsexport.ErrorsAsTypeModernizer, "errorsastype/...")
+	RunWithSuggestedFixes(t, TestData(), modernize.ErrorsAsTypeAnalyzer, "errorsastype/...")
 }
 
 func TestFmtAppendf(t *testing.T) {
@@ -47,7 +47,7 @@ func TestForVar(t *testing.T) {
 }
 
 func TestStdIterators(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), goplsexport.StdIteratorsModernizer, "stditerators")
+	RunWithSuggestedFixes(t, TestData(), modernize.StdIteratorsAnalyzer, "stditerators")
 }
 
 func TestMapsLoop(t *testing.T) {
@@ -84,7 +84,7 @@ func TestPlusBuild(t *testing.T) {
 	// ignore files too, but only for this analyzer.
 	// (But see above: IgnoredFiles lack version information
 	// so we can't safely apply any fixes to them.)
-	RunWithSuggestedFixes(t, TestData(), goplsexport.PlusBuildModernizer, "plusbuild")
+	RunWithSuggestedFixes(t, TestData(), modernize.PlusBuildAnalyzer, "plusbuild")
 }
 
 func TestReflectTypeFor(t *testing.T) {
@@ -114,7 +114,7 @@ func TestStringsBuilder(t *testing.T) {
 }
 
 func TestStringsCut(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), goplsexport.StringsCutModernizer, "stringscut")
+	RunWithSuggestedFixes(t, TestData(), modernize.StringsCutAnalyzer, "stringscut")
 }
 
 func TestStringsCutPrefix(t *testing.T) {
