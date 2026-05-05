@@ -63,8 +63,6 @@ flags:
     	no effect
   -otel=string
     	export telemetry to specified OpenTelemetry collector address (e.g. http://localhost:4318)
-  -port=int
-    	port on which to run gopls for debugging purposes
   -profile.alloc=string
     	write alloc profile to this file
   -profile.block=string

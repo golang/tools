@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -30,7 +31,6 @@ import (
 type Serve struct {
 	Logfile     string        `flag:"logfile" help:"filename to log to. if value is \"auto\", then logging to a default output file is enabled"`
 	Mode        string        `flag:"mode" help:"no effect"`
-	Port        int           `flag:"port" help:"port on which to run gopls for debugging purposes"`
 	Address     string        `flag:"listen" help:"address on which to listen for remote connections. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. Otherwise, TCP is used."`
 	IdleTimeout time.Duration `flag:"listen.timeout" help:"when used with -listen, shut down the server when there are no connected clients for this duration"`
 	Trace       bool          `flag:"rpc.trace" help:"print the full rpc trace in lsp inspector format"`
@@ -87,7 +87,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	}
 
 	di := debug.GetInstance(ctx)
-	isDaemon := s.Address != "" || s.Port != 0
+	isDaemon := s.Address != ""
 	if di != nil {
 		closeLog, err := di.SetLogFile(s.Logfile, isDaemon)
 		if err != nil {
@@ -143,37 +143,17 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 			}
 		}()
 
-		var network, addr string
 		if s.Address != "" {
-			network, addr = lsprpc.ParseAddr(s.Address)
-		}
-		if s.Port != 0 {
-			network = "tcp"
-			// TODO(adonovan): should gopls ever be listening on network
-			// sockets, or only local ones?
-			//
-			// Ian says this was added in anticipation of
-			// something related to "VS Code remote" that turned
-			// out to be unnecessary. So I propose we limit it to
-			// localhost, if only so that we avoid the macOS
-			// firewall prompt.
-			//
-			// Hana says: "s.Address is for the remote access (LSP)
-			// and s.Port is for debugging purpose (according to
-			// the Server type documentation). I am not sure why the
-			// existing code here is mixing up and overwriting addr.
-			// For debugging endpoint, I think localhost makes perfect sense."
-			//
-			// TODO(adonovan): disentangle Address and Port,
-			// and use only localhost for the latter.
-			addr = fmt.Sprintf(":%v", s.Port)
-		}
-
-		if addr != "" {
+			// -listen=address
+			network, addr := lsprpc.ParseAddr(s.Address)
+			if strings.HasPrefix(addr, ":") {
+				return fmt.Errorf("-listen=%s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", addr)
+			}
 			log.Printf("Gopls LSP daemon: listening on %s network, address %s...", network, addr)
 			defer log.Printf("Gopls LSP daemon: exiting")
 			return jsonrpc2.ListenAndServe(ctx, network, addr, ss, s.IdleTimeout)
 		} else {
+			// communicate over stdin/stdout
 			stream := jsonrpc2.NewHeaderStream(fakenet.NewConn("stdio", os.Stdin, os.Stdout))
 			if s.Trace && di != nil {
 				stream = protocol.LoggingStream(stream, di.LogWriter)

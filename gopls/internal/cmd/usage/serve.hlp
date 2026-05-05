@@ -20,8 +20,6 @@ server-flags:
     	experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead.
   -mode=string
     	no effect
-  -port=int
-    	port on which to run gopls for debugging purposes
   -remote.debug=string
     	when used with -remote=auto, the -debug value used to start the daemon
   -remote.listen.timeout=duration
