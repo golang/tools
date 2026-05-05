@@ -583,7 +583,7 @@ func sendError(ctx context.Context, reply jsonrpc2.Replier, err error) {
 	}
 }
 
-// ParseAddr parses the address of a gopls remote.
+// ParseAddr parses the address of a gopls remote (e.g. "tcp;localhost:12345").
 // TODO(rFindley): further document this syntax, and allow URI-style remote
 // addresses such as "auto://...".
 func ParseAddr(listen string) (network string, address string) {
@@ -592,8 +592,8 @@ func ParseAddr(listen string) (network string, address string) {
 	if listen == autoNetwork {
 		return autoNetwork, ""
 	}
-	if parts := strings.SplitN(listen, ";", 2); len(parts) == 2 {
-		return parts[0], parts[1]
+	if network, address, ok := strings.Cut(listen, ";"); ok {
+		return network, address
 	}
 	return "tcp", listen
 }

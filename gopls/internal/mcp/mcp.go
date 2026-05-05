@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -52,6 +53,9 @@ type Sessions interface {
 // It is passed the list roots result returned by the MCP client, or an error
 // if the roots could not be retrieved. rootsHandler may be called concurrently.
 func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool, rootsHandler func(*mcp.ListRootsResult, error)) error {
+	if strings.HasPrefix(address, ":") {
+		return fmt.Errorf("address %s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", address)
+	}
 	log.Printf("Gopls MCP server: starting up on http")
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
