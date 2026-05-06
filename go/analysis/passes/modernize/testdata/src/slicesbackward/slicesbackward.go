@@ -15,6 +15,44 @@ func onlyIndexUse(s []int) {
 	}
 }
 
+// Tests for the heuristic that generates a name for the value variable.
+
+// Should use "name" for the value variable, and should remove the declaration.
+func firstUseName(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		name := s[i]
+		println(name)
+		name2 := s[i]
+		println(name2)
+	}
+}
+
+func useName(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+		name := s[i]
+		println(name)
+	}
+}
+
+// Can't use "name" because it is declared outside the block, and no singular
+// form of "arr", so use the first letter ("a").
+func firstLetter(arr []int) {
+	name := 2
+	for i := len(arr) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		name = arr[i]
+	}
+	println(name)
+}
+
+// Slice expression is a selector and not a valid identifier.
+// Should fallback to "v" instead of trying to use "s.item".
+func indexUseSelector(s struct{ items []int }) {
+	for i := len(s.items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s.items[i])
+	}
+}
+
 // Index used for something other than s[i] — keep both i and v.
 func indexUsedElsewhere(s []int) {
 	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
