@@ -356,7 +356,7 @@ func TestBrokenSymlink(t *testing.T) {
 	}
 
 	{
-		// Prepare a dir with with broken symbolic link.
+		// Prepare a dir with broken symbolic link.
 		// foo                       <- 1st
 		// ├── from.go -> root/to.go <- 1st
 		// ├── a.go                  <- 1st

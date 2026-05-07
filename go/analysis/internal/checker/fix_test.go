@@ -607,7 +607,7 @@ var relatedAnalyzer = &analysis.Analyzer{
 	},
 }
 
-// panics asserts that f() panics with with a value whose printed form matches the regexp want.
+// panics asserts that f() panics with a value whose printed form matches the regexp want.
 func panics(t *testing.T, want string, f func()) {
 	defer func() {
 		if x := recover(); x == nil {
