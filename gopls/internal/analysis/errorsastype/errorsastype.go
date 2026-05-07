@@ -25,9 +25,9 @@ For example:
 
 	err := f()
 	if err, ok := errors.AsType[*FooErr](err); ok {
-	    use(err)
+	    useFoo(err)
 	} else if err, ok := errors.AsType[*BarErr](err); ok {
-	    use(err)
+	    useBar(err)
 	}
 
 In this case, the second call to errors.AsType does not operate on the
@@ -60,9 +60,9 @@ func run(pass *analysis.Pass) (any, error) {
 	//
 	//	err := f()
 	//	if err, ok := errors.AsType[*FooErr](err); ok {
-	//		use(err)
+	//		useFoo(err)
 	//	} else if err, ok := errors.AsType[*BarErr](err); ok {
-	//		use(err)
+	//		useBar(err)
 	//	}
 	//
 	// In this case, the second call to errors.AsType does not operate on the

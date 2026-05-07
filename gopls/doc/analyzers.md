@@ -3179,9 +3179,9 @@ For example:
 
 	err := f()
 	if err, ok := errors.AsType[*FooErr](err); ok {
-	    use(err)
+	    useFoo(err)
 	} else if err, ok := errors.AsType[*BarErr](err); ok {
-	    use(err)
+	    useBar(err)
 	}
 
 In this case, the second call to errors.AsType does not operate on the original error. Instead, its operand is the zero value of type \*FooErr produced by the first if statement; this is invariably a mistake.

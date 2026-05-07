@@ -1474,7 +1474,7 @@
 						},
 						{
 							"Name": "\"errorsastype\"",
-							"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    use(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    use(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
+							"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3433,7 +3433,7 @@
 		},
 		{
 			"Name": "errorsastype",
-			"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    use(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    use(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
+			"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype",
 			"Default": true
 		},
