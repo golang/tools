@@ -1,0 +1,23 @@
+Test of 'implementation' query on generic methods, which don't
+participate in interface satisfaction.
+
+-- flags --
+-min_go=go1.27
+
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package a
+
+type C struct{}
+
+func (C) F[T any](T) {} //@ implementation("F")
+
+-- b/a.go --
+package a
+
+type I interface {
+	F(int)
+}

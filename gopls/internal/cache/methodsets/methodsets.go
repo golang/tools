@@ -395,6 +395,10 @@ func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) *go
 	methods := make([]*gobMethod, mset.Len())
 	for i := 0; i < mset.Len(); i++ {
 		m := mset.At(i).Obj().(*types.Func)
+		// Generic methods do not participate in interface satisfaction.
+		if m.Signature().TypeParams().Len() > 0 {
+			continue
+		}
 		id := m.Id()
 		fp, isTricky := fingerprint.Encode(m.Signature())
 		if isTricky {

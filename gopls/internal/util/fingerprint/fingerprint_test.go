@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/util/fingerprint"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -154,6 +155,81 @@ func F9[V any](V, *V, V) { panic(0) }
 		{"F6", "F7", "", false}, // both are bound
 		{"F5", "F8", "", true},  // T=*int, U=int, V=int
 		{"F5", "F9", "", false}, // T is unbound, V is bound, and T occurs in V
+	} {
+		lookup := func(name string) types.Type {
+			obj := scope.Lookup(name)
+			if obj == nil {
+				t.Fatalf("Lookup %s failed", name)
+			}
+			if test.method != "" {
+				obj, _, _ = types.LookupFieldOrMethod(obj.Type(), true, pkg.Types, test.method)
+				if obj == nil {
+					t.Fatalf("Lookup %s.%s failed", name, test.method)
+				}
+			}
+			return obj.Type()
+		}
+
+		check := func(sa, sb string, want bool) {
+			t.Helper()
+
+			a := lookup(sa)
+			b := lookup(sb)
+
+			afp, _ := fingerprint.Encode(a)
+			bfp, _ := fingerprint.Encode(b)
+
+			atree := fingerprint.Parse(afp)
+			btree := fingerprint.Parse(bfp)
+
+			got := fingerprint.Matches(atree, btree)
+			if got != want {
+				t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
+					sa, sb, test.method, got, a, b)
+			}
+		}
+
+		check(test.a, test.b, test.want)
+		// Matches is symmetric
+		check(test.b, test.a, test.want)
+		// Matches is reflexive
+		check(test.a, test.a, true)
+		check(test.b, test.b, true)
+	}
+}
+
+// Generic methods were added in go1.27 but cannot satisfy
+// interfaces, so their fingerprints aren't really important,
+// but we test them nonetheless.
+//
+// TODO(adonovan): merge into test above once go1.27 is assured.
+func TestMatches_genericMethods(t *testing.T) {
+	testenv.NeedsGo1Point(t, 27)
+
+	const src = `
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package a
+
+type I interface{ F(int) }
+
+type C struct{}
+func (C) F[T any](T) {}
+`
+	pkg := testfiles.LoadPackages(t, txtar.Parse([]byte(src)), "./a")[0]
+	scope := pkg.Types.Scope()
+	for _, test := range []struct {
+		a, b   string
+		method string // optional field or method
+		want   bool
+	}{
+		// C.F does match (unify with) I.F.
+		// However, C does not satisfy I since
+		// only non-generic methods are relevant.
+		{"I", "C", "F", true},
 	} {
 		lookup := func(name string) types.Type {
 			obj := scope.Lookup(name)
