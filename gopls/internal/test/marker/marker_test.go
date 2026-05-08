@@ -1493,10 +1493,11 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 	}
 }
 
-// checkDiffs checks that the diff content stored in the given golden directory
-// converts the original contents into the changed contents.
-// (This logic is strange because hundreds of existing marker tests were created
-// containing a modified version of unified diffs.)
+// checkDiffs checks that the diff content stored in the given golden
+// directory converts the original contents into the changed contents.
+// (It does _not_ check that the diff has a specific notation, as
+// there are many valid ways to notate the same patch and we do not
+// want tests to break whenever our diff algorithm evolves.)
 func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
@@ -1517,23 +1518,19 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 		}
 		// the call to Get is so that the -update flag will update the test.
 		// normally it just returns 'got'.
-		if tdiffs, ok := golden.Get(mark.T(), name, []byte(got)); !ok {
+		tdiffs, ok := golden.Get(mark.T(), name, []byte(got))
+		if !ok {
 			mark.errorf("%s: unexpected change to file %s; got diff:\n%s",
 				mark.note.Name, name, got)
 			return
-		} else {
-			// restore the ToUnified header lines deleted above
-			// before calling ApplyUnified
-			diffsFromTest := "--- \n+++ \n" + string(tdiffs)
-			want, err := diff.ApplyUnified(diffsFromTest, before)
-			if err != nil {
-				mark.errorf("%s: ApplyUnified(%q,%q) failed: %v",
-					mark.note.Name, before, after, err)
-			}
-			if want != string(after) {
-				mark.errorf("%s: got\n%q expected\n%q",
-					mark.note.Name, want, string(after))
-			}
+		}
+		want, err := diff.ApplyUnified(string(tdiffs), before)
+		if err != nil {
+			mark.errorf("in @%s golden section %s: %v; actual diff:\n%s",
+				mark.note.Name, name, err, d)
+		}
+		if want != string(after) {
+			mark.errorf("%s: got:\n%s\nwant:\n%s", mark.note.Name, want, after)
 		}
 	}
 
