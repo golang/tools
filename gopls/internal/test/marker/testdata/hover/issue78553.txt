@@ -2,7 +2,7 @@
 // in struct composite literals (a Go 1.27 feature).
 
 -- flags --
--min_go_command=go1.27
+-min_go=go1.27
 
 -- go.mod --
 module mod.com

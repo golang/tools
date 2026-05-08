@@ -17,16 +17,6 @@ import (
 // ErrNoIdentFound is error returned when no identifier is found at a particular position
 var ErrNoIdentFound = errors.New("no identifier found")
 
-// inferredSignature determines the resolved non-generic signature for an
-// identifier in an instantiation expression.
-//
-// If no such signature exists, it returns nil.
-func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
-	inst := info.Instances[id]
-	sig, _ := types.Unalias(inst.Type).(*types.Signature)
-	return sig
-}
-
 // searchForEnclosing returns, given the AST path to a SelectorExpr,
 // the exported named type of the innermost implicit field selection.
 //

@@ -497,11 +497,24 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		signature += " " + field.Tag.Value
 	}
 
-	// TODO(rfindley): we could do much better for inferred signatures.
-	// TODO(adonovan): fuse the two calls below.
-	if inferred := inferredSignature(pkg.TypesInfo(), ident); inferred != nil {
-		if s := inferredSignatureString(obj, qual, inferred); s != "" {
-			signature = s
+	// For references to generic functions or methods,
+	// show the inferred signature type in a comment:
+	//
+	//     func Method(C[string]) // func[U any]()
+	//
+	// For all others, do nothing; signature will be computed below.
+	//
+	// TODO(adonovan): show TypeParam/TypeArg correspondence, e.g. [T=string, U=int].
+	if inferred, ok := types.Unalias(pkg.TypesInfo().Instances[ident].Type).(*types.Signature); ok {
+		if sig, ok := obj.Type().Underlying().(*types.Signature); ok && sig.TypeParams().Len() > 0 { // (can't fail?)
+			obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
+			str := types.ObjectString(obj2, qual)
+			// Try to avoid overly long lines.
+			space := " "
+			if len(str) > 60 {
+				space = "\n"
+			}
+			signature = str + space + "// " + types.TypeString(sig, qual)
 		}
 	}
 
@@ -1222,27 +1235,6 @@ func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Ra
 		FullDocumentation: s.String(),
 	}
 	return rng, res, nil
-}
-
-// inferredSignatureString is a wrapper around the types.ObjectString function
-// that adds more information to inferred signatures. It will return an empty string
-// if the passed types.Object is not a signature.
-func inferredSignatureString(obj types.Object, qual types.Qualifier, inferred *types.Signature) string {
-	// If the signature type was inferred, prefer the inferred signature with a
-	// comment showing the generic signature.
-	if sig, _ := obj.Type().Underlying().(*types.Signature); sig != nil && sig.TypeParams().Len() > 0 && inferred != nil {
-		obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
-		str := types.ObjectString(obj2, qual)
-		// Try to avoid overly long lines.
-		if len(str) > 60 {
-			str += "\n"
-		} else {
-			str += " "
-		}
-		str += "// " + types.TypeString(sig, qual)
-		return str
-	}
-	return ""
 }
 
 // objectString is a wrapper around the types.ObjectString function.

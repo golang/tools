@@ -1,0 +1,80 @@
+This file tests for hovering over generic and instantiated methods and funcs.
+
+-- flags --
+-min_go=go1.27
+
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
+-- go.mod --
+module example.com
+
+go 1.27
+
+-- a/a.go --
+package a
+
+type C[T any] struct{}
+
+// This is method C.Method.
+func (C[T]) Method[U any]() {} //@hover("Method", "Method", Methodgen)
+
+var _ = C[string].Method[int] //@hover("Method", "Method", Methodint)
+
+// This is func Func.
+func Func[T any]() {} //@hover("Func", "Func", Funcgen)
+
+var _ = Func[int] //@hover("Func", "Func", Funcint)
+
+-- @Methodgen --
+```go
+func (C[T]) Method[U any]()
+```
+
+---
+
+This is method C.Method.
+
+
+---
+
+[`(a.C).Method` on pkg.go.dev](https://pkg.go.dev/example.com/a#C.Method)
+-- @Methodint --
+```go
+func Method(C[string]) // func[U any]()
+```
+
+---
+
+This is method C.Method.
+
+
+---
+
+[`(a.C).Method` on pkg.go.dev](https://pkg.go.dev/example.com/a#C.Method)
+-- @Funcgen --
+```go
+func Func[T any]()
+```
+
+---
+
+This is func Func.
+
+
+---
+
+[`a.Func` on pkg.go.dev](https://pkg.go.dev/example.com/a#Func)
+-- @Funcint --
+```go
+func Func() // func[T any]()
+```
+
+---
+
+This is func Func.
+
+
+---
+
+[`a.Func` on pkg.go.dev](https://pkg.go.dev/example.com/a#Func)
