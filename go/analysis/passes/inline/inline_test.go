@@ -21,33 +21,49 @@ import (
 )
 
 func TestAnalyzer(t *testing.T) {
-	if testenv.Go1Point() < 24 {
-		testenv.NeedsGoExperiment(t, "aliastypeparams")
-	}
-	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b", "rmimport")
-
-	dir1 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue76190.txtar")
-	analysistest.RunWithSuggestedFixes(t, dir1, Analyzer, "example.com/a", "example.com/b")
-
-	dir2 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue77610.txtar")
-	analysistest.RunWithSuggestedFixes(t, dir2, Analyzer,
-		"example.com/a",
-		"example.com/b",
-		"example.com/c",
-		"example.com/d",
-	)
-
-	dir3 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue78088.txtar")
-	patterns := []string{
-		"example.com/g",
-		"example.com/h",
-	}
-	// The following tests use errors.AsType, which was introduced in Go 1.26.
-	// This avoids the "build constraints exclude all Go files" testing error.
-	if testenv.Go1Point() >= 26 {
-		patterns = append(patterns, "example.com/e", "example.com/f")
-	}
-	analysistest.RunWithSuggestedFixes(t, dir3, Analyzer, patterns...)
+	t.Run("a,b", func(t *testing.T) {
+		analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b")
+	})
+	t.Run("RemoveImport72035", func(t *testing.T) {
+		analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "rmimport")
+	})
+	t.Run("Issue76190", func(t *testing.T) {
+		dir1 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue76190.txtar")
+		analysistest.RunWithSuggestedFixes(t, dir1, Analyzer, "example.com/a", "example.com/b")
+	})
+	t.Run("Issue77610", func(t *testing.T) {
+		dir2 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue77610.txtar")
+		analysistest.RunWithSuggestedFixes(t, dir2, Analyzer,
+			"example.com/a",
+			"example.com/b",
+			"example.com/c",
+			"example.com/d")
+	})
+	t.Run("Issue78088", func(t *testing.T) {
+		dir3 := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue78088.txtar")
+		patterns := []string{
+			"example.com/g",
+			"example.com/h",
+		}
+		// The following tests use errors.AsType, which was introduced in Go 1.26.
+		// This avoids the "build constraints exclude all Go files" testing error.
+		if testenv.Go1Point() >= 26 {
+			patterns = append(patterns, "example.com/e", "example.com/f")
+		}
+		analysistest.RunWithSuggestedFixes(t, dir3, Analyzer, patterns...)
+	})
+	t.Run("EmbeddedAlias78230", func(t *testing.T) {
+		dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/embedded_alias.txtar")
+		analysistest.Run(t, dir, Analyzer, "example.com")
+	})
+	t.Run("Issue77844", func(t *testing.T) {
+		dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue77844.txtar")
+		analysistest.Run(t, dir, Analyzer, "example.com/main")
+	})
+	t.Run("Issue78994", func(t *testing.T) {
+		dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue78994.txtar")
+		analysistest.RunWithSuggestedFixes(t, dir, Analyzer, "example.com/a")
+	})
 }
 
 func TestAllowBindingDeclFlag(t *testing.T) {
@@ -212,9 +228,4 @@ func TestTypesWithNames(t *testing.T) {
 			t.Errorf("%s: mismatch (-want, +got):\n%s", test.typeExpr, diff)
 		}
 	}
-}
-
-func TestEmbeddedAlias(t *testing.T) {
-	dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/embedded_alias.txtar")
-	analysistest.Run(t, dir, Analyzer, "example.com")
 }

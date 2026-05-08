@@ -43,7 +43,7 @@ type Server struct {
 	async    *async
 
 	shutdownOnce sync.Once
-	closing      int32 // atomic: set to nonzero when Shutdown is called
+	closing      atomic.Int32 // atomic: set to nonzero when Shutdown is called
 }
 
 // Dial uses the dialer to make a new connection, wraps the returned
@@ -90,7 +90,7 @@ func (s *Server) Wait() error {
 // Shutdown informs the server to stop accepting new connections.
 func (s *Server) Shutdown() {
 	s.shutdownOnce.Do(func() {
-		atomic.StoreInt32(&s.closing, 1)
+		s.closing.Store(1)
 		s.listener.Close()
 	})
 }
@@ -108,7 +108,7 @@ func (s *Server) run(ctx context.Context) {
 			// Only Shutdown closes the listener. If we get an error after Shutdown is
 			// called, assume that was the cause and don't report the error;
 			// otherwise, report the error in case it is unexpected.
-			if atomic.LoadInt32(&s.closing) == 0 {
+			if s.closing.Load() == 0 {
 				s.async.setError(err)
 			}
 			// We are done generating new connections for good.

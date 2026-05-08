@@ -237,6 +237,17 @@ func s_modified(s string) string {
 	return s[:idx]
 }
 
+func s_modified_multi_assign(s string) string {
+	idx := strings.Index(s, ",") // don't modernize since s gets modified in multi-assignment
+	var str string
+	str, s = "str", "modified" // modifying use of s
+	_ = str
+	if idx >= 0 {
+		return s[:idx]
+	}
+	return s
+}
+
 func s_modified_no_params() string {
 	s := "string"
 	idx := strings.Index(s, "=") // don't modernize since s gets modified

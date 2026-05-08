@@ -151,7 +151,7 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		state    = pUnknown
 		attempts = 0 // number of times we've asked already
 
-		// the followings are recorded after gopls v0.17+.
+		// the following are recorded after gopls v0.17+.
 		token        = 0   // valid token is [1, 1000]
 		creationTime int64 // unix time sec
 	)

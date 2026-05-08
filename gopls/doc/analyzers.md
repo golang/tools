@@ -3110,10 +3110,39 @@ Default: on.
 
 Package documentation: [embed](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective)
 
+<a id='embedlit'></a>
+## `embedlit`: simplify references to embedded fields in composite literals
+
+The embedlit analyzer suggests removing redundant embedded field type specifiers from composite literals. Go1.27 introduced the ability to directly initialize fields promoted from embedded struct types without a nested literal. For example, given the following structs:
+
+	type T struct {
+		U
+	}
+
+	type U struct {
+		x int
+	}
+
+A composite literal such as
+
+	t := T{U: U{x: 1}}
+
+would become
+
+	t := T{x: 1}
+
+
+Default: on.
+
+Package documentation: [embedlit](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit)
+
 <a id='errorsas'></a>
 ## `errorsas`: report passing non-pointer or non-error values to errors.As
 
-The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error.
+The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error. For example:
+
+	var unwrappedErr net.DNSError
+	errors.As(err, unwrappedErr) // should use &unwrappedErr, DNSError.Error has a pointer reciever
 
 
 Default: on.
@@ -3142,6 +3171,25 @@ The fix is only offered if the var declaration has the form shown and there are 
 Default: on.
 
 Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype)
+
+<a id='errorsastype'></a>
+## `errorsastype`: Reports misuse of errors.AsType[T] in if/else chains.
+
+For example:
+
+	err := f()
+	if err, ok := errors.AsType[*FooErr](err); ok {
+	    useFoo(err)
+	} else if err, ok := errors.AsType[*BarErr](err); ok {
+	    useBar(err)
+	}
+
+In this case, the second call to errors.AsType does not operate on the original error. Instead, its operand is the zero value of type \*FooErr produced by the first if statement; this is invariably a mistake.
+
+
+Default: on.
+
+Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype)
 
 <a id='fieldalignment'></a>
 ## `fieldalignment`: find structs that would use less memory if their fields were sorted
@@ -3200,6 +3248,8 @@ Package documentation: [fillreturns](https://pkg.go.dev/golang.org/x/tools/gopls
 ## `fmtappendf`: replace []byte(fmt.Sprintf) with fmt.Appendf
 
 The fmtappendf analyzer suggests replacing \`\[]byte(fmt.Sprintf(...))\` with \`fmt.Appendf(nil, ...)\`. This avoids the intermediate allocation of a string by Sprintf, making the code more efficient. The suggestion also applies to fmt.Sprint and fmt.Sprintln.
+
+Since its fix is not a Pareto improvement, fmtappendf is disabled by default in the \`go fix\` analyzer suite; see golang/go#77581.
 
 
 Default: on.
@@ -4121,6 +4171,8 @@ is replaced by:
 	use(s.String())
 
 This avoids quadratic memory allocation and improves performance.
+
+No diagnostics are issued in tests, where data sizes are often small and asymptotic performance is not a security concern.
 
 The analyzer requires that all references to s before the final uses are += operations. To avoid warning about trivial cases, at least one must appear within a loop. The variable s must be a local variable, not a global or parameter.
 

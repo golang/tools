@@ -396,7 +396,7 @@ func TestLoadSamePackageMultipleChunks(t *testing.T) {
 	var files []string
 	files = append(files, defFile)
 
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		fillerPath := filepath.Join(filepath.Dir(defFile), fmt.Sprintf("filler_%03d.go", i))
 		if err := os.WriteFile(fillerPath, []byte("package a\n"), 0644); err != nil {
 			t.Fatal(err)
@@ -3453,6 +3453,57 @@ func main() {
 		t.Errorf("Load returned mismatching Target fields (pkgpath->target -want +got):\n%s", diff)
 	}
 	t.Logf("Packages: %+v", pkgs)
+}
+
+// TestCompiledGoFilesIncludesDepsErrors ensures that when CompiledGoFiles
+// is missing, errors reported by go/packages include underlying dependency
+// errors from go list, rather than only a generic message.
+//
+// See golang/go#78083.
+func TestCompiledGoFilesIncludesDepsErrors(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	dir := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+/*
+#cgo CFLAGS: -I/nonexistent
+#include <missing.h>
+*/
+import "C"
+
+func Foo() {}
+`)
+	pkgs, err := packages.Load(&packages.Config{
+		Dir:  dir,
+		Mode: packages.LoadAllSyntax,
+		Env: append(os.Environ(),
+			"CGO_ENABLED=1",
+		),
+	}, "example.com/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) == 0 {
+		t.Fatal("no packages loaded")
+	}
+	found := false
+	// Expected error should include something like:
+	//   fatal error: missing.h: No such file or directory
+	// We assert only "missing.h" for portability across systems.
+	for _, err := range pkgs[0].Errors {
+		if strings.Contains(err.Msg, "missing.h") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message to include underlying dependency errors, got: %+v", pkgs[0].Errors)
+	}
 }
 
 // TestMainPackagePathInModeTypes tests (*types.Package).Path() for

@@ -411,7 +411,6 @@ return nil
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		env.SaveBuffer("main.go")
 		if true {
 			// according to https://github.com/golang/go/issues/78680
 			// this test is flaky. Print some possibly helpful diagnostic
@@ -427,8 +426,13 @@ return nil
 						t.Logf("could not read modcache dir: %v", err)
 					}
 					t.Logf("%d modcache files", len(fis))
+				} else { // let's see what it looks like
+					for i, e := range ix.Entries {
+						t.Logf("ix %d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
+					}
 				}
 			}
+			env.SaveBuffer("main.go")
 			out := env.BufferText("main.go")
 			if !strings.Contains(out, "github.com/mvdan/xurls") {
 				/* Perhaps the index is bad? The correct result is:

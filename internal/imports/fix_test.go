@@ -1596,14 +1596,15 @@ func TestFindStdlib(t *testing.T) {
 		{"ioutil", []string{"Discard"}, "io/ioutil"},
 	}
 	for _, tt := range tests {
-		input := "package p\n"
+		var input strings.Builder
+		input.WriteString("package p\n")
 		for _, sym := range tt.symbols {
-			input += fmt.Sprintf("var _ = %s.%s\n", tt.pkg, sym)
+			fmt.Fprintf(&input, "var _ = %s.%s\n", tt.pkg, sym)
 		}
 		testConfig{
 			module: packagestest.Module{
 				Name:  "foo.com",
-				Files: fm{"x.go": input},
+				Files: fm{"x.go": input.String()},
 			},
 		}.test(t, func(t *goimportTest) {
 			buf, err := t.process("foo.com", "x.go", nil, nil)
@@ -1611,7 +1612,7 @@ func TestFindStdlib(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := string(buf); !strings.Contains(got, tt.want) {
-				t.Errorf("Process(%q) = %q, wanted it to contain %q", input, buf, tt.want)
+				t.Errorf("Process(%q) = %q, wanted it to contain %q", input.String(), buf, tt.want)
 			}
 		})
 	}

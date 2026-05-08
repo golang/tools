@@ -16,7 +16,9 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/txtar"
 )
 
 func TestIndex(t *testing.T) {
@@ -79,6 +81,7 @@ func loadNetHTTP(tb testing.TB) *packages.Package {
 }
 
 func BenchmarkIndex(b *testing.B) {
+	testenv.NeedsGoPackages(b)
 	// Load net/http, a large package, and find calls to net.Dial.
 	//
 	// There is currently exactly one, which provides an extreme
@@ -253,5 +256,112 @@ func (n Named[_]) _() { n.g() }`,
 				}
 			}
 		})
+	}
+}
+
+func TestCalls(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+	const file = `-- go.mod --
+module foo
+
+go 1.24
+
+-- pkg/pkg.go --
+package pkg
+
+type Bar struct {}
+
+func (f Bar) Method() {}
+
+var Foo Bar
+-- test.go --
+package foo
+
+import "foo/pkg"
+
+func foo() {}
+
+func _() {
+	foo()
+	(foo)()
+	((foo))()
+}
+
+func fooGeneric[T any]() {}
+
+func _() {
+	fooGeneric[int]()
+	(fooGeneric[int])()
+	((fooGeneric[int]))()
+}
+
+func fooGeneric2[T, T2 any]() {}
+
+func _() {
+	fooGeneric2[int, int]()
+	(fooGeneric2[int, int])()
+	((fooGeneric2[int, int]))()
+}
+
+func _() {
+	var foo pkg.Bar
+	(foo.Method)()
+	((foo).Method)()
+	(foo).Method()
+	pkg.Bar.Method(pkg.Bar{})
+	(pkg.Bar).Method(pkg.Bar{})
+	((pkg.Bar).Method)(pkg.Bar{})
+
+	var bar struct { field pkg.Bar }
+	bar.field.Method()
+}
+
+func _() {
+	pkg.Foo.Method()
+	(pkg.Foo).Method()
+	((pkg.Foo).Method)()
+	(pkg.Foo.Method)()
+}
+`
+	fs, err := txtar.FS(txtar.Parse([]byte(file)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
+
+	fset := token.NewFileSet()
+	cfg := packages.Config{Mode: packages.LoadAllSyntax, Fset: fset, Dir: dir}
+	pkgs, err := packages.Load(&cfg, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		t.Fatal("Load: there were errors")
+	}
+
+	var (
+		pkg     = pkgs[0]
+		inspect = inspector.New(pkg.Syntax)
+		index   = typeindex.New(inspect, pkg.Types, pkg.TypesInfo)
+	)
+
+	// Emulate index.Calls with a tree walk.
+	objToCall := make(map[types.Object][]token.Pos)
+	for call := range inspector.All[*ast.CallExpr](inspect) {
+		obj := typeutil.Callee(pkg.TypesInfo, call)
+		if obj != nil {
+			objToCall[obj] = append(objToCall[obj], call.Pos())
+		}
+	}
+
+	// Assert index.Calls returns the same results, as the slow version (above).
+	for obj, wantCalls := range objToCall {
+		var gotCalls []token.Pos
+		for call := range index.Calls(obj) {
+			gotCalls = append(gotCalls, call.Node().Pos())
+		}
+		if !slices.Equal(gotCalls, wantCalls) {
+			t.Errorf("%v: got calls: %v; want: %v", obj.Name(), gotCalls, wantCalls)
+		}
 	}
 }

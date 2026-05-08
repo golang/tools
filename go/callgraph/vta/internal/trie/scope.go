@@ -16,10 +16,10 @@ type Scope struct {
 	id int32
 }
 
-var nextScopeId int32
+var nextScopeId atomic.Int32
 
 func newScope() Scope {
-	id := atomic.AddInt32(&nextScopeId, 1)
+	id := nextScopeId.Add(1)
 	return Scope{id: id}
 }
 

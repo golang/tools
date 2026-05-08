@@ -17,24 +17,18 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
 
-var errorsastypeAnalyzer = &analysis.Analyzer{
+var ErrorsAsTypeAnalyzer = &analysis.Analyzer{
 	Name:     "errorsastype",
 	Doc:      analyzerutil.MustExtractDoc(doc, "errorsastype"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
 	Requires: []*analysis.Analyzer{typeindexanalyzer.Analyzer},
 	Run:      errorsastype,
-}
-
-func init() {
-	// Export to gopls until this is a published modernizer.
-	goplsexport.ErrorsAsTypeModernizer = errorsastypeAnalyzer
 }
 
 // errorsastype offers a fix to replace error.As with the newer

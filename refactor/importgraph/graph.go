@@ -79,9 +79,7 @@ func Build(ctxt *build.Context) (forward, reverse Graph, errors map[string]error
 				return
 			}
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 
 				sema <- 1
 				bp, err := ctxt.Import(path, "", 0)
@@ -137,7 +135,7 @@ func Build(ctxt *build.Context) (forward, reverse Graph, errors map[string]error
 					}
 				}
 
-			}()
+			})
 		})
 		wg.Wait()
 		close(ch)
