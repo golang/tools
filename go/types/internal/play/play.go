@@ -264,6 +264,11 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 		if obj, ok := pkg.TypesInfo.Uses[n]; ok {
 			formatObj(out, fset, "use", obj)
 		}
+
+		if inst, ok := pkg.TypesInfo.Instances[n]; ok {
+			fmt.Fprintf(out, "Instances[ident] = %v.\n\n", inst)
+		}
+
 	default:
 		if obj, ok := pkg.TypesInfo.Implicits[n]; ok {
 			formatObj(out, fset, "implicit def", obj)
