@@ -1,0 +1,19 @@
+Test of stubmethods on generic methods, which do not participate
+in interface satisfaction.
+
+-- flags --
+-min_go=go1.27
+
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package a
+
+type C int
+func (C) F[T any]() {}
+
+type I interface { F() }
+
+var _ I = C(0) //@ quickfixerr(re"C.0.", re"does not implement", "method C.F already exists but has the wrong type: got func[T any](), want func()")
