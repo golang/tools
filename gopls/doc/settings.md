@@ -625,6 +625,29 @@ dependencies.
 
 Default: `"all"`.
 
+<a id='fileWatcher'></a>
+### `fileWatcher enum`
+
+**This setting is experimental and may be deleted.**
+
+fileWatcher specifies the server-side file watching strategy used by gopls.
+
+By default, this is set to "off", meaning gopls relies exclusively on the
+language client (e.g., the editor) to send file change notifications.
+
+Available options:
+  - "off"      : Client-driven watching (default)
+  - "fsnotify" : OS-level event notifications
+  - "poll"     : Periodic directory scanning
+
+Must be one of:
+
+* `"fsnotify"`
+* `"off"`
+* `"poll"`
+
+Default: `"off"`.
+
 <a id='maxFileCacheBytes'></a>
 ### `maxFileCacheBytes int64`
 

@@ -663,6 +663,17 @@ type UserOptions struct {
 	UIOptions
 	FormattingOptions
 
+	// FileWatcher specifies the server-side file watching strategy used by gopls.
+	//
+	// By default, this is set to "off", meaning gopls relies exclusively on the
+	// language client (e.g., the editor) to send file change notifications.
+	//
+	// Available options:
+	//   - "off"      : Client-driven watching (default)
+	//   - "fsnotify" : OS-level event notifications
+	//   - "poll"     : Periodic directory scanning
+	FileWatcher FileWatcherMode `status:"experimental"`
+
 	// MaxFileCacheBytes sets a soft limit on the file cache size in bytes.
 	// If zero, the default budget is used.
 	//
@@ -792,17 +803,6 @@ type InternalOptions struct {
 	// example, if like VS Code it drops file notifications), please file an
 	// issue.
 	SubdirWatchPatterns SubdirWatchPatterns
-
-	// FileWatcher specifies the server-side file watching strategy used by gopls.
-	//
-	// By default, this is set to "off", meaning gopls relies exclusively on the
-	// language client (e.g., the editor) to send file change notifications.
-	//
-	// Available options:
-	//   - "off"      : Client-driven watching (default)
-	//   - "fsnotify" : OS-level event notifications
-	//   - "poll"     : Periodic directory scanning
-	FileWatcher FileWatcherMode
 
 	// ReportAnalysisProgressAfter sets the duration for gopls to wait before starting
 	// progress reporting for ongoing go/analysis passes.
