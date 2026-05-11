@@ -25,8 +25,6 @@ import (
 	"runtime/trace"
 	"sync"
 	"sync/atomic"
-
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // Function is the type of a function that can be memoized.
@@ -164,7 +162,7 @@ func (p *Promise) Get(ctx context.Context, arg any) (any, error) {
 
 // run starts p.function and returns the result. p.mu must be locked.
 func (p *Promise) run(ctx context.Context, arg any) (any, error) {
-	childCtx, cancel := context.WithCancel(xcontext.Detach(ctx))
+	childCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	p.cancel = cancel
 	p.state = stateRunning
 	p.done = make(chan struct{})

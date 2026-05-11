@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 type contextKey int
@@ -53,7 +52,7 @@ func LogEvent(ctx context.Context, ev core.Event, lm label.Map, mt MessageType) 
 	// Add the log item to a queue, rather than sending a
 	// window/logMessage request to the client synchronously,
 	// which would slow down this thread.
-	ctx2 := xcontext.Detach(ctx)
+	ctx2 := context.WithoutCancel(ctx)
 	logQueue <- func() { client.LogMessage(ctx2, msg) }
 
 	return ctx

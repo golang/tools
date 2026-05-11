@@ -45,7 +45,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
@@ -404,7 +403,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	// Inv: release() must be called exactly once after this point.
 	// In the async case, runcmd may outlive run().
 
-	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	if cfg.progress != "" {
 		header := ""
 		if _, ok := c.s.options.SupportedWorkDoneProgressFormats[cfg.progressStyle]; ok && cfg.progressStyle != "" {

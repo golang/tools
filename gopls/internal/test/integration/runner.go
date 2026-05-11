@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // Mode is a bitmask that defines for which execution modes a test should run.
@@ -240,7 +239,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				// the editor: in general we want to clean up before proceeding to the
 				// next test, and if there is a deadlock preventing closing it will
 				// eventually be handled by the `go test` timeout.
-				if err := env.Editor.Close(xcontext.Detach(ctx)); err != nil {
+				if err := env.Editor.Close(context.WithoutCancel(ctx)); err != nil {
 					t.Errorf("closing editor: %v", err)
 				}
 			}()

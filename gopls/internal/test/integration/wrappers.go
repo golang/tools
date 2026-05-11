@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path"
@@ -12,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // RemoveWorkspaceFile deletes a file on disk but does nothing in the
@@ -618,7 +618,7 @@ func (e *Env) SemanticTokensRange(loc protocol.Location) []fake.SemanticToken {
 // Close shuts down resources associated with the environment, calling t.Error
 // on any error.
 func (e *Env) Close() {
-	ctx := xcontext.Detach(e.Ctx)
+	ctx := context.WithoutCancel(e.Ctx)
 	if e.MCPSession != nil {
 		if err := e.MCPSession.Close(); err != nil {
 			e.TB.Errorf("closing MCP session: %v", err)

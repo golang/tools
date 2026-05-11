@@ -12,7 +12,6 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // Binder builds a connection configuration.
@@ -209,7 +208,7 @@ type ConnectionConfig struct {
 // NewConnection creates a new [Connection] object and starts processing
 // incoming messages.
 func NewConnection(ctx context.Context, cfg ConnectionConfig) *Connection {
-	ctx = notDone{ctx}
+	ctx = context.WithoutCancel(ctx)
 
 	c := &Connection{
 		state:           inFlightState{closer: cfg.Closer},
@@ -234,7 +233,7 @@ func NewConnection(ctx context.Context, cfg ConnectionConfig) *Connection {
 func bindConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binder, onDone func()) *Connection {
 	// TODO: Should we create a new event span here?
 	// This will propagate cancellation from ctx; should it?
-	ctx := notDone{bindCtx}
+	ctx := context.WithoutCancel(bindCtx)
 
 	c := &Connection{
 		state:  inFlightState{closer: rwc},
@@ -695,7 +694,7 @@ func (c *Connection) processResult(from any, req *incomingRequest, result any, e
 			delete(s.incomingByID, req.ID)
 		})
 		if respErr == nil {
-			writeErr := c.write(notDone{req.ctx}, response)
+			writeErr := c.write(context.WithoutCancel(req.ctx), response)
 			if err == nil {
 				err = writeErr
 			}
@@ -766,14 +765,3 @@ func (c *Connection) internalErrorf(format string, args ...any) error {
 
 	return fmt.Errorf("%w: %v", ErrInternal, err)
 }
-
-// notDone is a context.Context wrapper that returns a nil Done channel.
-type notDone struct{ ctx context.Context }
-
-func (ic notDone) Value(key any) any {
-	return ic.ctx.Value(key)
-}
-
-func (notDone) Done() <-chan struct{}       { return nil }
-func (notDone) Err() error                  { return nil }
-func (notDone) Deadline() (time.Time, bool) { return time.Time{}, false }

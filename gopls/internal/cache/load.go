@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 var loadID uint64 // atomic identifier for loads
@@ -757,7 +756,7 @@ func computeWorkspacePackagesLocked(ctx context.Context, s *Snapshot, meta *meta
 	// The provided context is used for reading snapshot files, which can only
 	// fail due to context cancellation. Don't let this happen as it could lead
 	// to inconsistent results.
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, mp := range meta.Packages {
 		if !isWorkspacePackageLocked(ctx, s, meta, mp) {

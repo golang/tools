@@ -37,7 +37,6 @@ import (
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/modindex"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // A Folder represents an LSP workspace folder, together with its per-folder
@@ -785,7 +784,7 @@ func (s *Session) InvalidateView(ctx context.Context, view *View, changed StateC
 // s.viewMu must be held while calling this method.
 func (s *Session) invalidateViewLocked(ctx context.Context, v *View, changed StateChange) (*Snapshot, func(), bool) {
 	// Detach the context so that content invalidation cannot be canceled.
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 
 	// This should be the only time we hold the view's snapshot lock for any period of time.
 	v.snapshotMu.Lock()

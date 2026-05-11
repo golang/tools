@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 const (
@@ -221,7 +220,7 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 		return
 	}
 	defer release()
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 
 	work := s.progress.Start(ctx, GoVulncheckCommandTitle, "Running govulncheck...", nil, nil)
 	defer work.End(ctx, "Done.")
