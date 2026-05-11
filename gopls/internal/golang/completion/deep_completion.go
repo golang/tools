@@ -256,6 +256,9 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 // its members for more candidates.
 func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 	obj := cand.obj
+	if obj != nil && obj.Name() == "_" {
+		return
+	}
 	if c.matchingCandidate(cand) {
 		cand.score *= highScore
 

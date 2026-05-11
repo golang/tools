@@ -1,0 +1,15 @@
+This test checks that the blank identifier `_` is not suggested as a completion candidate for struct fields.
+
+-- flags --
+-ignore_extra_diags
+-- issue79325.go --
+package p
+
+type foo struct {
+	bar uint8
+	_   [2]byte
+}
+
+func (f foo) _() bool {
+	return f. //@rank(re"() \\/", "bar", "!_")
+}
