@@ -17,4 +17,5 @@ var (
 	UnsafeFuncsModernizer    *analysis.Analyzer // = modernize.unsafeFuncsAnalyzer
 	AtomicTypesModernizer    *analysis.Analyzer // = modernize.atomicTypesAnalyzer
 	EmbedLitModernizer       *analysis.Analyzer // = modernize.embedLitAnalyzer
+	GofmtAnalyzer            *analysis.Analyzer // = gofmt.analyzer
 )
