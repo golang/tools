@@ -825,8 +825,8 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			}
 			callee := v.(*Function) // (func)
 			if callee.typeparams.Len() > 0 {
-				targs := fn.subst.types(instanceArgs(fn.info, e))
-				callee = callee.instance(targs, b)
+				targs := fn.subtargs(e)
+				callee = callee.instance(nil, targs, b)
 			}
 			return callee
 		}
@@ -847,15 +847,16 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		case types.MethodExpr:
 			// (*T).f or T.f, the method f from the method-set of type T.
 			// The result is a "thunk".
-			thunk := createThunk(fn.Prog, sel)
+			targs := fn.subtargs(e.Sel)
+			thunk := createThunk(fn.Prog, sel, targs)
 			b.enqueue(thunk)
-			return emitConv(fn, thunk, fn.typ(tv.Type))
+			return emitConv(fn, thunk, thunk.Signature)
 
 		case types.MethodVal:
 			// e.f where e is an expression and f is a method.
 			// The result is a "bound".
-			obj := sel.obj.(*types.Func)
-			rt := fn.typ(recvType(obj))
+			m := sel.obj.(*types.Func)
+			rt := fn.typ(recvType(m))
 			wantAddr := isPointer(rt)
 			escaping := true
 			v := b.receiver(fn, e.X, wantAddr, escaping, sel)
@@ -886,11 +887,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 					emitTypeAssert(fn, v, rt, e.Sel.Pos())
 				}
 			}
-			if targs := receiverTypeArgs(obj); len(targs) > 0 {
-				// obj is generic.
-				obj = fn.Prog.canon.instantiateMethod(obj, fn.subst.types(targs), fn.Prog.ctxt)
+
+			if rtargs := fn.subrtargs(m); len(rtargs) > 0 {
+				m = fn.Prog.canon.instantiateMethod(m, rtargs, fn.Prog.ctxt)
 			}
-			bound := createBound(fn.Prog, obj)
+
+			targs := fn.subtargs(e.Sel)
+			bound := createBound(fn.Prog, m, targs)
 			b.enqueue(bound)
 
 			// The assignment may widen a type parameter to its
@@ -902,7 +905,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				Bindings: []Value{v},
 			}
 			c.setPos(e.Sel.Pos())
-			c.setType(fn.typ(tv.Type))
+			c.setType(bound.Signature)
 			return fn.emit(c)
 
 		case types.FieldVal:
@@ -1015,8 +1018,15 @@ func (b *builder) receiver(fn *Function, e ast.Expr, wantAddr, escaping bool, se
 func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 	c.pos = e.Lparen
 
-	// Is this a method call?
-	if selector, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
+	// Is this a (possibly generic) method call?
+	m := ast.Unparen(e.Fun)
+	switch e := m.(type) {
+	case *ast.IndexExpr:
+		m = e.X
+	case *ast.IndexListExpr:
+		m = e.X
+	}
+	if selector, ok := m.(*ast.SelectorExpr); ok {
 		sel := fn.selection(selector)
 		if sel != nil && sel.kind == types.MethodVal {
 			obj := sel.obj.(*types.Func)
@@ -1031,7 +1041,8 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 				c.Method = obj
 			} else {
 				// "Call"-mode call.
-				c.Value = fn.Prog.objectMethod(obj, b)
+				targs := fn.subtargs(selector.Sel)
+				c.Value = fn.Prog.objectMethod(obj, targs, b)
 				c.Args = append(c.Args, v)
 			}
 			return

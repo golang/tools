@@ -13,7 +13,11 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"reflect"
+	"slices"
+	"strings"
 	"sync"
+	"unsafe"
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
@@ -364,8 +368,10 @@ type Function struct {
 	referrers []Instruction // referring instructions (iff Parent() != nil)
 	anonIdx   int32         // position of a nested function in parent's AnonFuncs. fn.Parent()!=nil => fn.Parent().AnonFunc[fn.anonIdx] == fn.
 
-	typeparams     *types.TypeParamList // type parameters of this function. typeparams.Len() > 0 => generic or instance of generic function
-	typeargs       []types.Type         // type arguments that instantiated typeparams. len(typeargs) > 0 => instance of generic function
+	recvtypeparams *types.TypeParamList // receiver type parameters of this function. recvtypeparams.Len() > 0 => method on generic or instance of generic type
+	recvtypeargs   []types.Type         // type arguments that instantiated recvtypeparams. len(recvtypeargs) > 0 => method on instance of generic type
+	typeparams     *types.TypeParamList // type parameters of this function. typeparams.Len() > 0 => generic or instance of generic function or method
+	typeargs       []types.Type         // type arguments that instantiated typeparams. len(typeargs) > 0 => instance of generic function or method
 	topLevelOrigin *Function            // the origin function if this is an instance of a source function. nil if Parent()!=nil.
 	generic        *generic             // instances of this function, if generic
 
@@ -1577,18 +1583,73 @@ func (v *Function) Referrers() *[]Instruction {
 
 // TypeParams are the function's type parameters if generic or the
 // type parameters that were instantiated if fn is an instantiation.
+//
+// Specifically, the resulting list behaves like:
+//
+//	func        f       // []
+//	func        f[P]    // [P]
+//	func (T)    m       // []
+//	func (T)    m[P]    // [P]
+//	func (T[P]) m       // [P]
+//	func (T[P]) m[Q]    // [P (index=0), Q (index=0)]
+//
+// Note that receiver type parameters precede other type parameters.
+// Also, type parameters may have the same index if they come from
+// different source type parameter lists.
 func (fn *Function) TypeParams() *types.TypeParamList {
-	return fn.typeparams
+	return consTypeParamLists(fn.recvtypeparams, fn.typeparams)
+}
+
+func consTypeParamLists(l, r *types.TypeParamList) *types.TypeParamList {
+	if l.Len() == 0 {
+		return r
+	}
+	if r.Len() == 0 {
+		return l
+	}
+
+	tpars := make([]*types.TypeParam, l.Len()+r.Len())
+	for i := range l.Len() {
+		tpars[i] = l.At(i)
+	}
+	for i := range r.Len() {
+		tpars[i+l.Len()] = r.At(i)
+	}
+	// This logic unsafely assumes (and asserts) that the layout of the
+	// TypeParamList is identical to that of a slice of TypeParams. This
+	// is a hack while we work on getting a constructor for TypeParamList
+	// approved (see go.dev/issue/79603).
+	t := reflect.TypeFor[types.TypeParamList]()
+	if t.NumField() != 1 {
+		panic("TypeParamList has unexpected fields")
+	}
+	if f := t.Field(0); f.Offset != 0 || f.Type != reflect.TypeFor[[]*types.TypeParam]() {
+		panic("TypeParamList field is not []*TypeParam")
+	}
+	return (*types.TypeParamList)(unsafe.Pointer(&tpars))
 }
 
 // TypeArgs are the types that TypeParams() were instantiated by to create fn
 // from fn.Origin().
-func (fn *Function) TypeArgs() []types.Type { return fn.typeargs }
+//
+// Specifically, the resulting slice behaves like:
+//
+//	f                   // []
+//	f[int]              // [int]
+//	T.m                 // []
+//	T.m[int]            // [int]
+//	T[int].m            // [int]
+//	T[int].m[uint]      // [int, uint]
+//
+// Note that receiver type arguments precede other type arguments.
+func (fn *Function) TypeArgs() []types.Type {
+	return slices.Concat(fn.recvtypeargs, fn.typeargs)
+}
 
 // Origin returns the generic function from which fn was instantiated,
 // or nil if fn is not an instantiation.
 func (fn *Function) Origin() *Function {
-	if fn.parent != nil && len(fn.typeargs) > 0 {
+	if fn.parent != nil && fn.parent.hasTypeArgs() {
 		// Nested functions are BUILT at a different time than their instances.
 		// Build declared package if not yet BUILT. This is not an expected use
 		// case, but is simple and robust.
@@ -1597,12 +1658,48 @@ func (fn *Function) Origin() *Function {
 	return origin(fn)
 }
 
+// hasTypeParams returns whether fn has any type parameters
+func (fn *Function) hasTypeParams() bool {
+	return fn.recvtypeparams.Len()+fn.typeparams.Len() > 0
+}
+
+// hasTypeArgs returns whether fn has any type arguments
+func (fn *Function) hasTypeArgs() bool {
+	return len(fn.recvtypeargs)+len(fn.typeargs) > 0
+}
+
+// subrtargs returns fn's receiver type parameters substituted with receiver type arguments
+func (fn *Function) subrtargs(m *types.Func) []types.Type {
+	return fn.subst.types(receiverTypeArgs(m))
+}
+
+// subtargs returns fn's type parameters substituted with (possibly implied) type arguments
+func (fn *Function) subtargs(id *ast.Ident) []types.Type {
+	return fn.subst.types(instanceArgs(fn.info, id))
+}
+
+// targstr returns a comma-separated string of the types in targs
+func targstr(targs []types.Type) string {
+	var sb strings.Builder
+	if len(targs) > 0 {
+		sb.WriteString("[")
+		for i := range targs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(targs[i].String())
+		}
+		sb.WriteString("]")
+	}
+	return sb.String()
+}
+
 // origin is the function that fn is an instantiation of. Returns nil if fn is
 // not an instantiation.
 //
 // Precondition: fn and the origin function are done building.
 func origin(fn *Function) *Function {
-	if fn.parent != nil && len(fn.typeargs) > 0 {
+	if fn.parent != nil && fn.parent.hasTypeArgs() {
 		return origin(fn.parent).AnonFuncs[fn.anonIdx]
 	}
 	return fn.topLevelOrigin

@@ -32,8 +32,8 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	if prog.isParameterized(T) {
-		return nil // generic method
+	if prog.isParameterized(T, sel.Type()) {
+		return nil // method on generic type or generic method
 	}
 
 	if prog.mode&LogSource != 0 {
@@ -61,11 +61,11 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 			needsPromotion := len(sel.Index()) > 1
 			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
 			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel))
+				fn = createWrapper(prog, toSelection(sel), nil)
 				fn.buildshared = b.shared()
 				b.enqueue(fn)
 			} else {
-				fn = prog.objectMethod(obj, &b)
+				fn = prog.objectMethod(obj, nil, &b)
 			}
 			if fn.Signature.Recv() == nil {
 				panic(fn)
@@ -91,7 +91,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 // objectMethod panics if the function is not a method.
 //
 // Acquires prog.objectMethodsMu.
-func (prog *Program) objectMethod(obj *types.Func, b *builder) *Function {
+func (prog *Program) objectMethod(obj *types.Func, targs []types.Type, b *builder) *Function {
 	sig := obj.Type().(*types.Signature)
 	if sig.Recv() == nil {
 		panic("not a method: " + obj.String())
@@ -103,11 +103,8 @@ func (prog *Program) objectMethod(obj *types.Func, b *builder) *Function {
 	}
 
 	// Instantiation of generic?
-	if originObj := obj.Origin(); originObj != obj {
-		origin := prog.objectMethod(originObj, b)
-		assert(origin.typeparams.Len() > 0, "origin is not generic")
-		targs := receiverTypeArgs(obj)
-		return origin.instance(targs, b)
+	if orig := obj.Origin(); orig != obj || len(targs) > 0 {
+		return prog.objectMethod(orig, nil, b).instance(receiverTypeArgs(obj), targs, b)
 	}
 
 	// Consult/update cache of methods created from types.Func.

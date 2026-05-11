@@ -115,33 +115,26 @@ func memberFromObject(pkg *Package, obj types.Object, syntax ast.Node, goversion
 func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node, info *types.Info, goversion string) *Function {
 	sig := obj.Type().(*types.Signature)
 
-	// Collect type parameters.
-	var tparams *types.TypeParamList
-	if rtparams := sig.RecvTypeParams(); rtparams.Len() > 0 {
-		tparams = rtparams // method of generic type
-	} else if sigparams := sig.TypeParams(); sigparams.Len() > 0 {
-		tparams = sigparams // generic function
-	}
-
 	/* declared function/method (from syntax or export data) */
 	fn := &Function{
-		name:       name,
-		object:     obj,
-		Signature:  sig,
-		build:      (*builder).buildFromSyntax,
-		syntax:     syntax,
-		info:       info,
-		goversion:  goversion,
-		pos:        obj.Pos(),
-		Pkg:        nil, // may be set by caller
-		Prog:       prog,
-		typeparams: tparams,
+		name:           name,
+		object:         obj,
+		Signature:      sig,
+		build:          (*builder).buildFromSyntax,
+		syntax:         syntax,
+		info:           info,
+		goversion:      goversion,
+		pos:            obj.Pos(),
+		Pkg:            nil, // may be set by caller
+		Prog:           prog,
+		recvtypeparams: sig.RecvTypeParams(),
+		typeparams:     sig.TypeParams(),
 	}
 	if fn.syntax == nil {
 		fn.Synthetic = "from type information"
 		fn.build = (*builder).buildParamsOnly
 	}
-	if tparams.Len() > 0 {
+	if fn.hasTypeParams() {
 		fn.generic = new(generic)
 	}
 	return fn

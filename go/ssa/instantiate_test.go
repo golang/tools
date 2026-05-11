@@ -263,7 +263,7 @@ func Foo[T any, S any](t T, s S) {
 		instances string
 	}{
 		{"H", "[p.H[T] p.H[T]]"},
-		{"Foo", "[p.Foo[S T] p.Foo[T S]]"},
+		{"Foo", "[p.Foo[S, T] p.Foo[T, S]]"},
 	} {
 		t.Run(test.orig, func(t *testing.T) {
 			f := p.Members[test.orig].(*ssa.Function)

@@ -822,7 +822,7 @@ func TestGenericFunctionSelector(t *testing.T) {
 		}
 		sort.Strings(callees) // ignore the order in the code.
 
-		want := "[example.com/a.F[int] example.com/a.G[int string] example.com/a.H[int]]"
+		want := "[example.com/a.F[int] example.com/a.G[int, string] example.com/a.H[int]]"
 		if got := fmt.Sprint(callees); got != want {
 			t.Errorf("Expected main() to contain calls %v. got %v", want, got)
 		}
