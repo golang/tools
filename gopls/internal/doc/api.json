@@ -2273,6 +2273,36 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "fileWatcher",
+				"Type": "enum",
+				"Doc": "fileWatcher specifies the server-side file watching strategy used by gopls.\n\nBy default, this is set to \"off\", meaning gopls relies exclusively on the\nlanguage client (e.g., the editor) to send file change notifications.\n\nAvailable options:\n  - \"off\"      : Client-driven watching (default)\n  - \"fsnotify\" : OS-level event notifications\n  - \"poll\"     : Periodic directory scanning\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": [
+					{
+						"Value": "\"fsnotify\"",
+						"Doc": "",
+						"Status": ""
+					},
+					{
+						"Value": "\"off\"",
+						"Doc": "",
+						"Status": ""
+					},
+					{
+						"Value": "\"poll\"",
+						"Doc": "",
+						"Status": ""
+					}
+				],
+				"Default": "\"off\"",
+				"Status": "experimental",
+				"Hierarchy": "",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "maxFileCacheBytes",
 				"Type": "int64",
 				"Doc": "maxFileCacheBytes sets a soft limit on the file cache size in bytes.\nIf zero, the default budget is used.\n\nThe cache may temporarily use more than this amount.\nAlso, this parameter limits file contents; disk block usage\nas measured by du(1) may be significantly higher.\n",

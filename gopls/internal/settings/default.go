@@ -137,12 +137,12 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 					NewGoFileHeader:        true,
 					RenameMovesSubpackages: false,
 				},
+				FileWatcher: FileWatcherOff,
 			},
 			InternalOptions: InternalOptions{
 				CompleteUnimported:          true,
 				CompletionDocumentation:     true,
 				DeepCompletion:              true,
-				FileWatcher:                 FileWatcherOff,
 				SubdirWatchPatterns:         SubdirWatchPatternsAuto,
 				ReportAnalysisProgressAfter: 5 * time.Second,
 				TelemetryPrompt:             false,
