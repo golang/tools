@@ -42,6 +42,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
@@ -322,6 +323,35 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		return hoverReturnStatement(pgf, cur)
 	case *ast.Ident:
 		// fall through to rest of function
+	case *ast.FuncType:
+		// When hovering over the "func" keyword of a func literal that is
+		// implicitly converted to a named function type, show the named
+		// type's documentation (e.g. hovering over "func" in a call like
+		// filepath.WalkDir(dir, func(path string, ...) error { ... }) shows
+		// the docs for fs.WalkDirFunc).
+		//
+		// Note: FindByPos at a FuncLit's "func" token returns the inner
+		// *ast.FuncType node (not *ast.FuncLit), so we check the parent.
+		if inToken(node.Func, "func", posRange.Pos(), posRange.End()) {
+			if lit, ok := cur.Parent().Node().(*ast.FuncLit); ok {
+				if rng, res, err := hoverFuncLit(ctx, snapshot, pkg, pgf, cur.Parent(), lit); res != nil || err != nil {
+					return rng, res, err
+				}
+			}
+		}
+		// No named type found; fall through to the generic ast.Expr behavior.
+		if _, ok := pkg.TypesInfo().Types[node]; !ok {
+			return protocol.Range{}, nil, nil
+		}
+		exprResult := &hoverResult{
+			Synopsis:          goastutil.NodeDescription(node),
+			FullDocumentation: types.TypeString(pkg.TypesInfo().TypeOf(node), qual),
+		}
+		exprHighlight, err := pgf.NodeRange(node)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		return exprHighlight, exprResult, nil
 	case ast.Expr:
 		tv, ok := pkg.TypesInfo().Types[node]
 		if !ok {
@@ -1140,6 +1170,71 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 	return rng, &hoverResult{
 		Synopsis:          hover,
 		FullDocumentation: hover,
+	}, nil
+}
+
+// hoverFuncLit handles hover over the "func" keyword of a func literal that
+// is implicitly converted to a named function type (e.g. fs.WalkDirFunc).
+// It returns a non-nil result if a named type is found; otherwise it returns
+// nil, nil, nil to signal that the caller should fall through to default hover.
+func hoverFuncLit(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, cur inspector.Cursor, lit *ast.FuncLit) (protocol.Range, *hoverResult, error) {
+	// Use TypesFromContext to find the type the func literal must satisfy.
+	var named *types.Named
+	for _, t := range typesutil.TypesFromContext(pkg.TypesInfo(), cur) {
+		n, ok := types.Unalias(t).(*types.Named)
+		if !ok {
+			continue
+		}
+		if _, ok := n.Underlying().(*types.Signature); !ok {
+			continue // not a named function type
+		}
+		named = n
+		break
+	}
+	if named == nil {
+		return protocol.Range{}, nil, nil
+	}
+
+	obj := named.Obj()
+
+	// Load the declaring package to get documentation and signature.
+	declPkg, declPGF, declPos, err := NarrowestDeclaringPackage(ctx, snapshot, pkg, obj)
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+
+	decl, spec, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos)
+	var docText string
+	if docComment := chooseDocComment(decl, spec, nil); docComment != nil {
+		docText = docComment.Text()
+	}
+
+	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
+	signature := objectString(obj, qual, declPos, declPGF.Tok, spec)
+
+	var linkPath, anchor string
+	if obj.Exported() && typesinternal.IsPackageLevel(obj) && !snapshot.IsGoPrivatePath(obj.Pkg().Path()) {
+		linkPath = obj.Pkg().Path()
+		anchor = obj.Name()
+		if declPkg.Metadata().Module != nil && declPkg.Metadata().Module.Version != "" {
+			mod := declPkg.Metadata().Module
+			linkPath = strings.Replace(linkPath, mod.Path, cache.ResolvedString(mod), 1)
+		}
+	}
+
+	rng, err := pgf.NodeRange(lit.Type)
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+
+	return rng, &hoverResult{
+		Synopsis:          doc.Synopsis(docText),
+		FullDocumentation: docText,
+		Signature:         signature,
+		SingleLine:        signature,
+		SymbolName:        fmt.Sprintf("%s.%s", obj.Pkg().Name(), obj.Name()),
+		LinkPath:          linkPath,
+		LinkAnchor:        anchor,
 	}, nil
 }
 
