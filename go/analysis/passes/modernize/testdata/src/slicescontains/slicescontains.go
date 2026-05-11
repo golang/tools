@@ -224,3 +224,14 @@ func issue76210negation(haystack []string, needle string) bool {
 	}
 	return res
 }
+
+func issue77564needlesideeffects(slice []int, f func() int) bool {
+	found := false
+	for _, elem := range slice { // nope: needle f() may have side effects
+		if elem == f() {
+			found = true
+			break
+		}
+	}
+	return found
+}
