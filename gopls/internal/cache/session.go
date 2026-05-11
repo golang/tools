@@ -32,7 +32,6 @@ import (
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // NewSession creates a new gopls session with the given cache.
@@ -161,7 +160,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
-	baseCtx := event.Detach(xcontext.Detach(ctx))
+	baseCtx := event.Detach(context.WithoutCancel(ctx))
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 
 	// Compute a skip function to use for module cache scanning.
@@ -297,7 +296,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 	)
 
 	// Initialize the view without blocking.
-	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
+	initCtx, initCancel := context.WithCancel(context.WithoutCancel(ctx))
 	v.cancelInitialWorkspaceLoad = initCancel
 	snapshot := v.snapshot
 
@@ -1093,7 +1092,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 }
 
 func mustReadFile(ctx context.Context, fs file.Source, uri protocol.DocumentURI) file.Handle {
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		// ReadFile cannot fail with an uncancellable context.

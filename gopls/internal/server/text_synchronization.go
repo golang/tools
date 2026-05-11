@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // ModificationSource identifies the origin of a change.
@@ -328,7 +327,7 @@ func (s *server) needsDiagnosis(ctx context.Context, viewsToDiagnose map[*cache.
 	if s.cancelPrevDiagnostics != nil {
 		s.cancelPrevDiagnostics()
 	}
-	modCtx := xcontext.Detach(ctx)
+	modCtx := context.WithoutCancel(ctx)
 	modCtx, s.cancelPrevDiagnostics = context.WithCancel(modCtx)
 	s.lastModificationID++
 	modID := s.lastModificationID

@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // Editor is a fake client editor.  It keeps track of client state and can be
@@ -171,7 +170,7 @@ func NewEditor(sandbox *Sandbox, config EditorConfig) *Editor {
 //
 //	editor, err := NewEditor(s).Connect(ctx, conn, hooks)
 func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, hooks ClientHooks) (*Editor, error) {
-	bgCtx, cancelConn := context.WithCancel(xcontext.Detach(ctx))
+	bgCtx, cancelConn := context.WithCancel(context.WithoutCancel(ctx))
 	conn := connector.Connect(bgCtx)
 	e.cancelConn = cancelConn
 

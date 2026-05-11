@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 const HandshakeMethod = handshakeMethod
@@ -73,7 +72,7 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	preempter := &Canceler{
 		Conn: conn,
 	}
-	detached := xcontext.Detach(ctx)
+	detached := context.WithoutCancel(ctx)
 	go func() {
 		conn.Wait() // ignore error
 		if err := serverConn.Close(); err != nil {

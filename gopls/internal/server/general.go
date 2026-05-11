@@ -38,7 +38,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
@@ -479,7 +478,7 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 	// Create new file watcher based on the desired mode.
 	if s.fileWatcher == nil {
 		// TODO(hxjiang): ensure gopls don't process events after shutdown.
-		watcherCtx := xcontext.Detach(ctx)
+		watcherCtx := context.WithoutCancel(ctx)
 		onChange := func(events []protocol.FileEvent) {
 			modifications := make([]file.Modification, len(events))
 			for i, e := range events {

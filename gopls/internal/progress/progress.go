@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // NewTracker returns a new Tracker that reports progress to the
@@ -83,7 +82,7 @@ func (t *Tracker) SupportsWorkDoneProgress() bool {
 //	  // Do the work...
 //	}
 func (t *Tracker) Start(ctx context.Context, title, message string, token protocol.ProgressToken, cancel func()) *WorkDone {
-	ctx = xcontext.Detach(ctx) // progress messages should not be cancelled
+	ctx = context.WithoutCancel(ctx) // progress messages should not be cancelled
 	wd := &WorkDone{
 		client: t.client,
 		token:  token,
@@ -188,7 +187,7 @@ func (wd *WorkDone) doCancel() {
 
 // Report reports an update on WorkDone report back to the client.
 func (wd *WorkDone) Report(ctx context.Context, message string, fraction float64) {
-	ctx = xcontext.Detach(ctx) // progress messages should not be cancelled
+	ctx = context.WithoutCancel(ctx) // progress messages should not be cancelled
 	if wd == nil {
 		return
 	}
@@ -224,7 +223,7 @@ func (wd *WorkDone) Report(ctx context.Context, message string, fraction float64
 
 // End reports a workdone completion back to the client.
 func (wd *WorkDone) End(ctx context.Context, message string) {
-	ctx = xcontext.Detach(ctx) // progress messages should not be cancelled
+	ctx = context.WithoutCancel(ctx) // progress messages should not be cancelled
 	if wd == nil {
 		return
 	}

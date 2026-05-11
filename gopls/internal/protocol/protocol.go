@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 var (
@@ -89,7 +88,7 @@ func (c clientConnV2) Call(ctx context.Context, method string, params any, resul
 	call := c.conn.Call(ctx, method, params)
 	err := call.Await(ctx, result)
 	if ctx.Err() != nil {
-		detached := xcontext.Detach(ctx)
+		detached := context.WithoutCancel(ctx)
 		c.conn.Notify(detached, "$/cancelRequest", &CancelParams{ID: call.ID().Raw()})
 	}
 	return err
@@ -112,7 +111,7 @@ type serverDispatcher struct {
 func ClientHandler(client Client, handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		if ctx.Err() != nil {
-			ctx := xcontext.Detach(ctx)
+			ctx := context.WithoutCancel(ctx)
 			return reply(ctx, nil, RequestCancelledError)
 		}
 		handled, err := clientDispatch(ctx, client, reply, req)
@@ -152,7 +151,7 @@ func ClientHandlerV2(client Client) jsonrpc2_v2.Handler {
 func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		if ctx.Err() != nil {
-			ctx := xcontext.Detach(ctx)
+			ctx := context.WithoutCancel(ctx)
 			return reply(ctx, nil, RequestCancelledError)
 		}
 		handled, err := serverDispatch(ctx, server, reply, req)
@@ -235,7 +234,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 				if ctx.Err() != nil && err == nil {
 					err = RequestCancelledError
 				}
-				ctx = xcontext.Detach(ctx)
+				ctx = context.WithoutCancel(ctx)
 				return reply(ctx, resp, err)
 			}
 			return handler(ctx, replyWithDetachedContext, req)
@@ -264,7 +263,7 @@ func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params any, re
 }
 
 func cancelCall(ctx context.Context, sender connSender, id jsonrpc2.ID) {
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	ctx, done := event.Start(ctx, "protocol.canceller")
 	defer done()
 	// Note that only *jsonrpc2.ID implements json.Marshaler.
