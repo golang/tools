@@ -87,7 +87,7 @@ type interpreter struct {
 	reflectPackage     *ssa.Package           // the fake reflect package
 	errorMethods       methodSet              // the method set of reflect.error, which implements the error interface.
 	rtypeMethods       methodSet              // the method set of rtype, which implements the reflect.Type interface.
-	runtimeErrorString types.Type             // the runtime.errorString type
+	runtimeErrorString types.Type             // the runtime.errorString type (iff "runtime" is present)
 	sizes              types.Sizes            // the effective type-sizing function
 	goroutines         int32                  // atomically updated
 }
@@ -692,10 +692,9 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		goroutines: 1,
 	}
 	runtimePkg := i.prog.ImportedPackage("runtime")
-	if runtimePkg == nil {
-		panic("ssa.Program doesn't include runtime package")
+	if runtimePkg != nil {
+		i.runtimeErrorString = runtimePkg.Type("errorString").Object().Type()
 	}
-	i.runtimeErrorString = runtimePkg.Type("errorString").Object().Type()
 
 	initReflect(i)
 

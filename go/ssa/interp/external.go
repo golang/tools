@@ -221,7 +221,10 @@ func ext۰sort۰Float64s(fr *frame, args []value) value {
 func ext۰strconv۰Atoi(fr *frame, args []value) value {
 	i, e := strconv.Atoi(args[0].(string))
 	if e != nil {
-		return tuple{i, iface{fr.i.runtimeErrorString, e.Error()}}
+		if fr.i.runtimeErrorString != nil {
+			return tuple{i, iface{fr.i.runtimeErrorString, e.Error()}}
+		}
+		return tuple{i, e.Error()}
 	}
 	return tuple{i, iface{}}
 }
