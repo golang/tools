@@ -12,6 +12,9 @@ package main
 // For const and func objects, the results don't vary by reference and
 // are always values not addresses, so no annotations are needed.  The
 // declaration is enough.
+//
+// In retrospect, the intended behavior of ssa.Program.VarValue is
+// rather strange.
 
 import (
 	"fmt"
@@ -94,7 +97,7 @@ func main() {
 	v8a[0] = 0            //@ ssa(v8a,"Slice")
 	print(v8a[:])         //@ ssa(v8a,"Slice")
 
-	v9 := S{} //@ ssa(v9,"&Alloc")
+	v9 := S{} //@ ssa(v9,"Const")
 
 	v10 := &v9 //@ ssa(v10,"Alloc"), ssa(v9,"&Alloc")
 	_ = v10    //@ ssa(v10,"Alloc")

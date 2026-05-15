@@ -55,7 +55,7 @@ func f(spilled, unspilled int) {
 
 	_ = /*@UnOp*/ (global)
 	/*@UnOp*/ (global)[""] = ""
-	/*@Global*/ (global) = map[string]string{}
+	/*@MakeMap*/ (global) = map[string]string{}
 
 	var local t
 	/*UnOp*/ (local.x) = 1

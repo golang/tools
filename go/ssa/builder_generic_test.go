@@ -622,7 +622,7 @@ func TestInstructionString(t *testing.T) {
 		print(i, 0)
 	}
 
-	//@ instrs("f1", "*ssa.Alloc", "local T (u)")
+	//@ instrs("f1", "*ssa.Alloc", "local T (complit)")
 	//@ instrs("f1", "*ssa.FieldAddr", "&t0.x [#0]")
 	func f1[T ~struct{ x string }]() T {
 		u := T{"lorem"}
@@ -688,15 +688,15 @@ func TestInstructionString(t *testing.T) {
 	}
 
 	//@ instrs("f10", "*ssa.FieldAddr", "&t0.x [#0]")
-	//@ instrs("f10", "*ssa.Store", "*t0 = *new(T):T", "*t1 = 4:int")
+	//@ instrs("f10", "*ssa.Store", "*t1 = 4:int")
 	func f10[T ~struct{ x, y int }]() T {
 		var u T
 		u = T{x: 4}
 		return u
 	}
 
-	//@ instrs("f11", "*ssa.FieldAddr", "&t1.y [#1]")
-	//@ instrs("f11", "*ssa.Store", "*t1 = *new(T):T", "*t2 = 5:int")
+	//@ instrs("f11", "*ssa.FieldAddr", "&t2.y [#1]")
+	//@ instrs("f11", "*ssa.Store", "*t1 = t4", "*t3 = 5:int")
 	func f11[T ~struct{ x, y int }, PT *T]() PT {
 		var u PT = new(T)
 		*u = T{y: 5}
@@ -707,8 +707,8 @@ func TestInstructionString(t *testing.T) {
 	//@ instrs("f12", "*ssa.MakeMap", "make map[P]bool 1:int")
 	func f12[T any, P *struct{f T}](x T) map[P]bool { return map[P]bool{{}: true} }
 
-	//@ instrs("f13", "*ssa.IndexAddr", "&v[0:int]")
-	//@ instrs("f13", "*ssa.Store", "*t0 = 7:int", "*v = *new(A):A")
+	//@ instrs("f13", "*ssa.IndexAddr", "&t0[0:int]")
+	//@ instrs("f13", "*ssa.Store", "*t1 = 7:int", "*v = t2")
 	func f13[A [3]int, PA *A](v PA) {
 		*v = A{7}
 	}

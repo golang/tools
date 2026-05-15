@@ -583,33 +583,6 @@ func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *
 			}
 			return
 		}
-
-		if _, ok := loc.(*address); ok {
-			if isNonTypeParamInterface(loc.typ()) {
-				// e.g. var x interface{} = T{...}
-				// Can't in-place initialize an interface value.
-				// Fall back to copying.
-			} else {
-				// x = T{...} or x := T{...}
-				addr := loc.address(fn)
-				if sb != nil {
-					b.compLit(fn, addr, e, isZero, sb)
-				} else {
-					var sb storebuf
-					b.compLit(fn, addr, e, isZero, &sb)
-					sb.emit(fn)
-				}
-
-				// Subtle: emit debug ref for aggregate types only;
-				// slice and map are handled by store ops in compLit.
-				switch typeparams.CoreType(loc.typ()).(type) {
-				case *types.Struct, *types.Array:
-					emitDebugRef(fn, e, addr, true)
-				}
-
-				return
-			}
-		}
 	}
 
 	// simple case: just copy
