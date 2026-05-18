@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -124,6 +125,9 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 		curIf := curCall.Parent()
 		ifScope := info.Scopes[curIf.Node().(*ast.IfStmt)]
 		okName := freshName(info, index, ifScope, v.Pos(), curCall, curIf, token.NoPos, "ok")
+		// Because we reject any use of v outside the if statement, any use besides
+		// the argument in errors.As must lie inside the if statement.
+		usesV := moreiters.Len(index.Uses(v)) > 1
 
 		pass.Report(analysis.Diagnostic{
 			Pos:     call.Fun.Pos(),
@@ -138,10 +142,11 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 					//    -------------       --------------    -------- ----
 					// if myerr, ok := errors.AsType[*MyErr](err        ); ok { ... }
 					analysis.TextEdit{
-						// insert "myerr, ok := "
+						// Insert "myerr, ok := " if myerr is used inside the if statement.
+						// Otherwise insert "_, ok := ".
 						Pos:     call.Pos(),
 						End:     call.Pos(),
-						NewText: fmt.Appendf(nil, "%s, %s := ", v.Name(), okName),
+						NewText: fmt.Appendf(nil, "%s, %s := ", cond(usesV, v.Name(), "_"), okName),
 					},
 					analysis.TextEdit{
 						// replace As with AsType[T]

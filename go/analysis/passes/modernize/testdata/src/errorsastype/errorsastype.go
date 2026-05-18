@@ -22,6 +22,12 @@ func _(err error) {
 	}
 	{
 		var patherr *os.PathError
+		if errors.As(err, &patherr) { // want `errors.As can be simplified using AsType\[\*os.PathError\]`
+			print("not a use of patherr")
+		}
+	}
+	{
+		var patherr *os.PathError
 		print(patherr)
 		if errors.As(err, &patherr) { // nope: patherr is used outside scope of if
 			print(patherr)
