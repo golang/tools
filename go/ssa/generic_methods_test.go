@@ -66,175 +66,200 @@ func TestGenericMethods(t *testing.T) {
 	// TODO(mark): include implicit type arguments for direct callees?
 	// TODO(mark): ensure tpars == targs?
 	testCalls := []struct {
-		prog   string
-		callee string
-		tpars  int
-		targs  int
+		prog    string
+		stmts   string
+		callee  string
+		tparams int // number of type parameters
+		targs   int // number of type arguments
 	}{
 		// value receivers on generic types
 		{
-			prog:   fmt.Sprintf(g, "g.M[bool](true)"),
-			callee: "(p.G[int]).M[int, bool]",
-			tpars:  2,
-			targs:  2,
+			prog:    g,
+			stmts:   "g.M[bool](true)",
+			callee:  "(p.G[int]).M[bool]",
+			tparams: 2,
+			targs:   2,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "g.M(true)"),
-			callee: "(p.G[int]).M[int, bool]",
-			tpars:  2,
-			targs:  2,
+			prog:    g,
+			stmts:   "g.M(true)",
+			callee:  "(p.G[int]).M[bool]",
+			tparams: 2,
+			targs:   2,
 		},
 		{
-			prog:   fmt.Sprintf(g, "f := g.M[bool]; f(true)"),
-			callee: "(p.G[int]).M[bool]$bound",
-			tpars:  0, // not propagated
-			targs:  1, // receiver eagerly specialized
-		},
-		{
-			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "var f func(bool) (int, bool); f = g.M; f(true)"),
-			callee: "(p.G[int]).M[bool]$bound",
-			tpars:  0,
-			targs:  1,
-		},
-		{
-			prog:   fmt.Sprintf(g, "f := G[int].M[bool]; f(g, true)"),
-			callee: "(p.G[int]).M[bool]$thunk",
-			tpars:  0, // not propagated
-			targs:  1, // receiver eagerly specialized
+			prog:    g,
+			stmts:   "f := g.M[bool]; f(true)",
+			callee:  "(p.G[int]).M[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "var f func(G[int], bool) (int, bool); f = (G[int]).M; f(g, true)"),
-			callee: "(p.G[int]).M[bool]$thunk",
-			tpars:  0,
-			targs:  1,
+			prog:    g,
+			stmts:   "var f func(bool) (int, bool); f = g.M; f(true)",
+			callee:  "(p.G[int]).M[bool]$bound",
+			tparams: 0,
+			targs:   1,
+		},
+		{
+			prog:    g,
+			stmts:   "f := G[int].M[bool]; f(g, true)",
+			callee:  "(p.G[int]).M[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			// same as previous but with inferred type arguments
+			prog:    g,
+			stmts:   "var f func(G[int], bool) (int, bool); f = (G[int]).M; f(g, true)",
+			callee:  "(p.G[int]).M[bool]$thunk",
+			tparams: 0,
+			targs:   1,
 		},
 		// pointer receivers on generic types
 		{
-			prog:   fmt.Sprintf(g, "g.N[bool](true)"),
-			callee: "(*p.G[int]).N[int, bool]",
-			tpars:  2,
-			targs:  2,
+			prog:    g,
+			stmts:   "g.N[bool](true)",
+			callee:  "(*p.G[int]).N[bool]",
+			tparams: 2,
+			targs:   2,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "g.N(true)"),
-			callee: "(*p.G[int]).N[int, bool]",
-			tpars:  2,
-			targs:  2,
+			prog:    g,
+			stmts:   "g.N(true)",
+			callee:  "(*p.G[int]).N[bool]",
+			tparams: 2,
+			targs:   2,
 		},
 		{
-			prog:   fmt.Sprintf(g, "f := g.N[bool]; f(true)"),
-			callee: "(*p.G[int]).N[bool]$bound",
-			tpars:  0, // not propagated
-			targs:  1, // receiver eagerly specialized
-		},
-		{
-			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "var f func(bool) (int, bool); f = g.N; f(true)"),
-			callee: "(*p.G[int]).N[bool]$bound",
-			tpars:  0,
-			targs:  1,
-		},
-		{
-			prog:   fmt.Sprintf(g, "f := (*G[int]).N[bool]; f(&g, true)"),
-			callee: "(*p.G[int]).N[bool]$thunk",
-			tpars:  0, // not propagated
-			targs:  1, // receiver eagerly specialized
+			prog:    g,
+			stmts:   "f := g.N[bool]; f(true)",
+			callee:  "(*p.G[int]).N[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(g, "var f func(*G[int], bool) (int, bool); f = (*G[int]).N[bool]; f(&g, true)"),
-			callee: "(*p.G[int]).N[bool]$thunk",
-			tpars:  0,
-			targs:  1,
+			prog:    g,
+			stmts:   "var f func(bool) (int, bool); f = g.N; f(true)",
+			callee:  "(*p.G[int]).N[bool]$bound",
+			tparams: 0,
+			targs:   1,
+		},
+		{
+			prog:    g,
+			stmts:   "f := (*G[int]).N[bool]; f(&g, true)",
+			callee:  "(*p.G[int]).N[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			// same as previous but with inferred type arguments
+			prog:    g,
+			stmts:   "var f func(*G[int], bool) (int, bool); f = (*G[int]).N[bool]; f(&g, true)",
+			callee:  "(*p.G[int]).N[bool]$thunk",
+			tparams: 0,
+			targs:   1,
 		},
 		// value receivers on non-generic types
 		{
-			prog:   fmt.Sprintf(n, "n.M[bool](true)"),
-			callee: "(p.N).M",
-			tpars:  1,
-			targs:  0,
+			prog:    n,
+			stmts:   "n.M[bool](true)",
+			callee:  "(p.N).M",
+			tparams: 1,
+			targs:   0,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "n.M(true)"),
-			callee: "(p.N).M",
-			tpars:  1,
-			targs:  0,
+			prog:    n,
+			stmts:   "n.M(true)",
+			callee:  "(p.N).M",
+			tparams: 1,
+			targs:   0,
 		},
 		{
-			prog:   fmt.Sprintf(n, "f := n.M[bool]; f(true)"),
-			callee: "(p.N).M[bool]$bound",
-			tpars:  0, // not propagated
-			targs:  1,
-		},
-		{
-			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "var f func(bool) bool; f = n.M; f(true)"),
-			callee: "(p.N).M[bool]$bound",
-			tpars:  0,
-			targs:  1,
-		},
-		{
-			prog:   fmt.Sprintf(n, "f := N.M[bool]; f(n, true)"),
-			callee: "(p.N).M[bool]$thunk",
-			tpars:  0, // not propagated
-			targs:  1,
+			prog:    n,
+			stmts:   "f := n.M[bool]; f(true)",
+			callee:  "(p.N).M[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "var f func(N, bool) bool; f = N.M; f(n, true)"),
-			callee: "(p.N).M[bool]$thunk",
-			tpars:  0,
-			targs:  1,
+			prog:    n,
+			stmts:   "var f func(bool) bool; f = n.M; f(true)",
+			callee:  "(p.N).M[bool]$bound",
+			tparams: 0,
+			targs:   1,
+		},
+		{
+			prog:    n,
+			stmts:   "f := N.M[bool]; f(n, true)",
+			callee:  "(p.N).M[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1,
+		},
+		{
+			// same as previous but with inferred type arguments
+			prog:    n,
+			stmts:   "var f func(N, bool) bool; f = N.M; f(n, true)",
+			callee:  "(p.N).M[bool]$thunk",
+			tparams: 0,
+			targs:   1,
 		},
 		// pointer receivers on non-generic types
 		{
-			prog:   fmt.Sprintf(n, "n.N[bool](true)"),
-			callee: "(*p.N).N",
-			tpars:  1,
-			targs:  0,
+			prog:    n,
+			stmts:   "n.N[bool](true)",
+			callee:  "(*p.N).N",
+			tparams: 1,
+			targs:   0,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "n.N(true)"),
-			callee: "(*p.N).N",
-			tpars:  1,
-			targs:  0,
+			prog:    n,
+			stmts:   "n.N(true)",
+			callee:  "(*p.N).N",
+			tparams: 1,
+			targs:   0,
 		},
 		{
-			prog:   fmt.Sprintf(n, "f := n.N[bool]; f(true)"),
-			callee: "(*p.N).N[bool]$bound",
-			tpars:  0, // not propagated
-			targs:  1,
-		},
-		{
-			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "var f func(bool) bool; f = n.N[bool]; f(true)"),
-			callee: "(*p.N).N[bool]$bound",
-			tpars:  0,
-			targs:  1,
-		},
-		{
-			prog:   fmt.Sprintf(n, "f := (*N).N[bool]; f(&n, true)"),
-			callee: "(*p.N).N[bool]$thunk",
-			tpars:  0, // not propagated
-			targs:  1,
+			prog:    n,
+			stmts:   "f := n.N[bool]; f(true)",
+			callee:  "(*p.N).N[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1,
 		},
 		{
 			// same as previous but with inferred type arguments
-			prog:   fmt.Sprintf(n, "var f func(*N, bool) bool; f = (*N).N; f(&n, true)"),
-			callee: "(*p.N).N[bool]$thunk",
-			tpars:  0,
-			targs:  1,
+			prog:    n,
+			stmts:   "var f func(bool) bool; f = n.N[bool]; f(true)",
+			callee:  "(*p.N).N[bool]$bound",
+			tparams: 0,
+			targs:   1,
+		},
+		{
+			prog:    n,
+			stmts:   "f := (*N).N[bool]; f(&n, true)",
+			callee:  "(*p.N).N[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1,
+		},
+		{
+			// same as previous but with inferred type arguments
+			prog:    n,
+			stmts:   "var f func(*N, bool) bool; f = (*N).N; f(&n, true)",
+			callee:  "(*p.N).N[bool]$thunk",
+			tparams: 0,
+			targs:   1,
 		},
 	}
 
 	for _, want := range testCalls {
-		prog := want.prog
+		prog := fmt.Sprintf(want.prog, want.stmts)
 		calls := getCalls(t, prog)
 
 		if len(calls) != 1 {
@@ -245,8 +270,8 @@ func TestGenericMethods(t *testing.T) {
 		if got.callee != want.callee {
 			t.Errorf("wrong callee for %s: got %s, want %s", prog, got.callee, want.callee)
 		}
-		if got.tpars != want.tpars {
-			t.Errorf("wrong number of tpars for %s: got %d, want %d", prog, got.tpars, want.tpars)
+		if got.tparams != want.tparams {
+			t.Errorf("wrong number of tparams for %s: got %d, want %d", prog, got.tparams, want.tparams)
 		}
 		if got.targs != want.targs {
 			t.Errorf("wrong number of targs for %s: got %d, want %d", prog, got.targs, want.targs)
@@ -255,9 +280,9 @@ func TestGenericMethods(t *testing.T) {
 }
 
 type call struct {
-	callee string
-	tpars  int
-	targs  int
+	callee  string
+	tparams int
+	targs   int
 }
 
 func getCalls(t *testing.T, src string) []*call {
@@ -295,9 +320,9 @@ func getCalls(t *testing.T, src string) []*call {
 			if c, ok := instr.(*ssa.Call); ok {
 				fn := c.Call.StaticCallee()
 				calls = append(calls, &call{
-					callee: fn.String(),
-					tpars:  fn.TypeParams().Len(),
-					targs:  len(fn.TypeArgs()),
+					callee:  fn.String(),
+					tparams: fn.TypeParams().Len(),
+					targs:   len(fn.TypeArgs()),
 				})
 			}
 			// don't care about the extra call for MakeClosure

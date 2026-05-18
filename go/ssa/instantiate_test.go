@@ -73,25 +73,34 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 		}
 
 		intSliceTyp := types.NewSlice(types.Typ[types.Int])
-		instance := instantiateLoadMethod(intSliceTyp) // (*Pointer[[]int]).Load
-		if instance.Origin() != meth {
-			t.Errorf("Expected Origin of %s to be %s. got %s", instance, meth, instance.Origin())
+		inst1 := instantiateLoadMethod(intSliceTyp) // (*p.Pointer[[]int]).Load
+		if inst1.Origin() != meth {
+			t.Errorf("Expected Origin of %s to be %s. got %s", inst1, meth, inst1.Origin())
 		}
-		if len(instance.TypeArgs()) != 1 || !types.Identical(instance.TypeArgs()[0], intSliceTyp) {
-			t.Errorf("Expected TypeArgs of %s to be %v. got %v", instance, []types.Type{intSliceTyp}, instance.TypeArgs())
+		if len(inst1.TypeArgs()) != 1 || !types.Identical(inst1.TypeArgs()[0], intSliceTyp) {
+			t.Errorf("Expected TypeArgs of %s to be %v. got %v", inst1, []types.Type{intSliceTyp}, inst1.TypeArgs())
 		}
 
 		// A second request with an identical type returns the same Function.
 		second := instantiateLoadMethod(types.NewSlice(types.Typ[types.Int]))
-		if second != instance {
+		if second != inst1 {
 			t.Error("Expected second identical instantiation to be the same function")
 		}
 
-		// (*Pointer[[]uint]).Load
+		// (*p.Pointer[[]uint]).Load
 		inst2 := instantiateLoadMethod(types.NewSlice(types.Typ[types.Uint]))
 
-		if instance.Name() >= inst2.Name() {
-			t.Errorf("Expected name of instance %s to be before instance %v", instance, inst2)
+		if inst1.Name() != "Load" {
+			t.Errorf("Unexpected name of instance %s; got %s, want Load", inst1.String(), inst1.Name())
+		}
+		if inst2.Name() != "Load" {
+			t.Errorf("Unexpected name of instance %s; got %s, want Load", inst1.String(), inst2.Name())
+		}
+		if inst1.String() != "(*p.Pointer[[]int]).Load" {
+			t.Errorf("Unexpected string of first instance; got %s, want (*p.Pointer[[]int]).Load", inst1.String())
+		}
+		if inst2.String() != "(*p.Pointer[[]uint]).Load" {
+			t.Errorf("Unexpected string of second instance; got %s, want (*p.Pointer[[]uint]).Load", inst2.String())
 		}
 	}
 }

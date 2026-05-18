@@ -115,9 +115,14 @@ func createInstance(fn *Function, rtargs, targs []types.Type) *Function {
 		build = (*builder).buildInstantiationWrapper
 	}
 
+	name := fn.Name()
+	if len(targs) > 0 {
+		name = fmt.Sprintf("%s%s", name, targstr(targs)) // may not be unique
+	}
+
 	/* generic instance or instantiation wrapper */
 	return &Function{
-		name:           fmt.Sprintf("%s%s", fn.Name(), targstr(slices.Concat(rtargs, targs))), // may not be unique
+		name:           name,
 		object:         obj,
 		Signature:      sig,
 		Synthetic:      synthetic,

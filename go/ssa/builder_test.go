@@ -598,19 +598,19 @@ var indirect = R[int].M
 				"bound",
 				"*func() int",
 				"(p.S[int]).M$bound",
-				"(p.S[int]).M[int]",
+				"(p.S[int]).M",
 			},
 			{
 				"thunk",
 				"*func(p.S[int]) int",
 				"(p.S[int]).M$thunk",
-				"(p.S[int]).M[int]",
+				"(p.S[int]).M",
 			},
 			{
 				"indirect",
 				"*func(p.R[int]) int",
 				"(p.R[int]).M$thunk",
-				"(p.S[int]).M[int]",
+				"(p.S[int]).M",
 			},
 		} {
 			t.Run(entry.name, func(t *testing.T) {
