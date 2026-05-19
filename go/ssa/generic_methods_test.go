@@ -256,11 +256,69 @@ func TestGenericMethods(t *testing.T) {
 			tparams: 0,
 			targs:   1,
 		},
+		// bounds of instantiated signatures which only differ by receiver pointerness
+		{
+			prog:    g,
+			stmts:   "f := g.M[bool]; _ = g.N[bool]; f(true)",
+			callee:  "(p.G[int]).M[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			prog:    g,
+			stmts:   "_ = g.M[bool]; f := g.N[bool]; f(true)",
+			callee:  "(*p.G[int]).N[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			prog:    n,
+			stmts:   "f := n.M[bool]; _ = n.N[bool]; f(true)",
+			callee:  "(p.N).M[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1,
+		},
+		{
+			prog:    n,
+			stmts:   "_ = n.M[bool]; f := n.N[bool]; f(true)",
+			callee:  "(*p.N).N[bool]$bound",
+			tparams: 0, // not propagated
+			targs:   1,
+		},
+		// thunks of instantiated signatures which only differ by receiver pointerness
+		{
+			prog:    g,
+			stmts:   "f := G[int].M[bool]; _ = (*G[int]).N[bool]; f(g, true)",
+			callee:  "(p.G[int]).M[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			prog:    g,
+			stmts:   "_ = G[int].M[bool]; f := (*G[int]).N[bool]; f(&g, true)",
+			callee:  "(*p.G[int]).N[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1, // receiver eagerly specialized
+		},
+		{
+			prog:    n,
+			stmts:   "f := N.M[bool]; _ = (*N).N[bool]; f(n, true)",
+			callee:  "(p.N).M[bool]$thunk",
+			tparams: 0, // not propagated
+			targs:   1,
+		},
+		{
+			prog:    n,
+			stmts:   "_ = N.M[bool]; f := (*N).N[bool]; f(&n, true)",
+			callee:  "(*p.N).N[bool]$thunk",
+			tparams: 0,
+			targs:   1,
+		},
 	}
 
 	for _, want := range testCalls {
 		prog := fmt.Sprintf(want.prog, want.stmts)
-		calls := getCalls(t, prog)
+		calls := getCalls(t, build(t, prog))
 
 		if len(calls) != 1 {
 			t.Fatalf("too many direct calls for %s: got %d, want 1", prog, len(calls))
@@ -277,6 +335,16 @@ func TestGenericMethods(t *testing.T) {
 			t.Errorf("wrong number of targs for %s: got %d, want %d", prog, got.targs, want.targs)
 		}
 	}
+
+	testBuilds := []string{
+		// instantiate same signature with value / pointer receivers
+		fmt.Sprintf(g, "_ = g.M[bool]; _ = g.N[bool]"),
+		fmt.Sprintf(n, "_ = n.M[bool]; _ = n.N[bool]"),
+	}
+
+	for _, prog := range testBuilds {
+		build(t, prog)
+	}
 }
 
 type call struct {
@@ -285,7 +353,7 @@ type call struct {
 	targs   int
 }
 
-func getCalls(t *testing.T, src string) []*call {
+func build(t *testing.T, src string) *ssa.Package {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
 	if err != nil {
@@ -309,6 +377,10 @@ func getCalls(t *testing.T, src string) []*call {
 	p := prog.CreatePackage(pkg, []*ast.File{f}, info, true)
 	prog.Build()
 
+	return p
+}
+
+func getCalls(t *testing.T, p *ssa.Package) []*call {
 	fun := p.Func("f")
 	if fun == nil {
 		t.Fatal("f not found")

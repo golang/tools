@@ -77,7 +77,11 @@ func createInstance(fn *Function, rtargs, targs []types.Type) *Function {
 			if !ok {
 				panic("Instantiate of a Signature returned a non-signature")
 			}
-			sig = prog.canon.Type(instance).(*types.Signature)
+			// Do not canonicalize generic methods, because the receiver is not
+			// part of a Signature's type identity. For example,
+			// (*G[int]).m[int] and (G[int]).n[int] may be identical types even
+			// though their receiver types differ.
+			sig = instance
 		} else {
 			// non-generic method on generic type
 			sig = obj.Signature()
