@@ -2342,7 +2342,7 @@ type FileChangeType uint32
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileCreate
 type FileCreate struct {
 	// A file:// URI for the location of the file/folder being created.
-	URI string `json:"uri"`
+	URI DocumentURI `json:"uri"`
 }
 
 // Represents information on a file/folder delete.
@@ -2352,7 +2352,7 @@ type FileCreate struct {
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileDelete
 type FileDelete struct {
 	// A file:// URI for the location of the file/folder being deleted.
-	URI string `json:"uri"`
+	URI DocumentURI `json:"uri"`
 }
 
 // An event describing a file change.
@@ -2480,9 +2480,9 @@ type FileOperationRegistrationOptions struct {
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileRename
 type FileRename struct {
 	// A file:// URI for the original location of the file/folder being renamed.
-	OldURI string `json:"oldUri"`
+	OldURI DocumentURI `json:"oldUri"`
 	// A file:// URI for the new location of the file/folder being renamed.
-	NewURI string `json:"newUri"`
+	NewURI DocumentURI `json:"newUri"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileSystemWatcher

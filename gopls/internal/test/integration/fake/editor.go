@@ -1295,7 +1295,7 @@ func (e *Editor) DidCreateFiles(ctx context.Context, files ...protocol.DocumentU
 	params := &protocol.CreateFilesParams{}
 	for _, file := range files {
 		params.Files = append(params.Files, protocol.FileCreate{
-			URI: string(file),
+			URI: file,
 		})
 	}
 	return e.Server.DidCreateFiles(ctx, params)

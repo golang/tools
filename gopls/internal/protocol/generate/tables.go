@@ -78,6 +78,10 @@ var renameProp = map[prop]string{
 	{"DocumentDiagnosticReportPartialResult", "relatedDocuments"}: "map[DocumentURI]any",
 
 	{"ExecuteCommandParams", "arguments"}: "[]json.RawMessage",
+	{"FileCreate", "uri"}:                 "DocumentURI", // see go.dev/issue/74652
+	{"FileDelete", "uri"}:                 "DocumentURI",
+	{"FileRename", "oldUri"}:              "DocumentURI",
+	{"FileRename", "newUri"}:              "DocumentURI",
 	{"FoldingRange", "kind"}:              "string",
 	{"Hover", "contents"}:                 "MarkupContent",
 	{"InlayHint", "label"}:                "[]InlayHintLabelPart",

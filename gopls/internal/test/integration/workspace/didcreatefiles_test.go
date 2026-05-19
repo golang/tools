@@ -144,3 +144,14 @@ package license1
 		})
 	}
 }
+
+// TestDidCreateFiles_BadURI is an integration test for go.dev/issue/74652,
+// in which a bad URI passed to DidOpen would cause the server to panic.
+// Now, the server uses DocumentURI (not raw string) when unmarshalling,
+// causing it to sanitize properly.
+func TestDidCreateFiles_BadURI(t *testing.T) {
+	Run(t, "", func(t *testing.T, env *Env) {
+		env.DidCreateFiles("badschema:badfilename")
+		env.AfterChange()
+	})
+}
