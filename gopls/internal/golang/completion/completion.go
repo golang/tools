@@ -2092,7 +2092,7 @@ type candidateInference struct {
 	convertibleTo types.Type
 
 	// needsExactType is true if the candidate type must be exactly the type of
-	// the objType, e.g. an interface rather than it's implementors.
+	// the objType, e.g. an interface rather than its implementors.
 	//
 	// This is necessary when objType is derived using reverse type inference:
 	// any different (but assignable) type may lead to different type inference,

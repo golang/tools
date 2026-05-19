@@ -187,7 +187,7 @@ func BenchmarkAll(b *testing.B, f func(*testing.B, Exporter)) {
 // debugging tests.
 //
 // If the Writer for any file within any module returns an error equivalent to
-// ErrUnspported, Export skips the test.
+// ErrUnsupported, Export skips the test.
 func Export(t testing.TB, exporter Exporter, modules []Module) *Exported {
 	t.Helper()
 	if exporter == Modules {

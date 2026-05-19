@@ -3142,7 +3142,7 @@ Package documentation: [embedlit](https://pkg.go.dev/golang.org/x/tools/go/analy
 The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error. For example:
 
 	var unwrappedErr net.DNSError
-	errors.As(err, unwrappedErr) // should use &unwrappedErr, DNSError.Error has a pointer reciever
+	errors.As(err, unwrappedErr) // should use &unwrappedErr, DNSError.Error has a pointer receiver
 
 
 Default: on.
