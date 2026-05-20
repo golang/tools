@@ -31,5 +31,5 @@ var _ = rand.Float64()
 //@inlayhints(out)
 package p
 
-var _ = rand.Float64()
+var _< invalid type> = rand.Float64()
 
