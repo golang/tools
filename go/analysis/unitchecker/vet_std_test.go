@@ -9,84 +9,25 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/analysis/passes/appends"
-	"golang.org/x/tools/go/analysis/passes/asmdecl"
-	"golang.org/x/tools/go/analysis/passes/assign"
-	"golang.org/x/tools/go/analysis/passes/atomic"
-	"golang.org/x/tools/go/analysis/passes/bools"
-	"golang.org/x/tools/go/analysis/passes/buildtag"
-	"golang.org/x/tools/go/analysis/passes/cgocall"
-	"golang.org/x/tools/go/analysis/passes/composite"
-	"golang.org/x/tools/go/analysis/passes/copylock"
-	"golang.org/x/tools/go/analysis/passes/defers"
-	"golang.org/x/tools/go/analysis/passes/directive"
-	"golang.org/x/tools/go/analysis/passes/errorsas"
-	"golang.org/x/tools/go/analysis/passes/framepointer"
-	"golang.org/x/tools/go/analysis/passes/gofix"
-	"golang.org/x/tools/go/analysis/passes/hostport"
-	"golang.org/x/tools/go/analysis/passes/httpresponse"
-	"golang.org/x/tools/go/analysis/passes/ifaceassert"
-	"golang.org/x/tools/go/analysis/passes/loopclosure"
-	"golang.org/x/tools/go/analysis/passes/lostcancel"
-	"golang.org/x/tools/go/analysis/passes/nilfunc"
-	"golang.org/x/tools/go/analysis/passes/printf"
-	"golang.org/x/tools/go/analysis/passes/shift"
-	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
-	"golang.org/x/tools/go/analysis/passes/stdmethods"
-	"golang.org/x/tools/go/analysis/passes/stdversion"
-	"golang.org/x/tools/go/analysis/passes/stringintconv"
-	"golang.org/x/tools/go/analysis/passes/structtag"
-	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
-	"golang.org/x/tools/go/analysis/passes/tests"
-	"golang.org/x/tools/go/analysis/passes/timeformat"
-	"golang.org/x/tools/go/analysis/passes/unmarshal"
-	"golang.org/x/tools/go/analysis/passes/unreachable"
-	"golang.org/x/tools/go/analysis/passes/unusedresult"
+	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/unsafeptr"
+	"golang.org/x/tools/go/analysis/suite/vet"
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
-// vet is the entrypoint of this executable when ENTRYPOINT=vet.
-// Keep consistent with the actual vet in GOROOT/src/cmd/vet/main.go.
-func vet() {
-	unitchecker.Main(
-		appends.Analyzer,
-		asmdecl.Analyzer,
-		assign.Analyzer,
-		atomic.Analyzer,
-		bools.Analyzer,
-		buildtag.Analyzer,
-		cgocall.Analyzer,
-		composite.Analyzer,
-		copylock.Analyzer,
-		defers.Analyzer,
-		directive.Analyzer,
-		errorsas.Analyzer,
-		framepointer.Analyzer,
-		gofix.Analyzer,
-		httpresponse.Analyzer,
-		hostport.Analyzer,
-		ifaceassert.Analyzer,
-		loopclosure.Analyzer,
-		lostcancel.Analyzer,
-		nilfunc.Analyzer,
-		printf.Analyzer,
-		shift.Analyzer,
-		sigchanyzer.Analyzer,
-		stdmethods.Analyzer,
-		stdversion.Analyzer,
-		stringintconv.Analyzer,
-		structtag.Analyzer,
-		testinggoroutine.Analyzer,
-		tests.Analyzer,
-		timeformat.Analyzer,
-		unmarshal.Analyzer,
-		unreachable.Analyzer,
-		// unsafeptr.Analyzer, // currently reports findings in runtime
-		unusedresult.Analyzer,
-	)
+// vetmain is the entrypoint of this executable when ENTRYPOINT=vet.
+func vetmain() {
+	// Remove unsafeptr, since it currently reports findings in runtime.
+	suite := slices.Clone(vet.Suite)
+	suite = slices.DeleteFunc(suite, func(a *analysis.Analyzer) bool {
+		return a == unsafeptr.Analyzer
+	})
+
+	unitchecker.Main(suite...)
 }
 
 // TestVetStdlib runs the same analyzers as the actual vet over the

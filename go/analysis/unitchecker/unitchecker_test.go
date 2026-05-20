@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	// child process?
 	switch os.Getenv("ENTRYPOINT") {
 	case "vet":
-		vet()
+		vetmain()
 		panic("unreachable")
 	case "minivet":
 		minivet()
