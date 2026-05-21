@@ -164,7 +164,15 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		}
 		watchQueueMu.Lock()
 		for _, r := range res.Roots {
-			watchQueue = append(watchQueue, protocol.DocumentURI(r.URI).Path())
+			uri, err := protocol.ParseDocumentURI(r.URI)
+			if err != nil {
+				// Discard invalid URIs.
+				// Unlike LSP, MCP does not check URI validity during unmarshaling.
+				// Fixes go.dev/issue/74652, crash of May 18 2026.
+				log.Printf("mcp.ListRootsResult[*].Roots[*].URI contains invalid URI: %v", err)
+				continue
+			}
+			watchQueue = append(watchQueue, uri.Path())
 		}
 		watchQueueMu.Unlock()
 
