@@ -244,7 +244,7 @@ func cmpNamed(x, y *types.Named) error {
 		// Calling equalType here leads to infinite recursion, so just compare
 		// strings.
 		if xm.String() != ym.String() {
-			return fmt.Errorf("unequal methods: %s vs %s", x, y)
+			return fmt.Errorf("unequal methods: %s vs %s", xm, ym)
 		}
 	}
 	return nil
