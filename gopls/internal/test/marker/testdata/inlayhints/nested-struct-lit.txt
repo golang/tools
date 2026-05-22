@@ -1,0 +1,51 @@
+Test that inlay hints reveal the sequence of names implied by a field
+name F in a struct literal T{F: v}, which in go1.27 may denote an
+embedded field; see go.dev/issue/78553.
+
+-- flags --
+-ignore_extra_diags
+-min_go=go1.27
+
+-- settings.json --
+{"hints": {"compositeLiteralFields": true}}
+
+-- structlit.go --
+package p //@ inlayhints(structlit)
+
+type A struct { *B }
+type B struct { C }
+type C struct { F int }
+
+var _ = A{B: &B{C: C{F: 0}}}
+var _ = A{B: &B{C: C{0}}}
+var _ = A{&B{C: C{0}}}
+var _ = A{&B{C{0}}}
+var _ = A{C: C{F: 0}}
+var _ = A{C: C{0}}
+var _ = A{C{F: 0}}
+var _ = A{C{F: 0}}
+var _ = A{C{0}}
+var _ = A{F: 0}
+var _ = A{0}
+var _ = A{}
+
+-- @structlit --
+package p //@ inlayhints(structlit)
+
+type A struct { *B }
+type B struct { C }
+type C struct { F int }
+
+var _ = A{B: &B{C: C{F: 0}}}
+var _ = A{B: &B{C: C{<F: >0}}}
+var _ = A{<B: >&B{C: C{<F: >0}}}
+var _ = A{<B: >&B{<C: >C{<F: >0}}}
+var _ = A{<B.>C: C{F: 0}}
+var _ = A{<B.>C: C{<F: >0}}
+var _ = A{<B: >C{F: 0}}
+var _ = A{<B: >C{F: 0}}
+var _ = A{<B: >C{<F: >0}}
+var _ = A{<B.C.>F: 0}
+var _ = A{<B: >0}
+var _ = A{}
+

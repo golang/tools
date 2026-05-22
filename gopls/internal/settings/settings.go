@@ -559,30 +559,30 @@ type InlayHint string
 const (
 	// ParameterNames controls inlay hints for parameter names:
 	// ```go
-	// 	parseInt(/* str: */ "123", /* radix: */ 8)
+	// 	parseInt(« str: » "123", « radix: » 8)
 	// ```
 	ParameterNames InlayHint = "parameterNames"
 
 	// AssignVariableTypes controls inlay hints for variable types in assign statements:
 	// ```go
-	// 	i/* int*/, j/* int*/ := 0, len(r)-1
+	// 	i« int», j« int» := 0, len(r)-1
 	// ```
 	AssignVariableTypes InlayHint = "assignVariableTypes"
 
 	// ConstantValues controls inlay hints for constant values:
 	// ```go
 	// 	const (
-	// 		KindNone   Kind = iota/* = 0*/
-	// 		KindPrint/*  = 1*/
-	// 		KindPrintf/* = 2*/
-	// 		KindErrorf/* = 3*/
+	// 		KindNone   Kind = iota« = 0»
+	// 		KindPrint«  = 1»
+	// 		KindPrintf« = 2»
+	// 		KindErrorf« = 3»
 	// 	)
 	// ```
 	ConstantValues InlayHint = "constantValues"
 
 	// RangeVariableTypes controls inlay hints for variable types in range statements:
 	// ```go
-	// 	for k/* int*/, v/* string*/ := range []string{} {
+	// 	for k« int», v« string» := range []string{} {
 	// 		fmt.Println(k, v)
 	// 	}
 	// ```
@@ -593,26 +593,28 @@ const (
 	// 	for _, c := range []struct {
 	// 		in, want string
 	// 	}{
-	// 		/*struct{ in string; want string }*/{"Hello, world", "dlrow ,olleH"},
+	// 		«struct{ in string; want string }»{"Hello, world", "dlrow ,olleH"},
 	// 	}
 	// ```
 	CompositeLiteralTypes InlayHint = "compositeLiteralTypes"
 
 	// CompositeLiteralFieldNames inlay hints for composite literal field names:
 	// ```go
-	// 	{/*in: */"Hello, world", /*want: */"dlrow ,olleH"}
+	// 	Point2D{«X: »1, «Y: »2}
+	//
+	//	Outer{«Embedded.»Field: 0}
 	// ```
 	CompositeLiteralFieldNames InlayHint = "compositeLiteralFields"
 
 	// FunctionTypeParameters inlay hints for implicit type parameters on generic functions:
 	// ```go
-	// 	myFoo/*[int, string]*/(1, "hello")
+	// 	myFoo«[int, string]»(1, "hello")
 	// ```
 	FunctionTypeParameters InlayHint = "functionTypeParameters"
 
 	// IgnoredError inlay hints for implicitly discarded errors:
 	// ```go
-	// 	f.Close() // ignore error
+	// 	f.Close()« // ignore error»
 	// ```
 	// This check inserts an `// ignore error` hint following any
 	// statement that is a function call whose error result is

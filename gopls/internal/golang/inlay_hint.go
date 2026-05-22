@@ -12,6 +12,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"iter"
 	"slices"
 	"strings"
 
@@ -323,43 +324,76 @@ func constantValues(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 
 func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
 	for curCompLit := range cur.Preorder((*ast.CompositeLit)(nil)) {
-		compLit, ok := curCompLit.Node().(*ast.CompositeLit)
-		if !ok {
-			continue
-		}
+		compLit := curCompLit.Node().(*ast.CompositeLit)
 		typ := info.TypeOf(compLit)
 		if typ == nil {
 			continue
 		}
-		typ = typesinternal.Unpointer(typ)
-		strct, ok := typeparams.CoreType(typ).(*types.Struct)
+		strct, ok := typeparams.CoreType(typesinternal.Unpointer(typ)).(*types.Struct)
 		if !ok {
 			continue
 		}
 
-		var hints []protocol.InlayHint
-		var allEdits []protocol.TextEdit
+		var (
+			hints    []protocol.InlayHint
+			allEdits []protocol.TextEdit
+			label    strings.Builder
+		)
 		for i, v := range compLit.Elts {
-			if _, ok := v.(*ast.KeyValueExpr); !ok {
-				start, err := pgf.PosPosition(v.Pos())
-				if err != nil {
-					continue
+			label.Reset()
+			pad := false
+			if kv, ok := v.(*ast.KeyValueExpr); ok {
+				// keyed field: show implicit field selections
+				if id, ok := kv.Key.(*ast.Ident); ok {
+					// For some reason an inlayHintFunc
+					// doesn't get the current types.Package.
+					// Use the package of the explicit field.
+					var pkg *types.Package
+					if obj, ok := info.Uses[id]; ok {
+						pkg = obj.Pkg()
+					}
+
+					if seln, ok := types.LookupSelection(strct, true, pkg, id.Name); ok {
+						n := len(seln.Index())
+						for field := range fieldSelections(seln) {
+							n--
+							if n == 0 {
+								break // skip final (explicit) field
+							}
+							label.WriteString(field.Name())
+							label.WriteByte('.')
+						}
+					}
 				}
-				if i > strct.NumFields()-1 {
-					break
+			} else {
+				// unkeyed field: show key based on index
+				if i < strct.NumFields() {
+					label.WriteString(strct.Field(i).Name())
+					label.WriteByte(':')
+					pad = true
 				}
-				hints = append(hints, protocol.InlayHint{
-					Position:     start,
-					Label:        labelPart(strct.Field(i).Name() + ":"),
-					Kind:         protocol.Parameter,
-					PaddingRight: true,
-				})
-				allEdits = append(allEdits, protocol.TextEdit{
-					Range:   protocol.Range{Start: start, End: start},
-					NewText: strct.Field(i).Name() + ": ",
-				})
 			}
+			if label.Len() == 0 {
+				continue
+			}
+			labelStr := label.String()
+
+			start, err := pgf.PosPosition(v.Pos())
+			if err != nil {
+				continue
+			}
+			hints = append(hints, protocol.InlayHint{
+				Position:     start,
+				Label:        labelPart(labelStr),
+				Kind:         protocol.Parameter,
+				PaddingRight: pad,
+			})
+			allEdits = append(allEdits, protocol.TextEdit{
+				Range:   protocol.Range{Start: start, End: start},
+				NewText: labelStr,
+			})
 		}
+
 		// It is not allowed to have a mix of keyed and unkeyed fields, so
 		// have the text edits add keys to all fields.
 		for i := range hints {
@@ -403,4 +437,36 @@ func labelPart(s string) []protocol.InlayHintLabelPart {
 		s = s[:maxLabelLength] + "..."
 	}
 	return []protocol.InlayHintLabelPart{{Value: s}}
+}
+
+// fieldSelection returns the sequence of fields selected by seln.
+// All but the final one are implicit.
+// The boolean component indicates an indirect field.
+//
+// TODO(adonovan): promote to typesinternal. And thence to a method of Selection.
+func fieldSelections(seln types.Selection) iter.Seq2[*types.Var, bool] {
+	return func(yield func(*types.Var, bool) bool) {
+		var (
+			t       = seln.Recv()
+			indices = seln.Index()
+		)
+		for i, idx := range indices {
+			ptr, isPtr := t.Underlying().(*types.Pointer)
+			if isPtr {
+				t = ptr.Elem()
+			}
+			structType, ok := t.Underlying().(*types.Struct)
+			if !ok {
+				break // e.g. final selection is a method
+			}
+			field := structType.Field(idx)
+			if !yield(field, isPtr) {
+				break
+			}
+			if i == len(indices)-1 {
+				break
+			}
+			t = field.Type()
+		}
+	}
 }

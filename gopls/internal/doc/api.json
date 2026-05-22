@@ -2035,49 +2035,49 @@
 					"Keys": [
 						{
 							"Name": "\"assignVariableTypes\"",
-							"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```\n",
+							"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti« int», j« int» := 0, len(r)-1\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"compositeLiteralFields\"",
-							"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```\n",
+							"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\tPoint2D{«X: »1, «Y: »2}\n\n\tOuter{«Embedded.»Field: 0}\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"compositeLiteralTypes\"",
-							"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
+							"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t«struct{ in string; want string }»{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"constantValues\"",
-							"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```\n",
+							"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota« = 0»\n\t\tKindPrint«  = 1»\n\t\tKindPrintf« = 2»\n\t\tKindErrorf« = 3»\n\t)\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"functionTypeParameters\"",
-							"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```\n",
+							"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo«[int, string]»(1, \"hello\")\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"ignoredError\"",
-							"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
+							"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close()« // ignore error»\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"parameterNames\"",
-							"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```\n",
+							"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(« str: » \"123\", « radix: » 8)\n```\n",
 							"Default": "false",
 							"Status": ""
 						},
 						{
 							"Name": "\"rangeVariableTypes\"",
-							"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
+							"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k« int», v« string» := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
 							"Default": "false",
 							"Status": ""
 						}
@@ -3867,49 +3867,49 @@
 	"Hints": [
 		{
 			"Name": "assignVariableTypes",
-			"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```\n",
+			"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti« int», j« int» := 0, len(r)-1\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "compositeLiteralFields",
-			"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```\n",
+			"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\tPoint2D{«X: »1, «Y: »2}\n\n\tOuter{«Embedded.»Field: 0}\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "compositeLiteralTypes",
-			"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
+			"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t«struct{ in string; want string }»{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "constantValues",
-			"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```\n",
+			"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota« = 0»\n\t\tKindPrint«  = 1»\n\t\tKindPrintf« = 2»\n\t\tKindErrorf« = 3»\n\t)\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "functionTypeParameters",
-			"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```\n",
+			"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo«[int, string]»(1, \"hello\")\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "ignoredError",
-			"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
+			"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close()« // ignore error»\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explicitly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "parameterNames",
-			"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```\n",
+			"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(« str: » \"123\", « radix: » 8)\n```\n",
 			"Default": false,
 			"Status": ""
 		},
 		{
 			"Name": "rangeVariableTypes",
-			"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
+			"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k« int», v« string» := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
 			"Default": false,
 			"Status": ""
 		}
