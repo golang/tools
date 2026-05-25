@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 const testTmplString = `
@@ -481,6 +482,8 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return nil, nil, err
 	}
 
+	fileVersion := pkg.TypesInfo().FileVersions[pgf.File]
+
 	data := testInfo{
 		TestingPackageName: qual(types.NewPackage("testing", "testing")),
 		PackageName:        qual(pkg.Types()),
@@ -491,32 +494,45 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		},
 	}
 
-	isContextType := func(t types.Type) bool {
-		return typesinternal.IsTypeNamed(t, "context", "Context")
-	}
-
-	isUnusedParameter := func(name string) bool {
-		return name == "" || name == "_"
-	}
-
-	for i := range sig.Params().Len() {
-		param := sig.Params().At(i)
-		name, typ := param.Name(), param.Type()
-		f := field{Type: types.TypeString(typ, qual)}
-		if i == 0 && isContextType(typ) {
-			f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-		} else if isUnusedParameter(name) && data.Func.IsVariadic && sig.Params().Len()-1 == i {
-			// The last argument is the variadic argument, and it's not used in the function body,
-			// so we don't need to render it in the test case struct.
-			data.Func.IsUnusedVariadic = true
-			continue
-		} else if isUnusedParameter(name) {
-			f.Value, _ = typesinternal.ZeroString(typ, qual)
-		} else {
-			f.Name = name
+	// populateArgs fills fn.Args from sig's parameters, applying the conventions
+	// used by the test-generation template:
+	//   - a leading context.Context parameter becomes t.Context() (Go 1.24+) or
+	//     context.Background() (older modules), gated by fileVersion;
+	//   - an unused trailing variadic parameter is dropped and recorded via
+	//     fn.IsUnusedVariadic;
+	//   - other unused ("" or "_") parameters get a zero-value literal;
+	//   - named parameters keep their name and type for use as a test-table field.
+	populateArgs := func(fn *function, sig *types.Signature) {
+		for i := range sig.Params().Len() {
+			param := sig.Params().At(i)
+			name, typ := param.Name(), param.Type()
+			var f field
+			switch {
+			case i == 0 && typesinternal.IsTypeNamed(typ, "context", "Context"):
+				if versions.AtLeast(fileVersion, versions.Go1_24) {
+					f.Value = "t.Context()"
+				} else {
+					f.Type = types.TypeString(typ, qual)
+					f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
+				}
+			case name == "" || name == "_":
+				if fn.IsVariadic && i == sig.Params().Len()-1 {
+					// The last argument is the variadic argument, and it's not used in the function body,
+					// so we don't need to render it in the test case struct.
+					fn.IsUnusedVariadic = true
+					continue
+				}
+				f.Type = types.TypeString(typ, qual)
+				f.Value, _ = typesinternal.ZeroString(typ, qual)
+			default:
+				f.Type = types.TypeString(typ, qual)
+				f.Name = name
+			}
+			fn.Args = append(fn.Args, f)
 		}
-		data.Func.Args = append(data.Func.Args, f)
 	}
+
+	populateArgs(&data.Func, sig)
 
 	for i := range sig.Results().Len() {
 		typ := sig.Results().At(i).Type()
@@ -641,24 +657,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				Name:       constructor.Name(),
 				IsVariadic: constructor.Signature().Variadic(),
 			}
-			for i := range constructor.Signature().Params().Len() {
-				param := constructor.Signature().Params().At(i)
-				name, typ := param.Name(), param.Type()
-				f := field{Type: types.TypeString(typ, qual)}
-				if i == 0 && isContextType(typ) {
-					f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-				} else if isUnusedParameter(name) && data.Receiver.Constructor.IsVariadic && constructor.Signature().Params().Len()-1 == i {
-					// The last argument is the variadic argument, and it's not used in the function body,
-					// so we don't need to render it in the test case struct.
-					data.Receiver.Constructor.IsUnusedVariadic = true
-					continue
-				} else if isUnusedParameter(name) {
-					f.Value, _ = typesinternal.ZeroString(typ, qual)
-				} else {
-					f.Name = name
-				}
-				data.Receiver.Constructor.Args = append(data.Receiver.Constructor.Args, f)
-			}
+			populateArgs(data.Receiver.Constructor, constructor.Signature())
 			for i := range constructor.Signature().Results().Len() {
 				typ := constructor.Signature().Results().At(i).Type()
 				var name string

@@ -271,7 +271,8 @@ the struct used for the table-driven test. (For each blank `_` parameter, the
 value has no effect, so the test provides a zero-valued argument.)
 
 **Contexts**: If the first parameter is `context.Context`, the test passes
-`context.Background()`.
+`t.Context()` when the module's Go version is 1.24 or later, and
+`context.Background()` otherwise.
 
 **Results**: the function's results are assigned to variables (`got`, `got2`,
 and so on) and compared with expected values (`want`, `want2`, etc.`) defined in

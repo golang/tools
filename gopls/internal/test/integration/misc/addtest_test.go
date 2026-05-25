@@ -19,6 +19,8 @@ func TestAddTest(t *testing.T) {
 -- go.mod --
 module example.com
 
+go 1.24
+
 -- a/a.go --
 package a
 
@@ -40,7 +42,6 @@ func TestExisting(t *testing.T) {}
 	const want = `package a_test
 
 import (
-	"context"
 	"testing"
 
 	"example.com/a"
@@ -59,7 +60,7 @@ func TestFoo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := a.Foo(context.Background(), tt.in)
+			got := a.Foo(t.Context(), tt.in)
 			// TODO: update the condition below to compare got with tt.want.
 			if true {
 				t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -111,10 +112,10 @@ func TestFoo(t *testing.T) {
 			// Pointing to the line of test function declaration.
 			if want := (protocol.Range{
 				Start: protocol.Position{
-					Line: 11,
+					Line: 10,
 				},
 				End: protocol.Position{
-					Line: 11,
+					Line: 10,
 				},
 			}); *got[0].Selection != want {
 				t.Errorf("gopls.add_test: got showDocument requests selection for %v, want %v", *got[0].Selection, want)

@@ -1,0 +1,48 @@
+This test checks the fallback behavior of the 'add test for FUNC' code action
+when the module's Go version is older than 1.24 (before testing.T.Context was
+available): the generated test must continue to use context.Background() and
+reuse the existing rename of the "context" import in the test file.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.23
+
+-- a/a.go --
+package a
+
+import "context"
+
+func Foo(ctx context.Context) {} //@codeaction("Foo", "source.addTest", edit=foo)
+
+-- a/a_test.go --
+package a_test
+
+import renamedctx "context"
+
+-- @foo/a/a_test.go --
+@@ -3 +3,3 @@
+-import renamedctx "context"
++import (
++	renamedctx "context"
++	"testing"
+@@ -5 +7,16 @@
++	"example.com/a"
++)
++
++
++func TestFoo(t *testing.T) {
++	tests := []struct {
++		name string // description of this test case
++	}{
++		// TODO: Add test cases.
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			a.Foo(renamedctx.Background())
++		})
++	}
++}
