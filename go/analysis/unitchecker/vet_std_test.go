@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/unreachable"
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/suite/vet"
 	"golang.org/x/tools/go/analysis/unitchecker"
@@ -21,10 +22,12 @@ import (
 
 // vetmain is the entrypoint of this executable when ENTRYPOINT=vet.
 func vetmain() {
-	// Remove unsafeptr, since it currently reports findings in runtime.
 	suite := slices.Clone(vet.Suite)
 	suite = slices.DeleteFunc(suite, func(a *analysis.Analyzer) bool {
-		return a == unsafeptr.Analyzer
+		// This logic mirrors code in cmd/go/internal/work.Builder.vet
+		// to tailor the default analyzer suite used by go vet/test in GOROOT.
+		// (See https://go.dev/issue/79622.)
+		return a == unsafeptr.Analyzer || a == unreachable.Analyzer
 	})
 
 	unitchecker.Main(suite...)
