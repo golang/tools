@@ -212,7 +212,18 @@ Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":true,"tidy":t
 
 semanticTokens determines whether gopls will return a
 SemanticTokensProvider at initialization, or respond
-to request for semantic tokens.
+to requests for semantic tokens.
+
+This setting being `false` won't necessary disable the client's calls
+for semantic tokens. If you want that, it would need to be configured in
+the client. For example, in VSCode, this would disable all Go semantic
+token calls to the LSP server:
+
+```json5
+"[go]": {
+    "editor.semanticHighlighting.enabled": false,
+}
+```
 
 Default: `false`.
 

@@ -127,7 +127,53 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	}
 
 	var semanticTokenProvider any
-	if options.SemanticTokens {
+	if options.SemanticTokens || options.ConfigurationSupported {
+		// Also provide the semantic token provider if the client supports
+		// Configuration calls. Reasoning:
+		//
+		// There are two ways to tell the client that this LSP server supports
+		// semantic token calls:
+		//   1. Return the semanticTokenProvider here in the `InitializeResult`
+		//   2. Anytime after Initialize() finishes, call
+		//    client.register("textDocument/semanticTokens") with the
+		//    semanticTokenProvider. Doing it this way would have many
+		//    specific requirements:
+		//    * The client must have set
+		//      `SemanticTokensClientCapabilities.dynamicRegistration = true`.
+		//    * The server must maintain the state of what it has actively
+		//      registered on the client, as the LSP doesn't allow the same
+		//      capability to be registered multiple times.
+		//    * As most clients don't support dynamic registration, we wouldn't
+		//      be able to just support that route, we would have to maintain
+		//      both static and dynamic registration paths.
+		//
+		// For all these reasons, we choose not to support the dynamic
+		// registration and fully rely on option 1.
+		//
+		// The only way the server would ever change to start/stop supporting
+		// semantic tokens is on a user's change of setting: `semanticTokens`.
+		// gopls only *retrieves* updated user configuration by sending
+		// `workspace/configuration` requests to the client.
+		// `options.ConfigurationSupported` indicates whether the client
+		// supports those calls and gopls doesn't send the `configuration`
+		// requests if not.
+		//
+		// gopls also will only send `workspace/configuration` requests after
+		// it receives a `workspace/didChangeConfiguration` request or if a new
+		// directory is added to the current session. We can't determine
+		// through the `ClientCapabilities` whether the either of these things
+		// can happen, so we have to always assume that they will.
+		//
+		// To conclude, the only signal to guarantee that gopls will never see
+		// updated user configs is if the client has
+		// `options.ConfigurationSupported = false`. So if the user currently
+		// has semanticTokens disabled AND their client doesn't support
+		// configuration calls, we know we never need to support semantic
+		// tokens and can inform the client by *not* returning a
+		// semanticTokenProvider. In any other case (the current scope) we need
+		// to return a semanticTokenProvider here so that the client will try
+		// to send `semanticToken` requests in the possibility that the user's
+		// gopls settings at that point allow us to return them.
 		semanticTokenProvider = protocol.SemanticTokensOptions{
 			Range: &protocol.Or_SemanticTokensOptions_range{Value: true},
 			Full:  &protocol.Or_SemanticTokensOptions_full{Value: true},
@@ -136,6 +182,12 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 				TokenModifiers: moreslices.ConvertStrings[string](semtok.Modifiers),
 			},
 		}
+		// Note: If we ever get to a point that the performance of
+		// semanticTokens isn't significantly different from other file level
+		// LSP methods, we should remove this option alltogether and always
+		// return the semanticTokenProvider. At that point users can configure
+		// whether their client will send calls for the semantic tokens. This
+		// is a setting that should ideally live on the front-end.
 	}
 
 	versionInfo := debug.VersionInfo()
@@ -248,6 +300,9 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 	var registrations []protocol.Registration
 	options := s.Options()
 	if options.ConfigurationSupported && options.DynamicConfigurationSupported {
+		// Even though we are registering `didChangeConfiguration` based on the
+		// client capabilities, clients can and do still send requests to it
+		// even if it's not registered.
 		registrations = append(registrations, protocol.Registration{
 			ID:     "workspace/didChangeConfiguration",
 			Method: "workspace/didChangeConfiguration",

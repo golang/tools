@@ -2155,7 +2155,7 @@
 			{
 				"Name": "semanticTokens",
 				"Type": "bool",
-				"Doc": "semanticTokens determines whether gopls will return a\nSemanticTokensProvider at initialization, or respond\nto request for semantic tokens.\n",
+				"Doc": "semanticTokens determines whether gopls will return a\nSemanticTokensProvider at initialization, or respond\nto requests for semantic tokens.\n\nThis setting being `false` won't necessary disable the client's calls\nfor semantic tokens. If you want that, it would need to be configured in\nthe client. For example, in VSCode, this would disable all Go semantic\ntoken calls to the LSP server:\n\n```json5\n\"[go]\": {\n    \"editor.semanticHighlighting.enabled\": false,\n}\n```\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
