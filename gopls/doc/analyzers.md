@@ -3172,8 +3172,8 @@ Default: on.
 
 Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype)
 
-<a id='errorsastype'></a>
-## `errorsastype`: Reports misuse of errors.AsType[T] in if/else chains.
+<a id='errorsastypeshadow'></a>
+## `errorsastypeshadow`: report shadowing of errors.AsType[T] in if/else chains
 
 For example:
 
@@ -3189,7 +3189,7 @@ In this case, the second call to errors.AsType does not operate on the original 
 
 Default: on.
 
-Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype)
+Package documentation: [errorsastypeshadow](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastypeshadow)
 
 <a id='fieldalignment'></a>
 ## `fieldalignment`: find structs that would use less memory if their fields were sorted

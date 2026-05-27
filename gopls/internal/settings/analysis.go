@@ -56,7 +56,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
-	"golang.org/x/tools/gopls/internal/analysis/errorsastype"
+	"golang.org/x/tools/gopls/internal/analysis/errorsastypeshadow"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/maprange"
@@ -215,11 +215,12 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: yield.Analyzer},   // uses go/ssa
 	{analyzer: sortslice.Analyzer},
 	{analyzer: embeddirective.Analyzer},
-	{analyzer: scannererr.Analyzer},    // to appear in cmd/vet@go1.27
-	{analyzer: waitgroup.Analyzer},     // to appear in cmd/vet@go1.25
-	{analyzer: hostport.Analyzer},      // to appear in cmd/vet@go1.25
-	{analyzer: recursiveiter.Analyzer}, // under evaluation
-	{analyzer: writestring.Analyzer},
+	{analyzer: scannererr.Analyzer},         // to appear in cmd/vet@go1.27
+	{analyzer: waitgroup.Analyzer},          // to appear in cmd/vet@go1.25
+	{analyzer: hostport.Analyzer},           // to appear in cmd/vet@go1.25
+	{analyzer: recursiveiter.Analyzer},      // under evaluation
+	{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
+	{analyzer: writestring.Analyzer},        // under evaluation
 
 	// disabled due to high false positives
 	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
@@ -290,8 +291,6 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: nonewvars.Analyzer},
 	{analyzer: noresultvalues.Analyzer},
 	{analyzer: unusedvariable.Analyzer},
-
-	{analyzer: errorsastype.Analyzer},
 }
 
 func init() {

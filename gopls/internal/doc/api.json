@@ -1473,8 +1473,8 @@
 							"Status": ""
 						},
 						{
-							"Name": "\"errorsastype\"",
-							"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
+							"Name": "\"errorsastypeshadow\"",
+							"Doc": "report shadowing of errors.AsType[T] in if/else chains\n\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3462,9 +3462,9 @@
 			"Default": true
 		},
 		{
-			"Name": "errorsastype",
-			"Doc": "Reports misuse of errors.AsType[T] in if/else chains.\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.\n",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype",
+			"Name": "errorsastypeshadow",
+			"Doc": "report shadowing of errors.AsType[T] in if/else chains\n\nFor example:\n\n\terr := f()\n\tif err, ok := errors.AsType[*FooErr](err); ok {\n\t    useFoo(err)\n\t} else if err, ok := errors.AsType[*BarErr](err); ok {\n\t    useBar(err)\n\t}\n\nIn this case, the second call to errors.AsType does not operate on the\noriginal error. Instead, its operand is the zero value of type *FooErr\nproduced by the first if statement; this is invariably a mistake.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastypeshadow",
 			"Default": true
 		},
 		{

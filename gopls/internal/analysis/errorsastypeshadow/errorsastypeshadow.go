@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package errorsastype checks whether [errors.AsType] is used correctly
-// in if/else chains.
-package errorsastype
+package errorsastypeshadow
 
 import (
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -15,30 +14,19 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
-const Doc = `Reports misuse of errors.AsType[T] in if/else chains.
-For example:
-
-	err := f()
-	if err, ok := errors.AsType[*FooErr](err); ok {
-	    useFoo(err)
-	} else if err, ok := errors.AsType[*BarErr](err); ok {
-	    useBar(err)
-	}
-
-In this case, the second call to errors.AsType does not operate on the
-original error. Instead, its operand is the zero value of type *FooErr
-produced by the first if statement; this is invariably a mistake.
-`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
-	Name:     "errorsastype",
-	Doc:      Doc,
-	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastype",
+	Name:     "errorsastypeshadow",
+	Doc:      analyzerutil.MustExtractDoc(doc, "errorsastypeshadow"),
+	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/errorsastypeshadow",
 	Requires: []*analysis.Analyzer{typeindexanalyzer.Analyzer},
 	Run:      run,
 }

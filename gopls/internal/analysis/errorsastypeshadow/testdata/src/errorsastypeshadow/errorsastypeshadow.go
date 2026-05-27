@@ -1,4 +1,4 @@
-package astype
+package errorsastypeshadow
 
 import "errors"
 
@@ -20,7 +20,7 @@ var global = false
 func _(err error) {
 	if err, ok := errors.AsType[*FooError](err); ok {
 		_ = err
-	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*astype\.FooError`
+	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.FooError`
 		_ = err
 	}
 
@@ -40,7 +40,7 @@ func _(err error) {
 		err = &FooError{}
 	} else if err2 := err; modifies(&err2) && modifies(err2) {
 		err = &FooError{}
-	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*astype\.FooError`
+	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.FooError`
 		_ = err
 	}
 
@@ -65,9 +65,9 @@ func _(err error) {
 
 	if err, ok := errors.AsType[*FooError](err); ok {
 		_ = err
-	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*astype\.FooError from failed prior call to AsType`
+	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.FooError from failed prior call to AsType`
 		_ = err
-	} else if err, ok := errors.AsType[error](err); ok { // want `err passed to AsType is the zero value of \*astype\.BarError from failed prior call to AsType`
+	} else if err, ok := errors.AsType[error](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.BarError from failed prior call to AsType`
 		_ = err
 	} else if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of error from failed prior call to AsType`
 		_ = err
@@ -102,7 +102,7 @@ func asTypeNotChained(err error) {
 		err = &FooError{}
 	} else {
 		_ = err
-		if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*astype\.FooError`
+		if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.FooError`
 			_ = err
 		}
 	}
@@ -127,7 +127,7 @@ func asTypeNotChained(err error) {
 	if err, ok := errors.AsType[*FooError](err); ok {
 		_ = err
 	} else if global {
-		if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*astype\.FooError`
+		if err, ok := errors.AsType[*BarError](err); ok { // want `err passed to AsType is the zero value of \*errorsastypeshadow\.FooError`
 			_ = err
 		}
 	}

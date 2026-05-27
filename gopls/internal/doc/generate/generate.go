@@ -23,6 +23,7 @@ import (
 	"go/doc/comment"
 	"go/token"
 	"go/types"
+	"log"
 	"maps"
 	"os"
 	"os/exec"
@@ -754,8 +755,15 @@ func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 }
 
 func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
+	seen := make(map[string]string) // name->doc, for reporting dups
+
 	var buf bytes.Buffer
 	for _, analyzer := range api.Analyzers {
+		if prevDoc, ok := seen[analyzer.Name]; ok {
+			log.Fatalf("duplicate analyzer name %q\n===1===\n%s\n===2===\n%s", analyzer.Name, analyzer.Doc, prevDoc)
+		}
+		seen[analyzer.Name] = analyzer.Doc
+
 		fmt.Fprintf(&buf, "<a id='%s'></a>\n", analyzer.Name)
 		title, doc, _ := strings.Cut(analyzer.Doc, "\n")
 		title = strings.TrimPrefix(title, analyzer.Name+": ")
@@ -790,7 +798,6 @@ func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
 			fmt.Fprintf(&buf, "Package documentation: [%s](%s)\n\n",
 				analyzer.Name, analyzer.URL)
 		}
-
 	}
 	return replaceSection(prevContent, "Analyzers", buf.Bytes())
 }
