@@ -111,10 +111,8 @@ callLoop:
 		for curUse := range index.Uses(sc) {
 			// If the var sc is used in a context other than sc.Method(...),
 			// assume conservatively that it may escape, and reject this candidate.
-			switch curUse.ParentEdgeKind() {
-			case edge.SelectorExpr_X, edge.CallExpr_Fun:
-				// ok
-			default:
+			if curUse.ParentEdgeKind() != edge.SelectorExpr_X ||
+				curUse.Parent().ParentEdgeKind() != edge.CallExpr_Fun {
 				continue callLoop
 			}
 

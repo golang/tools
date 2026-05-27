@@ -139,3 +139,19 @@ func S1011(x, y []int) {
 		x = append(x, e) // no "replace loop with append" diagnostic
 	}
 }
+
+-- sqlrowserr/sqlrowserr.go --
+package sqlrowserr
+
+import "database/sql"
+
+func _(db *sql.DB) {
+	rows, err := db.Query("") //@ diag("db.Query", re`sql.Rows "rows" is used in Next loop at line .. without final check of rows.Err\(\)`)
+	if err != nil {
+		return
+	}
+	defer rows.Close() // ignore error
+	for rows.Next() {
+		rows.Scan() // ignore error
+	}
+}

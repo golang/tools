@@ -4089,6 +4089,38 @@ Default: on.
 
 Package documentation: [sortslice](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice)
 
+<a id='sqlrowserr'></a>
+## `sqlrowserr`: report failure to check sql.Rows.Err
+
+This analyzer reports uses of sql.Rows in which the result of a query such as db.Query() is assigned to a local variable that is then used in a loop that calls Rows.Next, but lacks a final check of Rows.Err. This causes row iteration errors to be discarded.
+
+For example:
+
+	rows, err := db.Query("select ...") // error: "sql.Rows rows is used in Next loop without final check of rows.Err()"
+	if err != nil {
+		return err
+	}
+	defer rows.Close() // ignore error
+	for rows.Next() {
+		var x int
+		if err := rows.Scan(&x); err != nil {
+			return err
+		}
+		use(x)
+	}
+	/* ...no use of rows.Err()... */
+
+Correct usage of sql.Rows demands both a call to Rows.Close to release resources and a call to Rows.Err to report iteration errors. It is not critical to report resource cleanup errors, but it is crucial to report iteration errors as they would otherwise be indistinguishable from a smaller result.
+
+To avoid false positives, the analyzer is silent if the Rows is passed into or out of the function or assigned somewhere other than a local variable.
+
+It is not this analyzer's goal to ensure proper handling of errors in all cases, but merely the simple mistakes where the user may have been oblivious to the existence of the Rows.Err method.
+
+
+Default: on.
+
+Package documentation: [sqlrowserr](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sqlrowserr)
+
 <a id='stditerators'></a>
 ## `stditerators`: use iterators instead of Len/At-style APIs
 

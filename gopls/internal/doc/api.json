@@ -1707,6 +1707,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"sqlrowserr\"",
+							"Doc": "sqlrowserr: report failure to check sql.Rows.Err\n\nThis analyzer reports uses of sql.Rows in which the result of a query\nsuch as db.Query() is assigned to a local variable that is then used\nin a loop that calls Rows.Next, but lacks a final check of Rows.Err.\nThis causes row iteration errors to be discarded.\n\nFor example:\n\n\trows, err := db.Query(\"select ...\") // error: \"sql.Rows rows is used in Next loop without final check of rows.Err()\"\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer rows.Close() // ignore error\n\tfor rows.Next() {\n\t\tvar x int\n\t\tif err := rows.Scan(\u0026x); err != nil {\n\t\t\treturn err\n\t\t}\n\t\tuse(x)\n\t}\n\t/* ...no use of rows.Err()... */\n\nCorrect usage of sql.Rows demands both a call to Rows.Close to release\nresources and a call to Rows.Err to report iteration errors. It is\nnot critical to report resource cleanup errors, but it is crucial to\nreport iteration errors as they would otherwise be indistinguishable\nfrom a smaller result.\n\nTo avoid false positives, the analyzer is silent if the Rows is passed\ninto or out of the function or assigned somewhere other than a local\nvariable.\n\nIt is not this analyzer's goal to ensure proper handling of errors in\nall cases, but merely the simple mistakes where the user may have been\noblivious to the existence of the Rows.Err method.\n",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"stditerators\"",
 							"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(x.At(i)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
 							"Default": "true",
@@ -3693,6 +3699,12 @@
 			"Name": "sortslice",
 			"Doc": "check the argument type of sort.Slice\n\nsort.Slice requires an argument of a slice type. Check that\nthe interface{} value passed to sort.Slice is actually a slice.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice",
+			"Default": true
+		},
+		{
+			"Name": "sqlrowserr",
+			"Doc": "sqlrowserr: report failure to check sql.Rows.Err\n\nThis analyzer reports uses of sql.Rows in which the result of a query\nsuch as db.Query() is assigned to a local variable that is then used\nin a loop that calls Rows.Next, but lacks a final check of Rows.Err.\nThis causes row iteration errors to be discarded.\n\nFor example:\n\n\trows, err := db.Query(\"select ...\") // error: \"sql.Rows rows is used in Next loop without final check of rows.Err()\"\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer rows.Close() // ignore error\n\tfor rows.Next() {\n\t\tvar x int\n\t\tif err := rows.Scan(\u0026x); err != nil {\n\t\t\treturn err\n\t\t}\n\t\tuse(x)\n\t}\n\t/* ...no use of rows.Err()... */\n\nCorrect usage of sql.Rows demands both a call to Rows.Close to release\nresources and a call to Rows.Err to report iteration errors. It is\nnot critical to report resource cleanup errors, but it is crucial to\nreport iteration errors as they would otherwise be indistinguishable\nfrom a smaller result.\n\nTo avoid false positives, the analyzer is silent if the Rows is passed\ninto or out of the function or assigned somewhere other than a local\nvariable.\n\nIt is not this analyzer's goal to ensure proper handling of errors in\nall cases, but merely the simple mistakes where the user may have been\noblivious to the existence of the Rows.Err method.\n",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sqlrowserr",
 			"Default": true
 		},
 		{
