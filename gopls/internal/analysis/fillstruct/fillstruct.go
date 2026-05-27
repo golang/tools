@@ -24,54 +24,63 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// Diagnose computes diagnostics for fillable struct literals overlapping with
-// the provided start and end position of file f.
+// Diagnose computes a diagnostic for the enclosing struct literal enclosing
+// the provided start and end position of curFile.
+//
+// If the target struct is already fully populated, no diagnostic is reported.
 //
 // The diagnostic contains a lazy fix; the actual patch is computed
 // (via the ApplyFix command) by a call to [SuggestedFix].
-//
-// If either start or end is invalid, the entire file is inspected.
-func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
-	var diags []analysis.Diagnostic
-	ast.Inspect(f, func(n ast.Node) bool {
-		if n == nil {
-			return true // pop
+func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package, info *types.Info) (diags []analysis.Diagnostic) {
+	cur, _, _, _ := astutil.Select(curFile, start, end)
+
+	var lits []*ast.CompositeLit
+	for c := range cur.Enclosing((*ast.CompositeLit)(nil)) {
+		lits = append(lits, c.Node().(*ast.CompositeLit))
+	}
+	for c := range cur.Preorder((*ast.CompositeLit)(nil)) {
+		expr := c.Node().(*ast.CompositeLit)
+		// Avoid double-counting when cur.Node() is itself a [ast.CompositeLit].
+		if expr == cur.Node() {
+			continue
 		}
-		if start.IsValid() && n.End() < start || end.IsValid() && n.Pos() > end {
-			return false // skip non-overlapping subtree
+		if expr.Pos() <= end && expr.End() >= start {
+			lits = append(lits, expr)
 		}
-		expr, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
+	}
+
+	for _, expr := range lits {
 		typ := info.TypeOf(expr)
 		if typ == nil {
-			return true
+			continue
 		}
 
 		// Find reference to the type declaration of the struct being initialized.
 		typ = typeparams.Deref(typ)
 		tStruct, ok := typeparams.CoreType(typ).(*types.Struct)
 		if !ok {
-			return true
+			continue
 		}
+
 		// Inv: typ is the possibly-named struct type.
 
 		fieldCount := tStruct.NumFields()
 
 		// Skip any struct that is already populated or that has no fields.
 		if fieldCount == 0 || fieldCount == len(expr.Elts) {
-			return true
+			continue
 		}
 
 		// Are any fields in need of filling?
@@ -85,7 +94,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 			fillableFields = append(fillableFields, fmt.Sprintf("%s: %s", field.Name(), field.Type().String()))
 		}
 		if len(fillableFields) == 0 {
-			return true
+			continue
 		}
 
 		// Derive a name for the struct type.
@@ -111,6 +120,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 			}
 			name = fmt.Sprintf("anonymous struct{ %s }", strings.Join(fillableFields, ", "))
 		}
+
 		diags = append(diags, analysis.Diagnostic{
 			Message:  fmt.Sprintf("%s literal has missing fields", name),
 			Pos:      expr.Pos(),
@@ -121,8 +131,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 				// No TextEdits => computed later by gopls.
 			}},
 		})
-		return true
-	})
+	}
 
 	return diags
 }

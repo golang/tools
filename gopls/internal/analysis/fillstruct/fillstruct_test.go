@@ -5,11 +5,13 @@
 package fillstruct_test
 
 import (
-	"go/token"
+	"fmt"
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -17,11 +19,18 @@ import (
 // analyzer allows us to test the fillstruct code action using the analysistest
 // harness. (fillstruct used to be a gopls analyzer.)
 var analyzer = &analysis.Analyzer{
-	Name: "fillstruct",
-	Doc:  "test only",
+	Name:     "fillstruct",
+	Doc:      "test only",
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run: func(pass *analysis.Pass) (any, error) {
+		inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
 		for _, f := range pass.Files {
-			for _, diag := range fillstruct.Diagnose(f, token.NoPos, token.NoPos, pass.Pkg, pass.TypesInfo) {
+			curFile, ok := inspect.Root().FindNode(f)
+			if !ok {
+				return nil, fmt.Errorf("can't find file %s", f.Name.Name)
+			}
+			for _, diag := range fillstruct.Diagnose(curFile, f.Pos(), f.End(), pass.Pkg, pass.TypesInfo) {
 				pass.Report(diag)
 			}
 		}

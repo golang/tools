@@ -110,3 +110,16 @@ type unsafeStruct struct {
 }
 
 var _ = unsafeStruct{} // want `unsafeStruct literal has missing fields`
+
+type inner struct {
+	bar int
+}
+
+type outer struct {
+	inner inner
+	foo   int
+}
+
+var _ = outer{ // want `outer literal has missing fields`
+	inner: inner{} // want `inner literal has missing fields`
+}

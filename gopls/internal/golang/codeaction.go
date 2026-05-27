@@ -815,10 +815,10 @@ func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) erro
 // refactorRewriteFillStruct produces "Fill STRUCT" code actions.
 // See [fillstruct.SuggestedFix] for command implementation.
 func refactorRewriteFillStruct(ctx context.Context, req *codeActionsRequest) error {
-	// fillstruct.Diagnose is a lazy analyzer: all it gives us is
-	// the (start, end, message) of each SuggestedFix; the actual
-	// edit is computed only later by ApplyFix, which calls fillstruct.SuggestedFix.
-	for _, diag := range fillstruct.Diagnose(req.pgf.File, req.start, req.end, req.pkg.Types(), req.pkg.TypesInfo()) {
+	// [fillstruct.Diagnose] is a lazy analyzer: all it gives us is the
+	// (start, end, message) of each SuggestedFix; the actual edit is
+	// computed only later by ApplyFix, which calls [fillstruct.SuggestedFix].
+	for _, diag := range fillstruct.Diagnose(req.pgf.Cursor(), req.start, req.end, req.pkg.Types(), req.pkg.TypesInfo()) {
 		loc, err := req.pgf.Mapper.PosLocation(req.pgf.Tok, diag.Pos, diag.End)
 		if err != nil {
 			return err
@@ -827,6 +827,7 @@ func refactorRewriteFillStruct(ctx context.Context, req *codeActionsRequest) err
 			req.addApplyFixAction(fix.Message, diag.Category, loc)
 		}
 	}
+
 	return nil
 }
 
