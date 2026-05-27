@@ -105,6 +105,36 @@ var (
 	_ = A{B: B{b: 1} /* comment */, a: 2} // want "embedded field type can be removed from struct literal"
 	_ = K{L: L{zero: 0}}                  // nope: cannot promote slice elements
 	_ = K{L: L{0: 100}}                   // nope: cannot promote slice elements
+
+	_ = A{ // want "embedded field type can be removed from struct literal"
+		B: B{
+			C: C{
+				c: 1,
+			},
+			b: 2,
+		},
+		a: 3,
+	}
+
+	_ = A{B: B{C: C{c: 1}}} // want "embedded field type can be removed from struct literal"
+
+	_ = A{B: B{ // want "embedded field type can be removed from struct literal"
+		C: C{
+			c: 1,
+		},
+	}}
+
+	_ = A{ // want "embedded field type can be removed from struct literal"
+		B: B{C: C{c: 1}},
+	}
+
+	_ = A{ // want "embedded field type can be removed from struct literal"
+		B: B{ // comment here
+			C: C{
+				c: 1,
+			},
+		},
+	}
 )
 
 func _() {
