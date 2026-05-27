@@ -1,0 +1,45 @@
+Regression test for golang/go#79399: panic in fromAssignStmt when an
+assignment has fewer LHS variables than RHS expressions (LHS < RHS).
+
+When an assignment like "x := Iface(&T{}), Iface2(&R{})" has 1 LHS variable
+but 2 RHS expressions, iterating over enclosing nodes for the second RHS
+expression (Iface2(&R{})) yields ParentEdgeIndex()=1, which is out of bounds
+for Lhs (len=1), causing a panic in assign.Lhs[idx].
+
+-- issue79399.go --
+package p
+
+// Regression test for golang/go#79399.
+
+type Writer interface {
+	Write([]byte) (int, error)
+}
+
+type Reader interface {
+	Read([]byte) (int, error)
+}
+
+type T struct{}
+type R struct{}
+
+// Normal fromAssignStmt case: variable declared as interface, assigned a
+// concrete type that doesn't implement it.
+func _() {
+	var x Writer
+	x = &T{} //@quickfix(re"&T{}", re"missing method", stub)
+	_ = x
+}
+
+// Regression test for golang/go#79399: panic when LHS < RHS.
+func _() {
+	x := Writer(&T{}), Reader(&R{}) //@quickfixerr(re"&T{}", re"missing method", re"found 0"),quickfixerr(re"&R{}", re"missing method", re"found 0")
+	_ = x
+}
+-- @stub/issue79399.go --
+@@ -14 +14,6 @@
++
++// Write implements [Writer].
++func (t *T) Write([]byte) (int, error) {
++	panic("unimplemented")
++}
++

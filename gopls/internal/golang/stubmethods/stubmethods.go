@@ -334,7 +334,12 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Curs
 	//          ^^^^
 
 	assign := curRhs.Parent().Node().(*ast.AssignStmt)
-	lhs, rhs := assign.Lhs[curRhs.ParentEdgeIndex()], curRhs.Node().(ast.Expr)
+	idx := curRhs.ParentEdgeIndex()
+	// ill-type code may have fewer LHS than RHS so guard it.
+	if idx >= len(assign.Lhs) {
+		return nil
+	}
+	lhs, rhs := assign.Lhs[idx], curRhs.Node().(ast.Expr)
 
 	ifaceObj := ifaceType(lhs, info)
 	if ifaceObj == nil {
