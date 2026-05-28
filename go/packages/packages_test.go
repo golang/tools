@@ -13,10 +13,13 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -37,7 +40,19 @@ import (
 func TestMain(m *testing.M) {
 	testenv.ExitIfSmallMachine()
 
-	os.Exit(m.Run())
+	// This executable also behaves as various flavors of
+	// GOPACKAGESDRIVER command for some tests, based on ENTRYPOINT.
+	entrypoint := os.Getenv("ENTRYPOINT")
+	switch entrypoint {
+	case "":
+		os.Exit(m.Run())
+	case "driver1":
+		driver1()
+	case "driver2":
+		driver2()
+	default:
+		log.Fatalf("unexpected ENTRYPOINT %q", entrypoint)
+	}
 }
 
 func skipIfShort(t *testing.T, reason string) {
@@ -1621,109 +1636,172 @@ func testPatternPassthrough(t *testing.T, exporter packagestest.Exporter) {
 
 }
 
-func TestConfigDefaultEnv(t *testing.T) {
+// TestDriver tests various configurations of default driver
+// (go list) and alternative drivers specified explicitly via
+// GOPACKAGESDRIVER or implicitly via $(which gopackagesdriver).
+func TestDriver(t *testing.T) {
 	// packagestest.TestAll instead of testAllOrModulesParallel because this test
 	// can't be parallelized (it modifies the environment).
-	packagestest.TestAll(t, testConfigDefaultEnv)
+	packagestest.TestAll(t, testDriver)
 }
-func testConfigDefaultEnv(t *testing.T, exporter packagestest.Exporter) {
-	const driverJSON = `{
-  "Roots": ["gopackagesdriver"],
-  "Packages": [{"ID": "gopackagesdriver", "Name": "gopackagesdriver"}]
-}`
-	var (
-		pathKey      string
-		driverScript packagestest.Writer
-	)
-	switch runtime.GOOS {
-	case "android":
-		t.Skip("doesn't run on android")
-	case "windows":
-		// TODO(jayconrod): write an equivalent batch script for windows.
-		// Hint: "type" can be used to read a file to stdout.
-		t.Skip("test requires sh")
-	case "plan9":
-		pathKey = "path"
-		driverScript = packagestest.Script(`#!/bin/rc
 
-cat <<'EOF'
-` + driverJSON + `
-EOF
-`)
-	default:
-		pathKey = "PATH"
-		driverScript = packagestest.Script(`#!/bin/sh
+func testDriver(t *testing.T, exporter packagestest.Exporter) {
+	testenv.NeedsTool(t, "go")
 
-cat - <<'EOF'
-` + driverJSON + `
-EOF
-`)
+	// Copy the current test executable to a temp dir.
+	// We'll use it as a GOPACKAGESDRIVER.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
 	}
-	exported := packagestest.Export(t, exporter, []packagestest.Module{{
-		Name: "golang.org/fake",
-		Files: map[string]any{
-			"bin/gopackagesdriver": driverScript,
-			"golist/golist.go":     "package golist",
-		}}})
-	defer exported.Cleanup()
-	driver := exported.File("golang.org/fake", "bin/gopackagesdriver")
-	binDir := filepath.Dir(driver)
-	if err := os.Chmod(driver, 0755); err != nil {
+	gopackagesdriver := filepath.Join(t.TempDir(), "gopackagesdriver"+cond(runtime.GOOS == "windows", ".exe", ""))
+	if err := copyfile(gopackagesdriver, exe); err != nil {
 		t.Fatal(err)
 	}
 
-	path, ok := os.LookupEnv(pathKey)
-	var pathWithDriver string
-	if ok {
-		pathWithDriver = binDir + string(os.PathListSeparator) + path
-	} else {
-		pathWithDriver = binDir
+	sanitize := func(s string) string {
+		return strings.ReplaceAll(s, filepath.Dir(gopackagesdriver), "PATH")
 	}
+
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"golist/golist.go": "package golist",
+		}}})
+	defer exported.Cleanup()
+
 	for _, test := range []struct {
-		desc    string
-		path    string
-		driver  string
-		wantIDs string
+		desc             string
+		onpath           bool   // whether gopackagesdriver's directory is on the PATH
+		gopackagesdriver string // value of GOPACKAGESDRIVER seen by packages.Load ("" and unset are equivalent)
+		entrypoint       string // value of ENTRYPOINT var to be seen by driver executable
+		want             string // expected list of package IDs, or "error: regexp" matching message
 	}{
+		// -- tests of driver selection --
 		{
-			desc:    "driver_off",
-			path:    pathWithDriver,
-			driver:  "off",
-			wantIDs: "[golist]",
-		}, {
-			desc:    "driver_unset",
-			path:    pathWithDriver,
-			driver:  "",
-			wantIDs: "[gopackagesdriver]",
-		}, {
-			desc:    "driver_set",
-			path:    "",
-			driver:  driver,
-			wantIDs: "[gopackagesdriver]",
+			// GOPACKAGESDRIVER unset, no driver on path: executes go list.
+			desc: "default",
+			want: "[golist]",
+		},
+		{
+			// GOPACKAGESDRIVER=off executes go list, not driver on the PATH.
+			desc:             "driver-explicitly-off",
+			onpath:           true,
+			gopackagesdriver: "off",
+			entrypoint:       "nope",
+			want:             "[golist]",
+		},
+		{
+			// GOPACKAGESDRIVER=exe runs the specified executable.
+			desc:             "driver-set-via-environment",
+			onpath:           false,
+			gopackagesdriver: gopackagesdriver,
+			entrypoint:       "driver1",
+			want:             "[gopackagesdriver]",
+		},
+		{
+			// GOPACKAGESDRIVER set to nonexistent does not look up 'gopackagesdriver' on the PATH
+			desc:             "driver-not-found-on-path",
+			onpath:           true,
+			gopackagesdriver: gopackagesdriver + "nonesuch",
+			entrypoint:       "driver1",
+			want:             "error: no such file|file does not exist",
+		},
+		// -- tests of driver response payload --
+		{
+			// GOPACKAGESDRIVER denotes a driver that returns duplicate IDs
+			desc:             "driver-returns-duplicate-IDs",
+			gopackagesdriver: gopackagesdriver,
+			entrypoint:       "driver2",
+			want:             "[a b c]", // TODO(adonovan): this should be an error; see go.dev/issue/63822
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			oldPath := os.Getenv(pathKey)
-			os.Setenv(pathKey, test.path)
-			defer os.Setenv(pathKey, oldPath)
-			// Clone exported.Config
-			config := exported.Config
+			// Defend against recursive exec due to forgotten entrypoint.
+			if test.gopackagesdriver != "" && test.entrypoint == "" {
+				t.Fatalf("missing entrypoint")
+			}
+
+			if test.onpath {
+				pathVar := cond(runtime.GOOS == "plan9", "path", "PATH")
+				t.Setenv(pathVar, filepath.Dir(gopackagesdriver)+string(os.PathListSeparator)+os.Getenv(pathVar))
+			}
+
+			// Clone and update the config.
+			config := *exported.Config
 			config.Env = slices.Clone(exported.Config.Env)
-			config.Env = append(config.Env, "GOPACKAGESDRIVER="+test.driver)
-			pkgs, err := packages.Load(exported.Config, "golist")
+			config.Env = append(config.Env,
+				"GOPACKAGESDRIVER="+test.gopackagesdriver,
+				"ENTRYPOINT="+test.entrypoint)
+
+			pattern, wantErr := strings.CutPrefix(test.want, "error: ")
+
+			// We request golist, but that's
+			// not necessarily what we get back.
+			pkgs, err := packages.Load(&config, "golist")
 			if err != nil {
-				t.Fatal(err)
+				errStr := sanitize(err.Error())
+				if wantErr {
+					if m, err := regexp.MatchString(pattern, errStr); err != nil {
+						t.Fatalf("bad 'want' pattern: %v", err)
+					} else if m {
+						return // success
+					}
+					t.Fatalf("Load failed with wrong error: %q, want match for %q", errStr, pattern)
+				}
+				t.Fatalf("Load failed: %v", errStr)
+			}
+			if wantErr {
+				t.Errorf("Load succeeded unexpectedly, want error matching %q", pattern)
 			}
 
 			gotIds := make([]string, len(pkgs))
 			for i, pkg := range pkgs {
 				gotIds[i] = pkg.ID
 			}
-			if fmt.Sprint(pkgs) != test.wantIDs {
-				t.Errorf("got %v; want %v", gotIds, test.wantIDs)
+			got := sanitize(fmt.Sprint(pkgs))
+			if got != test.want {
+				t.Errorf("got %s, want %s", got, test.want)
 			}
 		})
 	}
+}
+
+// driver1 returns a single package.
+func driver1() {
+	fmt.Println(`{"Roots": ["gopackagesdriver"], "Packages": [{"ID": "gopackagesdriver", "Name": "gopackagesdriver"}]}`)
+}
+
+// driver2 returns two package with the same ID.
+func driver2() {
+	fmt.Println(`{"Roots": ["a", "b", "c"], "Packages": [
+{"ID": "a", "Name": "a"},
+{"ID": "b", "Name": "b"},
+{"ID": "c", "Name": "c"},
+{"ID": "a", "Name": "a"}
+]}`)
+}
+
+// copyfile copies a file from src to dst.
+func copyfile(dst, src string) error {
+	srcf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcf.Close()
+	fi, err := srcf.Stat()
+	if err != nil {
+		return err
+	}
+	dstf, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dstf, srcf); err != nil {
+		dstf.Close() // ignore error
+		return err
+	}
+	return dstf.Close()
 }
 
 // This test that a simple x test package layout loads correctly.
@@ -3588,5 +3666,13 @@ func TestLoad_populatesInfoMapsForUnsafePackage(t *testing.T) {
 		info.Instances == nil ||
 		info.Scopes == nil {
 		t.Errorf("types.Info for package unsafe has one or more nil maps: %#v", *info)
+	}
+}
+
+func cond[T any](cond bool, t, f T) T {
+	if cond {
+		return t
+	} else {
+		return f
 	}
 }
