@@ -1713,7 +1713,7 @@ func testDriver(t *testing.T, exporter packagestest.Exporter) {
 			desc:             "driver-returns-duplicate-IDs",
 			gopackagesdriver: gopackagesdriver,
 			entrypoint:       "driver2",
-			want:             "[a b c]", // TODO(adonovan): this should be an error; see go.dev/issue/63822
+			want:             `error: go/packages driver response contained duplicate packages for ID "a"`,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
