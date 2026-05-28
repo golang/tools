@@ -756,50 +756,62 @@ func (s *server) Exit(ctx context.Context) error {
 
 // recordClientInfo records gopls client info.
 func recordClientInfo(clientName string) {
-	key := "gopls/client:other"
-	switch clientName {
-	case "Visual Studio Code":
-		key = "gopls/client:vscode"
-	case "Visual Studio Code - Insiders":
-		key = "gopls/client:vscode-insiders"
-	case "VSCodium":
-		key = "gopls/client:vscodium"
-	case "code-server":
+	// This table maps LSP (not MCP) clientInfo.Name prefixes to Go telemetry counters.
+	// Where authoritative source is available, we link to it.
+	for _, cli := range [...]struct {
+		clientNamePrefix, telemetryKey string
+	}{
+		{"Visual Studio Code - Insiders", "gopls/client:vscode-insiders"},
+		{"Visual Studio Code", "gopls/client:vscode"},
+
+		{"VSCodium", "gopls/client:vscodium"},
+
 		// https://github.com/coder/code-server/blob/3cb92edc76ecc2cfa5809205897d93d4379b16a6/ci/build/build-vscode.sh#L19
-		key = "gopls/client:code-server"
-	case "Eglot":
+		{"code-server", "gopls/client:code-server"},
+
 		// https://lists.gnu.org/archive/html/bug-gnu-emacs/2023-03/msg00954.html
-		key = "gopls/client:eglot"
-	case "govim":
+		{"Eglot", "gopls/client:eglot"},
+
 		// https://github.com/govim/govim/pull/1189
-		key = "gopls/client:govim"
-	case "helix":
+		{"govim", "gopls/client:govim"},
+
 		// https://github.com/helix-editor/helix/blob/d0218f7e78bc0c3af4b0995ab8bda66b9c542cf3/helix-lsp/src/client.rs#L714
-		key = "gopls/client:helix"
-	case "Neovim":
+		{"helix", "gopls/client:helix"},
+
 		// https://github.com/neovim/neovim/blob/42333ea98dfcd2994ee128a3467dfe68205154cd/runtime/lua/vim/lsp.lua#L1361
 		// https://github.com/neovim/neovim/blob/fe6026825883b44b09a8d3a03f2d49bfc8ed4725/runtime/lua/vim/lsp/client.lua#564
-		key = "gopls/client:neovim"
-	case "coc.nvim":
+		{"Neovim", "gopls/client:neovim"},
+
 		// https://github.com/neoclide/coc.nvim/blob/3dc6153a85ed0f185abec1deb972a66af3fbbfb4/src/language-client/client.ts#L994
-		key = "gopls/client:coc.nvim"
-	case "Sublime Text LSP":
+		{"coc.nvim", "gopls/client:coc.nvim"},
+
 		// https://github.com/sublimelsp/LSP/blob/e608f878e7e9dd34aabe4ff0462540fadcd88fcc/plugin/core/sessions.py#L493
-		key = "gopls/client:sublimetext"
-	case "Windsurf":
-		key = "gopls/client:windsurf"
-	case "Cursor":
-		key = "gopls/client:cursor"
-	case "Zed", "Zed Dev", "Zed Nightly", "Zed Preview":
+		{"Sublime Text LSP", "gopls/client:sublimetext"},
+
+		{"Cursor", "gopls/client:cursor"},
+
 		// https: //github.com/zed-industries/zed/blob/0ac17526687bf11007f0fbb5c3b2ff463ce47293/crates/release_channel/src/lib.rs#L147
-		key = "gopls/client:zed"
-	default:
-		// Accumulate at least a local counter for an unknown
-		// client name, but also fall through to count it as
-		// ":other" for collection.
-		if clientName != "" {
-			counter.New(fmt.Sprintf("gopls/client-other:%s", clientName)).Inc()
+		{"Zed", "gopls/client:zed"}, // incl. "Zed Dev", "Zed Nightly", "Zed Preview"
+
+		// (Observed empirically.)
+		{"Claude Code", "gopls/client:claude"},
+
+		// (Observed empirically.)
+		{"Antigravity", "gopls/client:antigravity"},
+		{"Jetski", "gopls/client:antigravity"},
+		{"Windsurf", "gopls/client:windsurf"},
+	} {
+		if strings.HasPrefix(clientName, cli.clientNamePrefix) {
+			counter.Inc(cli.telemetryKey)
+			return
 		}
 	}
-	counter.Inc(key)
+
+	// Accumulate at least a local counter for an unknown
+	// client name, but also fall through to count it as
+	// ":other" for collection.
+	if clientName != "" {
+		counter.New(fmt.Sprintf("gopls/client-other:%s", clientName)).Inc()
+	}
+	counter.Inc("gopls/client:other")
 }
