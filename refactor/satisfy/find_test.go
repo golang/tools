@@ -227,6 +227,31 @@ var _ I = new(C(123))
 	}
 }
 
+// TestIssue79734 is a regression test for a crash caused by
+// inappropriate use of the obsolete CoreType operator on operands
+// that (legally) have no core type; see go.dev/issue/79734.
+func TestIssue79734(t *testing.T) {
+	const src = `package p
+
+type I interface { f() }
+type Key struct{}
+func (Key) f() {}
+type Val1 struct{}
+type Val2 struct{}
+
+func _[Map interface{ map[I]Val1 | map[I]Val2 }](m Map) {
+	delete(m, Key{})
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.Key",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
 func constraints(t *testing.T, src string) []string {
 	// parse
 	fset := token.NewFileSet()
