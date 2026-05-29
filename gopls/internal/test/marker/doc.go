@@ -144,15 +144,16 @@ Here is the list of supported action markers:
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start location, kind string, diag=regexp, end=location, action=golden, edit=golden, result=golden, err=stringMatcher, form0=string, form1=string)
+  - codeaction(start location, kind string, diag=regexp, end=location, action=golden, edit=golden, result=golden, err=stringMatcher, answers=string)
 
     Specifies a code action to request at the location, with given kind.
     If diag is set, the code action must be associated with the given
     diagnostic.
     If end is set, the location is defined to be between start.Start and
     end.End.
-    If form0 is set the codeaction is invoking a user dialog and the form
-    arguments are the user response.
+    If answers is set, it is a JSON string mapping form field IDs to their
+    respective answer values (e.g. answers=`{"tags":"xml"}`), representing the
+    user's response to interactive refactoring dialogs.
 
     Exactly one of action, edit, result, or err must be set:
     If action is set, it is a golden reference to a JSON blob representing the

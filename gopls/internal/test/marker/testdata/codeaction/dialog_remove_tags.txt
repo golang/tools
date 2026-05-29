@@ -12,25 +12,25 @@ Test removing struct tags with dialogs
 package removetags
 
 type A struct {
-	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
-	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
-	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
+	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, answers=`{"tags":"xml"}`)
+	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, answers=`{"tags":"xml"}`)
+	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, answers=`{"tags":"xml"}`)
 }
 -- @entirestruct/removetags.go --
 @@ -4,3 +4,3 @@
--	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
--	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
--	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
-+	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
-+	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
-+	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
+-	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, answers=`{"tags":"xml"}`)
+-	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, answers=`{"tags":"xml"}`)
+-	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, answers=`{"tags":"xml"}`)
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, answers=`{"tags":"xml"}`)
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, answers=`{"tags":"xml"}`)
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, answers=`{"tags":"xml"}`)
 -- @singleline/removetags.go --
 @@ -4 +4 @@
--	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
-+	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, form0="xml")
+-	x int `xml:"x"` //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, answers=`{"tags":"xml"}`)
++	x int //@codeaction("x", "refactor.rewrite.removeTags", edit=singleline, answers=`{"tags":"xml"}`)
 -- @twolines/removetags.go --
 @@ -5,2 +5,2 @@
--	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
--	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
-+	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, form0="xml")
-+	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, form0="xml")
+-	y int `xml:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, answers=`{"tags":"xml"}`)
+-	z int `xml:"z"` //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, answers=`{"tags":"xml"}`)
++	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.removeTags", edit=twolines, answers=`{"tags":"xml"}`)
++	z int //@codeaction(re`()n`, "refactor.rewrite.removeTags", edit=entirestruct, answers=`{"tags":"xml"}`)

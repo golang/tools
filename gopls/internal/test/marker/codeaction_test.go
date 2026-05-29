@@ -310,15 +310,18 @@ func applyCodeAction(mark marker, action *protocol.CodeAction) ([]protocol.Docum
 
 		// Check if the command interactivity is required.
 		if len(cmd.FormFields) > 0 {
-			// Fill in "formAnswers" field from named arg "formX".
-			for _, name := range []string{"form0", "form1"} { // Test forms have at most two fields.
-				arg, ok := mark.note.NamedArgs[name]
-				if !ok {
-					break // No more answers provided by the test.
+			// Fill in "formAnswers" field from named arg "answers".
+			if rawArgs, ok := mark.note.NamedArgs["answers"]; ok {
+				args := make(map[string]any)
+				if err := json.Unmarshal([]byte(rawArgs.(string)), &args); err != nil {
+					mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
 				}
-
-				// TODO(hxjiang): support other kind of inputs.
-				cmd.FormAnswers = append(cmd.FormAnswers, arg.(string))
+				for k, v := range args {
+					cmd.FormAnswers = append(cmd.FormAnswers, protocol.FormAnswer{
+						ID:    k,
+						Value: v,
+					})
+				}
 			}
 
 			// Re-resolve command with the "formAnswers" field filled.

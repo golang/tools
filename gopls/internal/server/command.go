@@ -1819,7 +1819,7 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		iface, err := golang.FormAnswer[string](params, 0)
+		iface, err := golang.FormAnswer[string](params, "interface")
 		if err != nil {
 			return err
 		}
@@ -1840,7 +1840,7 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		if len(params.FormAnswers) > 0 {
 			switch args.Modification {
 			case "add":
-				tags, err := golang.FormAnswer[string](params, 0)
+				tags, err := golang.FormAnswer[string](params, "tags")
 				if err != nil {
 					return err
 				}
@@ -1848,12 +1848,12 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 				if err != nil {
 					return err
 				}
-				args.Transform, err = golang.FormAnswer[string](params, 1)
+				args.Transform, err = golang.FormAnswer[string](params, "transform")
 				if err != nil {
 					return err
 				}
 			case "remove":
-				tags, err := golang.FormAnswer[string](params, 0)
+				tags, err := golang.FormAnswer[string](params, "tags")
 				if err != nil {
 					return err
 				}

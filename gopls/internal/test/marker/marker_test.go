@@ -605,7 +605,7 @@ var valueMarkerFuncs = map[string]func(marker){
 // See doc.go for marker documentation.
 var actionMarkerFuncs = map[string]func(marker){
 	"acceptcompletion": actionMarkerFunc(acceptCompletionMarker),
-	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "diag", "action", "result", "edit", "err", "form0", "form1"),
+	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "diag", "action", "result", "edit", "err", "answers"),
 	"codelenses":       actionMarkerFunc(codeLensesMarker),
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),

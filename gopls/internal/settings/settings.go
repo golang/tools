@@ -1101,10 +1101,14 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 			}
 		}
 
-		if inputTypes, ok := experimental["interactiveInputTypes"].([]any); ok {
-			o.SupportedInteractiveInputTypes = make(map[InteractiveInputType]bool, len(inputTypes))
-			for _, t := range inputTypes {
-				o.SupportedInteractiveInputTypes[InteractiveInputType(t.(string))] = true
+		if interactiveCap, ok := experimental["interactiveResolve"].(map[string]any); ok {
+			if inputTypes, ok := interactiveCap["inputTypes"].([]any); ok {
+				o.SupportedInteractiveInputTypes = make(map[InteractiveInputType]bool, len(inputTypes))
+				for _, t := range inputTypes {
+					if s, ok := t.(string); ok {
+						o.SupportedInteractiveInputTypes[InteractiveInputType(s)] = true
+					}
+				}
 			}
 		}
 	}

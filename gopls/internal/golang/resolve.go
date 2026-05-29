@@ -48,11 +48,14 @@ import (
 
 var addTagsForm = []protocol.FormField{
 	{
+		ID:          "tags",
 		Description: `comma-separated list of tags to add; e.g.. "json,xml"`,
 		Type:        protocol.FormFieldTypeString{Kind: "string"},
+		Required:    true,
 		Default:     "json",
 	},
 	{
+		ID:          "transform",
 		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
 		Type: protocol.FormFieldTypeEnum{
 			Kind: "enum",
@@ -79,14 +82,17 @@ var addTagsForm = []protocol.FormField{
 				},
 			},
 		},
-		Default: "camelcase",
+		Required: true,
+		Default:  "camelcase",
 	},
 }
 
 var removeTagsForm = []protocol.FormField{
 	{
+		ID:          "tags",
 		Description: `comma-separated list of tags to remove; e.g., "json,xml"`,
 		Type:        protocol.FormFieldTypeString{Kind: "string"},
+		Required:    true,
 		Default:     "json", // TODO(?): put the existing tags here?
 	},
 }
@@ -130,8 +136,7 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		// User parameter 0.
-		v0, err := FormAnswer[string](&param.InteractiveParams, 0)
+		v0, err := FormAnswer[string](&param.InteractiveParams, "tags")
 		if err != nil {
 			return err
 		}
@@ -142,8 +147,7 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		// User parameter 1.
-		_, err = FormAnswer[string](&param.InteractiveParams, 1)
+		_, err = FormAnswer[string](&param.InteractiveParams, "transform")
 		if err != nil {
 			return err
 		}
@@ -163,7 +167,7 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		v, err := FormAnswer[string](&param.InteractiveParams, 0)
+		v, err := FormAnswer[string](&param.InteractiveParams, "tags")
 		if err != nil {
 			return err
 		}
@@ -191,6 +195,7 @@ func mustMarshal(x any) json.RawMessage {
 
 var implementInterfaceFormLazyEnum = []protocol.FormField{
 	{
+		ID:          "interface",
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
 		Type: protocol.FormFieldTypeLazyEnum{
 			Kind:   "lazyEnum",
@@ -199,17 +204,20 @@ var implementInterfaceFormLazyEnum = []protocol.FormField{
 				Kinds: []protocol.SymbolKind{protocol.Interface},
 			}),
 		},
-		Default: "error",
+		Required: true,
+		Default:  "error",
 	},
 }
 
 var implementInterfaceFormString = []protocol.FormField{
 	{
+		ID:          "interface",
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
 		Type: protocol.FormFieldTypeString{
 			Kind: "string",
 		},
-		Default: "error",
+		Required: true,
+		Default:  "error",
 	},
 }
 
@@ -236,7 +244,7 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 		return nil
 	}
 
-	v, err := FormAnswer[string](&param.InteractiveParams, 0)
+	v, err := FormAnswer[string](&param.InteractiveParams, "interface")
 	if err != nil {
 		return err
 	}
@@ -277,16 +285,26 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 	return nil
 }
 
-func FormAnswer[T any](params *protocol.InteractiveParams, index int) (v T, err error) {
-	if len(params.FormAnswers) <= index {
-		return v, fmt.Errorf("truncated FormAnswers: got %d items, want at least %d", len(params.FormAnswers), index+1)
+// FormAnswer finds, validates, and returns the unique answer for id.
+//
+// It uses a linear scan since the number of answers is small (usually < 5).
+func FormAnswer[T any](params *protocol.InteractiveParams, id string) (v T, err error) {
+	matches := 0
+	for _, ans := range params.FormAnswers {
+		if ans.ID == id {
+			matches++
+			val, ok := ans.Value.(T)
+			if !ok {
+				return v, fmt.Errorf("form answer %q has unexpected type %T, want %T", id, ans.Value, v)
+			}
+			v = val
+		}
 	}
-
-	v, ok := params.FormAnswers[index].(T)
-	if !ok {
-		return v, fmt.Errorf("invalid type at index %d, want %T: got %T", index, *new(T), params.FormAnswers[index])
+	if matches == 0 {
+		return v, fmt.Errorf("form lacks answer %q", id)
+	} else if matches > 1 {
+		return v, fmt.Errorf("form contains duplicate answer %q", id)
 	}
-
 	return v, nil
 }
 

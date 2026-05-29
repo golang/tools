@@ -12,20 +12,22 @@ This document describes how a language client should interact with `gopls` to su
 
 Client Capabilities
 
-To enable interactive refactoring, the language client must advertise its support for specific input types by adding an `interactiveInputTypes` field to the `experimental` section of its client capabilities.
+To enable interactive refactoring, the language client must advertise its support for specific input types by adding an `interactiveResolve` object with an `inputTypes` field to the `experimental` section of its client capabilities.
 
-The value should be a `[]string` containing the types of input UI the client can render.
+The value of `inputTypes` should be a `[]string` containing the types of input UI the client can render.
 
 Example:
 ```json
 {
   // ... existing client capabilities ...
   "experimental": {
-    "interactiveInputTypes": [
-      "string",
-      "enum",
-      "bool"
-    ]
+    "interactiveResolve": {
+      "inputTypes": [
+        "string",
+        "enum",
+        "bool"
+      ]
+    }
   }
 }
 ```
@@ -41,22 +43,24 @@ Common input types used by `gopls` include:
 
 Server Capabilities
 
-To enable interactive refactoring, the server must advertise its support for resolving commands by adding an `interactiveResolveProvider` field to the `experimental` section of its server capabilities.
+To enable interactive refactoring, the server must advertise its support for resolving commands by adding an `interactiveResolveProvider` object to the `experimental` section of its server capabilities.
 
 ```json
 {
   // ... existing server capabilities ...
   "experimental": {
-    "interactiveResolveProvider": [
+    "interactiveResolveProvider": {
+      "kinds": [
         "command"
-    ]
+      ]
+    }
   }
 }
 ```
 
-The value should be a `[]string` indicating the supported resolution targets. If `"command"` is present in this list, the client may safely invoke the `command/resolve` method to interactively resolve `ExecuteCommandParams`. Otherwise, the client should not attempt to call this method.
+The `kinds` field is a `[]string` indicating the supported resolution targets. If `"command"` is present in this list, the client may safely invoke the `command/resolve` method to interactively resolve `ExecuteCommandParams`. Otherwise, the client should not attempt to call this method.
 
-Additional methods may be supported in the future by adding them to this array.
+Additional kinds may be supported in the future by adding them to this array.
 
 ## Request
 
@@ -64,11 +68,11 @@ The `command/resolve` request is sent from the client to the server to interacti
 
 When a client receives a `CodeAction` containing a command that supports interactive resolution, it should **not** execute the command immediately via `workspace/executeCommand`. Instead, the client must first send a `command/resolve` request to the server, passing the `ExecuteCommandParams` received in the code action.
 
-The server responds with `ExecuteCommandParams` that may include a `formFields` property. If `formFields` is present and non-empty, it indicates that the command requires user inputs. The client must not proceed with command execution, but must instead present the questions from `formFields` to the user to collect answers. The `formFields` array contains `FormField` objects, each describing a prompt, expected type, and optional default value.
+The server responds with `ExecuteCommandParams` that may include a `formFields` property. If `formFields` is present and non-empty, it indicates that the command requires user inputs. The client must not proceed with command execution, but must instead present the questions from `formFields` to the user to collect answers. The `formFields` array contains `FormField` objects, each describing a unique ID, prompt, expected type, whether it is required, and optional default value.
 
-Once the user provides answers, the client sends another `command/resolve` request to the server, populating the `formAnswers` property in the `ExecuteCommandParams` and omitting the `formFields` property. The `formAnswers` array must be of the same length as the `formFields` previously received from the server, with the answer at index `i` corresponding to the question at index `i`.
+Once the user provides answers, the client sends another `command/resolve` request to the server, populating the `formAnswers` property in the `ExecuteCommandParams` and omitting the `formFields` property. Answers are linked to their respective questions using the field's unique `id`. The list must not contain duplicate IDs, and each answer's ID must correspond to a field ID defined in `formFields`. The client must include answers for all required fields (where `required` is true). Answers for optional fields may be omitted or included as available.
 
-Upon receiving `formAnswers`, the server validates the input. If the input is invalid, the server returns `ExecuteCommandParams` with `formFields` again, populating the `error` property on the fields that failed validation. The client can then choose to re-render the UI to display these errors and allow the user to correct their input for a retry, or it may abort the operation entirely.
+Upon receiving `formAnswers`, the server validates the input. If the input is invalid, the server returns `ExecuteCommandParams` with `formFields` again, populating the `error` property on the fields that failed validation (identified by matching `id`). The client can then choose to re-render the UI to display these errors and allow the user to correct their input for a retry, or it may abort the operation entirely.
 
 This process repeats until the server returns a response where `formFields` is omitted or empty. This signals that the parameters are fully resolved and valid. At this point, the client may proceed to execute the command by calling `workspace/executeCommand` with the finalized `ExecuteCommandParams` containing the valid `formAnswers`.
 
@@ -98,18 +102,30 @@ export interface InteractiveParams {
 	// current or default answers to the questions to support editing previous values.
 	//
 	// When sent by the language client, this field contains the user's answers.
-	// The slice must have the same length as FormFields, where the answer at
-	// index i corresponds to the question at index i.
-	formAnswers?: any[];
+	// Answers are linked to their respective questions using the field's unique
+	// `id` rather than their array index. The list must not contain duplicate IDs,
+	// and each answer's ID must correspond to a field ID defined in `formFields`.
+	//
+	// The client must include answers for all required fields (where `required`
+	// is true). Answers for optional fields (where `required` is false)
+	// may be omitted if no answer was provided, or included if an answer is available.
+	formAnswers?: FormAnswer[];
 }
 
 // FormField describes a single question in a form and its validation state.
 export interface FormField {
+	// ID is a unique identifier for this field. This key is used as the property
+	// name in FormAnswers to map the user's input back to this specific field.
+	id: string;
+
 	// Description is the text content of the question (the prompt) presented to the user.
 	description: string;
 
 	// Type specifies the data type and validation constraints for the answer.
 	type: FormFieldType;
+
+	// Required specifies whether an answer is required for this field.
+	required: boolean;
 
 	// Default specifies an optional initial value for the answer.
 	// If Type is FormFieldTypeEnum, this value must be present in the enum's values array.
@@ -118,6 +134,15 @@ export interface FormField {
 	// Error provides a validation message from the language server.
 	// If empty or undefined, the current answer is considered valid.
 	error?: string;
+}
+
+// FormAnswer describes a single answer to a FormField, identified by its unique ID.
+export interface FormAnswer {
+	// The ID of the FormField being answered.
+	id: string;
+
+	// The user's answer value.
+	value: any;
 }
 
 // FormFieldTypeString defines a text input.
@@ -166,6 +191,12 @@ export interface FormFieldTypeFile {
 	//
 	// Only applicable against existing file.
 	type: FileType;
+
+	// Filters specifies the allowed file extensions without the leading dot. A file
+	// is valid if it matches any of the extensions (OR logic). e.g. ["png", "jpg"].
+	//
+	// If omitted or empty, no extension filter is applied.
+	filters?: string[];
 }
 
 
@@ -312,13 +343,17 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
      "arguments": [{ "Modification": "add" }],
      "formFields": [
        {
+         "id": "tags",
          "description": "comma-separated list of tags to add",
          "type": { "kind": "string" },
+         "required": true,
          "default": "json"
        },
        {
+         "id": "transform",
          "description": "transform rule for added tags",
          "type": { "kind": "enum", "entries": [...] },
+         "required": true,
          "default": "camelcase"
        }
      ]
@@ -332,32 +367,42 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
    {
      "command": "gopls.modify_tags",
      "arguments": [{ "Modification": "add" }],
-     "formAnswers": ["json,foo", "camelcase"]
+     "formAnswers": [
+       { "id": "tags", "value": "json,foo" },
+       { "id": "transform", "value": "camelcase" }
+     ]
    }
    ```
 
 6. Resolution Response: The server validates the input. There are two possible outcomes:
 
    *   **Case A: Validation Failure**
-       If the input is invalid (e.g., the user entered `"json,fo o"` with a space), the server returns `formFields` again with one error per 'invalid' answers. The error is attached to the formFields[i] where the formAnswers[i] is invalid. The client may decide to drop the entire command resolve and command execution or try to return to step 4 to recollect user input.
+       If the input is invalid (e.g., the user entered `"json,fo o"` with a space), the server returns `formFields` again with one error per invalid answer. The error is attached to the `FormField` object that has the corresponding `id`. The client may decide to drop the entire command resolve and command execution or try to return to step 4 to recollect user input.
        ```json
        {
          "command": "gopls.modify_tags",
          "arguments": [{ "Modification": "add" }],
          "formFields": [
            {
+             "id": "tags",
              "description": "comma-separated list of tags to add",
              "type": { "kind": "string" },
+             "required": true,
              "default": "json",
              "error": "cannot contain spaces, quotes, colons, or control characters"
            },
            {
+             "id": "transform",
              "description": "transform rule for added tags",
              "type": { "kind": "enum", "entries": [...] },
+             "required": true,
              "default": "camelcase"
            }
          ],
-         "formAnswers": ["json,fo o", "camelcase"]
+         "formAnswers": [
+           { "id": "tags", "value": "json,fo o" },
+           { "id": "transform", "value": "camelcase" }
+         ]
        }
        ```
 
@@ -367,7 +412,10 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
        {
          "command": "gopls.modify_tags",
          "arguments": [{ "Modification": "add" }],
-         "formAnswers": ["json,foo", "camelcase"]
+         "formAnswers": [
+           { "id": "tags", "value": "json,foo" },
+           { "id": "transform", "value": "camelcase" }
+         ]
        }
        ```
        At this point, the client proceeds to execute the command via `workspace/executeCommand`, passing the finalized params (including `formAnswers`).
@@ -375,6 +423,9 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
        {
          "command": "gopls.modify_tags",
          "arguments": [{ "Modification": "add" }],
-         "formAnswers": ["json,foo", "camelcase"]
+         "formAnswers": [
+           { "id": "tags", "value": "json,foo" },
+           { "id": "transform", "value": "camelcase" }
+         ]
        }
        ```

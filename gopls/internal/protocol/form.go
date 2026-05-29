@@ -10,6 +10,24 @@ package protocol
 
 import "encoding/json"
 
+// InteractiveResolveOptions represents the server capabilities for interactive
+// resolve.
+type InteractiveResolveOptions struct {
+	// The kinds of interactive resolutions that the server supports.
+	//
+	// For example, "command" indicates that the server supports resolving
+	// `ExecuteCommandParams` interactively through "command/resolve".
+	Kinds []string `json:"kinds"`
+}
+
+// InteractiveResolveClientCapabilities represents the client capabilities for
+// interactive resolve.
+type InteractiveResolveClientCapabilities struct {
+	// The input types the client supports for interactive dialogs.
+	// The presence of this field implies support for interactive refactoring.
+	InputTypes []string `json:"inputTypes"`
+}
+
 // FormFieldTypeString defines a text input.
 //
 // It is defined as a struct to allow for future extensibility, such as
@@ -64,6 +82,12 @@ type FormFieldTypeFile struct {
 	//
 	// Only applicable against existing file.
 	Type FileType `json:"type"`
+
+	// Filters specifies the allowed file extensions without the leading dot. A file
+	// is valid if it matches any of the extensions (OR logic). e.g. ["png", "jpg"].
+	//
+	// If omitted or empty, no extension filter is applied.
+	Filters []string `json:"filters"`
 }
 
 // FormFieldTypeBool defines a boolean input.
@@ -146,6 +170,10 @@ type FormFieldTypeList struct {
 
 // FormField describes a single question in a form and its validation state.
 type FormField struct {
+	// ID is a unique identifier for this field. This key is used as the property
+	// name in FormAnswers to map the user's input back to this specific field.
+	ID string `json:"id"`
+
 	// Description is the text content of the question (the prompt) presented
 	// to the user.
 	Description string `json:"description"`
@@ -160,6 +188,9 @@ type FormField struct {
 	// fall back to a string input.
 	Type any `json:"type"`
 
+	// Required specifies whether an answer is required for this field.
+	Required bool `json:"required"`
+
 	// Default specifies an optional initial value for the answer.
 	//
 	// If Type is FormFieldTypeEnum, this value must be present in the enum's
@@ -169,6 +200,16 @@ type FormField struct {
 	// Error provides a validation message from the language server.
 	// If empty, the current answer is considered valid.
 	Error string `json:"error,omitempty"`
+}
+
+// FormAnswer describes a single answer to a FormField, identified by its unique
+// ID.
+type FormAnswer struct {
+	// The ID of the FormField being answered.
+	ID string `json:"id"`
+
+	// The user's answer value.
+	Value any `json:"value"`
 }
 
 // InteractiveParams facilitates a multi-step, interactive dialogue between the
@@ -227,18 +268,22 @@ type InteractiveParams struct {
 	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
 	FormFields []FormField `json:"formFields,omitempty"`
 
-	// FormAnswers contains the values for the form questions.
+	// FormAnswers contains the answers for the form questions.
 	//
-	// When sent by the language server, this field is optional but recommended
-	// to support editing previous values.
+	// When sent by the language server, this field is optional and contains the
+	// current or default answers to the questions to support editing previous values.
 	//
-	// When sent by the language client as part of the ResolveXXX request, this
-	// field is required. The slice must have the same length as FormFields (one
-	// answer per question), where the answer at index i corresponds to the
-	// field at index i.
+	// When sent by the language client, this field contains the user's answers.
+	// Answers are linked to their respective questions using the field's unique
+	// `id` rather than their array index. The list must not contain duplicate IDs,
+	// and each answer's ID must correspond to a field ID defined in `formFields`.
+	//
+	// The client must include answers for all required fields (where `required`
+	// is true). Answers for optional fields (where `required` is false)
+	// may be omitted if no answer was provided, or included if an answer is available.
 	//
 	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-	FormAnswers []any `json:"formAnswers,omitempty"`
+	FormAnswers []FormAnswer `json:"formAnswers,omitempty"`
 }
 
 // InteractiveListEnumParams defines the parameters for the
