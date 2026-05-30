@@ -61,6 +61,7 @@ func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package
 		}
 	}
 
+nextComp:
 	for _, expr := range lits {
 		typ := info.TypeOf(expr)
 		if typ == nil {
@@ -114,11 +115,11 @@ func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package
 
 		var seen map[*types.Var]bool
 
-	outer:
+	nextElem:
 		for _, el := range expr.Elts {
 			kv, ok := el.(*ast.KeyValueExpr)
 			if !ok {
-				continue
+				continue nextComp
 			}
 
 			key, ok := kv.Key.(*ast.Ident)
@@ -150,7 +151,7 @@ func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package
 				}
 				structType, ok := t.Underlying().(*types.Struct)
 				if !ok {
-					continue outer // skip to next element
+					continue nextElem
 				}
 
 				fields[i] = field
@@ -254,11 +255,13 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 	prefilledFields := map[string]ast.Expr{}
 	var elts []ast.Expr
 	for _, e := range expr.Elts {
-		if kv, ok := e.(*ast.KeyValueExpr); ok {
-			if key, ok := kv.Key.(*ast.Ident); ok {
-				prefilledFields[key.Name] = kv.Value
-				elts = append(elts, kv)
-			}
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, nil, fmt.Errorf("can not fill composite literal contains any untagged element")
+		}
+		if key, ok := kv.Key.(*ast.Ident); ok {
+			prefilledFields[key.Name] = kv.Value
+			elts = append(elts, kv)
 		}
 	}
 

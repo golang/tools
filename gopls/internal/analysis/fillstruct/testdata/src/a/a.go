@@ -125,3 +125,10 @@ type outer struct {
 var _ = outer{ // want `outer literal has missing fields`
 	inner: inner{} // want `inner literal has missing fields`
 }
+
+type untagged struct {
+	A, B string
+}
+
+// no diagnostic expected (contains untagged elements)
+var _ = untagged{"a"}
