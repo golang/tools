@@ -1,0 +1,67 @@
+Test for fill struct on promoted fields in struct literals.
+Ref: go.dev/issues/78553
+
+-- flags --
+-min_go_command=go1.27
+
+-- go.mod --
+module mod.com
+
+go 1.27
+
+-- main.go --
+package main
+
+type F struct {
+	F1 int
+	F2 int
+}
+
+type E struct {
+	E1 int
+	E2 int
+	F
+}
+
+type T struct {
+	E
+	F int
+}
+
+// Fill in struct at T level.
+var _ = T{E: E{}} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_F)
+
+var _ = T{F: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_E)
+
+// Fill in struct at T.E level: T.E.F shadowed by T.F.
+var _ = T{E1: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", err=re"shadowed")
+
+var _ = T{E1: 0, E2: 0, F: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", err=re"shadowed")
+
+// Fill in struct at T.E.F level: T.E.F does not need to be promoted.
+var _ = T{F1: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_all)
+
+-- @fill_T_E/main.go --
+@@ -22 +22,4 @@
+-var _ = T{F: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_E)
++var _ = T{
++	F: 0,
++	E: E{},
++} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_E)
+-- @fill_T_F/main.go --
+@@ -20 +20,4 @@
+-var _ = T{E: E{}} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_F)
++var _ = T{
++	E: E{},
++	F: 0,
++} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_T_F)
+-- @fill_all/main.go --
+@@ -30 +30,7 @@
+-var _ = T{F1: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_all)
++var _ = T{
++	F1: 0,
++	E1: 0,
++	E2: 0,
++	F2: 0,
++	F:  0,
++} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_all)

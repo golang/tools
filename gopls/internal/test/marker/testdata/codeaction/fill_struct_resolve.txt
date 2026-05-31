@@ -607,10 +607,16 @@ type invalidStruct struct {
 }
 
 func _() {
-  // Note: the golden content for issue63921 is empty: fillstruct produces no
-  // edits, but does not panic.
+  // Note: fillstruct now skips invalid/unresolvable fields (like Undefined)
+  // rather than aborting completely, it successfully fills the valid field F.
   invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
 }
+-- @issue63921/issue63921.go --
+@@ -12 +12,3 @@
+-  invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
++  invalidStruct{
++  	F: 0,
++  } //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
 -- named/named.go --
 package named
 

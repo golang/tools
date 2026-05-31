@@ -20,6 +20,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -127,7 +128,11 @@ nextComp:
 				continue
 			}
 
-			seln, _ := types.LookupSelection(typ, true, pkg, key.Name)
+			seln, ok := types.LookupSelection(typ, true, pkg, key.Name)
+			if !ok {
+				continue
+			}
+
 			length := len(seln.Index())
 			if length == 0 {
 				continue
@@ -234,88 +239,15 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")
 	}
 	expr, _ := cursorutil.FirstEnclosing[*ast.CompositeLit](cur)
-	typ := info.TypeOf(expr)
-	if typ == nil {
-		return nil, nil, fmt.Errorf("no composite literal")
+
+	// newElts accumulates the newly generated field element AST nodes.
+	newElts, err := populateMissingFields(info, pkg, file, expr, pos)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// Find reference to the type declaration of the struct being initialized.
-	typ = typeparams.Deref(typ)
-	tStruct, ok := typ.Underlying().(*types.Struct)
-	if !ok {
-		return nil, nil, fmt.Errorf("%s is not a (pointer to) struct type",
-			types.TypeString(typ, typesinternal.NameRelativeTo(pkg)))
-	}
-	// Inv: typ is the possibly-named struct type.
-
-	fieldCount := tStruct.NumFields()
-
-	// Check which types have already been filled in. (we only want to fill in
-	// the unfilled types, or else we'll blat user-supplied details)
-	prefilledFields := map[string]ast.Expr{}
-	var elts []ast.Expr
-	for _, e := range expr.Elts {
-		kv, ok := e.(*ast.KeyValueExpr)
-		if !ok {
-			return nil, nil, fmt.Errorf("can not fill composite literal contains any untagged element")
-		}
-		if key, ok := kv.Key.(*ast.Ident); ok {
-			prefilledFields[key.Name] = kv.Value
-			elts = append(elts, kv)
-		}
-	}
-
-	var fieldTyps []types.Type
-	for i := range fieldCount {
-		field := tStruct.Field(i)
-		// Ignore fields that are not accessible in the current package.
-		if field.Pkg() != nil && field.Pkg() != pkg && !field.Exported() {
-			fieldTyps = append(fieldTyps, nil)
-			continue
-		}
-		fieldTyps = append(fieldTyps, field.Type())
-	}
-	matches := fillreturns.MatchingIdents(fieldTyps, file, start, info, pkg)
-	qual := typesinternal.FileQualifier(file, pkg)
-
-	for i, fieldTyp := range fieldTyps {
-		if fieldTyp == nil {
-			continue // TODO(adonovan): is this reachable?
-		}
-		fieldName := tStruct.Field(i).Name()
-		if _, ok := prefilledFields[fieldName]; ok {
-			// We already stored these when looping over expr.Elt.
-			// Want to preserve the original order of prefilled fields
-			continue
-		}
-
-		kv := &ast.KeyValueExpr{
-			Key: &ast.Ident{
-				Name: fieldName,
-			},
-		}
-
-		names, ok := matches[fieldTyp]
-		if !ok {
-			return nil, nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
-		}
-
-		// Find the name most similar to the field name.
-		// If no name matches the pattern, generate a zero value.
-		// NOTE: We currently match on the name of the field key rather than the field type.
-		if best := fuzzy.BestMatch(fieldName, names); best != "" {
-			kv.Value = ast.NewIdent(best)
-		} else if expr, isValid := populateValue(fieldTyp, qual); isValid {
-			kv.Value = expr
-		} else {
-			return nil, nil, nil // no fix to suggest
-		}
-
-		elts = append(elts, kv)
-	}
-
-	// If all of the struct's fields are unexported, we have nothing to do.
-	if len(elts) == 0 {
+	// If we failed to generate any new fields to fill, we have nothing to do.
+	if len(newElts) == 0 {
 		return nil, nil, fmt.Errorf("no elements to fill")
 	}
 
@@ -330,16 +262,11 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 	index := bytes.Index(firstLine, trimmed)
 	whitespace := firstLine[:index]
 
-	// Write a new composite literal "_{...}" composed of all prefilled and new elements,
-	// preserving existing formatting and comments.
-	// An alternative would be to only format the new fields,
-	// but by printing the entire composite literal, we ensure
-	// that the result is gofmt'ed.
 	var buf bytes.Buffer
 	buf.WriteString("_{\n")
 	fcmap := ast.NewCommentMap(fset, file, file.Comments)
 	comments := fcmap.Filter(expr).Comments() // comments inside the expr, in source order
-	for _, elt := range elts {
+	for _, elt := range slices.Concat(expr.Elts, newElts) {
 		// Print comments before the current elt
 		for len(comments) > 0 && comments[0].Pos() < elt.Pos() {
 			for _, co := range comments[0].List {
@@ -394,6 +321,137 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 			},
 		},
 	}, nil
+}
+
+// populateMissingFields returns a slice of ast.Expr (specifically *ast.KeyValueExpr)
+// representing the populated missing fields of tStruct that can be filled.
+//
+// It traverses the struct fields in depth-first order (DFS), flattening embedded
+// structs where the user has partially initialized their sub-fields, and attempts
+// to generate a matching local variable or zero-value for each missing field.
+// Fields that cannot be populated are skipped, returning only the ones that can
+// be successfully populated.
+func populateMissingFields(info *types.Info, pkg *types.Package, file *ast.File, expr *ast.CompositeLit, pos token.Pos) ([]ast.Expr, error) {
+	typ := info.TypeOf(expr)
+	if typ == nil {
+		return nil, fmt.Errorf("no composite literal")
+	}
+
+	// Find reference to the type declaration of the struct being initialized.
+	typ = typeparams.Deref(typ)
+	tStruct, ok := typ.Underlying().(*types.Struct)
+	if !ok {
+		return nil, fmt.Errorf("%s is not a (pointer to) struct type",
+			types.TypeString(typ, typesinternal.NameRelativeTo(pkg)))
+	}
+
+	// Inv: typ is the possibly-named struct type.
+
+	// explicit records whether each encountered field is explicitly initialized.
+	// Each non-last field in a selection path is accessed implicitly (false),
+	// and the last field is accessed explicitly (true).
+	// Fields not present in this map are completely missing and need to be populated.
+	explicit := make(map[*types.Var]bool)
+	for _, elem := range expr.Elts {
+		kv, ok := elem.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("cannot fill struct literal containing unkeyed elements")
+		}
+
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+
+		seln, ok := types.LookupSelection(tStruct, true, pkg, key.Name)
+		if !ok {
+			continue
+		}
+
+		n := 0
+		for field := range typesinternal.FieldSelections(seln) {
+			n++
+			isExplicit := n == len(seln.Index()) // only the last field is explicit
+			got, ok := explicit[field]
+			if ok && got != isExplicit {
+				return nil, fmt.Errorf("cannot both directly initialize and flatten embedded field %q", field.Name())
+			}
+			explicit[field] = isExplicit
+		}
+	}
+
+	// Collect the final list of fields to be filled. Traverse the struct fields
+	// in depth-first order, flattening embedded fields that are marked for
+	// expansion because the user has partially initialized their sub-fields.
+	var fields []*types.Var
+	{
+		var addFields func(*types.Struct)
+		addFields = func(tStruct *types.Struct) {
+			for field := range tStruct.Fields() {
+				if field.Pkg() != pkg && !field.Exported() {
+					continue
+				}
+
+				isExplicit, ok := explicit[field]
+				if !ok {
+					fields = append(fields, field)
+					continue
+				}
+
+				if !isExplicit {
+					tInner, ok := typeparams.Deref(field.Type()).Underlying().(*types.Struct)
+					if !ok {
+						continue // can't happen
+					}
+					addFields(tInner)
+				}
+			}
+		}
+		addFields(tStruct)
+	}
+
+	typs := make([]types.Type, len(fields))
+	for i, f := range fields {
+		typs[i] = f.Type()
+	}
+
+	var newElts []ast.Expr
+	matches := fillreturns.MatchingIdents(typs, file, pos, info, pkg)
+	qual := typesinternal.FileQualifier(file, pkg)
+
+	// Iterate in the order fields were discovered to ensure deterministic
+	// output and match the struct definition order.
+	for _, field := range fields {
+		// TODO(hxjiang): Provide a separate quick-fix option to fill the
+		// struct using nested composite literals, ensuring we always have a
+		// valid suggestion even if shadowing prevents flattening.
+		if obj, _, _ := types.LookupFieldOrMethod(tStruct, true, pkg, field.Name()); obj != field {
+			return nil, fmt.Errorf("field %s shadowed", field.Name())
+		}
+
+		kv := &ast.KeyValueExpr{
+			Key: ast.NewIdent(field.Name()),
+		}
+
+		names, ok := matches[field.Type()]
+		if !ok {
+			return nil, fmt.Errorf("invalid struct field type: %v", field.Type())
+		}
+
+		// Find the name most similar to the field name.
+		// If no name matches the pattern, generate a zero value.
+		// NOTE: We currently match on the name of the field key rather than the field type.
+		if best := fuzzy.BestMatch(field.Name(), names); best != "" {
+			kv.Value = ast.NewIdent(best)
+		} else if expr, isValid := populateValue(field.Type(), qual); isValid {
+			kv.Value = expr
+		} else {
+			continue
+		}
+
+		newElts = append(newElts, kv)
+	}
+	return newElts, nil
 }
 
 // indent works line by line through str, indenting (prefixing) each line with
