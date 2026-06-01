@@ -128,16 +128,12 @@ func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 	if err != nil {
 		return err
 	}
-	if err := s.didModifyFiles(ctx, FromDidChange, file.Modification{
+	return s.didModifyFiles(ctx, FromDidChange, file.Modification{
 		URI:     uri,
 		Action:  file.Change,
 		Version: params.TextDocument.Version,
 		Text:    text,
-	}); err != nil {
-		return err
-	}
-	// TODO(adonovan): this should occur within the didModifyFiles span; #79760.
-	return s.warnAboutModifyingGeneratedFiles(ctx, uri)
+	})
 }
 
 // warnAboutModifyingGeneratedFiles shows a warning if a user tries to edit a
@@ -269,6 +265,12 @@ func (s *server) didModifyFiles(ctx context.Context, cause ModificationSource, m
 	// golang/go#50267: diagnostics should be re-sent after each change.
 	for _, mod := range modifications {
 		s.mustPublishDiagnostics(mod.URI)
+
+		if cause == FromDidChange && mod.Action == file.Change {
+			if err := s.warnAboutModifyingGeneratedFiles(ctx, mod.URI); err != nil {
+				return err // e.g. failed to get snapshot
+			}
+		}
 	}
 
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)

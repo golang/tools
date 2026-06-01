@@ -121,6 +121,8 @@ var x = 1
 		collectMessages := env.Awaiter.ListenToShownMessages()
 		env.RegexpReplace("a/a.go", "var", "const")
 		env.Await(env.DoneWithChange())
+		// We don't need to await [ShownMessage]: the warning
+		// should "happen before" completion of DidChange.
 		messages := collectMessages()
 
 		const want = "Warning: editing a.go, a generated file."
