@@ -850,7 +850,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			targs := fn.subtargs(e.Sel)
 			thunk := createThunk(fn.Prog, sel, targs)
 			b.enqueue(thunk)
-			return emitConv(fn, thunk, thunk.Signature)
+			return thunk
 
 		case types.MethodVal:
 			// e.f where e is an expression and f is a method.
