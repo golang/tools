@@ -543,7 +543,7 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 					OnDisk: true,
 				}
 			}
-			if err := s.didModifyFiles(watcherCtx, modifications, FromDidChangeWatchedFiles); err != nil {
+			if err := s.didModifyFiles(watcherCtx, FromDidChangeWatchedFiles, modifications...); err != nil {
 				event.Error(watcherCtx, "failed to process file changes", err)
 			}
 		}
