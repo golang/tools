@@ -353,12 +353,7 @@ func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qual
 					}
 
 					if seln, ok := types.LookupSelection(strct, true, pkg, id.Name); ok {
-						n := len(seln.Index())
-						for field := range typesinternal.FieldSelections(seln) {
-							n--
-							if n == 0 {
-								break // skip final (explicit) field
-							}
+						for field := range typesinternal.ImplicitFieldSelections(seln) {
 							label.WriteString(field.Name())
 							label.WriteByte('.')
 						}

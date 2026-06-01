@@ -144,11 +144,7 @@ nextComp:
 			)
 
 			i := 0
-			for field := range typesinternal.FieldSelections(seln) {
-				if i == length-1 {
-					break
-				}
-
+			for field := range typesinternal.ImplicitFieldSelections(seln) {
 				t := field.Type()
 				ptr, isPtr := t.Underlying().(*types.Pointer)
 				if isPtr {
@@ -368,15 +364,22 @@ func populateMissingFields(info *types.Info, pkg *types.Package, file *ast.File,
 			continue
 		}
 
-		n := 0
-		for field := range typesinternal.FieldSelections(seln) {
-			n++
-			isExplicit := n == len(seln.Index()) // only the last field is explicit
-			got, ok := explicit[field]
-			if ok && got != isExplicit {
-				return nil, fmt.Errorf("cannot both directly initialize and flatten embedded field %q", field.Name())
+		field, ok := seln.Obj().(*types.Var)
+		if !ok {
+			continue
+		}
+
+		isExplicit, ok := explicit[field]
+		if ok && !isExplicit {
+			return nil, fmt.Errorf("cannot fill both %q and its subfields", field.Name())
+		}
+		explicit[field] = true // last field is explicit
+
+		for field := range typesinternal.ImplicitFieldSelections(seln) {
+			if explicit[field] {
+				return nil, fmt.Errorf("cannot fill both %q and its subfields", field.Name())
 			}
-			explicit[field] = isExplicit
+			explicit[field] = false // all the others are implicit
 		}
 	}
 
