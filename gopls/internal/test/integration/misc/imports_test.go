@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/test/compare"
@@ -418,7 +419,14 @@ return nil
 			// information. Logf is fine as the test will fail later.
 			ix, err := modindex.Read(modcache)
 			if err != nil {
-				t.Logf("could not read modcache index: %v", err)
+				// no index? maybe it's a rare race condition
+				time.Sleep(3 * time.Second)
+				ix, err = modindex.Read(modcache)
+				if err != nil {
+					t.Logf("could not read modcache index: %v", err)
+				} else {
+					t.Logf("re-read modcache index, found %d entries", len(ix.Entries))
+				}
 			} else if len(ix.Entries) != 2 {
 				t.Logf("%d modcache entries", len(ix.Entries))
 				if len(ix.Entries) == 0 {
