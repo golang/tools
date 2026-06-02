@@ -1332,7 +1332,6 @@ func (c *completer) wantTypeName() bool {
 // See https://golang.org/issue/36001. Unimported completions are expensive.
 const (
 	maxUnimportedPackageNames = 5
-	unimportedMemberTarget    = 100
 )
 
 // selector finds completions for the specified selector expression.
@@ -1379,7 +1378,14 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	prefix := sel.Sel.Name
 	if c.surrounding != nil {
 		if c.surrounding.content != sel.Sel.Name {
-			bug.Reportf("unexpected surrounding: %q != %q", c.surrounding.content, sel.Sel.Name)
+			// the bug reports do not include the Reportf strings just the line numbers
+			if len(c.surrounding.content) == 0 {
+				bug.Reportf("surrounding is empty, should be %q", sel.Sel.Name)
+			} else if len(sel.Sel.Name) == 0 {
+				bug.Reportf("sel.Sel.Name is empty, should be %q", c.surrounding.content)
+			} else {
+				bug.Reportf("unexpected surrounding: %q != %q", c.surrounding.content, sel.Sel.Name)
+			}
 		} else {
 			prefix = sel.Sel.Name[:c.surrounding.cursor-c.surrounding.start]
 		}
