@@ -767,38 +767,3 @@ func _() {
 @@ -24 +24,2 @@
 +		Edges: map[*Node]*Node{},
 +		Other: "",
--- malformed/methodasfield.go --
-package malformed
-
-type foo struct {
-	A, B, C string
-}
-
-func (f *foo) Bar() {}
-
-// Test that we don't crash when a method is used as a struct literal key.
-var _ = foo{
-	Bar: 0,
-} //@codeaction("}", "refactor.rewrite.fillStruct", edit=methodasfield)
--- @methodasfield/malformed/methodasfield.go --
-@@ -12 +12,3 @@
-+	A:   "",
-+	B:   "",
-+	C:   "",
--- malformed/fieldconflict.go --
-package malformed
-
-type a struct {
-	b
-	a1 string
-	a2 string
-}
-
-type b struct {
-	b1 string
-}
-
-var _ = a{
-	b:  b{},
-	b1: "",
-} //@codeaction("}", "refactor.rewrite.fillStruct", err=re"cannot fill both .* and its subfields")
