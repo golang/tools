@@ -25,8 +25,10 @@ import (
 	"fmt"
 	"go/token"
 	"io"
+	"log"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"text/template"
 
 	"golang.org/x/tools/go/callgraph"
@@ -52,6 +54,9 @@ var (
 		"A template expression specifying how to format an edge")
 
 	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
+
+	cpuProfile = flag.String("cpuprofile", "", "write CPU profile to this file")
+	memProfile = flag.String("memprofile", "", "write memory profile to this file")
 )
 
 const Usage = `callgraph: display the call graph of a Go program.
@@ -82,6 +87,7 @@ Flags:
             digraph     output suitable for input to
                         golang.org/x/tools/cmd/digraph.
             graphviz    output in AT&T GraphViz (.dot) format.
+            ''          output nothing (useful when profiling)
 
            All other values are interpreted using text/template syntax.
            The default value is:
@@ -144,17 +150,42 @@ Examples:
       digraph succs golang.org/x/tools/cmd/callgraph.main
 `
 
-func init() {
-	// If $GOMAXPROCS isn't set, use the full capacity of the machine.
-	// For small machines, use at least 4 threads.
-	if os.Getenv("GOMAXPROCS") == "" {
-		n := max(runtime.NumCPU(), 4)
-		runtime.GOMAXPROCS(n)
-	}
-}
-
 func main() {
 	flag.Parse()
+
+	if *cpuProfile != "" {
+		f, err := os.Create(*cpuProfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal(err)
+		}
+		// Note: in case of error, program exits before writing profile.
+		defer func() {
+			pprof.StopCPUProfile()
+			log.Printf("Run: go tool pprof %s # (cpu)", *cpuProfile)
+		}()
+	}
+
+	if *memProfile != "" {
+		f, err := os.Create(*memProfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Note: in case of error, program exits before writing profile.
+		defer func() {
+			runtime.GC() // get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.Fatalf("Writing memory profile: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Closing memory profile: %v", err)
+			}
+			log.Printf("Run: go tool pprof -sample_index=1 %s # (alloc_space)", *memProfile)
+		}()
+	}
+
 	if err := doCallgraph("", "", *algoFlag, *formatFlag, *testFlag, flag.Args()); err != nil {
 		fmt.Fprintf(os.Stderr, "callgraph: %s\n", err)
 		os.Exit(1)
@@ -234,6 +265,9 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 
 	// Pre-canned formats.
 	switch format {
+	case "":
+		return nil
+
 	case "digraph":
 		format = `{{printf "%q %q" .Caller .Callee}}`
 
