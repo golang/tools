@@ -270,6 +270,21 @@ func TestRuntimeTypes(t *testing.T) {
 		{`package N; var g interface{}; func f[S any]() { var v []S; g = v }; `,
 			nil,
 		},
+		// ...including a parameterized type boxed by a closure in the body of a method of a generic type (go.dev/issue/80055).
+		{`package O; type box[N any] struct{ n N }; type holder[N any] struct{}; func (h *holder[N]) get() any { f := func() any { return &box[N]{} }; return f() }`,
+			nil,
+		},
+		// The type []T within generic F[T] is parameterized, so not a RuntimeType.
+		// But []T within instance f[T=C] is a ground type, so a RuntimeType.
+		{`package P
+var _ = G[C]
+func G[U any]()     { F[U]() }
+func F[T any]() any { return []T{} }
+type C struct{}
+func (C) f()
+`,
+			[]string{"*p.C", "p.C"},
+		},
 	}
 	for _, test := range tests {
 		// Parse the file.
@@ -282,7 +297,7 @@ func TestRuntimeTypes(t *testing.T) {
 
 		// Create a single-file main package.
 		// Load dependencies from gc binary export data.
-		mode := ssa.SanityCheckFunctions
+		mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
 		ssapkg, _, err := ssautil.BuildPackage(&types.Config{Importer: importer.Default()}, fset,
 			types.NewPackage("p", ""), []*ast.File{f}, mode)
 		if err != nil {
