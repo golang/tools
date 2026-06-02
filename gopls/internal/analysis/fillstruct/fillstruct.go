@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // Diagnose computes a diagnostic for the enclosing struct literal enclosing
@@ -46,6 +47,12 @@ import (
 // (via the ApplyFix command) by a call to [SuggestedFix].
 func Diagnose(curFile inspector.Cursor, start, end token.Pos, pkg *types.Package, info *types.Info) (diags []analysis.Diagnostic) {
 	cur, _, _, _ := astutil.Select(curFile, start, end)
+
+	// Direct reference to embedded fields in struct literals requires Go 1.27+.
+	var supportsEmbedFields bool
+	if v := info.FileVersions[curFile.Node().(*ast.File)]; v != "" {
+		supportsEmbedFields = versions.AtLeast(v, versions.Go1_27)
+	}
 
 	var lits []*ast.CompositeLit
 	for c := range cur.Enclosing((*ast.CompositeLit)(nil)) {
@@ -130,6 +137,10 @@ nextComp:
 
 			seln, ok := types.LookupSelection(typ, true, pkg, key.Name)
 			if !ok {
+				continue
+			}
+
+			if len(seln.Index()) > 1 && !supportsEmbedFields {
 				continue
 			}
 
@@ -343,6 +354,12 @@ func populateMissingFields(info *types.Info, pkg *types.Package, file *ast.File,
 
 	// Inv: typ is the possibly-named struct type.
 
+	// Direct reference to embedded fields in struct literals requires Go 1.27+.
+	var supportsEmbedFields bool
+	if v := info.FileVersions[file]; v != "" {
+		supportsEmbedFields = versions.AtLeast(v, versions.Go1_27)
+	}
+
 	// explicit records whether each encountered field is explicitly initialized.
 	// Each non-last field in a selection path is accessed implicitly (false),
 	// and the last field is accessed explicitly (true).
@@ -361,6 +378,10 @@ func populateMissingFields(info *types.Info, pkg *types.Package, file *ast.File,
 
 		seln, ok := types.LookupSelection(tStruct, true, pkg, key.Name)
 		if !ok {
+			continue
+		}
+
+		if len(seln.Index()) > 1 && !supportsEmbedFields {
 			continue
 		}
 

@@ -42,10 +42,17 @@ type b struct {
 	b1 string
 }
 
+// In Go 1.26, direct reference to embedded fields (like b1: "") is invalid.
+// gopls treats "b1" as unknown, does not detect a conflict with b, and
+// suggests filling direct fields a1 and a2.
 var _ = a{
 	b:  b{},
 	b1: "",
-} //@codeaction("}", "refactor.rewrite.fillStruct", err=re"cannot fill both .* and its subfields")
+} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fieldconflict)
+-- @fieldconflict/malformed/fieldconflict.go --
+@@ -19 +19,2 @@
++	a1: "",
++	a2: "",
 -- malformed/embeddedfields.go --
 package malformed
 
@@ -59,13 +66,13 @@ type T struct {
 }
 
 // In Go 1.26, direct reference to embedded fields (like E1: "") is invalid.
-// However, if the user writes it anyway, gopls will still try to fill in the
-// remaining promoted fields as if Go 1.27 were supported.
+// gopls treat "E1" as unknown, does not flatten E, and suggests filling direct
+// fields E, T1, and T2.
 var _ = T{
 	E1: "",
 } //@codeaction("}", "refactor.rewrite.fillStruct", edit=embeddedfieldsgo)
 -- @embeddedfieldsgo/malformed/embeddedfields.go --
 @@ -17 +17,3 @@
-+	E2: "",
++	E:  E{},
 +	T1: "",
 +	T2: "",

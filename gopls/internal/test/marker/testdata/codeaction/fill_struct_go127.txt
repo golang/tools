@@ -3,6 +3,7 @@ Ref: go.dev/issues/78553
 
 -- flags --
 -min_go_command=go1.27
+-ignore_extra_diags
 
 -- go.mod --
 module mod.com
@@ -65,3 +66,20 @@ var _ = T{F1: 0} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fil
 +	F2: 0,
 +	F:  0,
 +} //@codeaction(re"T{()", "refactor.rewrite.fillStruct", edit=fill_all)
+-- malformed/fieldconflict.go --
+package malformed
+
+type a struct {
+	b
+	a1 string
+	a2 string
+}
+
+type b struct {
+	b1 string
+}
+
+var _ = a{
+	b:  b{},
+	b1: "",
+} //@codeaction("}", "refactor.rewrite.fillStruct", err=re"cannot fill both .* and its subfields")
