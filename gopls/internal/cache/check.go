@@ -285,18 +285,6 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 	}
 	s.batchRef++
 
-	// While any type-checking batch is active, run the GC more aggressively. A
-	// batch that invalidates a large reverse-dependency closure (e.g. a syntax
-	// error in a widely-imported package) churns through a lot of transient
-	// memory -- parsed ASTs and types.Info for packages that are checked only to
-	// produce export data for their importers, then dropped. With the default
-	// pacing the heap is allowed to grow to ~2x the live set before collecting,
-	// so this transient garbage spikes RSS well above the steady-state working
-	// set. A lower percent collects sooner, trading some GC CPU for a much lower
-	// peak heap during the spike. The previous percent is restored when the last
-	// concurrent batch finishes.
-	restoreGC := lowerGCDuringTypeCheck()
-
 	return s.batch, func() {
 		s.typeCheckMu.Lock()
 		defer s.typeCheckMu.Unlock()
@@ -305,13 +293,24 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 		if s.batchRef == 0 {
 			s.batch = nil
 		}
-		restoreGC()
 	}
 }
 
-// typeCheckGCPercent is the GOGC value used while a type-checking batch is
-// active (see [lowerGCDuringTypeCheck]).
+// typeCheckGCPercent is the GOGC value used while a large type-checking batch is
+// in progress (see [lowerGCDuringTypeCheck] and its use in [typeCheckBatch.query]).
 const typeCheckGCPercent = 10
+
+// gcAggressiveBatchSize is the number of syntax packages in a single query above
+// which we lower the GC percent for the duration of the query. Re-checking a
+// large reverse-dependency closure (e.g. after a syntax error in a
+// widely-imported package) churns through a lot of transient memory -- parsed
+// ASTs and types.Info for packages that are checked, indexed, and then dropped.
+// With the default pacing the heap grows to ~2x the live set before collecting,
+// spiking RSS far above the steady-state working set. Lowering the GC percent
+// collects sooner, trading GC CPU for a much lower peak. We gate on batch size
+// so that small, latency-sensitive edits (re-checking a handful of packages on
+// each keystroke) keep the default, throughput-oriented pacing.
+const gcAggressiveBatchSize = 32
 
 var (
 	gcPercentMu      sync.Mutex
@@ -371,6 +370,12 @@ func newTypeCheckBatch(parseCache *parseCache, gopackagesdriver bool) *typeCheck
 func (b *typeCheckBatch) query(ctx context.Context, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) error {
 	b.addHandles(handles)
 	b.addSyntaxIDs(syntaxIDs)
+
+	// For large batches (a closure re-check), collect transient type-check
+	// garbage more aggressively to cap the heap spike. See gcAggressiveBatchSize.
+	if len(syntaxIDs) >= gcAggressiveBatchSize {
+		defer lowerGCDuringTypeCheck()()
+	}
 
 	// Start a single goroutine for each requested package.
 	//
