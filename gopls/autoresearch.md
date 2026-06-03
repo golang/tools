@@ -110,8 +110,21 @@ time for import. Baseline numbers above are WITH that change.
   in steady state. Production-safety refinement of #2.
 
 ## Current Best (final)
-peak_heap 2.05GB -> ~0.90GB (-56%), settled 1.35 -> 0.75GB (-44%), churn flat
-(~0.74), ns/op unchanged. Plus -2.4GB total-allocation (load-time) from #6.
+peak_heap 2.05GB -> ~0.45GB (-78%) with low-memory mode (#9), or ~0.90GB (-56%)
+without it. settled 1.35 -> 0.33GB. Plus -2.4GB total-allocation (load) from #6.
+
+- [#9 KEEP, default-on] Low-memory mode: during large batches, evict non-open
+  packages' parsed files from the parse cache after indexing (the transient
+  syntax cache already drops the *Package; the parse cache was the only pin on
+  ~400MB of ASTs). SAFE: cache-policy only, no shared-state mutation (eviction
+  re-parses on miss; never hands out gutted data). peak 0.89->0.45GB. ns/op
+  neutral (aggressive GC scans half the heap, offsetting re-parse). Off-switch:
+  GOPLS_NO_LOWMEM=1. Verified: marker+diagnostics+misc+completion pass with
+  eviction forced on every batch. Binary built at ~/go/bin/gopls-lowmem.
+  KEY INSIGHT: a package's AST is only needed during its own type-check
+  (importers consume .Types()); the parse cache's 1-min warm pin is what kept
+  the whole closure resident. Trading that pin (re-parse CPU) for memory is the
+  whole lever.
 
 Landed (all verified: cache tests + references/rename integration + full marker
 suite pass): #2 GC pacing, #3 xrefs transient walk, #6 shared objectpath
