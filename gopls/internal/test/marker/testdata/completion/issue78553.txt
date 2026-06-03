@@ -4,9 +4,6 @@ Ref: go.dev/issues/78553
 -- flags --
 -min_go_command=go1.27
 
--- skip --
-Skipping as this feature is not yet implemented. Ref: go.dev/issues/78553
-
 -- go.mod --
 module mod.com
 
@@ -16,21 +13,32 @@ go 1.27
 package main
 
 type E1 struct {
-	A int //@item(fieldA, "A", "int", "field")
+	A int //@item(fieldA, "A", "int", "field"),item(structE1, "E1", "struct{...}", "struct")
 }
 
 type E2 struct {
-	E1
+	E1    //@item(fieldE1, "E1", "E1", "field"),item(structE2, "E2", "struct{...}", "struct")
 	B int //@item(fieldB, "B", "int", "field")
 }
 
 type T struct {
-	E2    //@item(fieldE2, "E2", "E2", "field")
+	E2    //@item(fieldE2, "E2", "E2", "field"),item(structT, "T", "struct{...}", "struct")
 	C int //@item(fieldC, "C", "int", "field")
 }
 
+//@item(literalE2, "E2{}", "", "var")
+//@item(funcMain, "main", "func()", "func")
+
 func main() {
 	_ = T{
-		//@complete("", fieldA, fieldB, fieldC, fieldE2)
+		// Fields are suggested in breadth-first order:
+		// T fields (E2, C), then E2 fields (E1, B), then E1 fields (A).
+
+		//@complete("", fieldE2, fieldC, fieldE1, fieldB, fieldA, literalE2, funcMain, structE1, structE2, structT)
+	}
+
+	_ = T{
+		A: 1,
+		//@complete("", fieldC, fieldB)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"iter"
 	"math"
 	"slices"
 	"sort"
@@ -1809,36 +1810,79 @@ func (c *completer) inConstDecl() bool {
 func (c *completer) structLiteralFieldName(ctx context.Context) error {
 	clInfo := c.enclosingCompositeLiteral
 
-	// Mark fields of the composite literal that have already been set,
-	// except for the current field.
-	addedFields := make(map[*types.Var]bool)
-	for _, el := range clInfo.cl.Elts {
-		if kvExpr, ok := el.(*ast.KeyValueExpr); ok {
-			if clInfo.kv == kvExpr {
-				continue
-			}
+	if t, ok := clInfo.clType.Underlying().(*types.Struct); ok {
 
-			if key, ok := kvExpr.Key.(*ast.Ident); ok {
-				if used, ok := c.pkg.TypesInfo().Uses[key]; ok {
-					if usedVar, ok := used.(*types.Var); ok {
-						addedFields[usedVar] = true
+		// Collect selection indices of all existing
+		// fields specified by the struct literal.
+		existing := make(map[types.Object][]int)
+		for _, elt := range clInfo.cl.Elts {
+			if kv, ok := elt.(*ast.KeyValueExpr); ok {
+				if key, ok := kv.Key.(*ast.Ident); ok && clInfo.kv != kv {
+					seln, ok := types.LookupSelection(clInfo.clType, true, c.pkg.Types(), key.Name)
+					if ok {
+						existing[seln.Obj()] = seln.Index()
 					}
 				}
 			}
 		}
-	}
 
-	// Add struct fields.
-	if t, ok := types.Unalias(clInfo.clType).(*types.Struct); ok {
-		const deltaScore = 0.0001
-		for i := range t.NumFields() {
-			field := t.Field(i)
-			if !addedFields[field] {
-				c.deepState.enqueue(candidate{
-					obj:   field,
-					score: highScore - float64(i)*deltaScore,
-				})
+		// fields returns the sequence of candidate fields of struct type t.
+		fields := func(t *types.Struct) iter.Seq[*types.Var] {
+			// go1.27 permits promoted fields in struct literals.
+			deep := versions.AtLeast(c.goversion, versions.Go1_27)
+
+			return func(yield func(*types.Var) bool) {
+				var collect func(t *types.Struct) bool
+				collect = func(t *types.Struct) bool {
+					for f := range t.Fields() {
+						if !yield(f) {
+							return false
+						}
+						if deep && f.Anonymous() {
+							if inner, ok := f.Type().Underlying().(*types.Struct); ok && !collect(inner) {
+								return false
+							}
+						}
+					}
+					return true
+				}
+				collect(t)
 			}
+		}
+
+		// conflict reports whether one field index
+		// sequence is a prefix (ancestor) of the other.
+		conflict := func(a, b []int) bool {
+			for i := range min(len(a), len(b)) {
+				if a[i] != b[i] {
+					return false
+				}
+			}
+			return true
+		}
+
+	fieldloop:
+		for f := range fields(t) {
+			seln, ok := types.LookupSelection(clInfo.clType, true, c.pkg.Types(), f.Name())
+			if !ok || seln.Obj() != f {
+				continue // candidate's name is shadowed or ambiguous here
+			}
+
+			// Reject candidates that conflict with existing fields.
+			for _, indices := range existing {
+				if conflict(seln.Index(), indices) {
+					continue fieldloop
+				}
+			}
+
+			const deltaScore = 0.0001
+			const depthPenalty = 0.01
+			depth := len(seln.Index())
+			fieldIdx := seln.Index()[depth-1]
+			c.deepState.enqueue(candidate{
+				obj:   seln.Obj(),
+				score: highScore - float64(depth-1)*depthPenalty - float64(fieldIdx)*deltaScore,
+			})
 		}
 
 		// Fall through and add lexical completions if we aren't
