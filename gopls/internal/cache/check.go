@@ -15,7 +15,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"os"
 	"regexp"
 	"runtime"
 	rdebug "runtime/debug"
@@ -79,15 +78,6 @@ type typeCheckBatch struct {
 	syntaxPackages   *futureCache[PackageID, *Package]       // transient cache of in-progress syntax futures
 	importPackages   *futureCache[PackageID, *types.Package] // persistent cache of imports
 	gopackagesdriver bool                                    // for bug reporting: were packages loaded with a driver?
-
-	// releaseSyntax, when set, makes the batch evict the parsed files of non-open
-	// packages from the parse cache as soon as they have been type-checked and
-	// indexed, rather than letting them stay warm. This bounds the resident ASTs
-	// during a large reverse-dependency re-check (the syntax-error spike) to a
-	// rolling working set instead of the whole closure, trading re-parse CPU on
-	// the next re-check for a much lower memory high-water mark. Set by query for
-	// large batches; see [gcAggressiveBatchSize].
-	releaseSyntax atomic.Bool
 
 	// objpathEnc is a single objectpath.Encoder shared across all per-package
 	// xref computations in this batch, guarded by objpathMu. The Encoder
@@ -310,13 +300,6 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 // in progress (see [lowerGCDuringTypeCheck] and its use in [typeCheckBatch.query]).
 const typeCheckGCPercent = 10
 
-// lowMemReleaseDisabled is an escape hatch: setting GOPLS_NO_LOWMEM in the
-// environment disables the low-memory release of non-open package syntax (see
-// [typeCheckBatch.releaseSyntax]), which trades re-parse CPU for a lower memory
-// high-water mark. It lets a user A/B test or opt out without a rebuild. This is
-// a temporary, experimental knob.
-var lowMemReleaseDisabled = os.Getenv("GOPLS_NO_LOWMEM") != ""
-
 // gcAggressiveBatchSize is the number of syntax packages in a single query above
 // which we lower the GC percent for the duration of the query. Re-checking a
 // large reverse-dependency closure (e.g. after a syntax error in a
@@ -389,14 +372,9 @@ func (b *typeCheckBatch) query(ctx context.Context, syntaxIDs []PackageID, pre p
 	b.addSyntaxIDs(syntaxIDs)
 
 	// For large batches (a closure re-check), collect transient type-check
-	// garbage more aggressively to cap the heap spike, and release non-open
-	// packages' ASTs as they are consumed rather than keeping the whole closure
-	// resident. See gcAggressiveBatchSize and typeCheckBatch.releaseSyntax.
+	// garbage more aggressively to cap the heap spike. See gcAggressiveBatchSize.
 	if len(syntaxIDs) >= gcAggressiveBatchSize {
 		defer lowerGCDuringTypeCheck()()
-		if !lowMemReleaseDisabled {
-			b.releaseSyntax.Store(true)
-		}
 	}
 
 	// Start a single goroutine for each requested package.
@@ -559,27 +537,7 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 		}
 
 		// Update caches.
-		go func() {
-			storePackageResults(ctx, ph, p, b.objectpathFor) // ...and write all packages to disk
-
-			// In a large batch, evict non-open packages' parsed files from the
-			// parse cache once they have been indexed. The transient syntax cache
-			// already drops the *Package itself once its consumers finish (see
-			// [futureCache]), so the parse cache is the only thing keeping these
-			// ASTs resident; without this they would stay warm for a minute,
-			// keeping the entire closure in memory. Open packages are left warm so
-			// interactive features on the user's files stay fast.
-			if b.releaseSyntax.Load() && !ph.isOpen {
-				uris := make(map[protocol.DocumentURI]bool, len(p.pkg.compiledGoFiles)+len(p.pkg.goFiles))
-				for _, pgf := range p.pkg.compiledGoFiles {
-					uris[pgf.URI] = true
-				}
-				for _, pgf := range p.pkg.goFiles {
-					uris[pgf.URI] = true
-				}
-				b.parseCache.evict(uris)
-			}
-		}()
+		go storePackageResults(ctx, ph, p, b.objectpathFor) // ...and write all packages to disk
 		return p, nil
 	})
 }

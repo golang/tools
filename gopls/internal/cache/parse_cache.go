@@ -284,23 +284,6 @@ func (c *parseCache) gcOnce() {
 	}
 }
 
-// evict removes any cached parse results for the given URIs, across all parse
-// modes. Unlike time-based GC, this frees the parsed ASTs as soon as the caller
-// knows they are no longer worth retaining (see the low-memory release of
-// non-open packages in [typeCheckBatch.getPackage]). Files still referenced
-// elsewhere remain live; this only drops the cache's own reference, so a later
-// parse of the same file simply re-parses it.
-func (c *parseCache) evict(uris map[protocol.DocumentURI]bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for key, e := range c.m {
-		if uris[key.uri] {
-			delete(c.m, key)
-			heap.Remove(&c.lru, e.lruIndex)
-		}
-	}
-}
-
 // allocateSpace reserves the next n bytes of token.Pos space in the
 // cache.
 //
