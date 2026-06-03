@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 
+	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -68,9 +69,14 @@ type syntaxPackage struct {
 	_tests    *testfuncs.Index // only used by the tests method
 }
 
-func (p *syntaxPackage) xrefs() *xrefs.Index {
+// xrefs returns the cross-reference index for the package, computing it once on
+// first call. objectpathFor encodes referenced symbols' object paths; callers
+// indexing a whole batch of packages should pass a shared encoder so the index
+// of a heavily-referenced package is built once (see [xrefs.NewIndex]). It is
+// ignored after the first call, which builds the cached index.
+func (p *syntaxPackage) xrefs(objectpathFor func(types.Object) (objectpath.Path, error)) *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.NewIndex(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.NewIndex(p.compiledGoFiles, p.types, p.typesInfo, objectpathFor)
 	})
 	return p._xrefs
 }

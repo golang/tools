@@ -27,6 +27,7 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bloom"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -77,6 +78,25 @@ type typeCheckBatch struct {
 	syntaxPackages   *futureCache[PackageID, *Package]       // transient cache of in-progress syntax futures
 	importPackages   *futureCache[PackageID, *types.Package] // persistent cache of imports
 	gopackagesdriver bool                                    // for bug reporting: were packages loaded with a driver?
+
+	// objpathEnc is a single objectpath.Encoder shared across all per-package
+	// xref computations in this batch, guarded by objpathMu. The Encoder
+	// amortizes object-path encoding across packages: the index of a
+	// heavily-referenced package (e.g. a widely-imported "core" package) is built
+	// once and reused, rather than rebuilt for every referencing package. The
+	// Encoder is not concurrency-safe, hence the mutex; lookups after the first
+	// per-package build are cheap, so contention is low. Access via objectpathFor.
+	objpathMu  sync.Mutex
+	objpathEnc objectpath.Encoder
+}
+
+// objectpathFor encodes obj's object path using the batch's shared Encoder,
+// serialized by objpathMu so it may be called from the concurrent per-package
+// store goroutines. See [typeCheckBatch.objpathEnc].
+func (b *typeCheckBatch) objectpathFor(obj types.Object) (objectpath.Path, error) {
+	b.objpathMu.Lock()
+	defer b.objpathMu.Unlock()
+	return b.objpathEnc.For(obj)
 }
 
 // addHandles is called by each goroutine joining the type check batch, to
@@ -512,7 +532,7 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 		}
 
 		// Update caches.
-		go storePackageResults(ctx, ph, p) // ...and write all packages to disk
+		go storePackageResults(ctx, ph, p, b.objectpathFor) // ...and write all packages to disk
 		return p, nil
 	})
 }
@@ -520,9 +540,9 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 // storePackageResults serializes and writes information derived from p to the
 // file cache.
 // The context is used only for logging; cancellation does not affect the operation.
-func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
+func storePackageResults(ctx context.Context, ph *packageHandle, p *Package, objectpathFor func(types.Object) (objectpath.Path, error)) {
 	toCache := map[string][]byte{
-		xrefsKind:       p.pkg.xrefs().Encode(),
+		xrefsKind:       p.pkg.xrefs(objectpathFor).Encode(),
 		methodSetsKind:  p.pkg.methodsets().Encode(),
 		testsKind:       p.pkg.tests().Encode(),
 		diagnosticsKind: encodeDiagnostics(p.pkg.diagnostics),
