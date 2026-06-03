@@ -87,4 +87,38 @@ time for import. Baseline numbers above are WITH that change.
   Verified: cache tests + references integration + full marker suite pass.
   INSIGHT: pgf.Cursor() caching is a memory trap for batch/whole-closure work;
   audit other per-package batch consumers for the same pattern (methodsets,
-  tests index, analysis).
+  tests index, analysis). (methodsets/tests checked: no inspector; xrefs was
+  the only one.)
+- [#4 DISCARD] bound+stream storePackageResults goroutines. peak unchanged
+  (GOGC=10 already collects encode buffers); complexity for no gain. reverted.
+- [#5 DISCARD] shrink 100MB GC ballast. peak/settled dropped ~exactly 100MB
+  but the ballast is never touched -> zero pages, NOT RSS-resident. This only
+  games the HeapInuse metric, not real memory, and regresses small-workspace
+  GC CPU (the ballast's purpose). reverted. LESSON: peak_heap_bytes counts the
+  ballast; ~100MB of the metric is non-resident and not worth chasing.
+- [#6 KEEP] Share one objectpath.Encoder across a batch's xref indexing
+  (was new(objectpath.Encoder) per package -> core's index rebuilt ~800x).
+  Threaded through storePackageResults/syntaxPackage.xrefs/xrefs.NewIndex and
+  Snapshot.References, mutex-guarded (concurrent store goroutines). Total
+  process allocation 7.7GB -> 5.3GB (-2.4GB). NEUTRAL on spike peak: the win is
+  at INITIAL LOAD (clean refs); during the spike core is broken so few
+  cross-package refs resolve. Kept anyway -- real memory/GC win, correct by
+  design (Encoder is meant to be shared), no spike regression. marker+refs+
+  rename pass.
+- [#7 KEEP] Gate aggressive GC on batch size (>= 32 syntax pkgs) instead of
+  every type-check. Spike peak unchanged; avoids penalizing per-keystroke edits
+  in steady state. Production-safety refinement of #2.
+
+## Current Best
+peak_heap 2.05GB -> 0.886GB (-57%), settled 1.35 -> 0.74GB, churn flat (~0.74),
+ns/op unchanged. Plus -2.4GB total-allocation (load-time) from #6.
+
+## Floor analysis (where the remaining ~0.74GB lives, from inuse pprof)
+- ASTs (go/parser.*) ~340MB: the TRANSIENT batch working set. The
+  syntaxPackages futureCache holds every syntax package's full *Package
+  (AST + types.Info) until the batch ends, even though (a) importers only need
+  .Types() and (b) non-open packages are NOT retained afterward (check.go:250
+  caches pkgData.pkg only when ph.isOpen). This is the biggest remaining lever.
+- ballast 100MB: non-resident, do not chase (see #5).
+- types.Info (recordTypeAndValue etc.) retained per package in the batch.
+- file contents (Src) ~42MB; static cache.init.
