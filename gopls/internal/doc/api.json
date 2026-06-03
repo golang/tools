@@ -2323,6 +2323,20 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "memoryLimit",
+				"Type": "int64",
+				"Doc": "memoryLimit sets a soft memory limit (in bytes) for the gopls process, via\nruntime/debug.SetMemoryLimit. If zero (the default), no limit is set and\ngopls relies on the default GC pacing.\n\nOn very large workspaces, a single editing operation that invalidates many\npackages (e.g. a syntax error in a widely-imported package) can make the\nheap balloon far above the steady-state working set before the garbage\ncollector catches up, spiking RSS and, on memory-constrained machines,\ncausing swap. Setting a soft limit makes the GC work harder to keep the\nheap near the limit, trading additional GC CPU for a much lower memory\nhigh-water mark.\n\nThe limit is soft: gopls may still exceed it (the Go runtime caps GC at\n~50% CPU rather than spiraling). Set it comfortably above the steady-state\nworking set — too low a value causes excessive GC. As a rule of thumb, use\na fraction of physical memory that leaves room for the rest of your\ndevelopment environment.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "0",
+				"Status": "experimental",
+				"Hierarchy": "",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "verboseOutput",
 				"Type": "bool",
 				"Doc": "verboseOutput enables additional debug logging.\n",

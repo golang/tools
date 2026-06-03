@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +50,14 @@ var (
 	// test suite.
 	makeTempDirOnce sync.Once // guards creation of the temp dir
 	tempDir         string
+
+	// lastGoplsPID records the OS process ID of the most recently started gopls
+	// sidecar process, so that benchmarks may sample its RSS.
+	lastGoplsPID atomic.Int64
+
+	// extraGoplsArgs are appended to the gopls command line for every sidecar
+	// process. Used by tests to enable logging/profiling for debugging.
+	extraGoplsArgs []string
 )
 
 // if runAsGopls is "true", run the gopls command instead of the testing.M.
@@ -148,6 +157,7 @@ func newGoplsConnector(args []string) (servertest.Connector, error) {
 		}
 		env = []string{fmt.Sprintf("%s=true", runAsGopls)}
 	}
+	args = append(args, extraGoplsArgs...)
 	return &SidecarServer{
 		goplsPath: goplsPath,
 		env:       env,
@@ -252,6 +262,7 @@ func (s *SidecarServer) Connect(ctx context.Context) jsonrpc2.Conn {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("starting gopls: %v", err)
 	}
+	lastGoplsPID.Store(int64(cmd.Process.Pid))
 
 	go func() {
 		// If we don't log.Fatal here, benchmarks may hang indefinitely if gopls

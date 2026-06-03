@@ -673,6 +673,31 @@ as measured by du(1) may be significantly higher.
 
 Default: `0`.
 
+<a id='memoryLimit'></a>
+### `memoryLimit int64`
+
+**This setting is experimental and may be deleted.**
+
+memoryLimit sets a soft memory limit (in bytes) for the gopls process, via
+runtime/debug.SetMemoryLimit. If zero (the default), no limit is set and
+gopls relies on the default GC pacing.
+
+On very large workspaces, a single editing operation that invalidates many
+packages (e.g. a syntax error in a widely-imported package) can make the
+heap balloon far above the steady-state working set before the garbage
+collector catches up, spiking RSS and, on memory-constrained machines,
+causing swap. Setting a soft limit makes the GC work harder to keep the
+heap near the limit, trading additional GC CPU for a much lower memory
+high-water mark.
+
+The limit is soft: gopls may still exceed it (the Go runtime caps GC at
+~50% CPU rather than spiraling). Set it comfortably above the steady-state
+working set — too low a value causes excessive GC. As a rule of thumb, use
+a fraction of physical memory that leaves room for the rest of your
+development environment.
+
+Default: `0`.
+
 <a id='verboseOutput'></a>
 ### `verboseOutput bool`
 

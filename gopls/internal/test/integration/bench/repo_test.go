@@ -106,6 +106,15 @@ var repos = map[string]*repo{
 		commit: "ac55de2b1950972d93feaa250d7505d9ed829c7c",
 		inDir:  flag.String("hashiform_dir", "", "if set, reuse this directory as hashiform@ac55de2"),
 	},
+
+	// A very large monorepo that exhibits large memory spikes when a core type
+	// package (e.g. pkg/sql/sem/tree) is invalidated by a syntax error. Used to
+	// investigate memory usage; reuses an existing local checkout by default.
+	"cockroach": {
+		name:  "cockroach",
+		url:   "https://github.com/cockroachdb/cockroach",
+		inDir: flag.String("cockroach_dir", "/Users/briandillmann/go/src/github.com/cockroachdb/cockroach", "if set, reuse this directory as cockroach"),
+	},
 }
 
 // getRepo gets the requested repo, and skips the test if -short is set and

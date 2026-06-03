@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/metrics"
 	"runtime/pprof"
 	"slices"
 	"sort"
@@ -1377,16 +1378,37 @@ func (s *server) runVulncheck(ctx context.Context, snapshot *cache.Snapshot, uri
 // MemStats implements the MemStats command. It returns an error as a
 // future-proof API, but the resulting error is currently always nil.
 func (c *commandHandler) MemStats(ctx context.Context) (command.MemStatsResult, error) {
+	startMemPeakTracker()
+
 	// GC a few times for stable results.
 	runtime.GC()
 	runtime.GC()
 	runtime.GC()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
+
+	// Cumulative GC CPU time across all goroutines (runtime/metrics).
+	samples := []metrics.Sample{{Name: "/cpu/classes/gc/total:cpu-seconds"}}
+	metrics.Read(samples)
+	var gcCPU float64
+	if samples[0].Value.Kind() == metrics.KindFloat64 {
+		gcCPU = samples[0].Value.Float64()
+	}
+
+	// Peak heap high-water since the previous MemStats call; reset to the
+	// just-GC'd current values so the next interval measures the next operation.
+	peakHeapInuse, peakSys := readAndResetMemPeak(m.HeapInuse, m.Sys)
+
 	return command.MemStatsResult{
-		HeapAlloc:  m.HeapAlloc,
-		HeapInUse:  m.HeapInuse,
-		TotalAlloc: m.TotalAlloc,
+		HeapAlloc:     m.HeapAlloc,
+		HeapInUse:     m.HeapInuse,
+		TotalAlloc:    m.TotalAlloc,
+		HeapSys:       m.HeapSys,
+		Sys:           m.Sys,
+		NumGC:         uint64(m.NumGC),
+		GCCPUSeconds:  gcCPU,
+		PeakHeapInUse: peakHeapInuse,
+		PeakSys:       peakSys,
 	}, nil
 }
 

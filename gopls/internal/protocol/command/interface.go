@@ -568,6 +568,23 @@ type MemStatsResult struct {
 	HeapAlloc  uint64
 	HeapInUse  uint64
 	TotalAlloc uint64
+	// HeapSys and Sys report memory obtained from the OS. They act as
+	// high-water marks (only returned to the OS lazily by the scavenger), so
+	// reading them shortly after a memory-intensive operation approximates its
+	// peak footprint.
+	HeapSys uint64
+	Sys     uint64
+	// NumGC is the cumulative count of completed GC cycles, and GCCPUSeconds is
+	// the cumulative CPU time spent on GC (from runtime/metrics). Deltas across
+	// an operation reveal how hard the GC worked.
+	NumGC        uint64
+	GCCPUSeconds float64
+	// PeakHeapInUse and PeakSys are the maximum HeapInuse and Sys observed by a
+	// background sampler since the previous MemStats call (then reset). They let
+	// a caller bracket an operation with two MemStats calls and learn its peak
+	// heap footprint reliably, even if the peak is brief.
+	PeakHeapInUse uint64
+	PeakSys       uint64
 }
 
 // WorkspaceStatsResult returns information about the size and shape of the

@@ -53,8 +53,8 @@ type unit = struct{}
 // It shares state such as parsed files and imports, to optimize type-checking
 // for packages with overlapping dependency graphs.
 type typeCheckBatch struct {
-	// handleMu guards _handles, which must only be accessed via addHandles or
-	// getHandle.
+	// handleMu guards _handles and _syntaxIDs, which must only be accessed via
+	// their dedicated methods (addHandles/getHandle, addSyntaxIDs/isSyntaxID).
 	//
 	// An alternative would be to simply verify that package handles are present
 	// on the Snapshot, and access them directly, rather than copying maps for
@@ -63,6 +63,12 @@ type typeCheckBatch struct {
 	// persistent.Map used to store handles on the snapshot.
 	handleMu sync.Mutex
 	_handles map[PackageID]*packageHandle
+
+	// _syntaxIDs is the set of package IDs that are being fully type-checked (as
+	// syntax packages) in this batch. It lets getImportPackage reuse the full
+	// type-checked result for an in-batch dependency rather than redundantly
+	// type-checking it a second time for import. See getImportPackage.
+	_syntaxIDs map[PackageID]bool
 
 	parseCache       *parseCache
 	fset             *token.FileSet                          // describes all parsed or imported files
@@ -91,6 +97,24 @@ func (b *typeCheckBatch) getHandle(id PackageID) *packageHandle {
 	b.handleMu.Lock()
 	defer b.handleMu.Unlock()
 	return b._handles[id]
+}
+
+// addSyntaxIDs records the given ids as syntax packages being type-checked in
+// this batch (see [typeCheckBatch._syntaxIDs]).
+func (b *typeCheckBatch) addSyntaxIDs(ids []PackageID) {
+	b.handleMu.Lock()
+	defer b.handleMu.Unlock()
+	for _, id := range ids {
+		b._syntaxIDs[id] = true
+	}
+}
+
+// isSyntaxID reports whether id is a syntax package being type-checked in this
+// batch.
+func (b *typeCheckBatch) isSyntaxID(id PackageID) bool {
+	b.handleMu.Lock()
+	defer b.handleMu.Unlock()
+	return b._syntaxIDs[id]
 }
 
 // TypeCheck parses and type-checks the specified packages,
@@ -258,6 +282,7 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 func newTypeCheckBatch(parseCache *parseCache, gopackagesdriver bool) *typeCheckBatch {
 	return &typeCheckBatch{
 		_handles:         make(map[PackageID]*packageHandle),
+		_syntaxIDs:       make(map[PackageID]bool),
 		parseCache:       parseCache,
 		fset:             fileSetWithBase(reservedForParsing),
 		cpulimit:         make(chan unit, runtime.GOMAXPROCS(0)),
@@ -281,6 +306,7 @@ func newTypeCheckBatch(parseCache *parseCache, gopackagesdriver bool) *typeCheck
 // package handle logic.
 func (b *typeCheckBatch) query(ctx context.Context, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) error {
 	b.addHandles(handles)
+	b.addSyntaxIDs(syntaxIDs)
 
 	// Start a single goroutine for each requested package.
 	//
@@ -324,7 +350,29 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 
 		data, err := filecache.Get(exportDataKind, ph.key, filecache.Bytes)
 		if err == filecache.ErrNotFound {
-			// No cached export data: type-check as fast as possible.
+			// No cached export data.
+			//
+			// If this package is also being fully type-checked as a syntax
+			// package in this batch, reuse that result rather than redundantly
+			// type-checking it a second time for import. This is a significant
+			// memory and CPU saving when a change invalidates a large reverse
+			// dependency closure (e.g. a syntax error in a core type package):
+			// without it, every closure package that is imported by another
+			// closure package is parsed and type-checked twice.
+			//
+			// We only reuse when the package will be checked into the batch's
+			// shared FileSet (ph.state < validImports). When ph.state >=
+			// validImports, getPackage type-checks into a cloned FileSet, whose
+			// positions would not be commensurable with importers using b.fset;
+			// in that case fall back to checkPackageForImport, which uses b.fset.
+			if ph.state < validImports && b.isSyntaxID(id) {
+				pkg, err := b.getPackage(ctx, ph)
+				if err != nil {
+					return nil, err
+				}
+				return pkg.Types(), nil
+			}
+			// type-check as fast as possible.
 			return b.checkPackageForImport(ctx, ph)
 		}
 		if err != nil {
