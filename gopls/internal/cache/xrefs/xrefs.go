@@ -44,8 +44,17 @@ func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Inde
 	objectpathFor := new(objectpath.Encoder).For
 
 	for fileIndex, pgf := range files {
-		for cur := range pgf.Cursor().Preorder((*ast.Ident)(nil), (*ast.ImportSpec)(nil)) {
-			switch n := cur.Node().(type) {
+		// Traverse with a transient ast.Preorder rather than pgf.Cursor(): the
+		// xref index is computed for every package during type-checking, and
+		// pgf.Cursor() lazily builds and *permanently caches* an inspector on the
+		// File. Across a large reverse-dependency closure (e.g. re-checking after
+		// a syntax error in a core package) that retained inspector data
+		// dominated the live heap (~0.5GB). This loop only needs each node, not
+		// cursor navigation, so a plain preorder walk that allocates nothing
+		// outliving the loop suffices. Files the user actually interacts with
+		// still get a cached cursor, built on demand by other features.
+		for n := range ast.Preorder(pgf.File) {
+			switch n := n.(type) {
 			case *ast.Ident:
 				// Report a reference for each identifier that
 				// uses a symbol exported from another package.
