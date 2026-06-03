@@ -142,8 +142,8 @@ func highlightPath(info *types.Info, cur inspector.Cursor, start, end token.Pos)
 					if l, ok := curLoop.Parent().Node().(*ast.LabeledStmt); ok {
 						label = l.Label
 					}
+					highlightLoopControlFlow(stmt, label, info, result)
 				}
-				highlightLoopControlFlow(stmt, label, info, result)
 			}
 		}
 	}
