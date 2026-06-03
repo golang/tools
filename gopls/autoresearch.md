@@ -74,3 +74,17 @@ time for import. Baseline numbers above are WITH that change.
 (Update as experiments accumulate -- wins, dead ends, architectural insights.)
 
 - [baseline] In-tree syntax-package reuse in getImportPackage. KEPT (pre-loop).
+- [#2 KEEP] Scoped GC pacing: lower process GOGC to 10 while any type-check
+  batch is active (acquireTypeChecking refcount), restore after. Collects
+  transient type-check garbage sooner. peak 2.05->1.51GB (-26%). GOGC=5 gave
+  no more peak benefit at higher CPU; 10 is the knee. churn/settled unchanged.
+  NOTE/tension: GOGC=10 applies to ALL type-checking, not just spikes -- may
+  over-trade CPU in steady state. Idea: only lower GC for large batches.
+- [#3 KEEP] xrefs.NewIndex used pgf.Cursor() (builds + permanently caches an
+  inspector.Inspector per File). xrefs run for every package during type-check,
+  so a closure re-check retained ~0.5GB of inspector data. Switched to a
+  transient ast.Preorder walk. peak 1.51->0.88GB, settled 1.32->0.74GB.
+  Verified: cache tests + references integration + full marker suite pass.
+  INSIGHT: pgf.Cursor() caching is a memory trap for batch/whole-closure work;
+  audit other per-package batch consumers for the same pattern (methodsets,
+  tests index, analysis).
