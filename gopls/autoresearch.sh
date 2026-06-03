@@ -32,6 +32,10 @@ emit() { # $1 = bench-column name, $2 = METRIC name, $3 = divisor
   fi
 }
 
+# ns/op (CPU cost of the spike) -- field 3 of the result line.
+nsop=$(echo "$line" | awk '{print $3}')
+[ -n "$nsop" ] && echo "METRIC ns_per_op=$(awk -v x="$nsop" 'BEGIN{printf "%.0f", x}')"
+
 emit peak_heap_bytes      peak_heap_GB    1e9
 emit churn_GB/op          churn_GB        1     # already in GB
 emit settled_inuse_bytes  settled_GB      1e9

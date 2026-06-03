@@ -17,6 +17,7 @@ import (
 	"go/types"
 	"regexp"
 	"runtime"
+	rdebug "runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -264,6 +265,18 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 	}
 	s.batchRef++
 
+	// While any type-checking batch is active, run the GC more aggressively. A
+	// batch that invalidates a large reverse-dependency closure (e.g. a syntax
+	// error in a widely-imported package) churns through a lot of transient
+	// memory -- parsed ASTs and types.Info for packages that are checked only to
+	// produce export data for their importers, then dropped. With the default
+	// pacing the heap is allowed to grow to ~2x the live set before collecting,
+	// so this transient garbage spikes RSS well above the steady-state working
+	// set. A lower percent collects sooner, trading some GC CPU for a much lower
+	// peak heap during the spike. The previous percent is restored when the last
+	// concurrent batch finishes.
+	restoreGC := lowerGCDuringTypeCheck()
+
 	return s.batch, func() {
 		s.typeCheckMu.Lock()
 		defer s.typeCheckMu.Unlock()
@@ -271,6 +284,37 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 		s.batchRef--
 		if s.batchRef == 0 {
 			s.batch = nil
+		}
+		restoreGC()
+	}
+}
+
+// typeCheckGCPercent is the GOGC value used while a type-checking batch is
+// active (see [lowerGCDuringTypeCheck]).
+const typeCheckGCPercent = 10
+
+var (
+	gcPercentMu      sync.Mutex
+	gcPercentDepth   int // number of active type-checking batches
+	gcPercentRestore int // GC percent to restore when depth returns to 0
+)
+
+// lowerGCDuringTypeCheck lowers the process GC percent to typeCheckGCPercent for
+// the duration of a type-checking batch, returning a function that restores the
+// previous value once the last concurrent batch finishes. Calls nest safely.
+func lowerGCDuringTypeCheck() func() {
+	gcPercentMu.Lock()
+	defer gcPercentMu.Unlock()
+	if gcPercentDepth == 0 {
+		gcPercentRestore = rdebug.SetGCPercent(typeCheckGCPercent)
+	}
+	gcPercentDepth++
+	return func() {
+		gcPercentMu.Lock()
+		defer gcPercentMu.Unlock()
+		gcPercentDepth--
+		if gcPercentDepth == 0 {
+			rdebug.SetGCPercent(gcPercentRestore)
 		}
 	}
 }
