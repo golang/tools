@@ -109,9 +109,16 @@ time for import. Baseline numbers above are WITH that change.
   every type-check. Spike peak unchanged; avoids penalizing per-keystroke edits
   in steady state. Production-safety refinement of #2.
 
-## Current Best
-peak_heap 2.05GB -> 0.886GB (-57%), settled 1.35 -> 0.74GB, churn flat (~0.74),
-ns/op unchanged. Plus -2.4GB total-allocation (load-time) from #6.
+## Current Best (final)
+peak_heap 2.05GB -> ~0.90GB (-56%), settled 1.35 -> 0.75GB (-44%), churn flat
+(~0.74), ns/op unchanged. Plus -2.4GB total-allocation (load-time) from #6.
+
+Landed (all verified: cache tests + references/rename integration + full marker
+suite pass): #2 GC pacing, #3 xrefs transient walk, #6 shared objectpath
+Encoder, #7 GC gating. Discarded: #4 store bounding, #5 ballast (games metric),
+#8 GOGC=5 (marginal). Remaining lever (release non-open syntax mid-batch) is in
+autoresearch.ideas.md -- unsafe under shared-batch concurrency, needs upstream
+design.
 
 ## Floor analysis (where the remaining ~0.74GB lives, from inuse pprof)
 - ASTs (go/parser.*) ~340MB: the TRANSIENT batch working set. The
