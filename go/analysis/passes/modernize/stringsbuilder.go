@@ -320,13 +320,37 @@ nextcand:
 
 				// s +=          expr
 				//  -------------    -
-				// s.WriteString(expr)
+				// s.WriteString(expr) or s.WriteString(expr.String())
+				// If expr is a variable that is being transformed to a Builder
+				// in this pass, we need to call .String() on it.
+				// We check if the RHS variable is a candidate and its definition
+				// comes before the current variable's definition (in lexical order),
+				// which means it would have been processed earlier.
+				rhsNeedsString := false
+				if rhsIdent, ok := assign.Rhs[0].(*ast.Ident); ok {
+					if rhsVar, ok := info.Uses[rhsIdent].(*types.Var); ok {
+						if candidates[rhsVar] && rhsVar.Pos() < v.Pos() {
+							rhsNeedsString = true
+						}
+					}
+				}
+
 				edits = append(edits, analysis.TextEdit{
 					// replace " += " with ".WriteString("
 					Pos:     assign.Lhs[0].End(),
 					End:     assign.Rhs[0].Pos(),
 					NewText: []byte(".WriteString("),
 				})
+
+				// If RHS is a Builder candidate, insert .String() after it.
+				if rhsNeedsString {
+					postEdits = append(postEdits, analysis.TextEdit{
+						// insert ".String()"
+						Pos:     assign.Rhs[0].End(),
+						End:     assign.Rhs[0].End(),
+						NewText: []byte(".String()"),
+					})
+				}
 
 				// Delay inserting the closing parenthesis, in case it overlaps with a
 				// .String() edit, since it would need to come after.
