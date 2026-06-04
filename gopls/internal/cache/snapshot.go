@@ -14,6 +14,7 @@ import (
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path"
 	"path/filepath"
@@ -581,8 +582,20 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 		}
 		return true
 	}
+	// Share one objectpath.Encoder across the indexed packages (post may run
+	// concurrently, hence the mutex) so a heavily-referenced package's object
+	// paths are encoded once.
+	var (
+		objpathMu  sync.Mutex
+		objpathEnc objectpath.Encoder
+	)
+	objectpathFor := func(obj types.Object) (objectpath.Path, error) {
+		objpathMu.Lock()
+		defer objpathMu.Unlock()
+		return objpathEnc.For(obj)
+	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = xrefIndex{mp: pkg.metadata, idx: pkg.pkg.xrefs()}
+		indexes[i] = xrefIndex{mp: pkg.metadata, idx: pkg.pkg.xrefs(objectpathFor)}
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
