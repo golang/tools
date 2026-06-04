@@ -166,6 +166,29 @@ KEY FINDINGS:
    GOPLS_MAXFILECACHE (keep dep export data on disk -> skip re-checking), or
    extend syntax-reuse / release to the import path.
 
+## Cockroach spike A/B (BenchmarkCockroachSyntaxErrorSpike, 2026-06-04)
+Machine: 19GB RAM. Workspace: 11494 total / 2390 workspace pkgs, 2413 diagnostics.
+                              peak-heap  churn    gc-cpu  wall   (GOMEMLIMIT=10GiB)
+  GOGC=10 (current)           7.61GB     30.18GB  192.5s  48.6s
+  GOGC=10 + MAXFILECACHE=20G  7.90GB     30.32GB  537.6s  112.7s
+  GOGC=100 (pacing disabled)  10.14GB    30.18GB  250.5s  76.0s  (HIT the 10GiB limit)
+
+FINDINGS:
+1. GOPLS_MAXFILECACHE: BUST. churn identical (30.2GB) -> the checkPackageForImport
+   cost is re-checking the BROKEN tree pkg, which is uncacheable (no valid export
+   data to cache). And the bigger in-memory cache front raised the resident set
+   (in-use 3.43->4.64GB) -> MORE GC under GOGC=10. Net worse. Do not use.
+2. GOGC=10 is NOT a regression on cockroach (earlier alarm was wrong/confounded).
+   On 19GB RAM it WINS on both axes: peak 7.6GB vs 10.1GB and 48.6s vs 76s,
+   because GOGC=100 lets the heap hit memory pressure (~10GB on a 19GB box).
+   GOGC=10's ~192s GC-CPU is high but driven by the CHURN, not GOGC; GOGC=100 is
+   worse (250s + courts swap). KEEP GOGC=10.
+3. THE ROOT DRIVER is the ~30GB churn per spike: re-type-checking + re-analyzing
+   ~2390 workspace pkgs (2413 diagnostics) on each transient broken state. This
+   forces ~50 GC cycles and ~190s GC-CPU regardless of GOGC. Reducing churn (e.g.
+   defer/skip full workspace RE-ANALYSIS while a core pkg is transiently broken --
+   downstream diagnostics are mostly noise) is the real lever, not GC/cache knobs.
+
 ## Floor analysis (synth; where the remaining ~0.74GB lives, from inuse pprof)
 - ASTs (go/parser.*) ~340MB: the TRANSIENT batch working set. The
   syntaxPackages futureCache holds every syntax package's full *Package
