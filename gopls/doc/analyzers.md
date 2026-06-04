@@ -4017,6 +4017,30 @@ Default: on.
 
 Package documentation: [simplifyslice](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice)
 
+<a id='slicesbackward'></a>
+## `slicesbackward`: replace backward loops over slices with slices.Backward
+
+The slicesbackward analyzer suggests replacing manually-written backward loops of the form
+
+	for i := len(s) - 1; i >= 0; i-- {
+	    use(s[i])
+	}
+
+with the more readable Go 1.23 style using slices.Backward:
+
+	for _, v := range slices.Backward(s) {
+	    use(v)
+	}
+
+If the loop index is needed beyond just indexing into the slice, both the index and value variables are kept:
+
+	for i, v := range slices.Backward(s) { ... }
+
+
+Default: on.
+
+Package documentation: [slicesbackward](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesbackward)
+
 <a id='slicescontains'></a>
 ## `slicescontains`: replace loops with slices.Contains or slices.ContainsFunc
 

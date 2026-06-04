@@ -1677,6 +1677,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"slicesbackward\"",
+							"Doc": "replace backward loops over slices with slices.Backward\n\nThe slicesbackward analyzer suggests replacing manually-written backward\nloops of the form\n\n\tfor i := len(s) - 1; i \u003e= 0; i-- {\n\t    use(s[i])\n\t}\n\nwith the more readable Go 1.23 style using slices.Backward:\n\n\tfor _, v := range slices.Backward(s) {\n\t    use(v)\n\t}\n\nIf the loop index is needed beyond just indexing into the slice, both\nthe index and value variables are kept:\n\n\tfor i, v := range slices.Backward(s) { ... }",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"slicescontains\"",
 							"Doc": "replace loops with slices.Contains or slices.ContainsFunc\n\nThe slicescontains analyzer simplifies loops that check for the existence of\nan element in a slice. It replaces them with calls to `slices.Contains` or\n`slices.ContainsFunc`, which were added in Go 1.21.\n\nIf the expression for the target element has side effects, this\ntransformation will cause those effects to occur only once, not\nonce per tested slice element.",
 							"Default": "true",
@@ -3669,6 +3675,12 @@
 			"Name": "simplifyslice",
 			"Doc": "check for slice simplifications\n\nA slice expression of the form:\n\n\ts[a:len(s)]\n\nwill be simplified to:\n\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.\n\nThis analyzer ignores generated code.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice",
+			"Default": true
+		},
+		{
+			"Name": "slicesbackward",
+			"Doc": "replace backward loops over slices with slices.Backward\n\nThe slicesbackward analyzer suggests replacing manually-written backward\nloops of the form\n\n\tfor i := len(s) - 1; i \u003e= 0; i-- {\n\t    use(s[i])\n\t}\n\nwith the more readable Go 1.23 style using slices.Backward:\n\n\tfor _, v := range slices.Backward(s) {\n\t    use(v)\n\t}\n\nIf the loop index is needed beyond just indexing into the slice, both\nthe index and value variables are kept:\n\n\tfor i, v := range slices.Backward(s) { ... }",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesbackward",
 			"Default": true
 		},
 		{

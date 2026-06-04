@@ -6,55 +6,21 @@ package settings
 
 import (
 	"log"
-	"slices"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/appends"
-	"golang.org/x/tools/go/analysis/passes/asmdecl"
-	"golang.org/x/tools/go/analysis/passes/assign"
-	"golang.org/x/tools/go/analysis/passes/atomic"
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
-	"golang.org/x/tools/go/analysis/passes/bools"
-	"golang.org/x/tools/go/analysis/passes/buildtag"
-	"golang.org/x/tools/go/analysis/passes/cgocall"
-	"golang.org/x/tools/go/analysis/passes/composite"
-	"golang.org/x/tools/go/analysis/passes/copylock"
 	"golang.org/x/tools/go/analysis/passes/deepequalerrors"
-	"golang.org/x/tools/go/analysis/passes/defers"
-	"golang.org/x/tools/go/analysis/passes/directive"
-	"golang.org/x/tools/go/analysis/passes/errorsas"
 	"golang.org/x/tools/go/analysis/passes/fieldalignment"
-	"golang.org/x/tools/go/analysis/passes/framepointer"
-	"golang.org/x/tools/go/analysis/passes/hostport"
-	"golang.org/x/tools/go/analysis/passes/httpresponse"
-	"golang.org/x/tools/go/analysis/passes/ifaceassert"
 	"golang.org/x/tools/go/analysis/passes/inline"
-	"golang.org/x/tools/go/analysis/passes/loopclosure"
-	"golang.org/x/tools/go/analysis/passes/lostcancel"
 	"golang.org/x/tools/go/analysis/passes/modernize"
-	"golang.org/x/tools/go/analysis/passes/nilfunc"
 	"golang.org/x/tools/go/analysis/passes/nilness"
-	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/passes/scannererr"
 	"golang.org/x/tools/go/analysis/passes/shadow"
-	"golang.org/x/tools/go/analysis/passes/shift"
-	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
-	"golang.org/x/tools/go/analysis/passes/slog"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
 	"golang.org/x/tools/go/analysis/passes/sqlrowserr"
-	"golang.org/x/tools/go/analysis/passes/stdmethods"
-	"golang.org/x/tools/go/analysis/passes/stdversion"
-	"golang.org/x/tools/go/analysis/passes/stringintconv"
-	"golang.org/x/tools/go/analysis/passes/structtag"
-	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
-	"golang.org/x/tools/go/analysis/passes/tests"
-	"golang.org/x/tools/go/analysis/passes/timeformat"
-	"golang.org/x/tools/go/analysis/passes/unmarshal"
-	"golang.org/x/tools/go/analysis/passes/unreachable"
-	"golang.org/x/tools/go/analysis/passes/unsafeptr"
-	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
-	"golang.org/x/tools/go/analysis/passes/waitgroup"
+	"golang.org/x/tools/go/analysis/suite/fix"
+	"golang.org/x/tools/go/analysis/suite/vet"
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/errorsastypeshadow"
@@ -73,11 +39,13 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/writestring"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/goplsexport"
 	"honnef.co/go/tools/analysis/lint"
 )
 
-var AllAnalyzers = slices.Concat(DefaultAnalyzers, StaticcheckAnalyzers)
+// AllAnalyzers holds the list of Analyzers available to all gopls
+// sessions, independent of build version. It is the source from which
+// gopls/doc/analyzers.md is generated.
+var AllAnalyzers = initAnalyzers()
 
 // Analyzer augments an [analysis.Analyzer] with additional LSP configuration.
 //
@@ -160,143 +128,107 @@ func (a *Analyzer) Tags() []protocol.DiagnosticTag { return a.tags }
 // String returns the name of this analyzer.
 func (a *Analyzer) String() string { return a.analyzer.String() }
 
-// DefaultAnalyzers holds the list of Analyzers available to all gopls
-// sessions, independent of build version. It is the source from which
-// gopls/doc/analyzers.md is generated.
-var DefaultAnalyzers = []*Analyzer{
-	// See [Analyzer.Severity] for guidance on setting analyzer severity below.
+func initAnalyzers() (res []*Analyzer) {
+	seen := make(map[*analysis.Analyzer]bool)
 
-	// The traditional vet suite:
-	{analyzer: appends.Analyzer},
-	{analyzer: asmdecl.Analyzer},
-	{analyzer: assign.Analyzer},
-	{analyzer: atomic.Analyzer},
-	{analyzer: bools.Analyzer},
-	{analyzer: buildtag.Analyzer},
-	{analyzer: cgocall.Analyzer},
-	{analyzer: composite.Analyzer},
-	{analyzer: copylock.Analyzer},
-	{analyzer: defers.Analyzer},
-	{
-		analyzer: deprecated.Analyzer,
-		severity: protocol.SeverityHint,
-		tags:     []protocol.DiagnosticTag{protocol.Deprecated},
-	},
-	{analyzer: directive.Analyzer},
-	{analyzer: errorsas.Analyzer},
-	{analyzer: framepointer.Analyzer},
-	{analyzer: hostport.Analyzer},
-	{analyzer: httpresponse.Analyzer},
-	{analyzer: ifaceassert.Analyzer},
-	{analyzer: loopclosure.Analyzer},
-	{analyzer: lostcancel.Analyzer},
-	{analyzer: nilfunc.Analyzer},
-	{analyzer: printf.Analyzer},
-	{analyzer: shift.Analyzer},
-	{analyzer: sigchanyzer.Analyzer},
-	{analyzer: slog.Analyzer},
-	{analyzer: stdmethods.Analyzer},
-	{analyzer: stdversion.Analyzer},
-	{analyzer: stringintconv.Analyzer},
-	{analyzer: structtag.Analyzer},
-	{analyzer: testinggoroutine.Analyzer},
-	{analyzer: tests.Analyzer},
-	{analyzer: timeformat.Analyzer},
-	{analyzer: unmarshal.Analyzer},
-	{analyzer: unreachable.Analyzer},
-	{analyzer: unsafeptr.Analyzer},
-	{analyzer: unusedresult.Analyzer},
-	{analyzer: waitgroup.Analyzer},
+	// Start with the traditional vet and fix suites.
+	for _, suite := range []struct {
+		name      string
+		analyzers []*analysis.Analyzer
+		severity  protocol.DiagnosticSeverity
+	}{
+		{"fix.Suite", fix.Suite, protocol.SeverityHint},
+		{"vet.Suite", vet.Suite, protocol.SeverityWarning},
+	} {
+		for _, a := range suite.analyzers {
+			// De-duplicate, since the suites overlap.
+			if !seen[a] {
+				seen[a] = true
+				res = append(res, &Analyzer{analyzer: a, severity: suite.severity})
+			}
+		}
+	}
 
-	// not suitable for vet:
-	// - some (nilness, yield) use go/ssa; see #59714.
-	// - others don't meet the "frequency" criterion;
-	//   see GOROOT/src/cmd/vet/README.
-	{analyzer: atomicalign.Analyzer},
-	{analyzer: deepequalerrors.Analyzer},
-	{analyzer: nilness.Analyzer}, // uses go/ssa
-	{analyzer: yield.Analyzer},   // uses go/ssa
-	{analyzer: sortslice.Analyzer},
-	{analyzer: embeddirective.Analyzer},
-	{analyzer: scannererr.Analyzer},         // to appear in cmd/vet@go1.28
-	{analyzer: sqlrowserr.Analyzer},         // to appear in cmd/vet@go1.28
-	{analyzer: recursiveiter.Analyzer},      // under evaluation
-	{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
-	{analyzer: writestring.Analyzer},        // under evaluation
-
-	// disabled due to high false positives
-	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
-	{analyzer: fieldalignment.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // #67762, #76237
-
-	// simplifiers and modernizers
-	//
-	// These analyzers offer mere style fixes on correct code,
-	// thus they will never appear in cmd/vet and
-	// their severity level is "information".
-	//
-	// gofmt -s suite
-	{
-		analyzer:    simplifycompositelit.Analyzer,
-		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		severity:    protocol.SeverityInformation,
-	},
-	{
-		analyzer:    simplifyrange.Analyzer,
-		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		severity:    protocol.SeverityInformation,
-	},
-	{
-		analyzer:    simplifyslice.Analyzer,
-		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-		severity:    protocol.SeverityInformation,
-	},
-	// other simplifiers
-	{analyzer: inline.Analyzer, severity: protocol.SeverityHint}, // (in -lazy_edit mode)
-	{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
-	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
-	{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
-	{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
-	{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
-	// the modernize suite
-	{analyzer: modernize.AnyAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.AppendClippedAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
-	{analyzer: modernize.AtomicTypesAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.EmbedLitAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.ErrorsAsTypeAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.NewExprAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.OmitZeroAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.PlusBuildAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.RangeIntAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.ReflectTypeForAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.SlicesContainsAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.SlicesDeleteAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
-	{analyzer: modernize.SlicesSortAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.StdIteratorsAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.StringsBuilderAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.StringsCutAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.StringsCutPrefixAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.StringsSeqAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: modernize.TestingContextAnalyzer, severity: protocol.SeverityHint},
-	{analyzer: goplsexport.UnsafeFuncsModernizer, severity: protocol.SeverityHint},
-	{analyzer: modernize.WaitGroupGoAnalyzer, severity: protocol.SeverityHint},
-
-	// type-error analyzers
-	// These analyzers enrich go/types errors with suggested fixes.
-	// Since they exist only to attach their fixes to type errors, their
-	// severity is irrelevant.
-	{analyzer: fillreturns.Analyzer},
-	{analyzer: nonewvars.Analyzer},
-	{analyzer: noresultvalues.Analyzer},
-	{analyzer: unusedvariable.Analyzer},
-}
-
-func init() {
+	// set inline -lazy_edit mode
 	if err := inline.Analyzer.Flags.Set("lazy_edits", "true"); err != nil {
 		log.Fatalf("setting inline -lazy_edits flag: %v", err)
 	}
+
+	// See [Analyzer.Severity] for guidance on setting analyzer severity below.
+	for _, a := range []*Analyzer{
+		// not suitable for vet.Suite:
+		// - some (nilness, yield) use go/ssa; see #59714.
+		// - others don't meet the "frequency" criterion;
+		//   see GOROOT/src/cmd/vet/README.
+		{analyzer: atomicalign.Analyzer},
+		{analyzer: deprecated.Analyzer,
+			severity: protocol.SeverityHint,
+			tags:     []protocol.DiagnosticTag{protocol.Deprecated},
+		},
+		{analyzer: deepequalerrors.Analyzer},
+		{analyzer: nilness.Analyzer}, // uses go/ssa
+		{analyzer: yield.Analyzer},   // uses go/ssa
+		{analyzer: sortslice.Analyzer},
+		{analyzer: embeddirective.Analyzer},
+		{analyzer: scannererr.Analyzer},         // to appear in cmd/vet@go1.28
+		{analyzer: sqlrowserr.Analyzer},         // to appear in cmd/vet@go1.28
+		{analyzer: recursiveiter.Analyzer},      // under evaluation
+		{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
+		{analyzer: writestring.Analyzer},        // under evaluation
+
+		// disabled due to high false positives
+		{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
+		{analyzer: fieldalignment.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // #67762, #76237
+
+		// simplifiers and modernizers (beyond fix.Suite)
+		//
+		// These analyzers offer mere style fixes on correct code,
+		// thus they will never appear in cmd/vet or cmd/fix and
+		// their severity level is "information".
+		//
+		// gofmt -s suite
+		{
+			analyzer:    simplifycompositelit.Analyzer,
+			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			severity:    protocol.SeverityInformation,
+		},
+		{
+			analyzer:    simplifyrange.Analyzer,
+			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			severity:    protocol.SeverityInformation,
+		},
+		{
+			analyzer:    simplifyslice.Analyzer,
+			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+			severity:    protocol.SeverityInformation,
+		},
+		// other simplifiers
+		{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
+		{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
+		{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
+		{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
+		{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
+		// modernizers not included in modernize.Suite (nor fix.Suite)
+		{analyzer: modernize.AppendClippedAnalyzer, nonDefault: true}, // not nil-preserving
+		{analyzer: modernize.BLoopAnalyzer},                           // may skew benchmark results, see golang/go#74967
+		{analyzer: modernize.FmtAppendfAnalyzer},                      // makes code less clear, see golang/go#77581
+		{analyzer: modernize.SlicesDeleteAnalyzer, nonDefault: true},  // not nil-preserving
+
+		// type-error analyzers
+		// These analyzers enrich go/types errors with suggested fixes.
+		// Since they exist only to attach their fixes to type errors, their
+		// severity is irrelevant.
+		{analyzer: fillreturns.Analyzer},
+		{analyzer: nonewvars.Analyzer},
+		{analyzer: noresultvalues.Analyzer},
+		{analyzer: unusedvariable.Analyzer},
+	} {
+		if seen[a.analyzer] {
+			log.Fatalf("duplicate analyzer: %q", a.analyzer.Name)
+		}
+		seen[a.analyzer] = true
+		res = append(res, a)
+	}
+
+	return append(res, staticcheckAnalyzers()...)
 }

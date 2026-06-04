@@ -9,7 +9,6 @@ import (
 
 	. "golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/modernize"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -94,7 +93,7 @@ func TestReflectTypeFor(t *testing.T) {
 
 func TestSlicesBackward(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
-	RunWithSuggestedFixes(t, TestData(), goplsexport.SlicesBackwardModernizer, "slicesbackward")
+	RunWithSuggestedFixes(t, TestData(), modernize.SlicesBackwardAnalyzer, "slicesbackward")
 }
 
 func TestSlicesContains(t *testing.T) {
@@ -132,7 +131,7 @@ func TestTestingContext(t *testing.T) {
 }
 
 func TestUnsafeFuncs(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), goplsexport.UnsafeFuncsModernizer, "unsafefuncs")
+	RunWithSuggestedFixes(t, TestData(), modernize.UnsafeFuncsAnalyzer, "unsafefuncs")
 }
 
 func TestWaitGroupGo(t *testing.T) {

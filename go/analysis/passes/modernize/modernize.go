@@ -35,11 +35,8 @@ var doc string
 var Suite = []*analysis.Analyzer{
 	AnyAnalyzer,
 	AtomicTypesAnalyzer,
-	// AppendClippedAnalyzer, // not nil-preserving!
-	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
 	EmbedLitAnalyzer,
 	ErrorsAsTypeAnalyzer,
-	// FmtAppendfAnalyzer, // makes code less clear, see golang/go#77581
 	ForVarAnalyzer,
 	MapsLoopAnalyzer,
 	MinMaxAnalyzer,
@@ -48,9 +45,8 @@ var Suite = []*analysis.Analyzer{
 	PlusBuildAnalyzer,
 	RangeIntAnalyzer,
 	ReflectTypeForAnalyzer,
-	slicesBackwardAnalyzer,
+	slicesBackwardAnalyzer, // awaiting public symbol
 	SlicesContainsAnalyzer,
-	// SlicesDeleteAnalyzer, // not nil-preserving!
 	SlicesSortAnalyzer,
 	StdIteratorsAnalyzer,
 	StringsCutAnalyzer,
@@ -58,8 +54,15 @@ var Suite = []*analysis.Analyzer{
 	StringsSeqAnalyzer,
 	StringsBuilderAnalyzer,
 	TestingContextAnalyzer,
-	unsafeFuncsAnalyzer,
+	unsafeFuncsAnalyzer, // awaiting public symbol
 	WaitGroupGoAnalyzer,
+
+	// Not included:
+	//
+	// AppendClippedAnalyzer, 	// not nil-preserving
+	// BLoopAnalyzer, 		// may skew benchmark results, see golang/go#74967
+	// FmtAppendfAnalyzer, 		// makes code less clear, see golang/go#77581
+	// SlicesDeleteAnalyzer, 	// not nil-preserving
 }
 
 // -- helpers --
