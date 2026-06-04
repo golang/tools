@@ -457,9 +457,13 @@ func setVulncheckPreference(preference vulncheckAction) error {
 }
 
 func vulncheckFilename() (string, error) {
-	configDir, err := os.UserConfigDir()
+	configDir := os.Getenv(GoplsConfigDirEnvvar) // set for testing
+	if configDir != "" {
+		return filepath.Join(configDir, "vulncheck", "settings.json"), nil
+	}
+	userDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "gopls", "vulncheck", "settings.json"), nil
+	return filepath.Join(userDir, "gopls", "vulncheck", "settings.json"), nil
 }

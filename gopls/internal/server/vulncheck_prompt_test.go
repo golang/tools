@@ -265,16 +265,7 @@ func TestCheckDependencyChanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Cleanup(func() {
-				configDir, err := os.UserConfigDir()
-				if err != nil {
-					t.Fatalf("os.UserConfigDir() failed: %v", err)
-				}
-				if err := os.RemoveAll(filepath.Join(configDir, "gopls")); err != nil && !os.IsNotExist(err) {
-					t.Fatalf("failed to clear user config: %v", err)
-				}
-			})
-			t.Setenv("HOME", t.TempDir())
+			t.Setenv(GoplsConfigDirEnvvar, t.TempDir())
 			ctx := context.Background()
 			var promptShown bool
 			client := &mockClient{
@@ -357,16 +348,7 @@ func TestVulncheckPreference(t *testing.T) {
 	if runtime.GOARCH == "wasm" {
 		t.Skip("test not supported in wasm")
 	}
-	t.Cleanup(func() {
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			t.Fatalf("os.UserConfigDir() failed: %v", err)
-		}
-		if err := os.RemoveAll(filepath.Join(configDir, "gopls")); err != nil && !os.IsNotExist(err) {
-			t.Fatalf("failed to clear user config: %v", err)
-		}
-	})
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(GoplsConfigDirEnvvar, t.TempDir())
 
 	pref, err := getVulncheckPreference()
 	if err != nil {
