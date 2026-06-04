@@ -52,6 +52,7 @@ type synthConfig struct {
 	stmts          int // statements per function (drives AST / types.Info size)
 	coreIfaces     int // exported interfaces in core (grows go/types without AST)
 	methodsPerType int // methods per core type (grows go/types without AST)
+	deps           int // prev-layer packages each package imports (import fan-out)
 }
 
 func synthConfigFromEnv() synthConfig {
@@ -71,12 +72,22 @@ func synthConfigFromEnv() synthConfig {
 		stmts:          envInt("SYNTH_STMTS", 10),
 		coreIfaces:     envInt("SYNTH_CORE_INTERFACES", 150),
 		methodsPerType: envInt("SYNTH_METHODS_PER_TYPE", 3),
+		deps:           envInt("SYNTH_DEPS", 3),
 	}
 }
 
+func envIntDefault(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
 func (c synthConfig) tag() string {
-	return fmt.Sprintf("l%d-w%d-c%d-f%d-s%d-i%d-m%d",
-		c.layers, c.width, c.coreDecl, c.pkgFuncs, c.stmts, c.coreIfaces, c.methodsPerType)
+	return fmt.Sprintf("l%d-w%d-c%d-f%d-s%d-i%d-m%d-d%d",
+		c.layers, c.width, c.coreDecl, c.pkgFuncs, c.stmts, c.coreIfaces, c.methodsPerType, c.deps)
 }
 
 const synthModule = "synthbench"
@@ -142,14 +153,28 @@ func generateSynthModule(dir string, c synthConfig) error {
 			// import a few packages from the previous layer (intra-closure imports).
 			var deps []string
 			if l > 1 {
-				for k := 0; k < 3; k++ {
-					dw := (w + k*7) % c.width
+				seen := map[string]bool{}
+				for k := 0; k < c.deps; k++ {
+					dw := (w + k*13 + 1) % c.width
 					dep := pkgName(l-1, dw)
+					if seen[dep] {
+						continue
+					}
+					seen[dep] = true
 					fmt.Fprintf(&b, "\t%q\n", synthModule+"/"+dep)
 					deps = append(deps, dep)
 				}
 			}
 			fmt.Fprintf(&b, ")\n\n")
+			// Reference every imported dep so the imports are used (and to create
+			// a wide cross-package type-reference graph, growing the working set).
+			if len(deps) > 0 {
+				fmt.Fprintf(&b, "var _ = []any{")
+				for _, dep := range deps {
+					fmt.Fprintf(&b, "%s.G0, ", dep)
+				}
+				fmt.Fprintf(&b, "}\n\n")
+			}
 			// exported type using core types and an interface (keeps them in the
 			// typeref closure).
 			if c.coreIfaces > 0 {
@@ -235,6 +260,25 @@ func BenchmarkSynthSyntaxErrorSpike(b *testing.B) {
 	}
 
 	env.OpenFile(synthCoreFile)
+
+	// Optionally open many leaf files. Open packages retain their full pkgData
+	// (ASTs + types.Info, pointer-heavy) for the session, which enlarges the live
+	// heap and slows GC marking. With a large retained live heap, the allocation
+	// burst of a re-diagnosis pass overshoots the GC goal before marking
+	// completes, reproducing cockroach's memory *balloon* (peak >> settled)
+	// without needing cockroach-scale total work. Set SYNTH_OPEN_FILES.
+	if n := envIntDefault("SYNTH_OPEN_FILES", 0); n > 0 {
+		opened := 0
+		for l := 1; l <= c.layers && opened < n; l++ {
+			for w := 0; w < c.width && opened < n; w++ {
+				env.OpenFile(fmt.Sprintf("p%d_%d/p.go", l, w))
+				opened++
+			}
+		}
+		env.AfterChange()
+		b.Logf("opened %d leaf files", opened)
+	}
+
 	env.EditBuffer(synthCoreFile, protocol.TextEdit{NewText: "// __VALID__\n"})
 	env.AfterChange()
 
