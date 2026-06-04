@@ -77,6 +77,12 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		}
 	}
 
+	if len(params.FormAnswers) != 0 {
+		commandName := strings.TrimPrefix(params.Command, "gopls.")
+		counterName := fmt.Sprintf("gopls/interactive/command:%s", commandName)
+		counter.New(counterName).Inc()
+	}
+
 	handler := &commandHandler{
 		s:      s,
 		params: params,
