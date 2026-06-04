@@ -5,10 +5,12 @@
 package web_test
 
 import (
+	"bytes"
 	"regexp"
 	"runtime"
 	"testing"
 
+	"golang.org/x/net/html"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -143,6 +145,38 @@ func Test2(*testing.T) { println(0) }
 			switch runtime.GOARCH {
 			case "amd64", "arm64":
 				checkMatch(t, true, report, `CALL	runtime.printint`)
+			}
+		}
+	})
+}
+
+// TestAssemblyMisquote exercises that compiler output is properly quoted.
+func TestAssemblyMisquote(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+func f() {
+	// The compiler rejects this addition. The error it prints may include
+	// the string literal but this should not cause the resulting HTML page
+	// to contain a <u> element, which would result in misformatting.
+	const _ = "</script><u>underline</u>" + 1
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "const")
+		report := asmFor(t, env, loc)
+		doc, err := html.Parse(bytes.NewReader(report))
+		if err != nil {
+			t.Fatalf("html.Parse: %v", err)
+		}
+		for n := range doc.Descendants() {
+			if n.Type == html.ElementNode && n.Data == "u" {
+				t.Fatalf("unwanted <u> element in HTML document:\n%s", report)
 			}
 		}
 	})

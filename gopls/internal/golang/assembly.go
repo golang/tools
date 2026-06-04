@@ -18,8 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html"
-	"io"
+	"html/template"
 	"net/http"
 	"os"
 	"regexp"
@@ -54,53 +53,28 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.Response
 	}
 	defer cleanupInvocation()
 
-	escape := html.EscapeString
-
 	// Emit the start of the report.
-	titleHTML := fmt.Sprintf("%s assembly for %s",
-		escape(snapshot.View().GOARCH()),
-		escape(symbol))
-	io.WriteString(w, `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>`+titleHTML+`</title>
-  <link rel="stylesheet" href="/assets/common.css">
-  <script src="/assets/common.js"></script>
-</head>
-<body>
-<h1>`+titleHTML+`</h1>
-<p>
-  <a href='https://go.dev/doc/asm'>A Quick Guide to Go's Assembler</a>
-</p>
-<p>
-  Experimental. <a href='https://github.com/golang/go/issues/67478'>Contributions welcome!</a>
-</p>
-<p>
-  Click on a source line marker <code>L1234</code> to navigate your editor there.
-  (VS Code users: please upvote <a href='https://github.com/microsoft/vscode/issues/208093'>#208093</a>)
-</p>
-<p id='compiling'>Compiling...</p>
-<pre>
-`)
+
+	if err := asmHeader.Execute(w, asmHeaderData{
+		Title: fmt.Sprintf("%s assembly for %s", snapshot.View().GOARCH(), symbol),
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
 
 	// At this point errors must be reported by writing HTML.
-	// To do this, set "status" return early.
+	// To do this, set "status" and return early.
 
-	var buf bytes.Buffer
+	var buf bytes.Buffer // properly quoted content of <pre> followed by footer (</pre> etc).
 	status := "Reload the page to recompile."
 	defer func() {
-		// Update the "Compiling..." message.
-		fmt.Fprintf(&buf, `
-</pre>
-<script>
-document.getElementById('compiling').innerText = %q;
-</script>
-</body>`, status)
-		w.Write(buf.Bytes())
+		// Append the footer to close the <pre> and update the "Compiling..." message.
+		_ = asmFooter.Execute(&buf, asmFooterData{Status: status})
+
+		w.Write(buf.Bytes()) // ignore error
 	}()
 
 	// Compile the package.
@@ -125,6 +99,7 @@ document.getElementById('compiling').innerText = %q;
 	//         ...
 	//
 	// Allow matches of symbol, symbol.func1, symbol.deferwrap, etc.
+	escape := template.HTMLEscapeString
 	on := false
 	for line := range strings.SplitSeq(content, "\n") {
 		// start of function symbol?
@@ -155,3 +130,42 @@ document.getElementById('compiling').innerText = %q;
 		buf.WriteByte('\n')
 	}
 }
+
+type asmHeaderData struct {
+	Title string
+}
+
+var asmHeader = template.Must(template.New("header").Parse(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/assets/common.css">
+  <script src="/assets/common.js"></script>
+</head>
+<body>
+<h1>{{.Title}}</h1>
+<p>
+  <a href='https://go.dev/doc/asm'>A Quick Guide to Go's Assembler</a>
+</p>
+<p>
+  Experimental. <a href='https://github.com/golang/go/issues/67478'>Contributions welcome!</a>
+</p>
+<p>
+  Click on a source line marker <code>L1234</code> to navigate your editor there.
+  (VS Code users: please upvote <a href='https://github.com/microsoft/vscode/issues/208093'>#208093</a>)
+</p>
+<p id='compiling'>Compiling...</p>
+<pre>
+`))
+
+type asmFooterData struct {
+	Status string
+}
+
+var asmFooter = template.Must(template.New("footer").Parse(`
+</pre>
+<script>
+document.getElementById('compiling').innerText = {{.Status}};
+</script>
+</body>`))
