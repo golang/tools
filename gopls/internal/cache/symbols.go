@@ -46,11 +46,9 @@ func (s *Snapshot) Symbols(ctx context.Context, ids ...PackageID) ([]*symbols.Pa
 				return err
 			}
 
-			if pkg, err := filecache.Get(symbolsKind, key, symbols.Decode); err == nil {
+			if pkg, ok := filecache.GetOrFatal(symbolsKind, key, symbols.Decode); ok {
 				res[i] = pkg
 				return nil
-			} else if err != filecache.ErrNotFound {
-				bug.Reportf("internal error reading symbol data: %v", err)
 			}
 
 			pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, false, fhs...)

@@ -584,10 +584,8 @@ func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeS
 	// inFlightAnalyses) and must be treated as immutable; the caller
 	// copies its fields onto the analysisNode rather than retaining it.
 	const cacheKind = "analysis"
-	if summary, err := filecache.Get(cacheKind, key, analyzeSummaryCodec.Decode); err == nil {
+	if summary, ok := filecache.GetOrFatal(cacheKind, key, analyzeSummaryCodec.Decode); ok {
 		return summary, nil // cache hit
-	} else if err != filecache.ErrNotFound {
-		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	}
 
 	// Cache miss: do the work.

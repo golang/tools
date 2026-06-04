@@ -47,7 +47,7 @@ import (
 // Start is automatically called by the first call to Get, but may be called
 // explicitly to pre-initialize the cache.
 func Start() {
-	go getCacheDir()
+	go getCacheDir() // ignore error
 }
 
 // memCache is a 100MB in-memory LRU cache in front of filecache
@@ -66,6 +66,15 @@ type memKey struct {
 // returned by Get when the key is not found.
 var ErrNotFound = fmt.Errorf("not found")
 
+// ErrNoCache is the type of errors returned by Get when the cache
+// cannot be created at all (e.g. due to disk space, lack of
+// permission, deletion of the gopls executable, or hardware fault).
+//
+// The appropriate action in this case is typically to log.Fatal since
+// there is little the application can do and performance will
+// inevitably be terrible; See [GetOrFatal].
+type ErrNoCache struct{ error }
+
 // Bytes is the identity decoder, for use with [Get] when the caller
 // wants the raw bytes.
 func Bytes(data []byte) []byte { return data }
@@ -77,11 +86,14 @@ func Bytes(data []byte) []byte { return data }
 // holding raw bytes (from a recent [Set]), the entry is decoded once
 // and upgraded in place from raw bytes to the decoded value.
 //
-// Get returns ErrNotFound if the value was not found. The first call
-// to Get may fail due to ENOSPC or deletion of the process's
-// executable. Other causes of failure include deletion or corruption
-// of the cache (by external meddling) while gopls is running, or
-// faulty hardware; see issue #67433.
+// Get returns [ErrNotFound] if the value was not found.
+//
+// Get returns [ErrNoCache] if the cache did not exist and could not
+// be created. This may be due to ENOSPC, deletion of the process's
+// executable, deletion or corruption of the cache by external
+// meddling while gopls is running, or by faulty hardware (see issue
+// #67433). In this case, terminating the application is likely the
+// best course; see [GetOrFatal].
 //
 // Each kind must be used with exactly one decoded type T; mixing types
 // for the same kind is a programming error and will panic.
@@ -121,6 +133,23 @@ func Get[T any](kind string, key [32]byte, decode func([]byte) T) (T, error) {
 	return result, nil
 }
 
+// GetOrFatal retrieves from the cache like [Get], but if it
+// encounters an unrecoverable [ErrNoCache] error, it calls log.Fatal.
+// Any unexpected error (not [ErrNotFound]) is logged.
+func GetOrFatal[T any](kind string, key [32]byte, decode func([]byte) T) (T, bool) {
+	val, err := Get(kind, key, decode)
+	if err == nil {
+		return val, true // hit
+	}
+	if errNoCache, ok := errors.AsType[ErrNoCache](err); ok {
+		log.Fatal(errNoCache) // unrecoverable
+	}
+	if err != ErrNotFound {
+		log.Printf("unexpected error reading %s from filecache: %v", kind, err)
+	}
+	return *new(T), false // miss
+}
+
 // get reads the value for (kind, key) from the file system, bypassing
 // the in-memory cache.
 func get(kind string, key [32]byte) ([]byte, error) {
@@ -130,9 +159,7 @@ func get(kind string, key [32]byte) ([]byte, error) {
 	// Read the index file, which provides the name of the CAS file.
 	indexName, err := filename(kind, key)
 	if err != nil {
-		// e.g. ENOSPC, deletion of executable (first time only);
-		// deletion of cache (at any time).
-		return nil, err
+		return nil, err // (ErrNoCache)
 	}
 	indexData, err := os.ReadFile(indexName)
 	if err != nil {
@@ -153,7 +180,7 @@ func get(kind string, key [32]byte) ([]byte, error) {
 	// engineered hash collision, which is infeasible.
 	casName, err := filename(casKind, valueHash)
 	if err != nil {
-		return nil, err // see above for possible causes
+		return nil, err // (ErrNoCache)
 	}
 	value, _ := os.ReadFile(casName) // ignore error
 	if sha256.Sum256(value) != valueHash {
@@ -201,7 +228,7 @@ func Set(kind string, key [32]byte, value []byte) error {
 	hash := sha256.Sum256(value)
 	casName, err := filename(casKind, hash)
 	if err != nil {
-		return err
+		return err // (ErrNoCache)
 	}
 	// Does CAS file exist and have correct (complete) content?
 	// TODO(adonovan): opt: use mmap for this check.
@@ -220,10 +247,10 @@ func Set(kind string, key [32]byte, value []byte) error {
 	// Now write an index entry that refers to the CAS file.
 	indexName, err := filename(kind, key)
 	if err != nil {
-		return err
+		return err // (ErrNoCache)
 	}
 	if err := os.MkdirAll(filepath.Dir(indexName), 0700); err != nil {
-		return err
+		return err // e.g. disk full
 	}
 	if err := writeFileNoTrunc(indexName, hash[:], 0600); err != nil {
 		os.Remove(indexName) // ignore error
@@ -367,7 +394,7 @@ func filename(kind string, key [32]byte) (string, error) {
 	base := fmt.Sprintf("%x-%s", key, kind)
 	dir, err := getCacheDir()
 	if err != nil {
-		return "", err
+		return "", err // (ErrNoCache)
 	}
 	// Keep the BugReports function consistent with this one.
 	return filepath.Join(dir, base[:2], base), nil
@@ -412,13 +439,13 @@ func getCacheDir() (string, error) {
 		// Compute the hash of this executable (~20ms) and create a subdirectory.
 		hash, err := hashExecutable()
 		if err != nil {
-			cacheDirErr = fmt.Errorf("can't hash gopls executable: %w", err)
+			cacheDirErr = ErrNoCache{fmt.Errorf("can't hash gopls executable: %w", err)}
 		}
 		// Use only 32 bits of the digest to avoid unwieldy filenames.
 		// It's not an adversarial situation.
 		cacheDir = filepath.Join(goplsDir, fmt.Sprintf("%x", hash[:4]))
 		if err := os.MkdirAll(cacheDir, 0700); err != nil {
-			cacheDirErr = fmt.Errorf("can't create cache: %w", err)
+			cacheDirErr = ErrNoCache{fmt.Errorf("can't create cache: %w", err)}
 		}
 	})
 	return cacheDir, cacheDirErr

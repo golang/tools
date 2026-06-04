@@ -545,13 +545,10 @@ func (s *Snapshot) PackageDiagnostics(ctx context.Context, ids ...PackageID) (ma
 		}
 	}
 	pre := func(_ int, ph *packageHandle) bool {
-		diags, err := filecache.Get(diagnosticsKind, ph.key, decodeDiagnostics)
-		if err == nil { // hit
+		if diags, ok := filecache.GetOrFatal(diagnosticsKind, ph.key, decodeDiagnostics); ok {
 			collect(ph.loadDiagnostics)
 			collect(diags)
 			return false
-		} else if err != filecache.ErrNotFound {
-			event.Error(ctx, "reading diagnostics from filecache", err)
 		}
 		return true
 	}
@@ -572,12 +569,9 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 
 	indexes := make([]xrefIndex, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
-		idx, err := filecache.Get(xrefsKind, ph.key, xrefs.Decode)
-		if err == nil { // hit
+		if idx, ok := filecache.GetOrFatal(xrefsKind, ph.key, xrefs.Decode); ok {
 			indexes[i] = xrefIndex{mp: ph.mp, idx: idx}
 			return false
-		} else if err != filecache.ErrNotFound {
-			event.Error(ctx, "reading xrefs from filecache", err)
 		}
 		return true
 	}
@@ -608,14 +602,11 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	indexes := make([]*methodsets.Index, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		pkgPath := ph.mp.PkgPath // capture for decode closure
-		idx, err := filecache.Get(methodSetsKind, ph.key, func(data []byte) *methodsets.Index {
+		if idx, ok := filecache.GetOrFatal(methodSetsKind, ph.key, func(data []byte) *methodsets.Index {
 			return methodsets.Decode(pkgPath, data)
-		})
-		if err == nil { // hit
+		}); ok {
 			indexes[i] = idx
 			return false
-		} else if err != filecache.ErrNotFound {
-			event.Error(ctx, "reading methodsets from filecache", err)
 		}
 		return true
 	}
@@ -636,12 +627,9 @@ func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.In
 
 	indexes := make([]*testfuncs.Index, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
-		idx, err := filecache.Get(testsKind, ph.key, testfuncs.Decode)
-		if err == nil { // hit
+		if idx, ok := filecache.GetOrFatal(testsKind, ph.key, testfuncs.Decode); ok {
 			indexes[i] = idx
 			return false
-		} else if err != filecache.ErrNotFound {
-			event.Error(ctx, "reading tests from filecache", err)
 		}
 		return true
 	}

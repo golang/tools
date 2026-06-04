@@ -322,15 +322,11 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 			return types.Unsafe, nil
 		}
 
-		data, err := filecache.Get(exportDataKind, ph.key, filecache.Bytes)
-		if err == filecache.ErrNotFound {
-			// No cached export data: type-check as fast as possible.
-			return b.checkPackageForImport(ctx, ph)
+		if data, ok := filecache.GetOrFatal(exportDataKind, ph.key, filecache.Bytes); ok {
+			return b.importPackage(ctx, ph.mp, data)
 		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read cache data for %s: %v", ph.mp.ID, err)
-		}
-		return b.importPackage(ctx, ph.mp, data)
+		// No cached export data (or hit error): type-check as fast as possible.
+		return b.checkPackageForImport(ctx, ph)
 	})
 }
 
@@ -1416,11 +1412,8 @@ func (s *Snapshot) typerefs(ctx context.Context, mp *metadata.Package, cgfs []fi
 // a cache miss.
 func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[ImportPath]*metadata.Package, cgfs []file.Handle) ([]byte, error) {
 	key := typerefsKey(id, imports, cgfs)
-	if data, err := filecache.Get(typerefsKind, key, filecache.Bytes); err == nil {
+	if data, ok := filecache.GetOrFatal(typerefsKind, key, filecache.Bytes); ok {
 		return data, nil
-	} else if err != filecache.ErrNotFound {
-		bug.Reportf("internal error reading typerefs data: %v", err)
-		// Unexpected error: treat as cache miss, and fall through.
 	}
 
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, true, cgfs...)
