@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	rdebug "runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -73,6 +74,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 
 	if options.MaxFileCacheBytes > 0 {
 		filecache.SetBudget(options.MaxFileCacheBytes)
+	}
+	if options.MemoryLimit > 0 {
+		rdebug.SetMemoryLimit(options.MemoryLimit)
 	}
 
 	if options.ShowBugReports {

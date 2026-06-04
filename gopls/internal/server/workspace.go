@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	rdebug "runtime/debug"
 	"strings"
 	"sync"
 
@@ -146,6 +147,9 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 
 	if options.MaxFileCacheBytes > 0 {
 		filecache.SetBudget(options.MaxFileCacheBytes)
+	}
+	if options.MemoryLimit > 0 {
+		rdebug.SetMemoryLimit(options.MemoryLimit)
 	}
 
 	return nil
