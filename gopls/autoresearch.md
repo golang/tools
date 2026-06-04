@@ -132,7 +132,41 @@ Encoder, #7 GC gating. Discarded: #4 store bounding, #5 ballast (games metric),
 autoresearch.ideas.md -- unsafe under shared-batch concurrency, needs upstream
 design.
 
-## Floor analysis (where the remaining ~0.74GB lives, from inuse pprof)
+## REAL cockroach floor (profiled 2026-06-04, BenchmarkCockroachFloorProfile)
+Spike on pkg/sql/sem/tree/expr.go. Live floor (inuse, gc=1) peaks ~6-7.5GB.
+This is the GROUND TRUTH; the synth is NOT a faithful proxy for composition.
+
+Pre-fix (yesterday's baseline-WIP binary, /tmp/floor-pre/), 6.87GB sample:
+  - parsego.Parse (ASTs):        2.88GB (41%)
+  - checkPackageForImport.func2: 2.06GB (29%)  <-- import re-checking
+  - storePackageResults:         1.42GB (20%)
+  - xrefs.NewIndex:              1.33GB (19%)  <-- pgf.Cursor() inspector
+  - go/types (newVar/Scope/...): ~1.2GB
+  (categories overlap; parsing is called under both check paths.)
+
+Post-fix (CURRENT binary, after #3/#6/#7), 5.94GB peak sample:
+  - xrefs.NewIndex:        46MB  (was 1331MB!)  <-- #3 removed ~1.3GB on REAL cockroach
+  - inspector.traverse:    gone from top
+  - objectpath.traversal:  gone from top        <-- #6
+  - checkPackageForImport: 2.67GB (45%)         <-- now the dominant live consumer
+  - parsego.Parse:         3.40GB (57% cum, mostly under checkPackageForImport)
+  Floor peak ~7.5GB -> ~5.9GB.
+
+KEY FINDINGS:
+1. #3 (xrefs transient walk) is a CONFIRMED ~1.3GB win on real cockroach -- bigger
+   in absolute terms than on the synth. The user already has this (predates the
+   reverted low-mem change).
+2. WHY low-mem (#9) didn't help cockroach: it evicted only SYNTAX-package ASTs
+   (getPackage path, non-open). But on cockroach the dominant AST/memory consumer
+   is checkPackageForImport (2.67GB, 45%) -- a DIFFERENT path the eviction never
+   touched. On the synth nearly all packages were syntax targets, so eviction
+   covered them; on cockroach it missed the real consumer.
+3. The real lever on cockroach is checkPackageForImport (re-type-checking tree's
+   import closure when its export data is invalidated). Levers to try:
+   GOPLS_MAXFILECACHE (keep dep export data on disk -> skip re-checking), or
+   extend syntax-reuse / release to the import path.
+
+## Floor analysis (synth; where the remaining ~0.74GB lives, from inuse pprof)
 - ASTs (go/parser.*) ~340MB: the TRANSIENT batch working set. The
   syntaxPackages futureCache holds every syntax package's full *Package
   (AST + types.Info) until the batch ends, even though (a) importers only need
