@@ -156,15 +156,19 @@ type deprecatedNames struct {
 // them both as Facts and the return value. This is a simplified copy
 // of staticcheck's fact_deprecated analyzer.
 func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (deprecatedNames, error) {
-	doDocs := func(names []*ast.Ident, docs *ast.CommentGroup) {
-		alt := strings.TrimPrefix(internalastutil.Deprecation(docs), "Deprecated: ")
-		if alt == "" {
-			return
-		}
+	doDocs := func(names []*ast.Ident, docs ...*ast.CommentGroup) {
+		for _, doc := range docs {
+			// Find the first doc with a deprecation marker.
+			alt := strings.TrimPrefix(internalastutil.Deprecation(doc), "Deprecated: ")
+			if alt == "" {
+				continue
+			}
 
-		for _, name := range names {
-			obj := pass.TypesInfo.ObjectOf(name)
-			pass.ExportObjectFact(obj, &deprecationFact{alt})
+			for _, name := range names {
+				obj := pass.TypesInfo.ObjectOf(name)
+				pass.ExportObjectFact(obj, &deprecationFact{alt})
+			}
+			return
 		}
 	}
 
@@ -222,14 +226,16 @@ func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (depr
 			names = node.Names
 		case *ast.StructType:
 			for _, field := range node.Fields.List {
-				doDocs(field.Names, field.Doc)
+				doDocs(field.Names, field.Doc, field.Comment)
 			}
 		case *ast.InterfaceType:
 			for _, field := range node.Methods.List {
-				doDocs(field.Names, field.Doc)
+				doDocs(field.Names, field.Doc, field.Comment)
 			}
 		}
 		if docs != nil && len(names) > 0 {
+			// Only consider line comments for struct fields and interface
+			// methods.
 			doDocs(names, docs)
 		}
 	})
