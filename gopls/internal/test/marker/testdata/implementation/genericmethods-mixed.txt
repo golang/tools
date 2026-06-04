@@ -1,0 +1,42 @@
+Regression test for a crash in the method-set index when a type has
+both an ordinary method and a generic method (Go 1.27).
+
+Generic methods are skipped while building the method-set index (they
+do not participate in interface satisfaction), but the surrounding type
+is still indexed because its ordinary method gives it a non-zero mask.
+A bug once pre-sized the method slice to the full method-set length and
+filled it by index, so skipping the generic method left a nil hole;
+iterating those methods during a search panicked with a nil-pointer
+dereference.
+
+The query and its implementer are deliberately in different packages so
+that the search goes through the serialized methodsets index (the path
+that held the nil hole), not the go/types-based local path.
+
+See the fix in gopls/internal/cache/methodsets, follow-up to golang/go#77549.
+
+-- flags --
+-min_go=go1.27
+
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package a
+
+// C has an ordinary method G, so it is recorded in the method-set
+// index, and a generic method F, which is skipped during indexing and
+// must not leave a nil hole. C implements b.I via G alone.
+type C struct{} //@loc(C, "C"), implementation("C", I)
+
+func (C) G(int) {}
+
+func (C) F[T any](T) {}
+
+-- b/b.go --
+package b
+
+type I interface { //@loc(I, "I"), implementation("I", C)
+	G(int)
+}
