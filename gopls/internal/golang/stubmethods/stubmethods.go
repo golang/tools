@@ -260,12 +260,11 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.C
 
 	sig := typesutil.EnclosingSignature(curResult, info)
 	if sig == nil {
-		// Either curResult is not within a function (incontheivable?),
-		// or the function's type information is missing (in which case
-		// EnclosingSignature will have called bug.Report).
-		// Don't report a second bug here.
-		// See https://go.dev/issue/70666.
-		return nil, fmt.Errorf("internal error: return statement lacks type information or enclosing function (issue 70666)")
+		// Since curResult must be within a function, this
+		// indicates that the function's type information is
+		// missing, for example because there are two
+		// functions with the same name.
+		return nil, fmt.Errorf("function enclosing return statement has incomplete type information")
 	}
 	rets := sig.Results()
 	// The return operands and function results must match.

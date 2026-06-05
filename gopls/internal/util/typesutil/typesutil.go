@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -187,23 +186,35 @@ func containsInvalid(t types.Type) bool {
 // EnclosingSignature returns the signature of the innermost
 // function enclosing the syntax node denoted by cur.
 // It returns nil if the node is not within a function,
-// or the function's type information is missing.
+// or the function's type information is missing
+// (for example because there are duplicate func declarations).
 func EnclosingSignature(cur inspector.Cursor, info *types.Info) *types.Signature {
-loop:
 	for c := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
 			if f, ok := info.Defs[n.Name]; ok {
 				return f.Type().(*types.Signature)
 			}
-			bug.Reportf("FuncDecl defines no types.Func (#70666)")
-			break loop
+			// FuncDecl defines no types.Func (#70666).
+			// Example:
+			//    func f(); func f()
+			// The same name is defined twice, but only
+			// one results in a symbol being inserted into
+			// the package scope.
+			//
+			// (It is tempting to change the type checker
+			// to populate Defs with a second Func f that is
+			// not in the Package scope, but this would only
+			// lead to different inconsistencies.)
+			return nil
+
 		case *ast.FuncLit:
 			if f, ok := info.Types[n]; ok {
 				return f.Type.(*types.Signature)
 			}
-			bug.Reportf("FuncLit has no type (#70666)")
-			break loop
+			// Presumably this is also reachable in case
+			// of missing type information.
+			return nil
 		}
 	}
 	return nil

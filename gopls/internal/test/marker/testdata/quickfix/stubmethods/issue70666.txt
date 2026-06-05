@@ -1,0 +1,27 @@
+This test verifies that the 'stub methods' quickfix is not offered in
+duplicate function declarations because type information for the
+duplicate declaration is missing from info.Defs. This scenario
+previously triggered bug.Reports before the cause was understood; see
+go.dev/issue/70666.
+
+-- go.mod --
+module example.com
+
+go 1.22
+
+-- a/a.go --
+package a
+
+type I interface {
+	M()
+}
+
+type T struct{}
+
+func foo() I { //@ diag(re"foo", re"redeclared")
+	return T{} //@ diag(re"T{}", re"cannot use T|does not implement")
+}
+
+func foo() I { //@ diag(re"foo", re"redeclared")
+	return T{} //@ codeaction(re"T{}", "quickfix", diag=re"cannot use T|does not implement", err=re"found 0 CodeActions")
+}
