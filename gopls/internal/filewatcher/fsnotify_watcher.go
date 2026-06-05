@@ -59,7 +59,6 @@ type fsnotifyWatcher struct {
 	log      *slog.Logger
 	onEvents func([]protocol.FileEvent)
 	onError  func(error)
-	// interval time.Duration
 
 	stop chan struct{}  // closed by Close to terminate run and process loop
 	wg   sync.WaitGroup // counts the number of active run and process goroutines (max 2)
