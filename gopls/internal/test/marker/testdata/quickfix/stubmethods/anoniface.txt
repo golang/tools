@@ -1,0 +1,20 @@
+Test stubbing a method of an anonymous interface.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+var _ interface{ f(int) } = C(0) //@quickfix(re"C", re"missing method", out)
+
+type C int
+
+-- @out/a/a.go --
+@@ -7 +7,4 @@
++// f implements an anonymous interface.
++func (c C) f(int) {
++	panic("unimplemented")
++}

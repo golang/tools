@@ -17,28 +17,19 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
-// TODO(adonovan): eliminate the confusing Fset parameter; only the
-// file name and byte offset of Concrete are needed.
-
 // IfaceStubInfo represents a concrete type
 // that wants to stub out an interface type
 type IfaceStubInfo struct {
-	// Interface is the interface that the client wants to implement.
-	// When the interface is defined, the underlying object will be a TypeName.
-	// Note that we keep track of types.Object instead of types.Type in order
-	// to keep a reference to the declaring object's package and the ast file
-	// in the case where the concrete type file requires a new import that happens to be renamed
-	// in the interface file.
-	// TODO(marwan-at-work): implement interface literals.
-	Fset      *token.FileSet // the FileSet used to type-check the types below
-	Interface *types.TypeName
-	Concrete  typesinternal.NamedOrAlias
+	Fset      *token.FileSet
+	Interface types.Type                 // interface type to implement (may be unnamed, named, or even instantiated)
+	Concrete  typesinternal.NamedOrAlias // concrete type on which to declare methods
 	Pointer   bool
 }
 
@@ -92,13 +83,9 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		}
 	}
 
-	var (
-		missing []*types.Func
-		// Find subset of interface methods that the concrete type lacks.
-		ifaceType = si.Interface.Type().Underlying().(*types.Interface)
-	)
-
-	for imethod := range ifaceType.Methods() {
+	// Find subset of interface methods that the concrete type lacks.
+	var missing []*types.Func
+	for imethod := range si.Interface.Underlying().(*types.Interface).Methods() {
 		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
 		if cmethod == nil {
 			missing = append(missing, imethod)
@@ -137,10 +124,15 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		return fmt.Errorf("no missing methods found")
 	}
 
-	// Format interface name (used only in a comment).
-	iface := si.Interface.Name()
-	if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
-		iface = ipkg.Name() + "." + iface
+	// Format doc link to interface type for "implements" doc comment.
+	ifaceLink := "an anonymous interface"
+	// (I don't know why we unalias here, other than issue65024.txt wants it.)
+	if named, ok := types.Unalias(si.Interface).(*types.Named); ok {
+		ifaceLink = named.Obj().Name()
+		if ipkg := named.Obj().Pkg(); ipkg != nil && ipkg != conc.Pkg() {
+			ifaceLink = ipkg.Name() + "." + ifaceLink
+		}
+		ifaceLink = "[" + ifaceLink + "]"
 	}
 
 	// Pointer receiver?
@@ -178,13 +170,13 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 			mrn = ""
 		}
 
-		fmt.Fprintf(out, `// %s implements [%s].
+		fmt.Fprintf(out, `// %s implements %s.
 func (%s%s%s%s) %s%s {
 	panic("unimplemented")
 }
 `,
 			missing[index].Name(),
-			iface,
+			ifaceLink,
 			mrn,
 			star,
 			si.Concrete.Obj().Name(),
@@ -207,11 +199,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cu
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
-	tv, ok := info.Types[call.Fun]
-	if !ok {
-		return nil
-	}
-	sig, ok := types.Unalias(tv.Type).(*types.Signature)
+	sig, ok := types.Unalias(info.TypeOf(call.Fun)).(*types.Signature)
 	if !ok {
 		return nil
 	}
@@ -226,18 +214,14 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cu
 	} else if argIdx < sig.Params().Len() {
 		paramType = sig.Params().At(argIdx).Type()
 	}
-	if paramType == nil {
-		return nil // A type error prevents us from determining the param type.
-	}
-	iface := ifaceObjFromType(paramType)
-	if iface == nil {
+	if !validInterface(paramType) {
 		return nil
 	}
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Pointer:   pointer,
-		Interface: iface,
+		Interface: paramType,
 	}
 }
 
@@ -275,8 +259,8 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.C
 			len(ret.Results),
 			rets.Len())
 	}
-	iface := ifaceObjFromType(rets.At(curResult.ParentEdgeIndex()).Type())
-	if iface == nil {
+	iface := rets.At(curResult.ParentEdgeIndex()).Type()
+	if !validInterface(iface) {
 		return nil, nil
 	}
 	return &IfaceStubInfo{
@@ -310,14 +294,14 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, curValue inspector.Cur
 		return nil
 	}
 
-	ifaceObj := ifaceType(ifaceNode, info)
-	if ifaceObj == nil {
+	iface := info.TypeOf(ifaceNode)
+	if !validInterface(iface) {
 		return nil
 	}
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Interface: ifaceObj,
+		Interface: iface,
 		Pointer:   pointer,
 	}
 }
@@ -340,8 +324,8 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Curs
 	}
 	lhs, rhs := assign.Lhs[idx], curRhs.Node().(ast.Expr)
 
-	ifaceObj := ifaceType(lhs, info)
-	if ifaceObj == nil {
+	iface := info.TypeOf(lhs)
+	if !validInterface(iface) {
 		return nil
 	}
 	concType, pointer := concreteType(rhs, info)
@@ -355,35 +339,9 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Curs
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Interface: ifaceObj,
+		Interface: iface,
 		Pointer:   pointer,
 	}
-}
-
-// ifaceType returns the named interface type to which e refers, if any.
-func ifaceType(e ast.Expr, info *types.Info) *types.TypeName {
-	tv, ok := info.Types[e]
-	if !ok {
-		return nil
-	}
-	return ifaceObjFromType(tv.Type)
-}
-
-func ifaceObjFromType(t types.Type) *types.TypeName {
-	named, ok := types.Unalias(t).(*types.Named)
-	if !ok {
-		return nil
-	}
-	if !types.IsInterface(named) {
-		return nil
-	}
-	// Interfaces defined in the "builtin" package return nil a Pkg().
-	// But they are still real interfaces that we need to make a special case for.
-	// Therefore, protect gopls from panicking if a new interface type was added in the future.
-	if named.Obj().Pkg() == nil && named.Obj().Name() != "error" {
-		return nil
-	}
-	return named.Obj()
 }
 
 // concreteType tries to extract the *types.Named that defines
@@ -394,18 +352,22 @@ func ifaceObjFromType(t types.Type) *types.TypeName {
 // is a boolean that indicates whether the concreteType was defined as a
 // pointer or value.
 func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
-	tv, ok := info.Types[e]
-	if !ok {
-		return nil, false
-	}
-	typ := tv.Type
-	ptr, isPtr := types.Unalias(typ).(*types.Pointer)
+	t := info.TypeOf(e)
+	ptr, isPtr := types.Unalias(t).(*types.Pointer)
 	if isPtr {
-		typ = ptr.Elem()
+		t = ptr.Elem()
 	}
-	named, ok := types.Unalias(typ).(*types.Named)
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return nil, false
 	}
 	return named, isPtr
+}
+
+// validInterface reports whether iface is a non-nil interface
+// type with no free type parameters.
+func validInterface(iface types.Type) bool {
+	return iface != nil &&
+		types.IsInterface(iface) &&
+		!new(typeparams.Free).Has(iface)
 }

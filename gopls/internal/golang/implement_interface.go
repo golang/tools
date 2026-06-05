@@ -173,7 +173,7 @@ func ImplementInterface(ctx context.Context, snapshot *cache.Snapshot, loc proto
 	//    var _ Interface = (*Type)(nil)
 	si := stubmethods.IfaceStubInfo{
 		Fset:      pkg.FileSet(),
-		Interface: iface,
+		Interface: iface.Type(),
 		Concrete:  named,
 		// TODO(hxjiang): consider make it question and let the user decide
 		// whether to use pointer receiver or not.

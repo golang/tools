@@ -339,7 +339,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 			if si != nil {
 				qual := typesinternal.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg())
-				iface := types.TypeString(si.Interface.Type(), qual)
+				iface := types.TypeString(si.Interface, qual)
 				msg := fmt.Sprintf("Declare missing methods of %s", iface)
 				req.addApplyFixAction(msg, fixMissingInterfaceMethods, req.loc)
 			}

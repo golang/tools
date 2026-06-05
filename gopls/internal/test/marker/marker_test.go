@@ -1529,8 +1529,8 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 			mark.errorf("in @%s golden section %s: %v; actual diff:\n%s",
 				mark.note.Name, name, err, d)
 		}
-		if want != string(after) {
-			mark.errorf("%s: got:\n%s\nwant:\n%s", mark.note.Name, want, after)
+		if string(after) != want {
+			mark.errorf("%s: got:\n%s\nwant:\n%s", mark.note.Name, after, want)
 		}
 	}
 
