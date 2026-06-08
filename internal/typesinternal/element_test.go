@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -45,6 +46,23 @@ func (U) method() uint32
 `
 
 func TestForEachElement(t *testing.T) {
+	// Add generic method, if go1.27.
+	// It doesn't change the outcome:
+	// complex64 is not expected in the result.
+	elementSrc := elementSrc
+	if testenv.Go1Point() >= 27 {
+		elementSrc += `
+// generic method: T.generic[U] is not explored.
+func (T) generic[U any](complex64) {}
+
+// method of generic type
+type H[T any] uintptr
+func (H[T]) m(T) uint16
+type Hf64 = H[float64]
+`
+		// (still available: uint8 uint64 float32)
+	}
+
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "a.go", elementSrc, 0)
 	if err != nil {
@@ -56,10 +74,11 @@ func TestForEachElement(t *testing.T) {
 		t.Fatal(err) // type error
 	}
 
-	tests := []struct {
+	type testcase struct {
 		name string   // name of a type alias whose RHS type's elements to compute
 		want []string // strings of types that are/are not elements (! => not)
-	}{
+	}
+	tests := []testcase{
 		// simple type
 		{"A", []string{"int"}},
 
@@ -80,7 +99,7 @@ func TestForEachElement(t *testing.T) {
 		// the result does not include the struct type itself.
 		// (This follows the Go toolchain behavior, and finesses the need
 		// to create wrapper methods for that struct type.)
-		{"C", []string{"T", "*T", "int", "uint", "complex128", "!struct{x int}"}},
+		{"C", []string{"T", "*T", "int", "uint", "complex128", "!complex64", "!struct{x int}"}},
 
 		// alias type
 		{"D", []string{"int"}},
@@ -95,6 +114,12 @@ func TestForEachElement(t *testing.T) {
 
 		// struct with embedded field that has methods
 		{"G", []string{"*U", "struct{U}", "uint32", "U"}},
+	}
+	if testenv.Go1Point() >= 27 {
+		tests = append(tests, []testcase{
+			// H[float64].m is a ground type, so it is visited, giving us uint16.
+			{"Hf64", []string{"*H[float64]", "H[float64]", "float64", "uint16"}},
+		}...)
 	}
 	var msets typeutil.MethodSetCache
 	for _, test := range tests {
