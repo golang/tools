@@ -74,8 +74,11 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 	methodsOf := func(T types.Type) {
 		if !types.IsInterface(T) {
 			mset := prog.MethodSets.MethodSet(T)
-			for method := range mset.Methods() {
-				function(prog.MethodValue(method))
+			for sel := range mset.Methods() {
+				// Skip generic methods.
+				if sel.Obj().(*types.Func).Signature().TypeParams() == nil {
+					function(prog.MethodValue(sel))
+				}
 			}
 		}
 	}
@@ -104,6 +107,7 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 			// Consider only named types.
 			// (Ignore aliases and unsafe.Pointer.)
 			if named, ok := t.Type().(*types.Named); ok {
+				// Skip generic types.
 				if named.TypeParams() == nil {
 					methodsOf(named)                   //  T
 					methodsOf(types.NewPointer(named)) // *T
@@ -117,6 +121,11 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 			switch mem := mem.(type) {
 			case *ssa.Function:
 				// Visit all package-level declared functions.
+				//
+				// (This may include generic functions, which is
+				// inconsistent with the treatment of methods:
+				// we skip both generic methods,
+				// and methods of generic types.)
 				function(mem)
 
 			case *ssa.Type:
