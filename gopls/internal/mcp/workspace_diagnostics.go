@@ -14,7 +14,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -25,13 +24,12 @@ type workspaceDiagnosticsParams struct {
 func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, req *mcp.CallToolRequest, params workspaceDiagnosticsParams) (*mcp.CallToolResult, any, error) {
 	countGoDiagnosticsMCP.Inc()
 	var (
-		fh       file.Handle
 		snapshot *cache.Snapshot
 		release  func()
 		err      error
 	)
 	if len(params.Files) > 0 {
-		fh, snapshot, release, err = h.fileOf(ctx, params.Files[0])
+		_, snapshot, release, err = h.fileOf(ctx, params.Files[0])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -67,7 +65,7 @@ func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, req *mcp.Call
 		if err != nil {
 			return nil, nil, fmt.Errorf("diagnostics failed: %v", err)
 		}
-		diagnostics[fh.URI()] = fileDiagnostics
+		diagnostics[uri] = fileDiagnostics
 		maps.Insert(fixes, maps.All(fileFixes))
 	}
 

@@ -12,6 +12,9 @@ go 1.21
 //@mcptool("go_diagnostics", `{"files":["$WORKDIR/a/a.go"]}`, output=diagnostics)
 //@mcptool("go_diagnostics", `{"files":["$WORKDIR/b/b.go"]}`, output=diagnostics)
 //@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/b/b2.go", "$WORKDIR/main.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go", "$WORKDIR/a/a.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go", "$WORKDIR/a/a.go", "$WORKDIR/c/c.go"]}`, output=diagnostics_c)
 
 -- main.go --
 package main
@@ -42,9 +45,42 @@ const B = 1
 
 const B = 2
 
+-- c/c.go --
+package c
+
+func _() {
+	var x interface{}
+	_ = x
+}
+
 -- @diagnostics --
 File `$WORKDIR/b/b2.go` has the following diagnostics:
 1:0-1:0: [Error] expected 'package', found 'const'
+
+File `$WORKDIR/main.go` has the following diagnostics:
+7:5-7:9: [Error] func main must have no arguments and no return values
+8:9-8:12: [Error] cannot use b.B (untyped int constant 1) as string value in argument to a.Print
+
+-- @diagnostics_c --
+File `$WORKDIR/b/b2.go` has the following diagnostics:
+1:0-1:0: [Error] expected 'package', found 'const'
+
+File `$WORKDIR/c/c.go` has the following diagnostics:
+3:7-3:18: [Hint] interface{} can be replaced by any
+Fix:
+--- $WORKDIR/c/c.go
++++ $WORKDIR/c/c.go
+@@ -1,7 +1,7 @@
+ package c
+ 
+ func _() {
+-	var x interface{}
++	var x any
+ 	_ = x
+ }
+ 
+
+
 
 File `$WORKDIR/main.go` has the following diagnostics:
 7:5-7:9: [Error] func main must have no arguments and no return values
