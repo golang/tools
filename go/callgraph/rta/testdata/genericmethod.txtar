@@ -1,0 +1,31 @@
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package main
+
+type C struct{}
+
+func (C) Foo[T any]() { f() }
+
+func f() {}
+
+func main() {
+	var c C
+	c.Foo[int]()
+	c.Foo[string]()
+}
+
+// WANT:
+//
+// edge main --static method call--> (C).Foo[int]
+// edge main --static method call--> (C).Foo[string]
+// edge (C).Foo[string] --static function call--> f
+// edge (C).Foo[int] --static function call--> f
+//
+// reachable (C).Foo[int]
+// reachable (C).Foo[string]
+// reachable f
+// reachable init
+// reachable main

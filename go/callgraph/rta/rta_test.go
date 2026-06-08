@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -37,6 +38,10 @@ func TestRTA(t *testing.T) {
 		"testdata/rtype.txtar",
 		"testdata/multipkgs.txtar",
 	}
+	if testenv.Go1Point() >= 27 && false /* TODO(adonovan): fix the SSA bug in CL 788521 first */ {
+		archivePaths = append(archivePaths, "testdata/genericmethod.txtar")
+	}
+
 	for _, archive := range archivePaths {
 		t.Run(archive, func(t *testing.T) {
 			ar, err := txtar.ParseFile(archive)

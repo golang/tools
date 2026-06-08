@@ -114,15 +114,13 @@ type rta struct {
 
 type concreteTypeInfo struct {
 	C          types.Type
-	mset       *types.MethodSet
 	fprint     uint64             // fingerprint of method set
 	implements []*types.Interface // unordered set of implemented interfaces
 }
 
 type interfaceTypeInfo struct {
 	I               *types.Interface
-	mset            *types.MethodSet
-	fprint          uint64
+	fprint          uint64       // fingerprint of method set
 	implementations []types.Type // unordered set of concrete implementations
 }
 
@@ -361,11 +359,9 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 	if v := r.concreteTypes.At(C); v != nil {
 		cinfo = v.(*concreteTypeInfo)
 	} else {
-		mset := r.prog.MethodSets.MethodSet(C)
 		cinfo = &concreteTypeInfo{
 			C:      C,
-			mset:   mset,
-			fprint: fingerprint(mset),
+			fprint: fingerprint(r.prog.MethodSets.MethodSet(C)),
 		}
 		r.concreteTypes.Set(C, cinfo)
 
@@ -390,11 +386,9 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 	if v := r.interfaceTypes.At(I); v != nil {
 		iinfo = v.(*interfaceTypeInfo)
 	} else {
-		mset := r.prog.MethodSets.MethodSet(I)
 		iinfo = &interfaceTypeInfo{
 			I:      I,
-			mset:   mset,
-			fprint: fingerprint(mset),
+			fprint: fingerprint(r.prog.MethodSets.MethodSet(I)),
 		}
 		r.interfaceTypes.Set(I, iinfo)
 
@@ -544,6 +538,9 @@ func fingerprint(mset *types.MethodSet) uint64 {
 	for method := range mset.Methods() {
 		method := method.Obj()
 		sig := method.Type().(*types.Signature)
+		if sig.TypeParams() != nil {
+			continue // skip generic methods since interfaces don't have them
+		}
 		sum := crc32.ChecksumIEEE(fmt.Appendf(space[:], "%s/%d/%d",
 			method.Id(),
 			sig.Params().Len(),
