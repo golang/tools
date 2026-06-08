@@ -124,7 +124,7 @@ func ext۰reflect۰rtype۰NumIn(fr *frame, args []value) value {
 
 func ext۰reflect۰rtype۰NumMethod(fr *frame, args []value) value {
 	// Signature: func (t reflect.rtype) int
-	return fr.i.prog.MethodSets.MethodSet(args[0].(rtype).t).Len()
+	return fr.i.prog.MethodSets.MethodSet(args[0].(rtype).t).Len() // beware: falsely reports generic methods
 }
 
 func ext۰reflect۰rtype۰NumOut(fr *frame, args []value) value {
