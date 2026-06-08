@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/expect"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestObjValueLookup(t *testing.T) {
@@ -303,12 +304,13 @@ func testValueForExpr(t *testing.T, testfile string) {
 }
 
 func TestEnclosingFunction(t *testing.T) {
-	tests := []struct {
+	type testcase struct {
 		desc   string
 		input  string // the input file
 		substr string // first occurrence of this string denotes interval
 		fn     string // name of expected containing function
-	}{
+	}
+	tests := []testcase{
 		// We use distinctive numbers as syntactic landmarks.
 		{"Ordinary function", `
 		  package main
@@ -348,6 +350,16 @@ func TestEnclosingFunction(t *testing.T) {
 			type P[T any] struct{ *S[T] }`,
 			"1000", "(*main.S[T]).Foo",
 		},
+	}
+	if testenv.Go1Point() >= 27 {
+		tests = append(tests, testcase{
+			"generic method", `
+		    package main
+			type S struct{}
+			func (S) Foo[T any]() { println(1100) }
+			type P[T any] struct{ S }`,
+			"1100", "(main.S).Foo",
+		})
 	}
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
