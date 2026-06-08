@@ -73,7 +73,9 @@ func CallGraph(prog *ssa.Program) *callgraph.Graph {
 		if !types.IsInterface(T) {
 			mset := prog.MethodSets.MethodSet(T)
 			for method := range mset.Methods() {
-				visit(cg.CreateNode(prog.MethodValue(method)))
+				if method.Obj().(*types.Func).Signature().TypeParams() == nil {
+					visit(cg.CreateNode(prog.MethodValue(method)))
+				}
 			}
 		}
 	}
@@ -87,7 +89,7 @@ func CallGraph(prog *ssa.Program) *callgraph.Graph {
 				visit(cg.CreateNode(mem))
 
 			case *ssa.Type:
-				// methods of package-level non-interface non-parameterized types
+				// non-parameterized methods of package-level non-interface non-parameterized types
 				if !types.IsInterface(mem.Type()) {
 					if named, ok := mem.Type().(*types.Named); ok &&
 						named.TypeParams() == nil {
