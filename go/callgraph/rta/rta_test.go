@@ -38,7 +38,7 @@ func TestRTA(t *testing.T) {
 		"testdata/rtype.txtar",
 		"testdata/multipkgs.txtar",
 	}
-	if testenv.Go1Point() >= 27 && false /* TODO(adonovan): fix the SSA bug in CL 788521 first */ {
+	if testenv.Go1Point() >= 27 {
 		archivePaths = append(archivePaths, "testdata/genericmethod.txtar")
 	}
 

@@ -168,17 +168,17 @@ func TestGenericMethods(t *testing.T) {
 		{
 			prog:    n,
 			stmts:   "n.M[bool](true)",
-			callee:  "(p.N).M",
+			callee:  "(p.N).M[bool]",
 			tparams: 1,
-			targs:   0,
+			targs:   1,
 		},
 		{
 			// same as previous but with inferred type arguments
 			prog:    n,
 			stmts:   "n.M(true)",
-			callee:  "(p.N).M",
+			callee:  "(p.N).M[bool]",
 			tparams: 1,
-			targs:   0,
+			targs:   1,
 		},
 		{
 			prog:    n,
@@ -214,17 +214,17 @@ func TestGenericMethods(t *testing.T) {
 		{
 			prog:    n,
 			stmts:   "n.N[bool](true)",
-			callee:  "(*p.N).N",
+			callee:  "(*p.N).N[bool]",
 			tparams: 1,
-			targs:   0,
+			targs:   1,
 		},
 		{
 			// same as previous but with inferred type arguments
 			prog:    n,
 			stmts:   "n.N(true)",
-			callee:  "(*p.N).N",
+			callee:  "(*p.N).N[bool]",
 			tparams: 1,
-			targs:   0,
+			targs:   1,
 		},
 		{
 			prog:    n,

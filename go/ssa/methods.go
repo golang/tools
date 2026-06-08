@@ -97,14 +97,14 @@ func (prog *Program) objectMethod(obj *types.Func, targs []types.Type, b *builde
 		panic("not a method: " + obj.String())
 	}
 
-	// Belongs to a created package?
-	if fn := prog.FuncValue(obj); fn != nil {
-		return fn
-	}
-
 	// Instantiation of generic?
 	if orig := obj.Origin(); orig != obj || len(targs) > 0 {
 		return prog.objectMethod(orig, nil, b).instance(receiverTypeArgs(obj), targs, b)
+	}
+
+	// Belongs to a created package?
+	if fn := prog.FuncValue(obj); fn != nil {
+		return fn
 	}
 
 	// Consult/update cache of methods created from types.Func.
