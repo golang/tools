@@ -42,3 +42,8 @@ func (m Map[K, V]) Len() int {
 func (m Map[K, V]) All() iter.Seq2[K, V] {
 	return maps.All(m.m)
 }
+
+// Keys returns the sequence of keys in the map.
+func (m Map[K, V]) Keys() iter.Seq[K] {
+	return maps.Keys(m.m)
+}

@@ -103,7 +103,7 @@ func modulePath(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Docu
 
 func packageSummaries(snapshot *cache.Snapshot, pkgs immutable.Map[cache.PackageID, cache.PackagePath]) []string {
 	var summaries []string
-	for id := range pkgs.All() {
+	for id := range pkgs.Keys() {
 		mp := snapshot.Metadata(id)
 		if len(mp.CompiledGoFiles) == 0 {
 			continue // For convenience, just skip uncompiled packages; we could do more if it matters.
