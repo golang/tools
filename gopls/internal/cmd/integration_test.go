@@ -23,7 +23,7 @@ package cmd_test
 // - Subcommands that accept -write and -diff flags implement them
 //   consistently; factor their tests.
 // - Add missing test for 'vulncheck' subcommand.
-// - Add tests for client-only commands: serve, bug, help, api-json, licenses.
+// - Add tests for client-only commands: serve, help, api-json, licenses.
 
 import (
 	"bytes"
@@ -871,7 +871,7 @@ package foo
 	oops := fmt.Sprintf("oops-%d", rand.Int())
 	{
 		env := []string{"TEST_GOPLS_BUG=" + oops}
-		res := goplsWithEnv(t, tree, env, "bug")
+		res := goplsWithEnv(t, tree, env, "execute")
 		res.checkExit(true)
 	}
 
@@ -914,8 +914,8 @@ package foo
 	{
 		got := fmt.Sprint(stats.BugReports)
 		wants := []string{
-			"cmd/info.go", // File containing call to bug.Report
-			oops,          // Description
+			"cmd/execute.go", // File containing call to bug.Report
+			oops,             // Description
 		}
 		for _, want := range wants {
 			if !strings.Contains(got, want) {

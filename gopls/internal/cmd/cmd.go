@@ -31,7 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
-	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -266,7 +266,6 @@ func (app *Application) mainCommands() []tool.Application {
 	return []tool.Application{
 		&app.Serve,
 		&version{app: app},
-		&bug{app: app},
 		&help{app: app},
 		&apiJSON{app: app},
 		&licenses{app: app},
@@ -906,7 +905,7 @@ func (f *cmdFile) spanRange(s span) (protocol.Range, error) {
 	// requires querying the file system, and we don't want
 	// to do that.
 	if !strings.EqualFold(f.mapper.URI.Base(), s.URI().Base()) {
-		return protocol.Range{}, bugpkg.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
+		return protocol.Range{}, bug.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
 	}
 	start, err := pointPosition(f.mapper, s.Start())
 	if err != nil {

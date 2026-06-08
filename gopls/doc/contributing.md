@@ -160,14 +160,6 @@ believe "can't happen"?
 Note also that panicking is preferable to `log.Fatal` because it
 allows VS Code's crash reporting to recognize and capture the stack.
 
-Bugs reported through `bug.Errorf` and friends are retrieved using the
-`gopls bug` command, which opens a GitHub Issue template and populates
-it with a summary of each bug and its frequency.
-The text of the bug is rather fastidiously printed to stdout to avoid
-sharing user names and error message strings (which could contain
-project identifiers) with GitHub.
-Users are invited to share it if they are willing.
-
 ## Testing
 
 The normal command you should use to run the tests after a change is:

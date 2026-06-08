@@ -35,7 +35,7 @@ We can't diagnose a problem from just a description. When filing an issue, pleas
 1. The output of `gopls version` on the command line.
 1. A complete gopls log file from a session where the issue occurred. It should have a `go env for <workspace folder>` log line near the beginning. It's also helpful to tell us the timestamp the problem occurred, so we can find it the log. See the [instructions](#capture-logs) for information on how to capture gopls logs.
 
-Your editor may have a command that fills out some of the necessary information, such as `:GoReportGitHubIssue` in `vim-go`. Otherwise, you can use `gopls bug` on the command line. If neither of those work you can start from scratch directly on the [Go issue tracker](https://github.com/golang/go/issues/new?title=x%2Ftools%2Fgopls%3A%20%3Cfill%20this%20in%3E).
+Your editor may have a command that fills out some of the necessary information, such as `:GoReportGitHubIssue` in `vim-go`. Otherwise, use the [Go issue tracker](https://github.com/golang/go/issues/new?title=x%2Ftools%2Fgopls%3A%20%3Cfill%20this%20in%3E).
 
 ## Capture logs
 

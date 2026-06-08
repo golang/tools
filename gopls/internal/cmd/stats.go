@@ -22,7 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/event"
 )
@@ -121,7 +121,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	do("Gathering bug reports", func() error {
 		stats.CacheDir, stats.BugReports = filecache.BugReports()
 		if stats.BugReports == nil {
-			stats.BugReports = []bugpkg.Bug{} // non-nil for JSON
+			stats.BugReports = []bug.Bug{} // non-nil for JSON
 		}
 		return nil
 	})
@@ -206,7 +206,7 @@ type GoplsStats struct {
 	GOPACKAGESDRIVER             string
 	InitialWorkspaceLoadDuration string `anon:"ok"` // in time.Duration string form
 	CacheDir                     string
-	BugReports                   []bugpkg.Bug
+	BugReports                   []bug.Bug
 	MemStats                     command.MemStatsResult       `anon:"ok"`
 	WorkspaceStats               command.WorkspaceStatsResult `anon:"ok"`
 	DirStats                     dirStats                     `anon:"ok"`
