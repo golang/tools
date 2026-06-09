@@ -1,0 +1,30 @@
+Test of 'references' query via interfaces in presence of generic
+methods, which don't participate in interface satisfaction.
+
+Test same-package and cross-package cases,
+since they use different logic.
+
+-- flags --
+-min_go=go1.27
+
+-- go.mod --
+module example.com
+go 1.27
+
+-- a/a.go --
+package a
+
+type C struct{}
+
+func (C) F[T any](T) {} //@ loc(CF, "F"), refs("F", CF)
+
+type I interface {
+	F(int) //@ loc(IF, "F"), refs("F", IF)
+}
+
+-- b/a.go --
+package a
+
+type I interface {
+	F(int) //@ loc(bIF, "F"), refs("F", bIF)
+}

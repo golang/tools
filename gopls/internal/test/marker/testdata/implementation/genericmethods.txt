@@ -1,6 +1,9 @@
 Test of 'implementation' query on generic methods, which don't
 participate in interface satisfaction.
 
+Test same-package and cross-package cases,
+since they use different logic.
+
 -- flags --
 -min_go=go1.27
 
@@ -14,6 +17,14 @@ package a
 type C struct{}
 
 func (C) F[T any](T) {} //@ implementation("F")
+
+type I interface {
+	F(int)
+}
+
+func _[T C]() {
+	var _ T //@ implementation("T")
+}
 
 -- b/a.go --
 package a

@@ -548,10 +548,22 @@ func implements(msets *typeutil.MethodSetCache, x, y types.Type) bool {
 	for method := range ymset.Methods() {
 		ym := method.Obj().(*types.Func)
 
+		// Ignore generic methods, for safety.
+		// This is probably unnecessary since they cannot
+		// appear in a true interface type.
+		// (They can appear in a constraint interface type,
+		// but we shouldn't be called in that case.)
+		if ym.Signature().TypeParams().Len() > 0 {
+			continue
+		}
+
 		xobj, _, _ := types.LookupFieldOrMethod(x, false, ym.Pkg(), ym.Name())
 		xm, ok := xobj.(*types.Func)
 		if !ok {
 			return false // x lacks a method of y
+		}
+		if xm.Signature().TypeParams().Len() > 0 {
+			return false // generic methods do not satisfy interface methods
 		}
 		if !unify(xm.Signature(), ym.Signature(), nil) {
 			return false // signatures do not match
