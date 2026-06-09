@@ -41,7 +41,7 @@ This is method C.Method.
 [`(a.C).Method` on pkg.go.dev](https://pkg.go.dev/example.com/a#C.Method)
 -- @Methodint --
 ```go
-func Method(C[string]) // func[U any]()
+func (C[string]).Method() // func[U any]()
 ```
 
 ---
