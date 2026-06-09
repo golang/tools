@@ -75,13 +75,13 @@ Examples:
 
 1) list sessions for the default daemon:
 
-$ gopls -remote=auto remote sessions
+$ gopls remote sessions -remote=auto
 or just
 $ gopls remote sessions
 
 2) list sessions for a specific daemon:
 
-$ gopls -remote=localhost:8082 remote sessions
+$ gopls remote sessions -remote=localhost:8082
 `
 
 func (c *listSessions) DetailedHelp(f *flag.FlagSet) {
@@ -122,13 +122,13 @@ Examples:
 
 1) start a debug server for the default daemon, on an arbitrary port:
 
-$ gopls -remote=auto remote debug
+$ gopls remote debug -remote=auto
 or just
 $ gopls remote debug
 
 2) start for a specific daemon, on a specific port:
 
-$ gopls -remote=localhost:8082 remote debug localhost:8083
+$ gopls remote debug -remote=localhost:8082 localhost:8083
 `
 
 func (c *startDebugging) DetailedHelp(f *flag.FlagSet) {
