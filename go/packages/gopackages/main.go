@@ -16,48 +16,43 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"runtime/pprof"
+	"runtime/trace"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/drivertest"
-	"golang.org/x/tools/internal/tool"
 )
 
 func main() {
 	drivertest.RunIfChild()
-	tool.Main(context.Background(), &application{Mode: "imports"}, os.Args[1:])
-}
 
-type application struct {
-	// Embed the basic profiling flags supported by the tool package
-	tool.Profile
+	var (
+		cpuprofile   = flag.String("profile.cpu", "", "write CPU profile to this file")
+		memprofile   = flag.String("profile.mem", "", "write memory profile to this file")
+		traceprofile = flag.String("profile.trace", "", "write trace log to this file")
+	)
 
-	Deps       bool            `flag:"deps" help:"show dependencies too"`
-	Test       bool            `flag:"test" help:"include any tests implied by the patterns"`
-	Mode       string          `flag:"mode" help:"mode (one of files, imports, types, syntax, allsyntax)"`
-	Tags       string          `flag:"tags" help:"comma-separated list of extra build tags (see: go help buildconstraint)"`
-	Private    bool            `flag:"private" help:"show non-exported declarations too (if -mode=syntax)"`
-	PrintJSON  bool            `flag:"json" help:"print package in JSON form"`
-	BuildFlags stringListValue `flag:"buildflag" help:"pass argument to underlying build system (may be repeated)"`
-	Driver     bool            `flag:"driver" help:"use golist passthrough driver (for debugging driver issues)"`
-}
+	var (
+		deps       = flag.Bool("deps", false, "show dependencies too")
+		test       = flag.Bool("test", false, "include any tests implied by the patterns")
+		mode       = flag.String("mode", "imports", "mode (one of files, imports, types, syntax, allsyntax)")
+		tags       = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
+		private    = flag.Bool("private", false, "show non-exported declarations too (if -mode=syntax)")
+		printJSON  = flag.Bool("json", false, "print package in JSON form")
+		driver     = flag.Bool("driver", false, "use golist passthrough driver (for debugging driver issues)")
+		buildFlags stringListValue
+	)
+	flag.Var(&buildFlags, "buildflag", "pass argument to underlying build system (may be repeated)")
 
-// Name implements tool.Application returning the binary name.
-func (app *application) Name() string { return "gopackages" }
+	flag.Usage = func() {
+		fmt.Fprint(flag.CommandLine.Output(), `gopackages loads, parses, type-checks, and prints one or more Go packages.
 
-// Usage implements tool.Application returning empty extra argument usage.
-func (app *application) Usage() string { return "package..." }
+Usage:
+  gopackages [flags] package...
 
-// ShortHelp implements tool.Application returning the main binary help.
-func (app *application) ShortHelp() string {
-	return "gopackages loads, parses, type-checks, and prints one or more Go packages."
-}
-
-// DetailedHelp implements tool.Application returning the main binary help.
-func (app *application) DetailedHelp(f *flag.FlagSet) {
-	fmt.Fprint(f.Output(), `
 Packages are specified using the notation of "go list",
 or other underlying build system.
 
@@ -78,30 +73,67 @@ the legal values are:
 
 Flags:
 `)
-	f.PrintDefaults()
-}
-
-// Run takes the args after flag processing and performs the specified query.
-func (app *application) Run(ctx context.Context, args ...string) error {
-	if len(args) == 0 {
-		return tool.CommandLineErrorf("not enough arguments")
+		flag.PrintDefaults()
 	}
 
+	flag.Parse()
+	if flag.NArg() == 0 {
+		flag.Usage()
+		os.Exit(2)
+	}
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
+	if *traceprofile != "" {
+		f, err := os.Create(*traceprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		trace.Start(f)
+		defer trace.Stop()
+	}
+
+	if *memprofile != "" {
+		defer func() {
+			f, err := os.Create(*memprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.WriteHeapProfile(f)
+			f.Close()
+		}()
+	}
+
+	if err := run(context.Background(), flag.Args(), *deps, *test, *mode, *tags, *private, *printJSON, *driver, buildFlags); err != nil {
+		fmt.Fprintf(os.Stderr, "gopackages: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, args []string, deps, test bool, mode, tags string, private, printJSON, driver bool, buildFlags []string) error {
 	env := os.Environ()
-	if app.Driver {
+	if driver {
 		env = append(env, drivertest.Env(log.Default())...)
 	}
 
 	// Load, parse, and type-check the packages named on the command line.
 	cfg := &packages.Config{
 		Mode:       packages.LoadSyntax,
-		Tests:      app.Test,
-		BuildFlags: append([]string{"-tags=" + app.Tags}, app.BuildFlags...),
+		Tests:      test,
+		BuildFlags: append([]string{"-tags=" + tags}, buildFlags...),
 		Env:        env,
+		Context:    ctx,
 	}
 
 	// -mode flag
-	switch strings.ToLower(app.Mode) {
+	switch strings.ToLower(mode) {
 	case "files":
 		cfg.Mode = packages.LoadFiles
 	case "imports":
@@ -113,7 +145,7 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	case "allsyntax":
 		cfg.Mode = packages.LoadAllSyntax
 	default:
-		return tool.CommandLineErrorf("invalid mode: %s", app.Mode)
+		return fmt.Errorf("invalid mode: %s", mode)
 	}
 	cfg.Mode |= packages.NeedModule
 
@@ -123,7 +155,7 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	}
 
 	// -deps: print dependencies too.
-	if app.Deps {
+	if deps {
 		// We can't use packages.All because
 		// we need an ordered traversal.
 		var all []*packages.Package // postorder
@@ -153,13 +185,13 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	}
 
 	for _, lpkg := range lpkgs {
-		app.print(lpkg)
+		printPkg(lpkg, printJSON, private)
 	}
 	return nil
 }
 
-func (app *application) print(lpkg *packages.Package) {
-	if app.PrintJSON {
+func printPkg(lpkg *packages.Package, printJSON, private bool) {
+	if printJSON {
 		data, _ := json.MarshalIndent(lpkg, "", "\t")
 		os.Stdout.Write(data)
 		return
@@ -225,14 +257,14 @@ func (app *application) print(lpkg *packages.Package) {
 		scope := lpkg.Types.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
-			if !obj.Exported() && !app.Private {
+			if !obj.Exported() && !private {
 				continue // skip unexported names
 			}
 
 			fmt.Printf("\t%s\n", types.ObjectString(obj, qual))
 			if _, ok := obj.(*types.TypeName); ok {
 				for _, meth := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
-					if !meth.Obj().Exported() && !app.Private {
+					if !meth.Obj().Exported() && !private {
 						continue // skip unexported names
 					}
 					fmt.Printf("\t%s\n", types.SelectionString(meth, qual))
