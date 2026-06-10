@@ -46,10 +46,12 @@ type Application struct {
 	// Embed the basic profiling flags supported by the tool package
 	tool.Profile
 
-	// We include the server configuration directly for now, so the flags work
-	// even without the verb.
-	// TODO: Remove this when we stop allowing the serve verb by default.
-	serve Serve
+	// serve holds the state needed by the gopls serve subcommand.
+	// This is in this struct due to historical reasons.
+	// `flag:"-"` tells the reflection-based flag parser to ignore this field;
+	// instead, the dispatch function explicitly registers and parses serve flags.
+	// TODO: Remove serve from Application.
+	serve Serve `flag:"-"`
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)

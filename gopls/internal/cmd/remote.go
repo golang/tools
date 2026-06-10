@@ -18,7 +18,6 @@ import (
 )
 
 type remote struct {
-	RemoteFlag
 	app *Application
 	subcommands
 

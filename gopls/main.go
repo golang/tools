@@ -19,7 +19,6 @@ import (
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/tool"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 )
 
@@ -52,5 +51,5 @@ func main() {
 	}
 
 	ctx := context.Background()
-	tool.Main(ctx, cmd.New(), os.Args[1:])
+	cmd.Main(ctx, os.Args[1:])
 }

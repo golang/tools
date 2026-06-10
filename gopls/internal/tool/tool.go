@@ -48,6 +48,8 @@ type Profile struct {
 }
 
 // Application is the interface that must be satisfied by an object passed to Main.
+//
+// TODO(hyangah): Rename Application to Command, and embed Command within SubCommand to clarify structure.
 type Application interface {
 	// Name returns the application's name. It is used in help and error messages.
 	Name() string
@@ -77,30 +79,17 @@ type commandLineError string
 
 func (e commandLineError) Error() string { return string(e) }
 
+// IsCommandLineError reports whether the error was created by [CommandLineErrorf].
+func IsCommandLineError(err error) bool {
+	_, ok := err.(commandLineError)
+	return ok
+}
+
 // CommandLineErrorf is like fmt.Errorf except that it returns a value that
 // triggers printing of the command line help.
 // In general you should use this when generating command line validation errors.
 func CommandLineErrorf(message string, args ...any) error {
 	return commandLineError(fmt.Sprintf(message, args...))
-}
-
-// Main should be invoked directly by main function.
-// It will only return if there was no error.  If an error
-// was encountered it is printed to standard error and the
-// application exits with an exit code of 2.
-func Main(ctx context.Context, app Application, args []string) {
-	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-	if err := Run(ctx, s, app, args); err != nil {
-		fmt.Fprintf(s.Output(), "%s: %v\n", app.Name(), err)
-		if _, printHelp := err.(commandLineError); printHelp {
-			// TODO(adonovan): refine this. It causes
-			// any command-line error to result in the full
-			// usage message, which typically obscures
-			// the actual error.
-			s.Usage()
-		}
-		os.Exit(2)
-	}
 }
 
 // Run is the inner loop for Main; invoked by Main, recursively by
@@ -122,11 +111,17 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (
 		}
 		app.DetailedHelp(s)
 	}
-	p := addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
+	addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
 	if err := s.Parse(args); err != nil {
 		return err
 	}
 
+	return RunWithProfile(ctx, app, s.Args(), nil)
+}
+
+// RunWithProfile executes the application inside the profiling and error handling harness.
+// It assumes flags have already been parsed.
+func RunWithProfile(ctx context.Context, app Application, args []string, p *Profile) (resultErr error) {
 	if p != nil && p.CPU != "" {
 		f, err := os.Create(p.CPU)
 		if err != nil {
@@ -209,20 +204,23 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (
 		}()
 	}
 
-	return app.Run(ctx, s.Args()...)
+	return app.Run(ctx, args...)
 }
 
 // addFlags scans fields of structs recursively to find things with flag tags
 // and add them to the flag set.
-func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *Profile {
+func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) {
 	// is it a field we are allowed to reflect on?
 	if field.PkgPath != "" {
-		return nil
+		return
 	}
 	// now see if is actually a flag
 	flagNames, isFlag := field.Tag.Lookup("flag")
 	help := field.Tag.Get("help")
 	if isFlag {
+		if flagNames == "-" {
+			return
+		}
 		nameList := strings.Split(flagNames, ",")
 		// add the main flag
 		addFlag(f, value, nameList[0], help)
@@ -233,17 +231,14 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 				f.Var(fv, flagName, help)
 			}
 		}
-		return nil
+		return
 	}
 	// not a flag, but it might be a struct with flags in it
 	value = resolve(value.Elem())
 	if value.Kind() != reflect.Struct {
-		return nil
+		return
 	}
 
-	// TODO(adonovan): there's no need for this special treatment of Profile:
-	// The caller can use f.Lookup("profile.cpu") etc instead.
-	p, _ := value.Addr().Interface().(*Profile)
 	// go through all the fields of the struct
 	for i := 0; i < value.Type().NumField(); i++ {
 		child := value.Type().Field(i)
@@ -253,11 +248,13 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 			v = v.Addr()
 		}
 		// check if that field is a flag or contains flags
-		if fp := addFlags(f, child, v); fp != nil {
-			p = fp
-		}
+		addFlags(f, child, v)
 	}
-	return p
+}
+
+// AddFlags registers the flags defined in the app struct onto the FlagSet.
+func AddFlags(f *flag.FlagSet, app Application) {
+	addFlags(f, reflect.StructField{}, reflect.ValueOf(app))
 }
 
 func addFlag(f *flag.FlagSet, value reflect.Value, flagName string, help string) {

@@ -27,7 +27,7 @@ import (
 )
 
 // Serve is a struct that exposes the configurable parts of the LSP and MCP
-// server as flags, in the right form for tool.Main to consume.
+// server as flags, in the right form for cmd.Main to consume.
 type Serve struct {
 	RemoteFlag
 	Logfile     string        `flag:"logfile" help:"filename to log to. if value is \"auto\", then logging to a default output file is enabled"`
