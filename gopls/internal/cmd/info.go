@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/doc"
 	licensespkg "golang.org/x/tools/gopls/internal/licenses"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // help implements the help command.

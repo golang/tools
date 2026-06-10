@@ -21,9 +21,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/fakenet"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/tool"
 )
 
 // Serve is a struct that exposes the configurable parts of the LSP and MCP

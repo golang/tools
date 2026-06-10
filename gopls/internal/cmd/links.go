@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // links implements the links verb for gopls.

@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // foldingRanges implements the folding_ranges verb for gopls

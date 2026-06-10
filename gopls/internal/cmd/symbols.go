@@ -12,7 +12,7 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // symbols implements the symbols verb for gopls

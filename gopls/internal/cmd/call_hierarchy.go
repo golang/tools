@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // callHierarchy implements the callHierarchy verb for gopls.

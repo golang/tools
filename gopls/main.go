@@ -19,8 +19,8 @@ import (
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cmd"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/tool"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
-	"golang.org/x/tools/internal/tool"
 )
 
 var version = "" // if set by the linker, overrides the gopls version

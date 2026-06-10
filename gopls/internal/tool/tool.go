@@ -20,7 +20,6 @@ import (
 )
 
 // This file is a harness for writing your main function.
-// The original version of the file is in golang.org/x/tools/internal/tool.
 //
 // It adds a method to the Application type
 //     Main(name, usage string, args []string)

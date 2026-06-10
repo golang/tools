@@ -30,12 +30,12 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/tool"
 )
 
 // Application is the main application as passed to tool.Main

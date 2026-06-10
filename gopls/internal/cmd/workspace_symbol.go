@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // workspaceSymbol implements the workspace_symbol verb for gopls.

@@ -16,8 +16,8 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/tool"
 )
 
 // execute implements the LSP ExecuteCommand verb for gopls.

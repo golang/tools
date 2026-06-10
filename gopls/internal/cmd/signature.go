@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // signature implements the signature verb for gopls
