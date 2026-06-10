@@ -18,6 +18,7 @@ import (
 // workspaceSymbol implements the workspace_symbol verb for gopls.
 type workspaceSymbol struct {
 	Matcher string `flag:"matcher" help:"specifies the type of matcher: fuzzy, fastfuzzy, casesensitive, or caseinsensitive.\nThe default is caseinsensitive."`
+	CommonFlags
 
 	app *Application
 }
@@ -59,7 +60,7 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	cli, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
 	if err != nil {
 		return err
 	}

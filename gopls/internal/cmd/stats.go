@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/event"
@@ -29,7 +30,7 @@ import (
 
 type stats struct {
 	app *Application
-
+	CommonFlags
 	Anon bool `flag:"anon" help:"hide any fields that may contain user names, file names, or source code"`
 }
 
@@ -55,12 +56,14 @@ Example:
 }
 
 func (s *stats) Run(ctx context.Context, args ...string) error {
-	if s.app.Remote != "" {
-		// stats does not work with -remote.
-		// Other sessions on the daemon may interfere with results.
-		// Additionally, the type assertions in below only work if progress
-		// notifications bypass jsonrpc2 serialization.
-		return fmt.Errorf("the stats subcommand does not work with -remote")
+	// stats does not work with -remote yet.
+	// Other sessions on the daemon may interfere with results.
+	// Additionally, the type assertions in below only work if progress
+	// notifications bypass jsonrpc2 serialization.
+	// TODO(hyangah): support remote mode by fetching server-side
+	// statistics and avoiding hangs during InitialWorkspaceLoad.
+	if s.Remote != "" {
+		return tool.CommandLineErrorf("stats does not currently support remote mode")
 	}
 
 	if !s.app.Verbose {
@@ -98,7 +101,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	var cli *client
 	iwlDuration, err := do("Initializing workspace", func() (err error) {
-		cli, _, err = s.app.connect(ctx)
+		cli, _, err = s.app.connect(ctx, s.RemoteFlag)
 		if err != nil {
 			return err
 		}

@@ -49,13 +49,10 @@ type Application struct {
 	// We include the server configuration directly for now, so the flags work
 	// even without the verb.
 	// TODO: Remove this when we stop allowing the serve verb by default.
-	Serve Serve
+	serve Serve
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)
-
-	// Support for remote LSP server.
-	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
 
 	// Verbose enables verbose logging.
 	Verbose bool `flag:"v,verbose" help:"verbose output"`
@@ -91,6 +88,42 @@ type EditFlags struct {
 	List     bool `flag:"l,list" help:"display names of edited files"`
 }
 
+// CommonFlags defines the flags that apply to all gopls subcommands.
+// This is distinct from Application, which contains flags that apply to the
+// primary gopls command itself (such as profiling or verbose output).
+type CommonFlags struct {
+	RemoteFlag // most subcommands support -remote.
+}
+
+// RemoteFlag defines the set of flags for the forward mode.
+type RemoteFlag struct {
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
+
+	// The following flags are used with -remote=auto mode.
+	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
+	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon (default 1m0s)"`
+	RemoteLogfile       string        `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
+}
+
+func (r *RemoteFlag) remoteArgs(network, address string) []string {
+	args := []string{
+		"serve",
+		"-listen", fmt.Sprintf(`%s;%s`, network, address),
+	}
+	if r.RemoteDebug != "" {
+		args = append(args, "-debug", r.RemoteDebug)
+	}
+	timeout := r.RemoteListenTimeout
+	if timeout == 0 {
+		timeout = 1 * time.Minute
+	}
+	args = append(args, "-listen.timeout", timeout.String())
+	if r.RemoteLogfile != "" {
+		args = append(args, "-logfile", r.RemoteLogfile)
+	}
+	return args
+}
+
 func (app *Application) verbose() bool {
 	return app.Verbose || app.VeryVerbose
 }
@@ -98,11 +131,11 @@ func (app *Application) verbose() bool {
 // New returns a new Application ready to run.
 func New() *Application {
 	app := &Application{
-		Serve: Serve{
-			RemoteListenTimeout: 1 * time.Minute,
+		serve: Serve{
+			RemoteFlag: RemoteFlag{},
 		},
 	}
-	app.Serve.app = app
+	app.serve.app = app
 	return app
 }
 
@@ -239,7 +272,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 	ctx = debug.WithInstance(ctx, app.OTel)
 	if len(args) == 0 {
 		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-		return tool.Run(ctx, s, &app.Serve, args)
+		return tool.Run(ctx, s, &app.serve, args)
 	}
 	command, args := args[0], args[1:]
 	for _, c := range app.Commands() {
@@ -264,7 +297,7 @@ func (app *Application) Commands() []tool.Application {
 
 func (app *Application) mainCommands() []tool.Application {
 	return []tool.Application{
-		&app.Serve,
+		&app.serve,
 		&version{app: app},
 		&help{app: app},
 		&apiJSON{app: app},
@@ -309,7 +342,7 @@ func (app *Application) featureCommands() []tool.Application {
 }
 
 // connect creates and initializes a new in-process gopls LSP session.
-func (app *Application) connect(ctx context.Context) (*client, *cache.Session, error) {
+func (app *Application) connect(ctx context.Context, remote RemoteFlag) (*client, *cache.Session, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, nil, fmt.Errorf("finding workdir: %v", err)
@@ -320,14 +353,14 @@ func (app *Application) connect(ctx context.Context) (*client, *cache.Session, e
 		svr  protocol.Server
 		sess *cache.Session
 	)
-	if app.Remote == "" {
+	if remote.Remote == "" {
 		// local
 		sess = cache.NewSession(ctx, cache.New(nil))
 		svr = server.New(sess, client, options)
 		ctx = protocol.WithClient(ctx, client)
 	} else {
 		// remote
-		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
+		netConn, err := lsprpc.ConnectToRemote(ctx, remote.Remote)
 		if err != nil {
 			return nil, nil, err
 		}

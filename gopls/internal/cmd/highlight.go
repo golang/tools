@@ -16,6 +16,7 @@ import (
 // highlight implements the highlight verb for gopls.
 type highlight struct {
 	app *Application
+	CommonFlags
 }
 
 func (r *highlight) Name() string      { return "highlight" }
@@ -38,7 +39,7 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("highlight expects 1 argument (position)")
 	}
 
-	cli, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
 	if err != nil {
 		return err
 	}

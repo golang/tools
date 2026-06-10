@@ -18,6 +18,7 @@ import (
 )
 
 type remote struct {
+	RemoteFlag
 	app *Application
 	subcommands
 
@@ -60,6 +61,7 @@ func (r *remote) ShortHelp() string {
 // listSessions is an inspect subcommand to list current sessions.
 type listSessions struct {
 	app *Application
+	RemoteFlag
 }
 
 func (c *listSessions) Name() string   { return "sessions" }
@@ -89,7 +91,7 @@ func (c *listSessions) DetailedHelp(f *flag.FlagSet) {
 }
 
 func (c *listSessions) Run(ctx context.Context, args ...string) error {
-	remote := c.app.Remote
+	remote := c.Remote
 	if remote == "" {
 		remote = "auto"
 	}
@@ -107,6 +109,7 @@ func (c *listSessions) Run(ctx context.Context, args ...string) error {
 
 type startDebugging struct {
 	app *Application
+	RemoteFlag
 }
 
 func (c *startDebugging) Name() string  { return "debug" }
@@ -139,7 +142,7 @@ func (c *startDebugging) Run(ctx context.Context, args ...string) error {
 		fmt.Fprintln(os.Stderr, c.Usage())
 		return errors.New("invalid usage")
 	}
-	remote := c.app.Remote
+	remote := c.Remote
 	if remote == "" {
 		remote = "auto"
 	}

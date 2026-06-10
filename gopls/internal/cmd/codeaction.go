@@ -18,6 +18,7 @@ import (
 
 // codeaction implements the codeaction verb for gopls.
 type codeaction struct {
+	CommonFlags
 	EditFlags
 	Kind  string `flag:"kind" help:"comma-separated list of code action kinds to filter"`
 	Title string `flag:"title" help:"regular expression to match title"`
@@ -108,7 +109,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("codeaction expects at least 1 argument")
 	}
 	cmd.app.editFlags = &cmd.EditFlags
-	cli, _, err := cmd.app.connect(ctx)
+	cli, _, err := cmd.app.connect(ctx, cmd.RemoteFlag)
 	if err != nil {
 		return err
 	}

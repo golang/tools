@@ -15,6 +15,7 @@ import (
 
 // imports implements the import verb for gopls.
 type imports struct {
+	CommonFlags
 	EditFlags
 	app *Application
 }
@@ -43,7 +44,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("imports expects 1 argument")
 	}
 	t.app.editFlags = &t.EditFlags
-	cli, _, err := t.app.connect(ctx)
+	cli, _, err := t.app.connect(ctx, t.RemoteFlag)
 	if err != nil {
 		return err
 	}

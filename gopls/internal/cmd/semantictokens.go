@@ -44,6 +44,7 @@ import (
 
 type semanticToken struct {
 	app *Application
+	CommonFlags
 }
 
 func (c *semanticToken) Name() string      { return "semtok" }
@@ -73,7 +74,7 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 		}
 		opts.SemanticTokens = true
 	}
-	cli, _, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx, c.RemoteFlag)
 	if err != nil {
 		return err
 	}

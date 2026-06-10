@@ -22,6 +22,7 @@ import (
 
 // execute implements the LSP ExecuteCommand verb for gopls.
 type execute struct {
+	CommonFlags
 	EditFlags
 	app *Application
 }
@@ -83,7 +84,7 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 	e.app.editFlags = &e.EditFlags // in case command performs an edit
 
-	cli, _, err := e.app.connect(ctx)
+	cli, _, err := e.app.connect(ctx, e.RemoteFlag)
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,7 @@ import (
 // symbols implements the symbols verb for gopls
 type symbols struct {
 	app *Application
+	CommonFlags
 }
 
 func (r *symbols) Name() string      { return "symbols" }
@@ -36,7 +37,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("symbols expects 1 argument (position)")
 	}
 
-	cli, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
 	if err != nil {
 		return err
 	}

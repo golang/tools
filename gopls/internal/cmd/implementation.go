@@ -17,6 +17,7 @@ import (
 // implementation implements the implementation verb for gopls
 type implementation struct {
 	app *Application
+	CommonFlags
 }
 
 func (i *implementation) Name() string      { return "implementation" }
@@ -39,7 +40,7 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("implementation expects 1 argument (position)")
 	}
 
-	cli, _, err := i.app.connect(ctx)
+	cli, _, err := i.app.connect(ctx, i.RemoteFlag)
 	if err != nil {
 		return err
 	}

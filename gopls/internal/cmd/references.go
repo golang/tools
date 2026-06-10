@@ -17,6 +17,7 @@ import (
 // references implements the references verb for gopls
 type references struct {
 	IncludeDeclaration bool `flag:"d,declaration" help:"include the declaration of the specified identifier in the results"`
+	CommonFlags
 
 	app *Application
 }
@@ -43,7 +44,7 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("references expects 1 argument (position)")
 	}
 
-	cli, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
 	if err != nil {
 		return err
 	}

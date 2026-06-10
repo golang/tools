@@ -17,6 +17,7 @@ import (
 // prepareRename implements the prepare_rename verb for gopls.
 type prepareRename struct {
 	app *Application
+	CommonFlags
 }
 
 func (r *prepareRename) Name() string      { return "prepare_rename" }
@@ -43,7 +44,7 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("prepare_rename expects 1 argument (file)")
 	}
 
-	cli, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
 	if err != nil {
 		return err
 	}
