@@ -3019,6 +3019,9 @@ func main() {
 	}
 }
 
+// TestConfigEnvDoesNotInheritProcessEnv tests that when Config.Env is non-nil
+// and doesn't contain os.Environ(), packages.Load doesn't inherit the process
+// environment.
 func TestConfigEnvDoesNotInheritProcessEnv(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
@@ -3044,6 +3047,7 @@ package p
 		Dir:  dir,
 		Mode: packages.NeedFiles,
 		Env: []string{
+			"PATH=" + os.Getenv("PATH"),
 			"GOCACHE=" + t.TempDir(),
 			"GOPACKAGESDRIVER=off",
 			"GOWORK=off",
