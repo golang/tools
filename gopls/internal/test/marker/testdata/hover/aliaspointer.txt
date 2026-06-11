@@ -1,0 +1,85 @@
+This test verifies the behavior of hovering over a promoted field through an
+alias to a pointer to a struct type.
+
+-- go.mod --
+module example.com
+
+-- main.go --
+package main
+
+type U struct {
+	X int
+}
+
+type T struct {
+	U
+}
+
+type A = *T
+
+type S struct {
+	A
+}
+
+type A1 = U
+type S1 struct {
+	A1
+}
+
+type A2 = U
+type S2 struct {
+	*A2
+}
+
+type A3_1 = *T
+type A3_2 = A3_1
+type S3 struct {
+	A3_2
+}
+
+func main() {
+	var s S
+	_ = s.X //@hover("X", "X", X)
+
+	var s1 S1
+	_ = s1.X //@hover("X", "X", X1)
+
+	var s2 S2
+	_ = s2.X //@hover("X", "X", X2)
+
+	var s3 S3
+	_ = s3.X //@hover("X", "X", X3)
+}
+
+-- @X --
+```go
+field X int // through A, U
+```
+
+---
+
+[`(main.U).X` on pkg.go.dev](https://pkg.go.dev/example.com#U.X)
+-- @X1 --
+```go
+field X int // through A1
+```
+
+---
+
+[`(main.U).X` on pkg.go.dev](https://pkg.go.dev/example.com#U.X)
+-- @X2 --
+```go
+field X int // through *A2
+```
+
+---
+
+[`(main.U).X` on pkg.go.dev](https://pkg.go.dev/example.com#U.X)
+-- @X3 --
+```go
+field X int // through A3_2, U
+```
+
+---
+
+[`(main.U).X` on pkg.go.dev](https://pkg.go.dev/example.com#U.X)

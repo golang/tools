@@ -467,21 +467,17 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 			if sel, ok := pkg.TypesInfo().Selections[selExpr]; ok && len(sel.Index()) > 1 {
 				var s strings.Builder
 				s.WriteString(" // through ")
-				t := typesinternal.Unpointer(sel.Recv())
+				t := sel.Recv()
 				for i, index := range sel.Index()[:len(sel.Index())-1] {
-					if _, ok := t.Underlying().(*types.Struct); !ok {
+					structType, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct)
+					if !ok {
 						break
 					}
 					if i > 0 {
 						s.WriteString(", ")
 					}
-					field := typesinternal.Unpointer(t.Underlying()).(*types.Struct).Field(index)
+					field := structType.Field(index)
 					t = field.Type()
-					// Inv: fieldType is N or *N for some NamedOrAlias type N.
-					if ptr, ok := t.(*types.Pointer); ok {
-						s.WriteString("*")
-						t = ptr.Elem()
-					}
 					s.WriteString(types.TypeString(t, qual))
 				}
 				// Update signature to include embedded struct info.
