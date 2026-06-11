@@ -166,7 +166,8 @@ outer:
 		if typesinternal.IsFunctionNamed(obj, "fmt", "Print", "Printf", "Println", "Fprint", "Fprintf", "Fprintln") ||
 			typesinternal.IsMethodNamed(obj, "bytes", "Buffer", "Write", "WriteByte", "WriteRune", "WriteString") ||
 			typesinternal.IsMethodNamed(obj, "strings", "Builder", "Write", "WriteByte", "WriteRune", "WriteString") ||
-			typesinternal.IsFunctionNamed(obj, "io", "WriteString") {
+			typesinternal.IsFunctionNamed(obj, "io", "WriteString") ||
+			typesinternal.IsMethodNamed(obj, "hash/maphash", "Hash", "Write", "WriteByte", "WriteString") {
 			continue
 		}
 
