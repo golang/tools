@@ -703,7 +703,12 @@ func main() {
 	opts := []RunOption{
 		EnvVars{"GOMODCACHE": modcache},
 		ProxyFiles(ardanLabsProxy),
-		//WriteGoSum("."), // TODO(golang/go#74594): uncommenting this causes mysterious failure; investigate and make the error clearer (go list?)
+		// WriteGoSum() cannot be uncommented because it has a side effect
+		// that breaks the test. The test relies on go.mod not having a
+		// require statement for the package imported by main.go. However
+		// WriteGoSum() causes the execution of go list -mod=mod ./...
+		// which both writes go.sum and adds the require statement to go.mod.
+		//WriteGoSum("."),
 	}
 
 	t.Run("setup", func(t *testing.T) {
