@@ -10,46 +10,73 @@ type A string
 
 type B[T any] int
 
+type tokenKind int
+
+type namedStruct struct{ field int }
+
+type Fn func([4]byte)
+
+const arrayLen = 4
+
+func helper(a int, b string) {}
+
 var (
-	x any
-	a A
-	b B[int]
-	_ = reflect.TypeOf(x)                // nope (dynamic)
-	_ = reflect.TypeFor[int]()           // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(nil)              // nope (likely a mistake)
-	_ = reflect.TypeFor[uint]()          // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(error(nil))       // nope (likely a mistake)
-	_ = reflect.TypeFor[*error]()        // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeOf(io.Reader(nil))   // nope (likely a mistake)
-	_ = reflect.TypeOf((io.Reader)(nil)) // nope (likely a mistake)
-	_ = reflect.TypeFor[*io.Reader]()    // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[time.Time]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[time.Time]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[time.Duration]() // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[*A]()            // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[*B[int]]()       // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[*io.Reader]()    // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[io.Reader]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[int]()     // want "reflect.TypeOf call can be simplified using TypeFor"
-	_ = reflect.TypeFor[int]()     // want "reflect.TypeOf call can be simplified using TypeFor"
+	x     any
+	a     A
+	b     B[int]
+	token tokenKind
+	named = namedStruct{field: 1}
+	ptr   = &named
+	_     = reflect.TypeOf(x)                               // nope (dynamic)
+	_     = reflect.TypeFor[int]()                          // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(nil)                             // nope (likely a mistake)
+	_     = reflect.TypeFor[uint]()                         // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(error(nil))                      // nope (likely a mistake)
+	_     = reflect.TypeFor[*error]()                       // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(io.Reader(nil))                  // nope (likely a mistake)
+	_     = reflect.TypeOf((io.Reader)(nil))                // nope (likely a mistake)
+	_     = reflect.TypeFor[*io.Reader]()                   // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[time.Time]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[time.Time]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[time.Duration]()                // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(&a)                              // nope (mentions symbol a)
+	_     = reflect.TypeOf(&b)                              // nope (mentions symbol b)
+	_     = reflect.TypeFor[tokenKind]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[namedStruct]()                  // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[[4]byte]()                      // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[*[4]byte]()                     // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[[4]byte]()                      // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(helper)                          // nope (mentions symbol helper)
+	_     = reflect.TypeOf(token)                           // nope (mentions symbol token)
+	_     = reflect.TypeOf(named.field)                     // nope (mentions symbols named and field)
+	_     = reflect.TypeOf(ptr).Elem()                      // nope (mentions symbol ptr)
+	_     = reflect.TypeOf([arrayLen]byte{})                // nope (mentions symbol arrayLen)
+	_     = reflect.TypeOf((*[arrayLen]byte)(nil))          // nope (mentions symbol arrayLen)
+	_     = reflect.TypeOf(any([4]byte{}).([arrayLen]byte)) // nope (mentions symbol arrayLen)
+	_     = reflect.TypeOf(Fn(func([arrayLen]byte) {}))     // nope (mentions symbol arrayLen, in a func literal)
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[*io.Reader]()                   // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[io.Reader]()                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[int]()                          // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeFor[int]()                          // want "reflect.TypeOf call can be simplified using TypeFor"
 )
 
-// Eliminate local var if we deleted its last use.
+// Preserve local variables used as symbolic stand-ins.
 func _() {
 	// Test for shadowed nil
 	nil := "nil"
-	_ = reflect.TypeFor[string]() // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(nil) // nope (mentions symbol nil)
 	_ = nil                 // shadowed nil has multiple uses
- 	
-	_ = reflect.TypeFor[string]() // want "reflect.TypeOf call can be simplified using TypeFor"
+
+	var zero string
+	_ = reflect.TypeOf(zero) // nope (mentions symbol zero)
 
 	var z2 string
-	_ = reflect.TypeFor[string]() // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = reflect.TypeOf(z2) // nope (mentions symbol z2)
 	_ = z2                 // z2 has multiple uses
 }
 
