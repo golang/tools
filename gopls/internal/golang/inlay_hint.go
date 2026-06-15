@@ -200,8 +200,14 @@ outer:
 func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
 	for curCall := range cur.Preorder((*ast.CallExpr)(nil)) {
 		call := curCall.Node().(*ast.CallExpr)
-		id, ok := call.Fun.(*ast.Ident)
-		if !ok {
+		var id *ast.Ident
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			id = fun
+		case *ast.SelectorExpr: // imported function
+			id = fun.Sel
+		}
+		if id == nil {
 			continue
 		}
 		inst := info.Instances[id]
@@ -214,7 +220,7 @@ func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 		}
 		var args []string
 		for t := range inst.TypeArgs.Types() {
-			args = append(args, t.String())
+			args = append(args, types.TypeString(t, qual))
 		}
 		if len(args) == 0 {
 			continue

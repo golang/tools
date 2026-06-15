@@ -15,6 +15,11 @@
 	}
 }
 
+-- go.mod --
+module example.com
+
+go 1.24
+
 -- composite_literals.go --
 package inlayHint //@inlayhints(complit)
 
@@ -274,6 +279,8 @@ func foobar() {
 -- type_params.go --
 package inlayHint //@inlayhints(typeparams)
 
+import "example.com/other"
+
 func main() {
 	ints := map[string]int64{
 		"first":  34,
@@ -293,6 +300,9 @@ func main() {
 
 	SumNumbers(ints)
 	SumNumbers(floats)
+
+	other.Bar(ints)
+	other.Bar(other.Foo{})
 }
 
 type Number interface {
@@ -318,6 +328,8 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 -- @typeparams --
 package inlayHint //@inlayhints(typeparams)
 
+import "example.com/other"
+
 func main() {
 	ints< map[string]int64> := map[string]int64{
 		"first":  34,
@@ -337,6 +349,9 @@ func main() {
 
 	SumNumbers<[string, int64]>(<m: >ints)
 	SumNumbers<[string, float64]>(<m: >floats)
+
+	other.Bar<[map[string]int64]>(<x: >ints)
+	other.Bar<[other.Foo]>(<x: >other.Foo{})
 }
 
 type Number interface {
@@ -407,3 +422,9 @@ func compositeLitType() {
 	foo< map[string]any> := map[string]any{"": ""}
 }
 
+-- other/other.go --
+package other
+
+type Foo struct{}
+
+func Bar[T any](x T) {}
