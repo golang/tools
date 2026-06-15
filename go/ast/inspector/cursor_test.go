@@ -542,6 +542,33 @@ func TestCursor_FindByPos(t *testing.T) {
 	}
 }
 
+func TestCursor_GoString(t *testing.T) {
+	const src = `package a
+func f()
+func g() {
+	print("goodbye")
+}
+`
+	fset := token.NewFileSet()
+	file, _ := parser.ParseFile(fset, "a.go", src, 0)
+	root := inspector.New([]*ast.File{file}).Root()
+
+	// Find sole (string) literal.
+	var curLit inspector.Cursor
+	for cur := range root.Preorder((*ast.BasicLit)(nil)) {
+		curLit = cur
+	}
+	got := curLit.GoString()
+	want := "File.Decls[1].(*ast.FuncDecl).Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr).Args[0].(*ast.BasicLit)"
+	if got != want {
+		t.Errorf("GoString = %q, want %s", got, want)
+	}
+
+	if file.Decls[1].(*ast.FuncDecl).Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr).Args[0].(*ast.BasicLit) != curLit.Node() {
+		t.Errorf("GoString path was inaccurate")
+	}
+}
+
 func is[T any](x any) bool {
 	_, ok := x.(T)
 	return ok

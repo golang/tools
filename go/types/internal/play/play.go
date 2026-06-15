@@ -169,10 +169,10 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// cases (e.g. around FuncType.Func).
 	curFile, _ := inspector.New([]*ast.File{file}).Root().FirstChild()
 	if cur, ok := curFile.FindByPos(startPos, endPos); ok {
-		fmt.Fprintf(out, "Cursor.FindByPos().Enclosing() = %v\n",
-			slices.Collect(cur.Enclosing()))
+		fmt.Fprintf(out, "Cursor.GoString = %#v\n", cur)
+		fmt.Fprintf(out, "Cursor.Enclosing = %v\n", slices.Collect(cur.Enclosing()))
 	} else {
-		fmt.Fprintf(out, "Cursor.FindPos() failed\n")
+		fmt.Fprintf(out, "Cursor.FindPos failed\n")
 	}
 	// And show the astutil.Select result (enclosing, leftmost & rightmost enclosed).
 	if curEnclosing, curStart, curEnd, err := astutil.Select(curFile, startPos, endPos); err == nil {
