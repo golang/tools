@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor"
@@ -87,10 +88,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 			pkgForRef[ref] = md.ID
 			needPkgs[md.ID] = struct{}{}
 		}
-		var pkgIDs []PackageID
-		for id := range needPkgs { // TODO: use maps.Keys once it is available to us
-			pkgIDs = append(pkgIDs, id)
-		}
+		pkgIDs := moremaps.KeySlice(needPkgs)
 
 		refPkgs, err := snapshot.TypeCheck(ctx, pkgIDs...)
 		if err != nil {

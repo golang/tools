@@ -143,10 +143,7 @@ func main() {
 		n := started.Load() - int64(runs)
 		if *flagCount > 0 {
 			// started counts past *flagCount at end; do not count those
-			// TODO: n = min(n, int64(*flagCount-runs))
-			if x := int64(*flagCount - runs); n > x {
-				n = x
-			}
+			n = min(n, int64(*flagCount-runs))
 		}
 		if n > 0 {
 			active = fmt.Sprintf(", %d active", n)

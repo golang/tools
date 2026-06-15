@@ -982,7 +982,7 @@ var godirectives = map[string]struct{}{
 func (tv *tokenVisitor) godirective(c *ast.Comment) {
 	// First check if '//go:directive args...' is a valid directive.
 	directive, args, _ := strings.Cut(c.Text, " ")
-	kind, _ := stringsCutPrefix(directive, "//go:")
+	kind, _ := strings.CutPrefix(directive, "//go:")
 	if _, ok := godirectives[kind]; !ok {
 		// Unknown 'go:' directive.
 		tv.token(c.Pos(), len(c.Text), semtok.TokComment)
@@ -999,14 +999,6 @@ func (tv *tokenVisitor) godirective(c *ast.Comment) {
 		tailStart := c.Pos() + token.Pos(len(directive)+len(" "))
 		tv.token(tailStart, len(args), semtok.TokComment)
 	}
-}
-
-// Go 1.20 strings.CutPrefix.
-func stringsCutPrefix(s, prefix string) (after string, found bool) {
-	if !strings.HasPrefix(s, prefix) {
-		return s, false
-	}
-	return s[len(prefix):], true
 }
 
 func is[T any](x any) bool {
