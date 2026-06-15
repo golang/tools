@@ -135,21 +135,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, err
 	}
 
-	var importDeletes []protocol.TextEdit
-	// For unparenthesised declarations like `import "fmt"` we remove
-	// the whole declaration because simply removing importSpec leaves
-	// `import \n`, which does not compile.
-	// For parenthesised declarations like `import ("fmt"\n "log")`
-	// we only remove the ImportSpec, because removing the whole declaration
-	// might remove other ImportsSpecs we don't want to touch.
-	unparenthesizedImports := unparenthesizedImports(pgf)
-	for _, importSpec := range deletes {
-		if decl := unparenthesizedImports[importSpec]; decl != nil {
-			importDeletes = append(importDeletes, removeNode(pgf, decl))
-		} else {
-			importDeletes = append(importDeletes, removeNode(pgf, importSpec))
-		}
-	}
+	importDeletes := importDeletesEdits(pgf, deletes)
 
 	var buf bytes.Buffer
 	if c := CopyrightComment(pgf.File); c != nil {
@@ -206,6 +192,25 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		protocol.DocumentChangeEdit(newFile, []protocol.TextEdit{
 			{Range: protocol.Range{}, NewText: string(newFileContent)},
 		})}, nil
+}
+
+// importDeletesEdits returns a list of [protocol.TextEdit] for each import deletion.
+func importDeletesEdits(pgf *parsego.File, deletes []*ast.ImportSpec) (edits []protocol.TextEdit) {
+	// For unparenthesised declarations like `import "fmt"` we remove
+	// the whole declaration because simply removing importSpec leaves
+	// `import \n`, which does not compile.
+	// For parenthesised declarations like `import ("fmt"\n "log")`
+	// we only remove the ImportSpec, because removing the whole declaration
+	// might remove other ImportsSpecs we don't want to touch.
+	unparenthesizedImports := unparenthesizedImports(pgf)
+	for _, importSpec := range deletes {
+		var n ast.Node = importSpec
+		if decl := unparenthesizedImports[importSpec]; decl != nil {
+			n = decl
+		}
+		edits = append(edits, removeNode(pgf, n))
+	}
+	return edits
 }
 
 // chooseNewFile chooses a new filename in dir, based on the name of the

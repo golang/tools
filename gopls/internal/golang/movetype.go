@@ -83,6 +83,25 @@ func MoveType(ctx context.Context, fh file.Handle, snapshot *cache.Snapshot, loc
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
+	// Get the range to delete the type from its current location. If the type spec
+	// in question is the only spec in the decl, delete the entire decl
+	// including any comments. Otherwise, just delete the type spec.
+	var n ast.Node = spec
+	if len(decl.Specs) == 1 {
+		n = decl // delete entire decl
+	}
+	typStart, typEnd := n.Pos(), n.End()
+	if doc := astutil.DocComment(n); doc != nil {
+		typStart = doc.Pos() // include doc comment in deletion range
+	}
+	rng, err := curPGF.PosRange(typStart, typEnd+1) // include probable newline
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
+
+	changes = append(changes, protocol.DocumentChangeEdit(fh, []protocol.TextEdit{
+		{Range: rng},
+	}))
 	return changes, protocol.Location{URI: destURI, Range: destRng}, nil
 }
 
@@ -122,12 +141,12 @@ func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPk
 		typSpecBuf.WriteString("\n")
 	}
 	// Calculate imports to add to the destination file.
+	adds, deletes, err := findImportEdits(curPGF.File, curPkg.TypesInfo(), spec.Pos(), spec.End())
+	if err != nil {
+		return nil, protocol.Range{}, err
+	}
 	var addImportEdits []protocol.TextEdit
 	{
-		adds, _, err := findImportEdits(curPGF.File, curPkg.TypesInfo(), spec.Pos(), spec.End())
-		if err != nil {
-			return nil, protocol.Range{}, err
-		}
 
 		for _, importSpec := range adds {
 			path, err := strconv.Unquote(importSpec.Path.Value)
@@ -152,6 +171,9 @@ func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPk
 		}
 	}
 
+	// Imports that are now unused and can be removed from the current file.
+	deleteImportEdits := importDeletesEdits(curPGF, deletes)
+
 	// Add the type spec to the end of the file.
 	destRng, err := destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
 	if err != nil {
@@ -161,10 +183,15 @@ func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPk
 	if err != nil {
 		return nil, protocol.Range{}, err
 	}
+	curFH, err := snapshot.ReadFile(ctx, curPGF.URI)
+	if err != nil {
+		return nil, protocol.Range{}, err
+	}
 	return []protocol.DocumentChange{
 		protocol.DocumentChangeEdit(destFH,
 			append(addImportEdits, []protocol.TextEdit{
 				{Range: destRng, NewText: typSpecBuf.String()},
 			}...)),
+		protocol.DocumentChangeEdit(curFH, deleteImportEdits),
 	}, destRng, nil
 }

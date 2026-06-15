@@ -14,19 +14,56 @@ import (
 	"html/template"
 )
 
+// This comment gets deleted.
 type Struct struct { //@ codeaction("Struct", "refactor.move.moveType", result=basic)
 	Seconds  time.Duration
-	Template template.HTML
 }
 
 type (
 	S1 struct { //@ codeaction("S1", "refactor.move.moveType", result=single)
-		Seconds time.Duration
 		Template template.HTML
 	}
 
 	S2 struct {
-		Seconds time.Duration
+		Template template.HTML
+	}
+)
+
+-- @basic/movetype/struct.go --
+package movetype
+
+import (
+	
+	"html/template"
+)
+
+
+type (
+	S1 struct { //@ codeaction("S1", "refactor.move.moveType", result=single)
+		Template template.HTML
+	}
+
+	S2 struct {
+		Template template.HTML
+	}
+)
+
+-- @single/movetype/struct.go --
+package movetype
+
+import (
+	"time"
+	"html/template"
+)
+
+// This comment gets deleted.
+type Struct struct { //@ codeaction("Struct", "refactor.move.moveType", result=basic)
+	Seconds  time.Duration
+}
+
+type (
+	
+	S2 struct {
 		Template template.HTML
 	}
 )
@@ -39,20 +76,14 @@ package otherpkg
 
 import "time"
 
-import "html/template"
-
 type Struct struct { //@ codeaction("Struct", "refactor.move.moveType", result=basic)
-	Seconds  time.Duration
-	Template template.HTML
+	Seconds time.Duration
 }
 -- @single/movetype/otherpkg/destfile.go --
 package otherpkg
 
-import "time"
-
 import "html/template"
 
 type S1 struct { //@ codeaction("S1", "refactor.move.moveType", result=single)
-	Seconds  time.Duration
 	Template template.HTML
 }
