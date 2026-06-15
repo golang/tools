@@ -256,7 +256,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractVariableAll, fn: refactorExtractVariableAll, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorInlineVariable, fn: refactorInlineVariable, needPkg: true},
-	// {kind: settings.RefactorMoveType, fn: refactorMoveType, needPkg: true},
+	{kind: settings.RefactorMoveType, fn: refactorMoveType, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
 	{kind: settings.RefactorRewriteFillSwitch, fn: refactorRewriteFillSwitch, needPkg: true},
@@ -1246,11 +1246,11 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 	return nil
 }
 
-// (this function is unused)
 func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
 	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
-	if _, _, _, typeName, ok := selectionContainsType(curSel); ok {
-		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", typeName), command.MoveTypeArgs{Location: req.loc})
+	if specCur, ok := selectionContainsTypeSpec(curSel); ok {
+		spec := specCur.Node().(*ast.TypeSpec)
+		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", spec.Name.Name), command.MoveTypeArgs{Location: req.loc})
 		req.addCommandAction(cmd, false)
 	}
 	return nil

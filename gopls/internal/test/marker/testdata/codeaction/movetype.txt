@@ -1,0 +1,58 @@
+This test checks the behavior of the 'move type' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+-- movetype/struct.go --
+package movetype
+
+import (
+	"time"
+	"html/template"
+)
+
+type Struct struct { //@ codeaction("Struct", "refactor.move.moveType", result=basic)
+	Seconds  time.Duration
+	Template template.HTML
+}
+
+type (
+	S1 struct { //@ codeaction("S1", "refactor.move.moveType", result=single)
+		Seconds time.Duration
+		Template template.HTML
+	}
+
+	S2 struct {
+		Seconds time.Duration
+		Template template.HTML
+	}
+)
+
+-- movetype/otherpkg/destfile.go --
+package otherpkg
+
+-- @basic/movetype/otherpkg/destfile.go --
+package otherpkg
+
+import "time"
+
+import "html/template"
+
+type Struct struct { //@ codeaction("Struct", "refactor.move.moveType", result=basic)
+	Seconds  time.Duration
+	Template template.HTML
+}
+-- @single/movetype/otherpkg/destfile.go --
+package otherpkg
+
+import "time"
+
+import "html/template"
+
+type S1 struct { //@ codeaction("S1", "refactor.move.moveType", result=single)
+	Seconds  time.Duration
+	Template template.HTML
+}

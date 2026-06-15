@@ -5,41 +5,166 @@
 package golang
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
+	"go/format"
+	"go/printer"
 	"go/token"
+	"strconv"
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 )
 
-// MoveType moves the selected type declaration into a new package and updates all references.
-func MoveType(ctx context.Context, fh file.Handle, snapshot *cache.Snapshot, loc protocol.Location, newPkgDir string) ([]protocol.DocumentChange, error) {
-	return nil, fmt.Errorf("MoveType: not yet supported")
+// MoveType moves the selected type declaration into the given file, which must already exist.
+func MoveType(ctx context.Context, fh file.Handle, snapshot *cache.Snapshot, loc protocol.Location, destURI protocol.DocumentURI) ([]protocol.DocumentChange, protocol.Location, error) {
+	curPkg, curPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
+	destPkg, destPGF, err := NarrowestPackageForFile(ctx, snapshot, destURI)
+	if err != nil {
+		// TODO(mkalil): Handle move type to new file.
+		return nil, protocol.Location{}, err
+	}
+
+	var (
+		spec *ast.TypeSpec
+		decl *ast.GenDecl
+	)
+	{
+		start, end, err := curPGF.RangePos(loc.Range)
+		if err != nil {
+			return nil, protocol.Location{}, err
+		}
+
+		curSel, ok := curPGF.Cursor().FindByPos(start, end)
+		if !ok {
+			return nil, protocol.Location{}, err
+		}
+		specCur, ok := selectionContainsTypeSpec(curSel)
+		if !ok {
+			return nil, protocol.Location{}, fmt.Errorf("no type spec at cursor")
+		}
+		spec = specCur.Node().(*ast.TypeSpec) // can't fail
+		decl = specCur.Parent().Node().(*ast.GenDecl)
+	}
+	// TODO(mkalil): check if type move is legal.
+
+	// Capture floating comments so they can be moved to the
+	// new file along with the type spec.
+	var comments []*ast.CommentGroup
+	{
+		var enclosed ast.Node
+		// If the moving type spec is the only one in the decl, we want comments
+		// enclosed by the decl, otherwise we want comments enclosed by just the
+		// individual type spec.
+		if len(decl.Specs) == 1 {
+			enclosed = decl
+		} else {
+			enclosed = spec
+		}
+		for _, comment := range curPGF.File.Comments {
+			if astutil.NodeContains(enclosed, astutil.NodeRange(comment)) {
+				comments = append(comments, comment)
+			}
+		}
+	}
+
+	changes, destRng, err := addTypeToFile(ctx, snapshot, curPkg, destPkg, curPGF, destPGF, spec, comments)
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
+	return changes, protocol.Location{URI: destURI, Range: destRng}, nil
 }
 
-// selectionContainsType returns the Cursor, GenDecl and TypeSpec of the type
-// declaration that encloses cursor if one exists. Otherwise it returns false.
-func selectionContainsType(cursor inspector.Cursor) (inspector.Cursor, *ast.GenDecl, *ast.TypeSpec, string, bool) {
-	declCur, ok := moreiters.First(cursor.Enclosing((*ast.GenDecl)(nil)))
-	if !ok {
-		return inspector.Cursor{}, &ast.GenDecl{}, &ast.TypeSpec{}, "", false
+// selectionContainsTypeSpec returns the [inspector.Cursor] of the type declaration that
+// encloses cur if one exists. Otherwise it returns false.
+func selectionContainsTypeSpec(cur inspector.Cursor) (inspector.Cursor, bool) {
+	spec, curSpec := cursorutil.FirstEnclosing[*ast.TypeSpec](cur)
+	if spec == nil {
+		return inspector.Cursor{}, false
 	}
-
+	declNode := curSpec.Parent().Node().(*ast.GenDecl)
 	// Verify that we have a type declaration (e.g. not an import declaration).
-	declNode := declCur.Node().(*ast.GenDecl)
 	if declNode.Tok != token.TYPE {
-		return inspector.Cursor{}, &ast.GenDecl{}, &ast.TypeSpec{}, "", false
+		return inspector.Cursor{}, false
+	}
+	return curSpec, true
+}
+
+// addTypeToFile returns the necessary document changes to add the type spec to
+// the end of the given existing file.
+// It also returns the [protocol.Range] where the type is added.
+func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPkg *cache.Package, curPGF, destPGF *parsego.File, spec *ast.TypeSpec, comments []*ast.CommentGroup) ([]protocol.DocumentChange, protocol.Range, error) {
+	// Ensure comments are formatted along with the type spec.
+	var typSpecBuf bytes.Buffer
+	{
+		commentedNode := &printer.CommentedNode{
+			Node: &ast.GenDecl{
+				Tok:   token.TYPE,
+				Specs: []ast.Spec{spec},
+			},
+			Comments: comments,
+		}
+		err := format.Node(&typSpecBuf, curPkg.FileSet(), commentedNode)
+		if err != nil {
+			return nil, protocol.Range{}, fmt.Errorf("error formatting type decl: %v", err)
+		}
+		typSpecBuf.WriteString("\n")
+	}
+	// Calculate imports to add to the destination file.
+	var addImportEdits []protocol.TextEdit
+	{
+		adds, _, err := findImportEdits(curPGF.File, curPkg.TypesInfo(), spec.Pos(), spec.End())
+		if err != nil {
+			return nil, protocol.Range{}, err
+		}
+
+		for _, importSpec := range adds {
+			path, err := strconv.Unquote(importSpec.Path.Value)
+			if err != nil {
+				return nil, protocol.Range{}, err
+			}
+			name := ""
+			if importSpec.Name != nil {
+				name = importSpec.Name.Name
+			}
+			_, impEdits := refactor.AddImport(destPkg.TypesInfo(), destPGF.File, name, path, "", destPGF.File.FileEnd-1)
+			for _, edit := range impEdits {
+				editRng, err := destPGF.PosRange(edit.Pos, edit.End)
+				if err != nil {
+					return nil, protocol.Range{}, err
+				}
+				addImportEdits = append(addImportEdits, protocol.TextEdit{
+					Range:   editRng,
+					NewText: string(edit.NewText),
+				})
+			}
+		}
 	}
 
-	typSpec, ok := declNode.Specs[0].(*ast.TypeSpec)
-	if !ok {
-		return inspector.Cursor{}, &ast.GenDecl{}, &ast.TypeSpec{}, "", false
+	// Add the type spec to the end of the file.
+	destRng, err := destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
+	if err != nil {
+		return nil, protocol.Range{}, err
 	}
-
-	return declCur, declNode, declNode.Specs[0].(*ast.TypeSpec), typSpec.Name.Name, true
+	destFH, err := snapshot.ReadFile(ctx, destPGF.URI)
+	if err != nil {
+		return nil, protocol.Range{}, err
+	}
+	return []protocol.DocumentChange{
+		protocol.DocumentChangeEdit(destFH,
+			append(addImportEdits, []protocol.TextEdit{
+				{Range: destRng, NewText: typSpecBuf.String()},
+			}...)),
+	}, destRng, nil
 }

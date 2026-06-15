@@ -1,0 +1,45 @@
+This test checks that comments are preserved during the 'move type' code action.
+
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+-- movetype/comments.go --
+package movetype
+
+type A struct { //@codeaction("A", "refactor.move.moveType", result=comments)
+	B int // comment B
+	C int // comment C
+} // not copied
+
+type (
+  D struct {
+    E int // comment E
+    F int // comment F
+  }
+  G struct { //@codeaction("G", "refactor.move.moveType", result=comments_single)
+    H int // comment H
+  }
+)
+
+type D struct {
+  E int // comment E
+  F int // comment F
+}
+
+-- @comments/movetype/otherpkg/destfile.go --
+package otherpkg
+type A struct { //@codeaction("A", "refactor.move.moveType", result=comments)
+	B int // comment B
+	C int // comment C
+}
+-- @comments_single/movetype/otherpkg/destfile.go --
+package otherpkg
+type G struct { //@codeaction("G", "refactor.move.moveType", result=comments_single)
+	H int // comment H
+}
+-- movetype/otherpkg/destfile.go --
+package otherpkg
