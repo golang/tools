@@ -12,7 +12,7 @@ require (
 	golang.org/x/mod v0.37.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/telemetry v0.0.0-20260610154732-fb80ec83bdd9
+	golang.org/x/telemetry v0.0.0-20260615203432-72dfd249d08a
 	golang.org/x/text v0.38.0
 	golang.org/x/tools v0.45.0
 	golang.org/x/vuln v1.3.0
