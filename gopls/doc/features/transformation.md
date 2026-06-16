@@ -363,6 +363,7 @@ Special cases:
   ```
 
 Using Rename to move a package:
+
 To rename a package, execute the Rename operation over the `p` in a
 `package p` declaration at the start of a file.
 You will be prompted to edit the package's path and choose its new location.
@@ -379,6 +380,13 @@ Package moves are rejected if they would break the build. For example:
 
 Renaming package main is not supported, because the main package has special meaning to the linker.
 Renaming x_test packages is currently not supported.
+
+Using Rename to change a function signature:
+
+This feature enables choosing a new permutation of the order of a function's parameters.
+To invoke it, execute a Rename request on the `func` token of a function declaration or literal,
+and enter the new function signature as the new name. The new signature must have the same
+parameters; adding/removing parameters and changing function results is currently not supported.
 
 Some tips for best results:
 
