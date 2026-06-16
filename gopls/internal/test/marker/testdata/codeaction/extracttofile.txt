@@ -2,6 +2,7 @@ This test checks the behavior of the 'extract to a new file' code action.
 
 -- flags --
 -ignore_extra_diags
+-errors_ok
 
 -- go.mod --
 module golang.org/lsptests/extracttofile
@@ -349,3 +350,10 @@ const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyright
 -// docs
 -const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
 +//@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
+
+-- parsererror.go --
+package main
+
+func foo() { //@codeaction("foo", "refactor.extract.toNewFile", err=re"failed to format extracted source")
+	for i := struct
+

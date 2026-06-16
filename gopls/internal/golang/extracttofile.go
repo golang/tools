@@ -98,8 +98,6 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	if !ok {
 		return nil, fmt.Errorf("invalid selection")
 	}
-	pgf.CheckPos(start) // #70553
-	// Inv: start is valid wrt pgf.Tok.
 
 	// select trailing empty lines
 	offset, err := safetoken.Offset(pgf.Tok, end)
@@ -109,21 +107,10 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	rest := pgf.Src[offset:]
 	spaces := len(rest) - len(bytes.TrimLeft(rest, " \t\n"))
 	end += token.Pos(spaces)
-	pgf.CheckPos(end) // #70553
-	if !(start <= end) {
-		bug.Reportf("start: not before end")
+	src, err := pgf.PosText(start, end)
+	if err != nil {
+		return nil, err
 	}
-	// Inv: end is valid wrt pgf.Tok; env >= start.
-	fileStart := pgf.File.FileStart
-	pgf.CheckPos(fileStart) // #70553
-	if !(0 <= start-fileStart) {
-		bug.Reportf("start: out of bounds")
-	}
-	if !(int(end-fileStart) <= len(pgf.Src)) {
-		bug.Reportf("end: out of bounds")
-	}
-	// Inv: 0 <= start-fileStart <= end-fileStart <= len(Src).
-	src := pgf.Src[start-fileStart : end-fileStart]
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
@@ -180,7 +167,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 
 	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to format extracted source: %w", err)
 	}
 
 	return []protocol.DocumentChange{
