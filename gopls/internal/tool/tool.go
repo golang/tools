@@ -21,17 +21,11 @@ import (
 
 // This file is a harness for writing your main function.
 //
-// It adds a method to the Application type
-//     Main(name, usage string, args []string)
-// which should normally be invoked from a true main as follows:
-//     func main() {
-//       (&Application{}).Main("myapp", "non-flag-command-line-arg-help", os.Args[1:])
-//     }
-// It recursively scans the application object for fields with a tag containing
+// It recursively scans the command object for fields with a tag containing
 //     `flag:"flagnames" help:"short help text"`
 // uses all those fields to build command line flags. It will split flagnames on
 // commas and add a flag per name.
-// It expects the Application type to have a method
+// It expects the Command type to have a method
 //     Run(context.Context, args...string) error
 // which it invokes only after all command line flag processing has been finished.
 // If Run returns an error, the error will be printed to stderr and the
@@ -47,9 +41,9 @@ type Profile struct {
 	Block  string `flag:"profile.block" help:"write block profile to this file"`
 }
 
-// Application is the interface that must be satisfied by an object passed to Main.
-type Application interface {
-	// Name returns the application's name. It is used in help and error messages.
+// Command is the interface that must be satisfied by an object passed to Main.
+type Command interface {
+	// Name returns the command's name. It is used in help and error messages.
 	Name() string
 	// Most of the help usage is automatically generated, this string should only
 	// describe the contents of non flag arguments.
@@ -67,7 +61,8 @@ type Application interface {
 	Run(ctx context.Context, args ...string) error
 }
 
-type SubCommand interface {
+type Subcommand interface {
+	Command
 	Parent() string
 }
 
@@ -88,7 +83,7 @@ func CommandLineErrorf(message string, args ...any) error {
 // It will only return if there was no error.  If an error
 // was encountered it is printed to standard error and the
 // application exits with an exit code of 2.
-func Main(ctx context.Context, app Application, args []string) {
+func Main(ctx context.Context, app Command, args []string) {
 	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
 	if err := Run(ctx, s, app, args); err != nil {
 		fmt.Fprintf(s.Output(), "%s: %v\n", app.Name(), err)
@@ -106,11 +101,11 @@ func Main(ctx context.Context, app Application, args []string) {
 // Run is the inner loop for Main; invoked by Main, recursively by
 // Run, and by various tests.  It runs the application and returns an
 // error.
-func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (resultErr error) {
+func Run(ctx context.Context, s *flag.FlagSet, app Command, args []string) (resultErr error) {
 	s.Usage = func() {
 		if app.ShortHelp() != "" {
 			fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
-			if sub, ok := app.(SubCommand); ok && sub.Parent() != "" {
+			if sub, ok := app.(Subcommand); ok && sub.Parent() != "" {
 				fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
 			} else {
 				fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
