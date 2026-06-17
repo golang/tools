@@ -86,17 +86,6 @@ func TestDispatch(t *testing.T) {
 			wantArgs: []string{"./gopls/main.go:35:8"},
 		},
 		{
-			name:    "XTools_RemoteInspect",
-			args:    []string{"-remote=localhost:12345", "inspect", "sessions"},
-			wantErr: "belongs to subcommand but is placed before it",
-		},
-		{
-			name:     "XTools_RemoteInspectStrict",
-			args:     []string{"inspect", "sessions", "-remote=localhost:12345"},
-			wantCmd:  "inspect",
-			wantArgs: []string{"sessions", "-remote=localhost:12345"},
-		},
-		{
 			name:    "ModernRemoteSessionsStrict_Misplaced",
 			args:    []string{"remote", "-remote=localhost:12345", "sessions"},
 			wantErr: "unknown flag: -remote",

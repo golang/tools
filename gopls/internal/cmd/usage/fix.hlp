@@ -1,5 +1,0 @@
-apply suggested fixes (obsolete)
-
-Usage:
-  gopls [flags] fix
-No longer supported; use "gopls codeaction" instead.

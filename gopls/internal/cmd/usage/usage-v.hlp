@@ -28,7 +28,6 @@ Features
   codelens          List or execute code lenses for a file
   definition        show declaration of selected identifier
   execute           Execute a gopls custom LSP command
-  fix               apply suggested fixes (obsolete)
   folding_ranges    display selected file's folding ranges
   format            format the code according to the go standard
   mcp               start the gopls MCP server in headless mode
@@ -36,7 +35,6 @@ Features
   implementation    display selected identifier's implementation
   imports           updates import statements
   remote            interact with the gopls daemon
-  inspect           interact with the gopls daemon (deprecated: use 'remote')
   links             list links in a file
   prepare_rename    test validity of a rename operation at location
   references        display selected identifier's references

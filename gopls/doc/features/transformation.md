@@ -248,7 +248,7 @@ Client support:
   (setq gofmt-command "goimports")
   (add-hook 'before-save-hook 'gofmt-before-save)
   ```
-- **CLI**: `gopls fix -a file.go:#offset source.organizeImports`
+- **CLI**: `gopls codeaction -kind=source.organizeImports -exec -write file.go:#offset`
 
 <a name='source.addTest'></a>
 ## `source.addTest`: Add test for function or method

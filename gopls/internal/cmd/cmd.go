@@ -321,15 +321,13 @@ func (app *Application) featureCommands() []tool.Application {
 		&codelens{app: app},
 		&definition{app: app},
 		&execute{app: app},
-		&fix{app: app}, // (non-functional)
 		&foldingRanges{app: app},
 		&format{app: app},
 		&headlessMCP{app: app},
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
-		newRemote(app, ""),
-		newRemote(app, "inspect"),
+		newRemote(app),
 		&links{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
@@ -962,18 +960,4 @@ func pointPosition(m *protocol.Mapper, p point) (protocol.Position, error) {
 		return m.OffsetPosition(p.Offset())
 	}
 	return protocol.Position{}, fmt.Errorf("point has neither offset nor line/column")
-}
-
-// TODO(adonovan): delete in 2025.
-type fix struct{ app *Application }
-
-func (*fix) Name() string       { return "fix" }
-func (cmd *fix) Parent() string { return cmd.app.Name() }
-func (*fix) Usage() string      { return "" }
-func (*fix) ShortHelp() string  { return "apply suggested fixes (obsolete)" }
-func (*fix) DetailedHelp(flags *flag.FlagSet) {
-	fmt.Fprintf(flags.Output(), `No longer supported; use "gopls codeaction" instead.`)
-}
-func (*fix) Run(ctx context.Context, args ...string) error {
-	return tool.CommandLineErrorf(`no longer supported; use "gopls codeaction" instead`)
 }

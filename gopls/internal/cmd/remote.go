@@ -20,41 +20,26 @@ import (
 type remote struct {
 	app *Application
 	subcommands
-
-	// For backward compatibility, allow aliasing this command (it was previously
-	// called 'inspect').
-	//
-	// TODO(rFindley): delete this after allowing some transition time in case
-	//                 there were any users of 'inspect' (I suspect not).
-	alias string
 }
 
-func newRemote(app *Application, alias string) *remote {
+func newRemote(app *Application) *remote {
 	return &remote{
 		app: app,
 		subcommands: subcommands{
 			&listSessions{app: app},
 			&startDebugging{app: app},
 		},
-		alias: alias,
 	}
 }
 
 func (r *remote) Name() string {
-	if r.alias != "" {
-		return r.alias
-	}
 	return "remote"
 }
 
 func (r *remote) Parent() string { return r.app.Name() }
 
 func (r *remote) ShortHelp() string {
-	short := "interact with the gopls daemon"
-	if r.alias != "" {
-		short += " (deprecated: use 'remote')"
-	}
-	return short
+	return "interact with the gopls daemon"
 }
 
 // listSessions is an inspect subcommand to list current sessions.
