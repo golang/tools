@@ -767,3 +767,36 @@ func _() {
 @@ -24 +24,2 @@
 +		Edges: map[*Node]*Node{},
 +		Other: "",
+-- issue80033.go --
+package fillstruct
+// Test behavior for a struct inside an anonymous struct or anonymous interface.
+type OtherStruct struct{}
+
+type MapAnonStruct struct {
+	bar map[string]struct {
+		fizz OtherStruct
+	}
+}
+
+type InterfaceAnonStruct struct {
+	bar []interface {
+		fizz(OtherStruct)
+	}
+}
+
+func _() {
+	_ = &MapAnonStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033)
+	_ = &InterfaceAnonStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033_2)
+}
+-- @issue80033/issue80033.go --
+@@ -18 +18,3 @@
+-	_ = &MapAnonStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033)
++	_ = &MapAnonStruct{
++		bar: map[string]struct{ fizz OtherStruct }{},
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033)
+-- @issue80033_2/issue80033.go --
+@@ -19 +19,3 @@
+-	_ = &InterfaceAnonStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033_2)
++	_ = &InterfaceAnonStruct{
++		bar: []interface{ fizz(OtherStruct) }{},
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033_2)
