@@ -61,10 +61,10 @@ func Main(ctx context.Context, args []string) {
 // (ensuring slice/repeatable flags accumulate correctly).
 //
 // [dispatch] enforces strict POSIX flag ordering for non-serve subcommands,
-// and returns the specific [tool.Application] to execute,
+// and returns the specific [tool.Command] to execute,
 // its positional arguments, and
 // any core [tool.Profile] configuration discovered during global flag parsing.
-func dispatch(app *Application, args []string) (tool.Application, []string, *tool.Profile, error) {
+func dispatch(app *Application, args []string) (tool.Command, []string, *tool.Profile, error) {
 	silentFlagSet := func(name string) *flag.FlagSet {
 		fs := flag.NewFlagSet(name, flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -106,7 +106,7 @@ func dispatch(app *Application, args []string) (tool.Application, []string, *too
 		return &app.serve, serveFS.Args(), p, nil
 	}
 
-	var subApp tool.Application
+	var subApp tool.Command
 	for _, cmd := range app.Commands() {
 		if cmd.Name() == cmdName {
 			subApp = cmd

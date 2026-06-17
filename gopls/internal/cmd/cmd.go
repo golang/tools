@@ -141,18 +141,18 @@ func New() *Application {
 	return app
 }
 
-// Name implements tool.Application returning the binary name.
+// Name implements tool.Command returning the binary name.
 func (app *Application) Name() string { return "gopls" }
 
-// Usage implements tool.Application returning empty extra argument usage.
+// Usage implements tool.Command returning empty extra argument usage.
 func (app *Application) Usage() string { return "" }
 
-// ShortHelp implements tool.Application returning the main binary help.
+// ShortHelp implements tool.Command returning the main binary help.
 func (app *Application) ShortHelp() string {
 	return ""
 }
 
-// DetailedHelp implements tool.Application returning the main binary help.
+// DetailedHelp implements tool.Command returning the main binary help.
 // This includes the short help for all the sub commands.
 func (app *Application) DetailedHelp(f *flag.FlagSet) {
 	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
@@ -289,16 +289,16 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 // Commands returns the set of commands supported by the gopls tool on the
 // command line.
 // The command is specified by the first non flag argument.
-func (app *Application) Commands() []tool.Application {
-	var commands []tool.Application
+func (app *Application) Commands() []tool.Command {
+	var commands []tool.Command
 	commands = append(commands, app.mainCommands()...)
 	commands = append(commands, app.featureCommands()...)
 	commands = append(commands, app.internalCommands()...)
 	return commands
 }
 
-func (app *Application) mainCommands() []tool.Application {
-	return []tool.Application{
+func (app *Application) mainCommands() []tool.Command {
+	return []tool.Command{
 		&app.serve,
 		&version{app: app},
 		&help{app: app},
@@ -307,14 +307,14 @@ func (app *Application) mainCommands() []tool.Application {
 	}
 }
 
-func (app *Application) internalCommands() []tool.Application {
-	return []tool.Application{
+func (app *Application) internalCommands() []tool.Command {
+	return []tool.Command{
 		&vulncheck{app: app},
 	}
 }
 
-func (app *Application) featureCommands() []tool.Application {
-	return []tool.Application{
+func (app *Application) featureCommands() []tool.Command {
+	return []tool.Command{
 		&callHierarchy{app: app},
 		&check{app: app, Severity: "warning"},
 		&codeaction{app: app},

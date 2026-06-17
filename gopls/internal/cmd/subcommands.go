@@ -15,7 +15,7 @@ import (
 
 // subcommands is a helper that may be embedded for commands that delegate to
 // subcommands.
-type subcommands []tool.Application
+type subcommands []tool.Command
 
 func (s subcommands) DetailedHelp(f *flag.FlagSet) {
 	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
@@ -43,14 +43,14 @@ func (s subcommands) Run(ctx context.Context, args ...string) error {
 	return tool.CommandLineErrorf("unknown subcommand %v", command)
 }
 
-func (s subcommands) Commands() []tool.Application { return s }
+func (s subcommands) Commands() []tool.Command { return s }
 
-// getSubcommands returns the subcommands of a given Application.
-func getSubcommands(a tool.Application) []tool.Application {
-	// This interface is satisfied both by tool.Applications
+// getSubcommands returns the subcommands of a given Command.
+func getSubcommands(a tool.Command) []tool.Command {
+	// This interface is satisfied both by tool.Commands
 	// that embed subcommands, and by *cmd.Application.
 	type hasCommands interface {
-		Commands() []tool.Application
+		Commands() []tool.Command
 	}
 	if sub, ok := a.(hasCommands); ok {
 		return sub.Commands()

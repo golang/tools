@@ -21,17 +21,11 @@ import (
 
 // This file is a harness for writing your main function.
 //
-// It adds a method to the Application type
-//     Main(name, usage string, args []string)
-// which should normally be invoked from a true main as follows:
-//     func main() {
-//       (&Application{}).Main("myapp", "non-flag-command-line-arg-help", os.Args[1:])
-//     }
-// It recursively scans the application object for fields with a tag containing
+// It recursively scans the command object for fields with a tag containing
 //     `flag:"flagnames" help:"short help text"`
 // uses all those fields to build command line flags. It will split flagnames on
 // commas and add a flag per name.
-// It expects the Application type to have a method
+// It expects the Command type to have a method
 //     Run(context.Context, args...string) error
 // which it invokes only after all command line flag processing has been finished.
 // If Run returns an error, the error will be printed to stderr and the
@@ -47,11 +41,9 @@ type Profile struct {
 	Block  string `flag:"profile.block" help:"write block profile to this file"`
 }
 
-// Application is the interface that must be satisfied by an object passed to Main.
-//
-// TODO(hyangah): Rename Application to Command, and embed Command within SubCommand to clarify structure.
-type Application interface {
-	// Name returns the application's name. It is used in help and error messages.
+// Command is the interface that must be satisfied by an object passed to Run.
+type Command interface {
+	// Name returns the command's name. It is used in help and error messages.
 	Name() string
 	// Most of the help usage is automatically generated, this string should only
 	// describe the contents of non flag arguments.
@@ -69,7 +61,8 @@ type Application interface {
 	Run(ctx context.Context, args ...string) error
 }
 
-type SubCommand interface {
+type Subcommand interface {
+	Command
 	Parent() string
 }
 
@@ -95,11 +88,11 @@ func CommandLineErrorf(message string, args ...any) error {
 // Run is the inner loop for Main; invoked by Main, recursively by
 // Run, and by various tests.  It runs the application and returns an
 // error.
-func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (resultErr error) {
+func Run(ctx context.Context, s *flag.FlagSet, app Command, args []string) (resultErr error) {
 	s.Usage = func() {
 		if app.ShortHelp() != "" {
 			fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
-			if sub, ok := app.(SubCommand); ok && sub.Parent() != "" {
+			if sub, ok := app.(Subcommand); ok && sub.Parent() != "" {
 				fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
 			} else {
 				fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
@@ -121,7 +114,7 @@ func Run(ctx context.Context, s *flag.FlagSet, app Application, args []string) (
 
 // RunWithProfile executes the application inside the profiling and error handling harness.
 // It assumes flags have already been parsed.
-func RunWithProfile(ctx context.Context, app Application, args []string, p *Profile) (resultErr error) {
+func RunWithProfile(ctx context.Context, app Command, args []string, p *Profile) (resultErr error) {
 	if p != nil && p.CPU != "" {
 		f, err := os.Create(p.CPU)
 		if err != nil {
@@ -253,7 +246,7 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) {
 }
 
 // AddFlags registers the flags defined in the app struct onto the FlagSet.
-func AddFlags(f *flag.FlagSet, app Application) {
+func AddFlags(f *flag.FlagSet, app Command) {
 	addFlags(f, reflect.StructField{}, reflect.ValueOf(app))
 }
 
