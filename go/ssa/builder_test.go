@@ -270,6 +270,10 @@ func TestRuntimeTypes(t *testing.T) {
 		{`package N; var g interface{}; func f[S any]() { var v []S; g = v }; `,
 			nil,
 		},
+		// ...including a parameterized type boxed by a closure in the body of a method of a generic type (go.dev/issue/80055).
+		{`package O; type box[N any] struct{ n N }; type holder[N any] struct{}; func (h *holder[N]) get() any { f := func() any { return &box[N]{} }; return f() }`,
+			nil,
+		},
 	}
 	for _, test := range tests {
 		// Parse the file.

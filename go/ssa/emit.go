@@ -247,8 +247,19 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 
 		// Record the types of operands to MakeInterface, if
 		// non-parameterized, as they are the set of runtime types.
+		//
+		// We must consult isParameterized even when f.hasTypeParams()
+		// reports false: an anonymous function nested within a method of
+		// a generic type does not itself carry the enclosing method's
+		// receiver type parameters (the closure built in (*builder).expr0
+		// inherits the parent's typeparams/typeargs but not its
+		// recvtypeparams), so f.hasTypeParams() is false for such a
+		// closure even though its body may box a parameterized type such
+		// as *box[N] into an interface. Recording that type would later
+		// cause Program.RuntimeTypes (via ForEachElement) to panic on the
+		// bare type parameter. See go.dev/issue/80055.
 		t := val.Type()
-		if !f.hasTypeParams() || !f.Prog.isParameterized(t) {
+		if !f.Prog.isParameterized(t) {
 			addMakeInterfaceType(f.Prog, t)
 		}
 
