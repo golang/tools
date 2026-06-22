@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/callgraph/cha"
-	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
@@ -26,7 +25,7 @@ func TestNodeInterface(t *testing.T) {
 	//   - "foo" function
 	//   - "main" function and its
 	//   - first register instruction t0 := *gl
-	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go")
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
@@ -88,7 +87,7 @@ func removeModulePrefix(s string) string {
 
 func TestVtaGraph(t *testing.T) {
 	// Get the basic type int from a real program.
-	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go")
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
@@ -217,7 +216,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/panic.go",
 	} {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(t, file, ssa.BuilderMode(0))
+			prog, want, err := testProg(t, file)
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}

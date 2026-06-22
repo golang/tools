@@ -73,6 +73,9 @@ import (
 // CallGraph does not make any assumptions on initial types global variables
 // and function/method inputs can have. CallGraph is then sound, modulo use of
 // reflection and unsafe, if the initial call graph is sound.
+//
+// The supplied SSA functions must have been constructed with the
+// [ssa.InstantiateGenerics] mode flag.
 func CallGraph(funcs map[*ssa.Function]bool, initial *callgraph.Graph) *callgraph.Graph {
 	callees := makeCalleesFunc(funcs, initial)
 	vtaG, canon := typePropGraph(funcs, callees)

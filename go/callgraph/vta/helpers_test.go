@@ -38,9 +38,9 @@ func want(f *ast.File) []string {
 // testProg returns an ssa representation of a program at
 // `path`, assumed to define package "testdata," and the
 // test want result as list of strings.
-func testProg(t testing.TB, path string, mode ssa.BuilderMode) (*ssa.Program, []string, error) {
+func testProg(t testing.TB, path string) (*ssa.Program, []string, error) {
 	// Set debug mode to exercise DebugRef instructions.
-	pkg, ssapkg := loadFile(t, path, mode|ssa.GlobalDebug)
+	pkg, ssapkg := loadFile(t, path, ssa.InstantiateGenerics|ssa.GlobalDebug)
 	return ssapkg.Prog, want(pkg.Syntax[0]), nil
 }
 
