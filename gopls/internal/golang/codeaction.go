@@ -1247,6 +1247,9 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 }
 
 func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
+	if !req.snapshot.Options().MoveType {
+		return nil
+	}
 	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
 	if specCur, ok := selectionContainsTypeSpec(curSel); ok {
 		spec := specCur.Node().(*ast.TypeSpec)

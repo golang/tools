@@ -1,5 +1,9 @@
 This test checks that comments are preserved during the 'move type' code action.
 
+-- settings.json --
+{
+	"moveType": true
+}
 
 -- flags --
 -ignore_extra_diags

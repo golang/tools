@@ -1,5 +1,10 @@
 This test checks the behavior of the 'move type' code action.
 
+-- settings.json --
+{
+	"moveType": true
+}
+
 -- flags --
 -ignore_extra_diags
 

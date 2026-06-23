@@ -291,6 +291,16 @@ move subdirectories of the target package.
 
 Default: `false`.
 
+<a id='moveType'></a>
+### `moveType bool`
+
+**This setting is experimental and may be deleted.**
+
+moveType enables producing Move Type codeactions. The implementation
+is unfinished so we use this setting to gate its use.
+
+Default: `false`.
+
 <a id='completion'></a>
 ## Completion
 
