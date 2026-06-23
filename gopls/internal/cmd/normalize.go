@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/tool"
 )
 
@@ -31,7 +33,21 @@ func Main(ctx context.Context, args []string) {
 		os.Exit(2)
 	}
 
-	if err := tool.RunWithProfile(ctx, subApp, restArgs, p); err != nil {
+	// -- early startup logic goes here  --
+
+	// In the category of "things we can do while waiting for the Go command":
+	// Pre-initialize the filecache, which takes ~50ms to hash the gopls
+	// executable, and immediately runs a gc.
+	filecache.Start()
+
+	ctx = debug.WithInstance(ctx, app.OTel)
+
+	// -- end --
+
+	// Run the subcommand.
+	// TODO(adonovan): refactor the types further to make clear that dispatch
+	// can only ever return a tool.Subcommand.
+	if err := tool.RunWithProfile(ctx, subApp.(tool.Subcommand), restArgs, p); err != nil {
 		fmt.Fprintf(os.Stderr, "gopls: %v\n", err)
 		if tool.IsCommandLineError(err) {
 			fs := flag.NewFlagSet(subApp.Name(), flag.ContinueOnError)

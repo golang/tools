@@ -1092,6 +1092,40 @@ func someFunctionName()
 	}
 }
 
+// TestContextLogging checks that debug.WithInstance was called. It
+// plumbs many important bits of logging middleware, but the most
+// obvious symptom if it is skipped (as is easy to do by accident when
+// refactoring the complex startup logic) is to start sending all
+// internal logs to stderr.
+func TestContextLogging(t *testing.T) {
+	t.Parallel()
+
+	// Run any old gopls subcommand.
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+`)
+	res := gopls(t, tree, "check", "./a/a.go")
+	res.checkExit(true)
+
+	// Assert that stderr does not contain any of these
+	// common internal log messages.
+	for _, bad := range []string{
+		"New session",
+		"Created View",
+		"packages.Load",
+		"Shutdown session",
+	} {
+		if strings.Contains(res.stderr, bad) {
+			t.Errorf("gopls stderr output contained unwanted log substring %q:\n%s", bad, res.stderr)
+		}
+	}
+}
+
 // -- test framework --
 
 func TestMain(m *testing.M) {

@@ -56,14 +56,14 @@ type Command interface {
 	// It is passed the flag set so it can print the default values of the flags.
 	// It should use the flag sets configured Output to write the help to.
 	DetailedHelp(*flag.FlagSet)
-	// Run is invoked after all flag processing, and inside the profiling and
-	// error handling harness.
-	Run(ctx context.Context, args ...string) error
 }
 
 type Subcommand interface {
 	Command
 	Parent() string
+	// Run is invoked after all flag processing, and inside the profiling and
+	// error handling harness.
+	Run(ctx context.Context, args ...string) error
 }
 
 // This is the type returned by CommandLineErrorf, which causes the outer main
@@ -109,12 +109,20 @@ func Run(ctx context.Context, s *flag.FlagSet, app Command, args []string) (resu
 		return err
 	}
 
-	return RunWithProfile(ctx, app, s.Args(), nil)
+	// This should never be reached with a cmd.Application;
+	// the earlier dispatch logic should ensure that only one of the
+	// Subcommands is called.
+	//
+	// TODO(adonovan): rewrite TestHelpFiles, which is the only
+	// code that calls Run with a cmd.Application, though it never
+	// actually reaches this point because the -h flag causes
+	// Parse to return an error.
+	return RunWithProfile(ctx, app.(Subcommand), s.Args(), nil)
 }
 
-// RunWithProfile executes the application inside the profiling and error handling harness.
+// RunWithProfile executes the command inside the profiling and error handling harness.
 // It assumes flags have already been parsed.
-func RunWithProfile(ctx context.Context, app Command, args []string, p *Profile) (resultErr error) {
+func RunWithProfile(ctx context.Context, cmd Subcommand, args []string, p *Profile) (resultErr error) {
 	if p != nil && p.CPU != "" {
 		f, err := os.Create(p.CPU)
 		if err != nil {
@@ -197,7 +205,7 @@ func RunWithProfile(ctx context.Context, app Command, args []string, p *Profile)
 		}()
 	}
 
-	return app.Run(ctx, args...)
+	return cmd.Run(ctx, args...)
 }
 
 // addFlags scans fields of structs recursively to find things with flag tags

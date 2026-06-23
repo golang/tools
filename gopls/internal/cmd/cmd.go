@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -259,31 +257,6 @@ func isZeroValue(f *flag.Flag, value string) bool {
 		z = reflect.Zero(typ)
 	}
 	return value == z.Interface().(flag.Value).String()
-}
-
-// Run takes the args after top level flag processing, and invokes the correct
-// sub command as specified by the first argument.
-// If no arguments are passed it will invoke the server sub command, as a
-// temporary measure for compatibility.
-func (app *Application) Run(ctx context.Context, args ...string) error {
-	// In the category of "things we can do while waiting for the Go command":
-	// Pre-initialize the filecache, which takes ~50ms to hash the gopls
-	// executable, and immediately runs a gc.
-	filecache.Start()
-
-	ctx = debug.WithInstance(ctx, app.OTel)
-	if len(args) == 0 {
-		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-		return tool.Run(ctx, s, &app.serve, args)
-	}
-	command, args := args[0], args[1:]
-	for _, c := range app.Commands() {
-		if c.Name() == command {
-			s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-			return tool.Run(ctx, s, c, args)
-		}
-	}
-	return tool.CommandLineErrorf("Unknown command %v", command)
 }
 
 // Commands returns the set of commands supported by the gopls tool on the
