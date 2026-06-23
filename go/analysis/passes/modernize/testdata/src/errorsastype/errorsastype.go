@@ -85,4 +85,23 @@ func _(err error) {
 			print(patherr)
 		}
 	}
+	{
+		type Foo interface {
+			Bar() string
+		}
+		var target Foo
+		if errors.As(err, &target) { // nope: target doesn't satisfy error
+			print(target)
+		}
+	}
+	{
+		type FooError interface {
+			Bar() string
+			error
+		}
+		var target FooError
+		if errors.As(err, &target) { // want `errors.As can be simplified using AsType\[FooError\]`
+			print(target)
+		}
+	}
 }
