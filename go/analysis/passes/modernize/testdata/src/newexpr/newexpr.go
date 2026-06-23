@@ -14,6 +14,8 @@ func varOf[T any](x T) *T { return &x } // want `varOf can be an inlinable wrapp
 //go:fix inline
 func alreadyAnnotated[T any](x T) *T { return &x } // want `alreadyAnnotated can be an inlinable wrapper around new\(expr\)` alreadyAnnotated:"newlike"
 
+func variadic[T any](x ...T) *[]T { return &x } // nope: reject variadic functions
+
 var (
 	s struct {
 		int
@@ -27,7 +29,8 @@ var (
 	_ = varOf(int64(123)) // want `call of varOf\(x\) can be simplified to new\(x\)`
 	_ = varOf[int](123)   // want `call of varOf\(x\) can be simplified to new\(x\)`
 	_ = varOf[int64](123) // nope: implicit conversion from untyped int to int64
-	_ = varOf( // want `call of varOf\(x\) can be simplified to new\(x\)`
+	_ = varOf(            // want `call of varOf\(x\) can be simplified to new\(x\)`
 		varOf(123)) // want `call of varOf\(x\) can be simplified to new\(x\)`
 	_ = alreadyAnnotated[int](123) // want `call of alreadyAnnotated\(x\) can be simplified to new\(x\)`
+	_ = variadic[int]()            // nope: reject variadic function calls
 )
