@@ -44,8 +44,11 @@ func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Inde
 	objectpathFor := new(objectpath.Encoder).For
 
 	for fileIndex, pgf := range files {
-		for cur := range pgf.Cursor().Preorder((*ast.Ident)(nil), (*ast.ImportSpec)(nil)) {
-			switch n := cur.Node().(type) {
+		// Avoid pgf.Cursor() here to prevent materialization
+		// of an Inspector during workspace reindexing, which
+		// increases peak and retained memory usage.
+		for n := range ast.Preorder(pgf.File) {
+			switch n := n.(type) {
 			case *ast.Ident:
 				// Report a reference for each identifier that
 				// uses a symbol exported from another package.
