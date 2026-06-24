@@ -43,7 +43,7 @@ $ gopls help remote sessions         # help on 'remote sessions' subcommand
 
 // Run prints help information about a subcommand.
 func (h *help) Run(ctx context.Context, args ...string) error {
-	find := func(cmds []tool.Command, name string) tool.Command {
+	find := func(cmds []tool.Application, name string) tool.Application {
 		for _, cmd := range cmds {
 			if cmd.Name() == name {
 				return cmd
@@ -53,7 +53,7 @@ func (h *help) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Find the subcommand denoted by args (empty => h.app).
-	var cmd tool.Command = h.app
+	var cmd tool.Application = h.app
 	for i, arg := range args {
 		cmd = find(getSubcommands(cmd), arg)
 		if cmd == nil {

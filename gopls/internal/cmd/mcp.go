@@ -18,12 +18,10 @@ import (
 	"golang.org/x/tools/gopls/internal/filewatcher"
 	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 type headlessMCP struct {
 	app *Application
-	CommonFlags
 
 	Address      string `flag:"listen" help:"the address on which to run the mcp server"`
 	Logfile      string `flag:"logfile" help:"filename to log to; if unset, logs to stderr"`
@@ -49,10 +47,6 @@ Examples:
 }
 
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
-	// TODO(hxjiang): properly support remote mode (https://github.com/golang/go/issues/78668).
-	if m.Remote != "" {
-		return tool.CommandLineErrorf("mcp does not currently support remote mode")
-	}
 	if m.Instructions {
 		fmt.Println(internalmcp.Instructions)
 		return nil
@@ -74,7 +68,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 
 	// Start a new in-process gopls session and create a fake client
 	// to connect to it.
-	cli, sess, err := m.app.connect(ctx, m.RemoteFlag)
+	cli, sess, err := m.app.connect(ctx)
 	if err != nil {
 		return err
 	}

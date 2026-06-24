@@ -44,7 +44,7 @@ forward the LSP. For example, here is a reasonable gopls invocation, that sets
 some additional flags for easier [debugging](#debugging):
 
 ```bash
-gopls serve -remote=auto -logfile=auto -debug=:0 -remote.debug=:0 -rpc.trace
+gopls -remote=auto -logfile=auto -debug=:0 -remote.debug=:0 -rpc.trace
 ```
 
 Note that the shared gopls process will automatically shut down after one
@@ -60,26 +60,26 @@ started by your editor.
 For example, to host the daemon on the TCP port `37374`, do:
 
 ```bash
-gopls serve -listen=:37374 -logfile=auto -debug=:0
+gopls -listen=:37374 -logfile=auto -debug=:0
 ```
 
 And then from the editor, run
 
 ```bash
-gopls serve -remote=:37374 -logfile=auto -debug=:0 -rpc.trace
+gopls -remote=:37374 -logfile=auto -debug=:0 -rpc.trace
 ```
 
 If you are on a POSIX system, you can also use unix domain sockets by prefixing
 the flag values with `unix;`. For example:
 
 ```bash
-gopls serve -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0
+gopls -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0
 ```
 
 And connect via:
 
 ```bash
-gopls serve -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0 -rpc.trace
+gopls -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0 -rpc.trace
 ```
 
 (Note that these flag values MUST be enclosed in quotes, because ';' is a
@@ -94,11 +94,11 @@ are some tips:
 
 ### Finding logfiles and debug addresses
 
-When running in daemon mode, you can use the `gopls remote sessions` command
+When running in daemon mode, you can use the `gopls inspect sessions` command
 to find the logfile and debug port for your gopls daemon instance (as well as
-for all its connected clients). By default, this finds the default daemon
-(i.e. `-remote=auto`). To query a different daemon, use the `-remote` flag
-explicitly: `gopls remote sessions -remote=localhost:12345`.
+for all its connected clients). By default, this inspects the default daemon
+(i.e. `-remote=auto`). To inspect a different daemon, use the `-remote` flag
+explicitly: `gopls -remote=localhost:12345 inspect sessions`.
 
 This works whether or not you have enabled `-remote.debug`.
 
@@ -106,7 +106,7 @@ This works whether or not you have enabled `-remote.debug`.
 
 When `-debug=:0` is passed to gopls, it runs a webserver that serves stateful
 debug pages (see [troubleshooting.md](troubleshooting.md)). You can find the
-actual port hosting these pages by either using the `gopls remote sessions`
+actual port hosting these pages by either using the `gopls inspect sessions`
 command, or by checking the start of the logfile -- it will be one of the first
 log messages. For example, if using `-logfile=auto`, find the debug address by
 checking `head /tmp/gopls-<pid>.log`.

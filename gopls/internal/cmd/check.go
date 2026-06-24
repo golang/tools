@@ -16,8 +16,7 @@ import (
 
 // check implements the check verb for gopls.
 type check struct {
-	app *Application
-	CommonFlags
+	app      *Application
 	Severity string `flag:"severity" help:"minimum diagnostic severity (hint, info, warning, or error)"`
 }
 
@@ -67,7 +66,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		opts.RelatedInformationSupported = true
 	}
 
-	cli, _, err := c.app.connect(ctx, c.RemoteFlag)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,6 @@ import (
 // callHierarchy implements the callHierarchy verb for gopls.
 type callHierarchy struct {
 	app *Application
-	CommonFlags
 }
 
 func (c *callHierarchy) Name() string      { return "call_hierarchy" }
@@ -40,7 +39,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("call_hierarchy expects 1 argument (position)")
 	}
 
-	cli, _, err := c.app.connect(ctx, c.RemoteFlag)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

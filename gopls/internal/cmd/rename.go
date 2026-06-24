@@ -15,7 +15,6 @@ import (
 
 // rename implements the rename verb for gopls.
 type rename struct {
-	CommonFlags
 	EditFlags
 	app *Application
 }
@@ -46,7 +45,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("rename expects 2 arguments (position, new name)")
 	}
 	r.app.editFlags = &r.EditFlags
-	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

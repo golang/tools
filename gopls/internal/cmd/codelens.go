@@ -16,7 +16,6 @@ import (
 
 // codelens implements the codelens verb for gopls.
 type codelens struct {
-	CommonFlags
 	EditFlags
 	app *Application
 
@@ -84,7 +83,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 		opts.Codelenses[settings.CodeLensTest] = true
 	}
 
-	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

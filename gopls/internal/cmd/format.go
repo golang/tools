@@ -14,7 +14,6 @@ import (
 
 // format implements the format verb for gopls.
 type format struct {
-	CommonFlags
 	EditFlags
 	app *Application
 }
@@ -43,7 +42,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		return nil
 	}
 	c.app.editFlags = &c.EditFlags
-	cli, _, err := c.app.connect(ctx, c.RemoteFlag)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

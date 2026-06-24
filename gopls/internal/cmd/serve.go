@@ -27,15 +27,18 @@ import (
 )
 
 // Serve is a struct that exposes the configurable parts of the LSP and MCP
-// server as flags, in the right form for cmd.Main to consume.
+// server as flags, in the right form for tool.Main to consume.
 type Serve struct {
-	RemoteFlag
 	Logfile     string        `flag:"logfile" help:"filename to log to. if value is \"auto\", then logging to a default output file is enabled"`
 	Mode        string        `flag:"mode" help:"no effect"`
 	Address     string        `flag:"listen" help:"address on which to listen for remote connections. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. Otherwise, TCP is used."`
 	IdleTimeout time.Duration `flag:"listen.timeout" help:"when used with -listen, shut down the server when there are no connected clients for this duration"`
 	Trace       bool          `flag:"rpc.trace" help:"print the full rpc trace in lsp inspector format"`
 	Debug       string        `flag:"debug" help:"serve debug information on the supplied address"`
+
+	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon"`
+	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
+	RemoteLogfile       string        `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
 
 	// MCP Server related configurations.
 	MCPAddress string `flag:"mcp.listen" help:"experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead."`
@@ -58,6 +61,22 @@ a child of an editor process.
 server-flags:
 `)
 	printFlagDefaults(f)
+}
+
+func (s *Serve) remoteArgs(network, address string) []string {
+	args := []string{"serve",
+		"-listen", fmt.Sprintf(`%s;%s`, network, address),
+	}
+	if s.RemoteDebug != "" {
+		args = append(args, "-debug", s.RemoteDebug)
+	}
+	if s.RemoteListenTimeout != 0 {
+		args = append(args, "-listen.timeout", s.RemoteListenTimeout.String())
+	}
+	if s.RemoteLogfile != "" {
+		args = append(args, "-logfile", s.RemoteLogfile)
+	}
+	return args
 }
 
 // Run configures a server based on the flags, and then runs it.
@@ -83,9 +102,9 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		ss       jsonrpc2.StreamServer
 		sessions mcp.Sessions // if non-nil, handle MCP sessions
 	)
-	if s.Remote != "" {
+	if s.app.Remote != "" {
 		var err error
-		ss, err = lsprpc.NewForwarder(s.Remote, s.remoteArgs)
+		ss, err = lsprpc.NewForwarder(s.app.Remote, s.remoteArgs)
 		if err != nil {
 			return fmt.Errorf("creating forwarder: %w", err)
 		}

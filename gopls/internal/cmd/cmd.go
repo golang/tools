@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -44,15 +46,16 @@ type Application struct {
 	// Embed the basic profiling flags supported by the tool package
 	tool.Profile
 
-	// serve holds the state needed by the gopls serve subcommand.
-	// This is in this struct due to historical reasons.
-	// `flag:"-"` tells the reflection-based flag parser to ignore this field;
-	// instead, the dispatch function explicitly registers and parses serve flags.
-	// TODO: Remove serve from Application.
-	serve Serve `flag:"-"`
+	// We include the server configuration directly for now, so the flags work
+	// even without the verb.
+	// TODO: Remove this when we stop allowing the serve verb by default.
+	Serve Serve
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)
+
+	// Support for remote LSP server.
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
 
 	// Verbose enables verbose logging.
 	Verbose bool `flag:"v,verbose" help:"verbose output"`
@@ -88,42 +91,6 @@ type EditFlags struct {
 	List     bool `flag:"l,list" help:"display names of edited files"`
 }
 
-// CommonFlags defines the flags that apply to all gopls subcommands.
-// This is distinct from Application, which contains flags that apply to the
-// primary gopls command itself (such as profiling or verbose output).
-type CommonFlags struct {
-	RemoteFlag // most subcommands support -remote.
-}
-
-// RemoteFlag defines the set of flags for the forward mode.
-type RemoteFlag struct {
-	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
-
-	// The following flags are used with -remote=auto mode.
-	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
-	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon (default 1m0s)"`
-	RemoteLogfile       string        `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
-}
-
-func (r *RemoteFlag) remoteArgs(network, address string) []string {
-	args := []string{
-		"serve",
-		"-listen", fmt.Sprintf(`%s;%s`, network, address),
-	}
-	if r.RemoteDebug != "" {
-		args = append(args, "-debug", r.RemoteDebug)
-	}
-	timeout := r.RemoteListenTimeout
-	if timeout == 0 {
-		timeout = 1 * time.Minute
-	}
-	args = append(args, "-listen.timeout", timeout.String())
-	if r.RemoteLogfile != "" {
-		args = append(args, "-logfile", r.RemoteLogfile)
-	}
-	return args
-}
-
 func (app *Application) verbose() bool {
 	return app.Verbose || app.VeryVerbose
 }
@@ -131,26 +98,26 @@ func (app *Application) verbose() bool {
 // New returns a new Application ready to run.
 func New() *Application {
 	app := &Application{
-		serve: Serve{
-			RemoteFlag: RemoteFlag{},
+		Serve: Serve{
+			RemoteListenTimeout: 1 * time.Minute,
 		},
 	}
-	app.serve.app = app
+	app.Serve.app = app
 	return app
 }
 
-// Name implements tool.Command returning the binary name.
+// Name implements tool.Application returning the binary name.
 func (app *Application) Name() string { return "gopls" }
 
-// Usage implements tool.Command returning empty extra argument usage.
+// Usage implements tool.Application returning empty extra argument usage.
 func (app *Application) Usage() string { return "" }
 
-// ShortHelp implements tool.Command returning the main binary help.
+// ShortHelp implements tool.Application returning the main binary help.
 func (app *Application) ShortHelp() string {
 	return ""
 }
 
-// DetailedHelp implements tool.Command returning the main binary help.
+// DetailedHelp implements tool.Application returning the main binary help.
 // This includes the short help for all the sub commands.
 func (app *Application) DetailedHelp(f *flag.FlagSet) {
 	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
@@ -259,20 +226,45 @@ func isZeroValue(f *flag.Flag, value string) bool {
 	return value == z.Interface().(flag.Value).String()
 }
 
+// Run takes the args after top level flag processing, and invokes the correct
+// sub command as specified by the first argument.
+// If no arguments are passed it will invoke the server sub command, as a
+// temporary measure for compatibility.
+func (app *Application) Run(ctx context.Context, args ...string) error {
+	// In the category of "things we can do while waiting for the Go command":
+	// Pre-initialize the filecache, which takes ~50ms to hash the gopls
+	// executable, and immediately runs a gc.
+	filecache.Start()
+
+	ctx = debug.WithInstance(ctx, app.OTel)
+	if len(args) == 0 {
+		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
+		return tool.Run(ctx, s, &app.Serve, args)
+	}
+	command, args := args[0], args[1:]
+	for _, c := range app.Commands() {
+		if c.Name() == command {
+			s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
+			return tool.Run(ctx, s, c, args)
+		}
+	}
+	return tool.CommandLineErrorf("Unknown command %v", command)
+}
+
 // Commands returns the set of commands supported by the gopls tool on the
 // command line.
 // The command is specified by the first non flag argument.
-func (app *Application) Commands() []tool.Command {
-	var commands []tool.Command
+func (app *Application) Commands() []tool.Application {
+	var commands []tool.Application
 	commands = append(commands, app.mainCommands()...)
 	commands = append(commands, app.featureCommands()...)
 	commands = append(commands, app.internalCommands()...)
 	return commands
 }
 
-func (app *Application) mainCommands() []tool.Command {
-	return []tool.Command{
-		&app.serve,
+func (app *Application) mainCommands() []tool.Application {
+	return []tool.Application{
+		&app.Serve,
 		&version{app: app},
 		&help{app: app},
 		&apiJSON{app: app},
@@ -280,14 +272,14 @@ func (app *Application) mainCommands() []tool.Command {
 	}
 }
 
-func (app *Application) internalCommands() []tool.Command {
-	return []tool.Command{
+func (app *Application) internalCommands() []tool.Application {
+	return []tool.Application{
 		&vulncheck{app: app},
 	}
 }
 
-func (app *Application) featureCommands() []tool.Command {
-	return []tool.Command{
+func (app *Application) featureCommands() []tool.Application {
+	return []tool.Application{
 		&callHierarchy{app: app},
 		&check{app: app, Severity: "warning"},
 		&codeaction{app: app},
@@ -315,7 +307,7 @@ func (app *Application) featureCommands() []tool.Command {
 }
 
 // connect creates and initializes a new in-process gopls LSP session.
-func (app *Application) connect(ctx context.Context, remote RemoteFlag) (*client, *cache.Session, error) {
+func (app *Application) connect(ctx context.Context) (*client, *cache.Session, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, nil, fmt.Errorf("finding workdir: %v", err)
@@ -326,14 +318,14 @@ func (app *Application) connect(ctx context.Context, remote RemoteFlag) (*client
 		svr  protocol.Server
 		sess *cache.Session
 	)
-	if remote.Remote == "" {
+	if app.Remote == "" {
 		// local
 		sess = cache.NewSession(ctx, cache.New(nil))
 		svr = server.New(sess, client, options)
 		ctx = protocol.WithClient(ctx, client)
 	} else {
 		// remote
-		netConn, err := lsprpc.ConnectToRemote(ctx, remote.Remote)
+		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
 		if err != nil {
 			return nil, nil, err
 		}

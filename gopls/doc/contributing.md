@@ -248,11 +248,11 @@ You can also start the server in a running gopls process by executing a StartDeb
 
 ### OpenTelemetry
 
-Gopls supports periodical export of traces and metrics by POSTing JSON messages to an OpenTelemetry collector process such as Jaeger/Grafana.
+Gopls supports periodical export of traces and metrics by POSTing JSON messages to an OpenTelemetry collector process such as Jaeger/Grafana. 
 Use the `-otel` flag to specify the collector endpoint to enable exporting:
 
 ```bash
-gopls -otel=http://localhost:4318 serve
+gopls serve -otel=http://localhost:4318
 ```
 
 The data are discarded if no collector is listening at that address.

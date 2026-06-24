@@ -35,7 +35,6 @@ const (
 // definition implements the definition verb for gopls.
 type definition struct {
 	app *Application
-	CommonFlags
 
 	JSON              bool `flag:"json" help:"emit output in JSON format"`
 	MarkdownSupported bool `flag:"markdown" help:"support markdown in responses"`
@@ -74,7 +73,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 			o.PreferredContentFormat = protocol.Markdown
 		}
 	}
-	cli, _, err := d.app.connect(ctx, d.RemoteFlag)
+	cli, _, err := d.app.connect(ctx)
 	if err != nil {
 		return err
 	}

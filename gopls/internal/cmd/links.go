@@ -18,7 +18,6 @@ import (
 // links implements the links verb for gopls.
 type links struct {
 	JSON bool `flag:"json" help:"emit document links in JSON format"`
-	CommonFlags
 
 	app *Application
 }
@@ -45,7 +44,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return tool.CommandLineErrorf("links expects 1 argument")
 	}
-	cli, _, err := l.app.connect(ctx, l.RemoteFlag)
+	cli, _, err := l.app.connect(ctx)
 	if err != nil {
 		return err
 	}

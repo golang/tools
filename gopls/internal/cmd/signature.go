@@ -16,7 +16,6 @@ import (
 // signature implements the signature verb for gopls
 type signature struct {
 	app *Application
-	CommonFlags
 }
 
 func (r *signature) Name() string      { return "signature" }
@@ -39,7 +38,7 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("signature expects 1 argument (position)")
 	}
 
-	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

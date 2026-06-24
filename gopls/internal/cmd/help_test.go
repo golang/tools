@@ -36,10 +36,6 @@ func TestHelpFiles(t *testing.T) {
 	ctx := context.Background()
 	for _, page := range append(app.Commands(), app) {
 		t.Run(page.Name(), func(t *testing.T) {
-			// TODO(adonovan): rewrite this test and the one below to
-			// fork+exec "gopls subcommand -h" instead of poking into
-			// half-baked internal startup routines like tool.Run.
-			// Then we can make cmd.Main the only entry point.
 			var buf bytes.Buffer
 			s := flag.NewFlagSet(page.Name(), flag.ContinueOnError)
 			s.SetOutput(&buf)

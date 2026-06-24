@@ -16,7 +16,6 @@ import (
 // foldingRanges implements the folding_ranges verb for gopls
 type foldingRanges struct {
 	app *Application
-	CommonFlags
 }
 
 func (r *foldingRanges) Name() string      { return "folding_ranges" }
@@ -37,7 +36,7 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("folding_ranges expects 1 argument (file)")
 	}
 
-	cli, _, err := r.app.connect(ctx, r.RemoteFlag)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
