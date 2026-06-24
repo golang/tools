@@ -55,13 +55,23 @@ import (
 type Mode int
 
 const (
+	// NoMode represents an empty mode filter.
+	//
+	// When passed to the Modes() option, it explicitly instructs the runner
+	// to run the test in zero modes (effectively skipping the test).
+	//
+	// This is distinct from not specifying the Modes() option at all (which
+	// defaults to a nil pointer, causing the runner to fall back to its
+	// DefaultModes).
+	NoMode Mode = 0
+
 	// Default mode runs gopls with the default options, communicating over pipes
 	// to emulate the lsp sidecar execution mode, which communicates over
 	// stdin/stdout.
 	//
 	// It uses separate servers for each test, but a shared cache, to avoid
 	// duplicating work when processing GOROOT.
-	Default Mode = 1 << iota
+	Default Mode = 1 << (iota - 1) // 1, because iota = 1
 
 	// Forwarded uses the default options, but forwards connections to a shared
 	// in-process gopls server.
@@ -76,6 +86,8 @@ const (
 
 func (m Mode) String() string {
 	switch m {
+	case NoMode:
+		return "none"
 	case Default:
 		return "default"
 	case Forwarded:
@@ -146,8 +158,8 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			opt.set(&config)
 		}
 		modes := r.DefaultModes
-		if config.modes != 0 {
-			modes = config.modes
+		if config.modes != nil {
+			modes = *config.modes
 		}
 		if modes&tc.mode == 0 {
 			continue

@@ -16,9 +16,14 @@ import (
 )
 
 type runConfig struct {
-	editor        fake.EditorConfig
-	sandbox       fake.SandboxConfig
-	modes         Mode
+	editor  fake.EditorConfig
+	sandbox fake.SandboxConfig
+	// modes determines the execution modes for the test.
+	//
+	// If nil (unset), the runner falls back to its DefaultModes.
+	// If non-nil but empty (*modes == NoMode), the test runs in 0 modes (effectively skipping it).
+	// If non-nil and non-empty, the test runs only in the specified modes.
+	modes         *Mode
 	noLogsOnError bool
 	writeGoSum    []string
 }
@@ -71,10 +76,10 @@ func WriteGoSum(dirs ...string) RunOption {
 // modes.
 func Modes(modes Mode) RunOption {
 	return optionSetter(func(opts *runConfig) {
-		if opts.modes != 0 {
+		if opts.modes != nil {
 			panic("modes set more than once")
 		}
-		opts.modes = modes
+		opts.modes = &modes
 	})
 }
 
