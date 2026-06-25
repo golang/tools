@@ -132,7 +132,7 @@ features can also be accessed via the gopls command-line interface.
 
 For documentation of all its features, see:
 
-   https://github.com/golang/tools/blob/master/gopls/doc/features
+   https://go.dev/gopls/features
 
 Usage:
   gopls help [<subject>]

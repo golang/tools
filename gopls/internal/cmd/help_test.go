@@ -13,41 +13,40 @@ package cmd_test
 //go:generate go test -run Help -update-help-files
 
 import (
-	"bytes"
-	"context"
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/internal/testenv"
 )
 
 var updateHelpFiles = flag.Bool("update-help-files", false, "Write out the help files instead of checking them")
 
-const appName = "gopls"
-
 func TestHelpFiles(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
+	t.Parallel()
 	app := cmd.New()
-	ctx := context.Background()
-	for _, page := range append(app.Commands(), app) {
-		t.Run(page.Name(), func(t *testing.T) {
-			var buf bytes.Buffer
-			s := flag.NewFlagSet(page.Name(), flag.ContinueOnError)
-			s.SetOutput(&buf)
-			tool.Run(ctx, s, page, []string{"-h"}) // ignore error
-			name := page.Name()
-			if name == appName {
+	tree := writeTree(t, "")
+	for _, cmd := range append(app.Commands(), app) {
+		name := cmd.Name()
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			args := []string{name, "-h"}
+			// The output of 'gopls -h' is in usage.hlp
+			if cmd == app {
+				args = args[1:]
 				name = "usage"
 			}
+			res := gopls(t, tree, args...)
+			res.checkExit(true) // -h should result in exit 0
+			got := res.stderr
 			helpFile := filepath.Join("usage", name+".hlp")
-			got := buf.Bytes()
 			if *updateHelpFiles {
-				if err := os.WriteFile(helpFile, got, 0666); err != nil {
+				if err := os.WriteFile(helpFile, []byte(got), 0666); err != nil {
 					t.Errorf("Failed writing %v: %v", helpFile, err)
 				}
 				return
@@ -56,26 +55,22 @@ func TestHelpFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Missing help file %q", helpFile)
 			}
-			if diff := cmp.Diff(string(want), string(got)); diff != "" {
+			if diff := cmp.Diff(string(want), got); diff != "" {
 				t.Errorf("Help file %q did not match, run with -update-help-files to fix (-want +got)\n%s", helpFile, diff)
 			}
 		})
 	}
 }
-
 func TestVerboseHelp(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
-	app := cmd.New()
-	ctx := context.Background()
-	var buf bytes.Buffer
-	s := flag.NewFlagSet(appName, flag.ContinueOnError)
-	s.SetOutput(&buf)
-	tool.Run(ctx, s, app, []string{"-v", "-h"}) // ignore error
-	got := buf.Bytes()
-
+	t.Parallel()
+	tree := writeTree(t, "")
+	res := gopls(t, tree, "-v", "-h")
+	res.checkExit(true) // -h should result in exit 0
+	got := res.stderr
 	helpFile := filepath.Join("usage", "usage-v.hlp")
 	if *updateHelpFiles {
-		if err := os.WriteFile(helpFile, got, 0666); err != nil {
+		if err := os.WriteFile(helpFile, []byte(got), 0666); err != nil {
 			t.Errorf("Failed writing %v: %v", helpFile, err)
 		}
 		return
@@ -84,7 +79,71 @@ func TestVerboseHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Missing help file %q", helpFile)
 	}
-	if diff := cmp.Diff(string(want), string(got)); diff != "" {
+	if diff := cmp.Diff(string(want), got); diff != "" {
 		t.Errorf("Help file %q did not match, run with -update-help-files to fix (-want +got)\n%s", helpFile, diff)
+	}
+}
+
+// TestHelpTree tests "gopls help" on a number
+// of levels of the commmand tree.
+func TestHelpTree(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, ``)
+
+	for _, test := range []struct {
+		args         []string
+		wantSuccess  bool
+		wantPatterns []string
+	}{
+		// gopls help
+		{
+			args:        []string{"help"},
+			wantSuccess: true,
+			wantPatterns: []string{
+				"gopls is a Go language server",
+				"https://go.dev/gopls/features",
+				"Usage:",
+				"Command:",
+				"  links.*list links in a file", // command menu
+			},
+		},
+		// gopls help remote
+		{
+			args:        []string{"help", "remote"},
+			wantSuccess: true,
+			wantPatterns: []string{
+				"interact with the gopls daemon",
+				"Usage:",
+				"Subcommand:",
+				"  sessions.*print information about current gopls sessions", // subcommand menu
+			},
+		},
+		// gopls help remote sessions
+		{
+			args:        []string{"help", "remote", "sessions"},
+			wantSuccess: true,
+			wantPatterns: []string{
+				"print information about current gopls sessions",
+				"Usage:",
+				"list sessions for the default daemon",
+			},
+		},
+		// gopls help remote nonesuch
+		{
+			args: []string{"help", "remote", "nonesuch"},
+			wantPatterns: []string{
+				"gopls: no such subcommand: remote nonesuch",
+			},
+		},
+	} {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			res := gopls(t, tree, test.args...)
+			res.checkExit(test.wantSuccess)
+			res.checkStdout("^$") // no stdout
+			for _, pattern := range test.wantPatterns {
+				res.checkStderr(pattern)
+			}
+		})
 	}
 }
