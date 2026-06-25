@@ -156,6 +156,7 @@ import (
 	"honnef.co/go/tools/staticcheck/sa9007"
 	"honnef.co/go/tools/staticcheck/sa9008"
 	"honnef.co/go/tools/staticcheck/sa9009"
+	"honnef.co/go/tools/staticcheck/sa9010"
 	"honnef.co/go/tools/stylecheck"
 	"honnef.co/go/tools/stylecheck/st1000"
 	"honnef.co/go/tools/stylecheck/st1001"
@@ -441,6 +442,7 @@ func staticcheckAnalyzers() (res []*Analyzer) {
 		sa9007.SCAnalyzer: false, // requires buildir
 		sa9008.SCAnalyzer: false, // requires buildir
 		sa9009.SCAnalyzer: true,
+		sa9010.SCAnalyzer: true,
 	})
 
 	return res

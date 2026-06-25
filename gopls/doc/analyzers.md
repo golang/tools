@@ -384,13 +384,11 @@ In many cases, assigning to the blank identifier is unnecessary.
 Before:
 
 	for _ = range s {}
-	x, _ = someMap[key]
 	_ = <-ch
 
 After:
 
 	for range s{}
-	x = someMap[key]
 	<-ch
 
 Available since
@@ -1028,6 +1026,8 @@ Package documentation: [SA1001](https://staticcheck.dev/docs/checks/#SA1001)
 <a id='SA1002'></a>
 ## `SA1002`: Invalid format in time.Parse
 
+time.Parse requires a layout string that uses Go's reference time: 'Mon Jan 2 15:04:05 MST 2006'. The layout must represent this date and time exactly. See [https://pkg.go.dev/time#pkg-constants](https://pkg.go.dev/time#pkg-constants) for layout examples.
+
 Available since
 
 	2017.1
@@ -1162,6 +1162,8 @@ Package documentation: [SA1011](https://staticcheck.dev/docs/checks/#SA1011)
 <a id='SA1012'></a>
 ## `SA1012`: A nil context.Context is being passed to a function, consider using context.TODO instead
 
+The context package prohibits the use of a nil context. If no parent context is available, a new context should be used, e.g. context.TODO or context.Background.
+
 Available since
 
 	2017.1
@@ -1185,6 +1187,8 @@ Package documentation: [SA1013](https://staticcheck.dev/docs/checks/#SA1013)
 
 <a id='SA1014'></a>
 ## `SA1014`: Non-pointer value passed to Unmarshal or Decode
+
+Functions such as encoding/json.Unmarshal and (\*encoding/json.Decoder).Decode require a pointer to the value that should be populated. Passing a non-pointer value results in the function returning an error at runtime, as it cannot modify the target value.
 
 Available since
 
@@ -1255,6 +1259,8 @@ Package documentation: [SA1018](https://staticcheck.dev/docs/checks/#SA1018)
 
 <a id='SA1020'></a>
 ## `SA1020`: Using an invalid host:port pair with a net.Listen-related function
+
+Functions such as net.Listen, net.ListenTCP, and similar, expect a valid network address in the form of host:port. The host, the port, or both, can be omitted, e.g. localhost:8080, :8080 or : are valid host:port pairs. See [https://pkg.go.dev/net#Listen](https://pkg.go.dev/net#Listen) for the full documentation.
 
 Available since
 
@@ -1470,6 +1476,16 @@ Package documentation: [SA2002](https://staticcheck.dev/docs/checks/#SA2002)
 <a id='SA2003'></a>
 ## `SA2003`: Deferred Lock right after locking, likely meant to defer Unlock instead
 
+Deferring a call to Lock immediately after locking is almost always a typo. For example:
+
+	mu.Lock()
+	defer mu.Lock()
+
+While this does not strictly guarantee a deadlock depending on how the surrounding code is structured, it is highly likely to be a mistake. The intended code was likely this:
+
+	mu.Lock()
+	defer mu.Unlock()
+
 Available since
 
 	2017.1
@@ -1622,6 +1638,8 @@ Package documentation: [SA4009](https://staticcheck.dev/docs/checks/#SA4009)
 
 <a id='SA4010'></a>
 ## `SA4010`: The result of append will never be observed anywhere
+
+Calls to append produce a new slice value. When the result of append is assigned to a variable that is never subsequently read, the append operation may have an unintended effect.
 
 Available since
 
@@ -2132,68 +2150,6 @@ Default: off. Enable by setting `"analyses": {"SA5010": true}`.
 
 Package documentation: [SA5010](https://staticcheck.dev/docs/checks/#SA5010)
 
-<a id='SA5011'></a>
-## `SA5011`: Possible nil pointer dereference
-
-A pointer is being dereferenced unconditionally, while also being checked against nil in another place. This suggests that the pointer may be nil and dereferencing it may panic. This is commonly a result of improperly ordered code or missing return statements. Consider the following examples:
-
-	func fn(x *int) {
-	    fmt.Println(*x)
-
-	    // This nil check is equally important for the previous dereference
-	    if x != nil {
-	        foo(*x)
-	    }
-	}
-
-	func TestFoo(t *testing.T) {
-	    x := compute()
-	    if x == nil {
-	        t.Errorf("nil pointer received")
-	    }
-
-	    // t.Errorf does not abort the test, so if x is nil, the next line will panic.
-	    foo(*x)
-	}
-
-Staticcheck tries to deduce which functions abort control flow. For example, it is aware that a function will not continue execution after a call to panic or log.Fatal. However, sometimes this detection fails, in particular in the presence of conditionals. Consider the following example:
-
-	func Log(msg string, level int) {
-	    fmt.Println(msg)
-	    if level == levelFatal {
-	        os.Exit(1)
-	    }
-	}
-
-	func Fatal(msg string) {
-	    Log(msg, levelFatal)
-	}
-
-	func fn(x *int) {
-	    if x == nil {
-	        Fatal("unexpected nil pointer")
-	    }
-	    fmt.Println(*x)
-	}
-
-Staticcheck will flag the dereference of x, even though it is perfectly safe. Staticcheck is not able to deduce that a call to Fatal will exit the program. For the time being, the easiest workaround is to modify the definition of Fatal like so:
-
-	func Fatal(msg string) {
-	    Log(msg, levelFatal)
-	    panic("unreachable")
-	}
-
-We also hard-code functions from common logging packages such as logrus. Please file an issue if we're missing support for a popular package.
-
-Available since
-
-	2020.1
-
-
-Default: off. Enable by setting `"analyses": {"SA5011": true}`.
-
-Package documentation: [SA5011](https://staticcheck.dev/docs/checks/#SA5011)
-
 <a id='SA5012'></a>
 ## `SA5012`: Passing odd-sized slice to function expecting even size
 
@@ -2566,6 +2522,35 @@ Available since
 Default: on.
 
 Package documentation: [SA9009](https://staticcheck.dev/docs/checks/#SA9009)
+
+<a id='SA9010'></a>
+## `SA9010`: Returned function should be called in defer
+
+If you have a function such as:
+
+	func f() func() {
+	    // Do something.
+	    return func() {
+	        // Do something.
+	    }
+	}
+
+Then calling that in defer:
+
+	defer f()
+
+Is almost always a mistake, since you typically want to call the returned function:
+
+	defer f()()
+
+Available since
+
+	2026.2
+
+
+Default: on.
+
+Package documentation: [SA9010](https://staticcheck.dev/docs/checks/#SA9010)
 
 <a id='ST1000'></a>
 ## `ST1000`: Incorrect or missing package comment

@@ -514,7 +514,7 @@
 						},
 						{
 							"Name": "\"S1005\"",
-							"Doc": "Drop unnecessary use of the blank identifier\n\nIn many cases, assigning to the blank identifier is unnecessary.\n\nBefore:\n\n    for _ = range s {}\n    x, _ = someMap[key]\n    _ = \u003c-ch\n\nAfter:\n\n    for range s{}\n    x = someMap[key]\n    \u003c-ch\n\nAvailable since\n    2017.1\n",
+							"Doc": "Drop unnecessary use of the blank identifier\n\nIn many cases, assigning to the blank identifier is unnecessary.\n\nBefore:\n\n    for _ = range s {}\n    _ = \u003c-ch\n\nAfter:\n\n    for range s{}\n    \u003c-ch\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -706,7 +706,7 @@
 						},
 						{
 							"Name": "\"SA1002\"",
-							"Doc": "Invalid format in time.Parse\n\nAvailable since\n    2017.1\n",
+							"Doc": "Invalid format in time.Parse\n\ntime.Parse requires a layout string that uses Go's reference time:\n'Mon Jan 2 15:04:05 MST 2006'. The layout must represent this date and time\nexactly. See https://pkg.go.dev/time#pkg-constants for layout examples.\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -754,7 +754,7 @@
 						},
 						{
 							"Name": "\"SA1012\"",
-							"Doc": "A nil context.Context is being passed to a function, consider using context.TODO instead\n\nAvailable since\n    2017.1\n",
+							"Doc": "A nil context.Context is being passed to a function, consider using context.TODO instead\n\nThe context package prohibits the use of a nil context.\nIf no parent context is available, a new context should be used,\ne.g. context.TODO or context.Background.\n\nAvailable since\n    2017.1\n",
 							"Default": "true",
 							"Status": ""
 						},
@@ -766,7 +766,7 @@
 						},
 						{
 							"Name": "\"SA1014\"",
-							"Doc": "Non-pointer value passed to Unmarshal or Decode\n\nAvailable since\n    2017.1\n",
+							"Doc": "Non-pointer value passed to Unmarshal or Decode\n\nFunctions such as encoding/json.Unmarshal and\n(*encoding/json.Decoder).Decode require a pointer to the value that should\nbe populated. Passing a non-pointer value results in the function returning an\nerror at runtime, as it cannot modify the target value.\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -796,7 +796,7 @@
 						},
 						{
 							"Name": "\"SA1020\"",
-							"Doc": "Using an invalid host:port pair with a net.Listen-related function\n\nAvailable since\n    2017.1\n",
+							"Doc": "Using an invalid host:port pair with a net.Listen-related function\n\nFunctions such as net.Listen, net.ListenTCP, and similar,\nexpect a valid network address in the form of host:port. The host, the port,\nor both, can be omitted, e.g. localhost:8080, :8080 or : are valid\nhost:port pairs.\nSee https://pkg.go.dev/net#Listen for the full documentation.\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -880,7 +880,7 @@
 						},
 						{
 							"Name": "\"SA2003\"",
-							"Doc": "Deferred Lock right after locking, likely meant to defer Unlock instead\n\nAvailable since\n    2017.1\n",
+							"Doc": "Deferred Lock right after locking, likely meant to defer Unlock instead\n\nDeferring a call to Lock immediately after locking is almost always\na typo. For example:\n\n    mu.Lock()\n    defer mu.Lock()\n\nWhile this does not strictly guarantee a deadlock depending on how the\nsurrounding code is structured, it is highly likely to be a mistake.\nThe intended code was likely this:\n\n    mu.Lock()\n    defer mu.Unlock()\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -946,7 +946,7 @@
 						},
 						{
 							"Name": "\"SA4010\"",
-							"Doc": "The result of append will never be observed anywhere\n\nAvailable since\n    2017.1\n",
+							"Doc": "The result of append will never be observed anywhere\n\nCalls to append produce a new slice value. When the result of\nappend is assigned to a variable that is never subsequently read, the\nappend operation may have an unintended effect.\n\nAvailable since\n    2017.1\n",
 							"Default": "false",
 							"Status": ""
 						},
@@ -1131,12 +1131,6 @@
 							"Status": ""
 						},
 						{
-							"Name": "\"SA5011\"",
-							"Doc": "Possible nil pointer dereference\n\nA pointer is being dereferenced unconditionally, while\nalso being checked against nil in another place. This suggests that\nthe pointer may be nil and dereferencing it may panic. This is\ncommonly a result of improperly ordered code or missing return\nstatements. Consider the following examples:\n\n    func fn(x *int) {\n        fmt.Println(*x)\n\n        // This nil check is equally important for the previous dereference\n        if x != nil {\n            foo(*x)\n        }\n    }\n\n    func TestFoo(t *testing.T) {\n        x := compute()\n        if x == nil {\n            t.Errorf(\"nil pointer received\")\n        }\n\n        // t.Errorf does not abort the test, so if x is nil, the next line will panic.\n        foo(*x)\n    }\n\nStaticcheck tries to deduce which functions abort control flow.\nFor example, it is aware that a function will not continue\nexecution after a call to panic or log.Fatal. However, sometimes\nthis detection fails, in particular in the presence of\nconditionals. Consider the following example:\n\n    func Log(msg string, level int) {\n        fmt.Println(msg)\n        if level == levelFatal {\n            os.Exit(1)\n        }\n    }\n\n    func Fatal(msg string) {\n        Log(msg, levelFatal)\n    }\n\n    func fn(x *int) {\n        if x == nil {\n            Fatal(\"unexpected nil pointer\")\n        }\n        fmt.Println(*x)\n    }\n\nStaticcheck will flag the dereference of x, even though it is perfectly\nsafe. Staticcheck is not able to deduce that a call to\nFatal will exit the program. For the time being, the easiest\nworkaround is to modify the definition of Fatal like so:\n\n    func Fatal(msg string) {\n        Log(msg, levelFatal)\n        panic(\"unreachable\")\n    }\n\nWe also hard-code functions from common logging packages such as\nlogrus. Please file an issue if we're missing support for a\npopular package.\n\nAvailable since\n    2020.1\n",
-							"Default": "false",
-							"Status": ""
-						},
-						{
 							"Name": "\"SA5012\"",
 							"Doc": "Passing odd-sized slice to function expecting even size\n\nSome functions that take slices as parameters expect the slices to have an even number of elements. \nOften, these functions treat elements in a slice as pairs. \nFor example, strings.NewReplacer takes pairs of old and new strings, \nand calling it with an odd number of elements would be an error.\n\nAvailable since\n    2020.2\n",
 							"Default": "false",
@@ -1229,6 +1223,12 @@
 						{
 							"Name": "\"SA9009\"",
 							"Doc": "Ineffectual Go compiler directive\n\nA potential Go compiler directive was found, but is ineffectual as it begins\nwith whitespace.\n\nAvailable since\n    2024.1\n",
+							"Default": "true",
+							"Status": ""
+						},
+						{
+							"Name": "\"SA9010\"",
+							"Doc": "Returned function should be called in defer\n\nIf you have a function such as:\n\n    func f() func() {\n        // Do something.\n        return func() {\n            // Do something.\n        }\n    }\n\nThen calling that in defer:\n\n    defer f()\n\nIs almost always a mistake, since you typically want to call the returned\nfunction:\n\n    defer f()()\n\nAvailable since\n    2026.2\n",
 							"Default": "true",
 							"Status": ""
 						},
@@ -2529,7 +2529,7 @@
 		},
 		{
 			"Name": "S1005",
-			"Doc": "Drop unnecessary use of the blank identifier\n\nIn many cases, assigning to the blank identifier is unnecessary.\n\nBefore:\n\n    for _ = range s {}\n    x, _ = someMap[key]\n    _ = \u003c-ch\n\nAfter:\n\n    for range s{}\n    x = someMap[key]\n    \u003c-ch\n\nAvailable since\n    2017.1\n",
+			"Doc": "Drop unnecessary use of the blank identifier\n\nIn many cases, assigning to the blank identifier is unnecessary.\n\nBefore:\n\n    for _ = range s {}\n    _ = \u003c-ch\n\nAfter:\n\n    for range s{}\n    \u003c-ch\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#S1005",
 			"Default": false
 		},
@@ -2721,7 +2721,7 @@
 		},
 		{
 			"Name": "SA1002",
-			"Doc": "Invalid format in time.Parse\n\nAvailable since\n    2017.1\n",
+			"Doc": "Invalid format in time.Parse\n\ntime.Parse requires a layout string that uses Go's reference time:\n'Mon Jan 2 15:04:05 MST 2006'. The layout must represent this date and time\nexactly. See https://pkg.go.dev/time#pkg-constants for layout examples.\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA1002",
 			"Default": false
 		},
@@ -2769,7 +2769,7 @@
 		},
 		{
 			"Name": "SA1012",
-			"Doc": "A nil context.Context is being passed to a function, consider using context.TODO instead\n\nAvailable since\n    2017.1\n",
+			"Doc": "A nil context.Context is being passed to a function, consider using context.TODO instead\n\nThe context package prohibits the use of a nil context.\nIf no parent context is available, a new context should be used,\ne.g. context.TODO or context.Background.\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA1012",
 			"Default": true
 		},
@@ -2781,7 +2781,7 @@
 		},
 		{
 			"Name": "SA1014",
-			"Doc": "Non-pointer value passed to Unmarshal or Decode\n\nAvailable since\n    2017.1\n",
+			"Doc": "Non-pointer value passed to Unmarshal or Decode\n\nFunctions such as encoding/json.Unmarshal and\n(*encoding/json.Decoder).Decode require a pointer to the value that should\nbe populated. Passing a non-pointer value results in the function returning an\nerror at runtime, as it cannot modify the target value.\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA1014",
 			"Default": false
 		},
@@ -2811,7 +2811,7 @@
 		},
 		{
 			"Name": "SA1020",
-			"Doc": "Using an invalid host:port pair with a net.Listen-related function\n\nAvailable since\n    2017.1\n",
+			"Doc": "Using an invalid host:port pair with a net.Listen-related function\n\nFunctions such as net.Listen, net.ListenTCP, and similar,\nexpect a valid network address in the form of host:port. The host, the port,\nor both, can be omitted, e.g. localhost:8080, :8080 or : are valid\nhost:port pairs.\nSee https://pkg.go.dev/net#Listen for the full documentation.\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA1020",
 			"Default": false
 		},
@@ -2895,7 +2895,7 @@
 		},
 		{
 			"Name": "SA2003",
-			"Doc": "Deferred Lock right after locking, likely meant to defer Unlock instead\n\nAvailable since\n    2017.1\n",
+			"Doc": "Deferred Lock right after locking, likely meant to defer Unlock instead\n\nDeferring a call to Lock immediately after locking is almost always\na typo. For example:\n\n    mu.Lock()\n    defer mu.Lock()\n\nWhile this does not strictly guarantee a deadlock depending on how the\nsurrounding code is structured, it is highly likely to be a mistake.\nThe intended code was likely this:\n\n    mu.Lock()\n    defer mu.Unlock()\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA2003",
 			"Default": false
 		},
@@ -2961,7 +2961,7 @@
 		},
 		{
 			"Name": "SA4010",
-			"Doc": "The result of append will never be observed anywhere\n\nAvailable since\n    2017.1\n",
+			"Doc": "The result of append will never be observed anywhere\n\nCalls to append produce a new slice value. When the result of\nappend is assigned to a variable that is never subsequently read, the\nappend operation may have an unintended effect.\n\nAvailable since\n    2017.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA4010",
 			"Default": false
 		},
@@ -3146,12 +3146,6 @@
 			"Default": false
 		},
 		{
-			"Name": "SA5011",
-			"Doc": "Possible nil pointer dereference\n\nA pointer is being dereferenced unconditionally, while\nalso being checked against nil in another place. This suggests that\nthe pointer may be nil and dereferencing it may panic. This is\ncommonly a result of improperly ordered code or missing return\nstatements. Consider the following examples:\n\n    func fn(x *int) {\n        fmt.Println(*x)\n\n        // This nil check is equally important for the previous dereference\n        if x != nil {\n            foo(*x)\n        }\n    }\n\n    func TestFoo(t *testing.T) {\n        x := compute()\n        if x == nil {\n            t.Errorf(\"nil pointer received\")\n        }\n\n        // t.Errorf does not abort the test, so if x is nil, the next line will panic.\n        foo(*x)\n    }\n\nStaticcheck tries to deduce which functions abort control flow.\nFor example, it is aware that a function will not continue\nexecution after a call to panic or log.Fatal. However, sometimes\nthis detection fails, in particular in the presence of\nconditionals. Consider the following example:\n\n    func Log(msg string, level int) {\n        fmt.Println(msg)\n        if level == levelFatal {\n            os.Exit(1)\n        }\n    }\n\n    func Fatal(msg string) {\n        Log(msg, levelFatal)\n    }\n\n    func fn(x *int) {\n        if x == nil {\n            Fatal(\"unexpected nil pointer\")\n        }\n        fmt.Println(*x)\n    }\n\nStaticcheck will flag the dereference of x, even though it is perfectly\nsafe. Staticcheck is not able to deduce that a call to\nFatal will exit the program. For the time being, the easiest\nworkaround is to modify the definition of Fatal like so:\n\n    func Fatal(msg string) {\n        Log(msg, levelFatal)\n        panic(\"unreachable\")\n    }\n\nWe also hard-code functions from common logging packages such as\nlogrus. Please file an issue if we're missing support for a\npopular package.\n\nAvailable since\n    2020.1\n",
-			"URL": "https://staticcheck.dev/docs/checks/#SA5011",
-			"Default": false
-		},
-		{
 			"Name": "SA5012",
 			"Doc": "Passing odd-sized slice to function expecting even size\n\nSome functions that take slices as parameters expect the slices to have an even number of elements. \nOften, these functions treat elements in a slice as pairs. \nFor example, strings.NewReplacer takes pairs of old and new strings, \nand calling it with an odd number of elements would be an error.\n\nAvailable since\n    2020.2\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA5012",
@@ -3245,6 +3239,12 @@
 			"Name": "SA9009",
 			"Doc": "Ineffectual Go compiler directive\n\nA potential Go compiler directive was found, but is ineffectual as it begins\nwith whitespace.\n\nAvailable since\n    2024.1\n",
 			"URL": "https://staticcheck.dev/docs/checks/#SA9009",
+			"Default": true
+		},
+		{
+			"Name": "SA9010",
+			"Doc": "Returned function should be called in defer\n\nIf you have a function such as:\n\n    func f() func() {\n        // Do something.\n        return func() {\n            // Do something.\n        }\n    }\n\nThen calling that in defer:\n\n    defer f()\n\nIs almost always a mistake, since you typically want to call the returned\nfunction:\n\n    defer f()()\n\nAvailable since\n    2026.2\n",
+			"URL": "https://staticcheck.dev/docs/checks/#SA9010",
 			"Default": true
 		},
 		{
