@@ -567,6 +567,8 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 	ctx, done := event.Start(ctx, "cache.snapshot.References")
 	defer done()
 
+	var enc objectpath.Encoder // amortize encoding across the batch
+
 	indexes := make([]xrefIndex, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		if idx, ok := filecache.GetOrFatal(xrefsKind, ph.key, xrefs.Decode); ok {
@@ -576,7 +578,7 @@ func (s *Snapshot) References(ctx context.Context, ids ...PackageID) ([]xrefInde
 		return true
 	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = xrefIndex{mp: pkg.metadata, idx: pkg.pkg.xrefs()}
+		indexes[i] = xrefIndex{mp: pkg.metadata, idx: pkg.pkg.xrefs(&enc)}
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
@@ -599,6 +601,8 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	ctx, done := event.Start(ctx, "cache.snapshot.MethodSets")
 	defer done()
 
+	var enc objectpath.Encoder // amortize encoding across the batch
+
 	indexes := make([]*methodsets.Index, len(ids))
 	pre := func(i int, ph *packageHandle) bool {
 		pkgPath := ph.mp.PkgPath // capture for decode closure
@@ -611,7 +615,7 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 		return true
 	}
 	post := func(i int, pkg *Package) {
-		indexes[i] = pkg.pkg.methodsets()
+		indexes[i] = pkg.pkg.methodsets(&enc)
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }

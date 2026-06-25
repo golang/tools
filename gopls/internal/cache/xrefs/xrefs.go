@@ -23,7 +23,11 @@ import (
 
 // NewIndex constructs an index of outbound cross-references for the
 // specified type-checked package.
-func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Index {
+//
+// Callers indexing many packages should share one objectpath Encoder
+// so that a heavily referenced package's object paths are encoded
+// once rather than once per referencing package.
+func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package, info *types.Info) *Index {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -40,8 +44,6 @@ func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Inde
 		}
 		return objects
 	}
-
-	objectpathFor := new(objectpath.Encoder).For
 
 	for fileIndex, pgf := range files {
 		// Avoid pgf.Cursor() here to prevent materialization
@@ -67,7 +69,7 @@ func NewIndex(files []*parsego.File, pkg *types.Package, info *types.Info) *Inde
 						objects := getObjects(obj.Pkg())
 						gobObj, ok := objects[obj]
 						if !ok {
-							path, err := objectpathFor(obj)
+							path, err := enc.For(obj)
 							if err != nil {
 								// Capitalized but not exported
 								// (e.g. local const/var/type).

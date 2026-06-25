@@ -26,6 +26,7 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/bloom"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -70,6 +71,7 @@ type typeCheckBatch struct {
 	syntaxPackages   *futureCache[PackageID, *Package]       // transient cache of in-progress syntax futures
 	importPackages   *futureCache[PackageID, *types.Package] // persistent cache of imports
 	gopackagesdriver bool                                    // for bug reporting: were packages loaded with a driver?
+	encoder          objectpath.Encoder                      // to amortize encoding across the batch
 }
 
 // addHandles is called by each goroutine joining the type check batch, to
@@ -416,7 +418,7 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 		}
 
 		// Update caches.
-		go storePackageResults(ctx, ph, p) // ...and write all packages to disk
+		go storePackageResults(ctx, ph, p, &b.encoder) // ...and write all packages to disk
 		return p, nil
 	})
 }
@@ -424,10 +426,10 @@ func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Pa
 // storePackageResults serializes and writes information derived from p to the
 // file cache.
 // The context is used only for logging; cancellation does not affect the operation.
-func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
+func storePackageResults(ctx context.Context, ph *packageHandle, p *Package, enc *objectpath.Encoder) {
 	toCache := map[string][]byte{
-		xrefsKind:       p.pkg.xrefs().Encode(),
-		methodSetsKind:  p.pkg.methodsets().Encode(),
+		xrefsKind:       p.pkg.xrefs(enc).Encode(),
+		methodSetsKind:  p.pkg.methodsets(enc).Encode(),
 		testsKind:       p.pkg.tests().Encode(),
 		diagnosticsKind: encodeDiagnostics(p.pkg.diagnostics),
 	}

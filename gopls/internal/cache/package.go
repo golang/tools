@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 
+	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -68,16 +69,16 @@ type syntaxPackage struct {
 	_tests    *testfuncs.Index // only used by the tests method
 }
 
-func (p *syntaxPackage) xrefs() *xrefs.Index {
+func (p *syntaxPackage) xrefs(enc *objectpath.Encoder) *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.NewIndex(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.NewIndex(enc, p.compiledGoFiles, p.types, p.typesInfo)
 	})
 	return p._xrefs
 }
 
-func (p *syntaxPackage) methodsets() *methodsets.Index {
+func (p *syntaxPackage) methodsets(enc *objectpath.Encoder) *methodsets.Index {
 	p.methodsetsOnce.Do(func() {
-		p._methodsets = methodsets.NewIndex(p.fset, p.types)
+		p._methodsets = methodsets.NewIndex(enc, p.fset, p.types)
 	})
 	return p._methodsets
 }
