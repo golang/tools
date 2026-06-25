@@ -24,11 +24,12 @@ func BenchmarkDiagnosePackageFiles(b *testing.B) {
 		b.Skip("pull diagnostics are not supported by the benchmark dashboard baseline")
 	}
 
-	env := getRepo(b, "kubernetes").newEnv(b, fake.EditorConfig{
+	env, close := getRepo(b, "kubernetes").newEnv(b, fake.EditorConfig{
 		Settings: map[string]any{
 			"pullDiagnostics": true, // currently required for pull diagnostic support
 		},
 	}, "diagnosePackageFiles", false)
+	defer close()
 
 	// 10 arbitrary files in a single package.
 	files := []string{

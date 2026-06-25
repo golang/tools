@@ -29,8 +29,8 @@ type completionBenchOptions struct {
 func benchmarkCompletion(options completionBenchOptions, b *testing.B) {
 	repo := getRepo(b, "tools")
 	_ = repo.sharedEnv(b) // ensure cache is warm
-	env := repo.newEnv(b, fake.EditorConfig{}, "completion", false)
-	defer env.Close()
+	env, close := repo.newEnv(b, fake.EditorConfig{}, "completion", false)
+	defer close()
 
 	// Run edits required for this completion.
 	if options.setup != nil {
@@ -280,14 +280,14 @@ func runCompletion(b *testing.B, test completionTest, followingEdit, completeUni
 		envvars["GOMODCACHE"] = *gomodcache
 	}
 
-	env := repo.newEnv(b, fake.EditorConfig{
+	env, close := repo.newEnv(b, fake.EditorConfig{
 		Env: envvars,
 		Settings: map[string]any{
 			"completeUnimported": completeUnimported,
 			"completionBudget":   budget,
 		},
 	}, "completion", false)
-	defer env.Close()
+	defer close()
 
 	env.CreateBuffer(test.file, "// __TEST_PLACEHOLDER_0__\n"+test.content)
 	editPlaceholder := func() {

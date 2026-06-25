@@ -73,8 +73,8 @@ func doIWL(b *testing.B, gopath string, repo *repo, openfiles []string) {
 	// involve installing gopls and/or checking out the repo dir.
 	b.StopTimer()
 	config := fake.EditorConfig{Env: map[string]string{"GOPATH": gopath}}
-	env := repo.newEnv(b, config, "iwl", true)
-	defer env.Close()
+	env, close := repo.newEnv(b, config, "iwl", true)
+	defer close()
 	b.StartTimer()
 
 	// TODO(rfindley): not awaiting the IWL here leads to much more volatile

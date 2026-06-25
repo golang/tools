@@ -127,8 +127,8 @@ func runChangeDiagnosticsBenchmark(b *testing.B, test changeTest, save bool, ope
 		}
 		// Use a new env to avoid the diagnostic delay: we want to measure how
 		// long it takes to produce the diagnostics.
-		env := getRepo(b, test.repo).newEnv(b, config, operation, false)
-		defer env.Close()
+		env, close := getRepo(b, test.repo).newEnv(b, config, operation, false)
+		defer close()
 		env.OpenFile(test.file)
 		// Insert the text we'll be modifying at the top of the file.
 		env.EditBuffer(test.file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})

@@ -12,11 +12,12 @@ import (
 )
 
 func BenchmarkSemanticTokens(b *testing.B) {
-	env := getRepo(b, "tools").newEnv(b, fake.EditorConfig{
+	env, close := getRepo(b, "tools").newEnv(b, fake.EditorConfig{
 		Settings: map[string]any{
 			"semanticTokens": true,
 		},
 	}, "SemanticTokens", false)
+	defer close()
 
 	env.Await(InitialWorkspaceLoad)
 

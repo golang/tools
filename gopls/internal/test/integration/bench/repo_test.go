@@ -226,11 +226,10 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 }
 
 // newEnv returns a new Env connected to a new gopls process communicating
-// over stdin/stdout. It is safe for concurrent use.
-//
-// It is the caller's responsibility to call Close on the resulting Env when it
-// is no longer needed.
-func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation string, cpuProfile bool) *Env {
+// over stdin/stdout, along with a function to close the environment, which
+// must be called when it is no longer needed.
+// It is safe for concurrent use.
+func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation string, cpuProfile bool) (env *Env, close func()) {
 	dir := r.getDir()
 
 	args := profileArgs(qualifiedName(r.name, forOperation), cpuProfile)
@@ -243,13 +242,14 @@ func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation stri
 		log.Fatalf("connecting editor: %v", err)
 	}
 
-	return &Env{
+	env = &Env{
 		TB:      tb,
 		Ctx:     context.Background(),
 		Editor:  editor,
 		Sandbox: sandbox,
 		Awaiter: awaiter,
 	}
+	return env, env.Close
 }
 
 // Close cleans up shared state referenced by the repo.

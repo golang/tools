@@ -42,8 +42,8 @@ func BenchmarkInitialGoimportsScan(b *testing.B) {
 			config := fake.EditorConfig{
 				Env: map[string]string{"GOPATH": *gopath},
 			}
-			env := repo.newEnv(b, config, "imports", false)
-			defer env.Close()
+			env, close := repo.newEnv(b, config, "imports", false)
+			defer close()
 			env.Await(InitialWorkspaceLoad)
 
 			// Create a buffer with a dangling selector where the receiver is a single
