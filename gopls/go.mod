@@ -14,7 +14,7 @@ require (
 	golang.org/x/sync v0.21.0
 	golang.org/x/telemetry v0.0.0-20260625142307-59b4966ccb57
 	golang.org/x/text v0.38.0
-	golang.org/x/tools v0.46.0
+	golang.org/x/tools v0.47.1-0.20260625193738-37af06489a8a
 	golang.org/x/vuln v1.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.8.0-rc.1
@@ -35,5 +35,3 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
-
-replace golang.org/x/tools => ..
