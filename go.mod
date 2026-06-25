@@ -8,7 +8,7 @@ require (
 	golang.org/x/mod v0.37.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/telemetry v0.0.0-20260615203432-72dfd249d08a
+	golang.org/x/telemetry v0.0.0-20260625142307-59b4966ccb57
 )
 
 require golang.org/x/sys v0.46.0 // indirect
