@@ -280,7 +280,7 @@ type UnmarshalError struct {
 	msg string
 }
 
-func (e UnmarshalError) Error() string {
+func (e *UnmarshalError) Error() string {
 	return e.msg
 }
 `)
