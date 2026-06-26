@@ -7,6 +7,7 @@ package nilness
 import (
 	_ "embed"
 	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -37,6 +39,14 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func runFunc(pass *analysis.Pass, fn *ssa.Function) {
+	// Skip cgo-generated functions annotated with
+	// //go:cgo_unsafe_args such as _cgo_cmalloc since
+	// they behave in magical ways not captured by the
+	// SSA representation, leading to false positives.
+	if hasCgoUnsafeArgs(fn) {
+		return
+	}
+
 	reportf := func(category string, pos token.Pos, format string, args ...any) {
 		// We ignore nil-checking ssa.Instructions
 		// that don't correspond to syntax.
@@ -492,6 +502,20 @@ func isRangeIndex(instr *ssa.IndexAddr) bool {
 				}
 			}
 		}
+	}
+	return false
+}
+
+func hasCgoUnsafeArgs(fn *ssa.Function) bool {
+	for ; fn != nil; fn = fn.Parent() {
+		if decl, ok := fn.Syntax().(*ast.FuncDecl); ok && decl != nil {
+			for _, d := range astutil.Directives(decl.Doc) {
+				if d.Tool == "go" && d.Name == "cgo_unsafe_args" {
+					return true
+				}
+			}
+		}
+
 	}
 	return false
 }

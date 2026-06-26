@@ -319,3 +319,20 @@ func f20() {
 	}
 	f.Close()
 }
+
+//go:cgo_unsafe_args
+func f21(ptr *int) {
+	if ptr == nil {
+		print(*ptr) // nope: cgo_unsafe_args means there is magic afoot that SSA cannot see
+	}
+}
+
+//go:cgo_unsafe_args
+func f22(ptr *int) {
+	if ptr == nil {
+		f := func() {
+			print(*ptr) // nope: cgo_unsafe_args means there is magic afoot that SSA cannot see
+		}
+		f()
+	}
+}
