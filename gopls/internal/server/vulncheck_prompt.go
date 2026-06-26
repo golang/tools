@@ -49,7 +49,6 @@ type vulnupgradeAction string
 const (
 	vulnupgradeActionUpgradeAll vulnupgradeAction = "Upgrade All"
 	vulnupgradeActionIgnore     vulnupgradeAction = "Ignore"
-	vulnupgradeActionEmpty      vulnupgradeAction = ""
 )
 
 // computeGoModHash computes the SHA256 hash of the go.mod file's dependencies.
@@ -169,7 +168,8 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 				event.Error(ctx, "showing dependency changed notification failed", err)
 				return
 			}
-			action, ok := parseVulncheckAction(choice)
+			var ok bool
+			action, ok = parseVulncheckAction(choice)
 			if !ok {
 				event.Error(ctx, "parsing vulncheck action failed", fmt.Errorf("unexpected action: %s", choice))
 				return
@@ -408,13 +408,16 @@ func parseVulnupgradeAction(s string) (vulnupgradeAction, bool) {
 	return parseAction(s, []vulnupgradeAction{vulnupgradeActionUpgradeAll, vulnupgradeActionIgnore})
 }
 
+// parseAction parses s against the list of allowed actions case-insensitively.
+// It returns the matching action and true if a match is found.
+// Otherwise, it returns the zero value of T and false.
 func parseAction[T ~string](s string, actions []T) (T, bool) {
 	for _, a := range actions {
 		if strings.EqualFold(string(a), s) {
 			return a, true
 		}
 	}
-	return "", false
+	return *new(T), false
 }
 
 func getVulncheckPreference() (vulncheckAction, error) {
