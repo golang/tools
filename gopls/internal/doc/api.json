@@ -2349,6 +2349,20 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "memoryLimit",
+				"Type": "int64",
+				"Doc": "memoryLimit sets a soft memory limit (in bytes) for the gopls process, via\nruntime/debug.SetMemoryLimit. If non-positive (the default), no limit is set.\n\nOn large workspaces, a single edit that invalidates many\npackages (for example a syntax error in a widely-imported\npackage) can make the heap briefly grow well above the\nsteady-state working set before the garbage collector\ncatches up, spiking memory and, on memory-constrained\nmachines, causing swapping. A soft limit makes the GC work\nharder to stay near the limit, trading some CPU for a lower\nmemory peak.\n\nThe limit is soft and may be exceeded. Set it comfortably above the\nsteady-state working set, as too low a value causes excessive GC.\n\nUnlike the GOMEMLIMIT environment variable, this setting is\nstrictly numeric; SI suffixes are not permitted.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "0",
+				"Status": "experimental",
+				"Hierarchy": "",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "verboseOutput",
 				"Type": "bool",
 				"Doc": "verboseOutput enables additional debug logging.\n",

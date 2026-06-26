@@ -683,6 +683,31 @@ as measured by du(1) may be significantly higher.
 
 Default: `0`.
 
+<a id='memoryLimit'></a>
+### `memoryLimit int64`
+
+**This setting is experimental and may be deleted.**
+
+memoryLimit sets a soft memory limit (in bytes) for the gopls process, via
+runtime/debug.SetMemoryLimit. If non-positive (the default), no limit is set.
+
+On large workspaces, a single edit that invalidates many
+packages (for example a syntax error in a widely-imported
+package) can make the heap briefly grow well above the
+steady-state working set before the garbage collector
+catches up, spiking memory and, on memory-constrained
+machines, causing swapping. A soft limit makes the GC work
+harder to stay near the limit, trading some CPU for a lower
+memory peak.
+
+The limit is soft and may be exceeded. Set it comfortably above the
+steady-state working set, as too low a value causes excessive GC.
+
+Unlike the GOMEMLIMIT environment variable, this setting is
+strictly numeric; SI suffixes are not permitted.
+
+Default: `0`.
+
 <a id='verboseOutput'></a>
 ### `verboseOutput bool`
 

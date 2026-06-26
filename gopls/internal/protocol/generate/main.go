@@ -270,8 +270,11 @@ func writeprotocol() {
 func writejsons() {
 	out := new(bytes.Buffer)
 	fmt.Fprintln(out, fileHdr)
-	out.WriteString("import \"encoding/json\"\n\n")
-	out.WriteString("import \"fmt\"\n")
+	out.WriteString(`import (
+	"encoding/json"
+	"fmt"
+)
+`)
 
 	out.WriteString(`
 // UnmarshalError indicates that a JSON value did not conform to
