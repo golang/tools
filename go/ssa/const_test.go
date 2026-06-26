@@ -97,3 +97,10 @@ func TestConstString(t *testing.T) {
 		t.Errorf("ssa.NewConst(%v, %s).String() = %v, want %v", nil, tup, got, want)
 	}
 }
+
+func TestConstUnsafePointerNil(t *testing.T) {
+	c := ssa.NewConst(nil, types.Typ[types.UnsafePointer])
+	if !c.IsNil() {
+		t.Errorf("Const(unsafe.Pointer(nil)).IsNil() = false")
+	}
+}
