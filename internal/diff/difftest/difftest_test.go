@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -18,9 +19,16 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+func diffCmd() string {
+	if runtime.GOOS == "plan9" {
+		return "/bin/ape/diff"
+	}
+	return "diff"
+}
+
 // check that the TestCases match diff -u output
 func TestVerifyUnified(t *testing.T) {
-	testenv.NeedsTool(t, "diff")
+	testenv.NeedsTool(t, diffCmd())
 	for _, test := range difftest.TestCases {
 		t.Run(test.Name, func(t *testing.T) {
 			if test.NoDiff {
@@ -33,8 +41,13 @@ func TestVerifyUnified(t *testing.T) {
 			if len(diff) > 0 {
 				diff = difftest.UnifiedPrefix + diff
 			}
-			if diff != test.Unified {
-				t.Errorf("unified:\n%s\ndiff -u:\n%s", test.Unified, diff)
+			want := test.Unified
+			if runtime.GOOS == "plan9" {
+				// ape/diff omits the "\ No newline at end of file" marker.
+				want = strings.ReplaceAll(want, "\\ No newline at end of file\n", "")
+			}
+			if diff != want {
+				t.Errorf("unified:\n%s\ndiff -u:\n%s", want, diff)
 			}
 		})
 	}
@@ -63,7 +76,7 @@ func getDiffOutput(a, b string) (string, error) {
 	if err := fileB.Close(); err != nil {
 		return "", err
 	}
-	cmd := exec.Command("diff", "-u", fileA.Name(), fileB.Name())
+	cmd := exec.Command(diffCmd(), "-u", fileA.Name(), fileB.Name())
 	cmd.Env = append(cmd.Env, "LANG=en_US.UTF-8")
 	out, err := cmd.Output()
 	if err != nil {
