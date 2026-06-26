@@ -3573,6 +3573,7 @@ func main() {
 // See golang/go#78083.
 func TestCompiledGoFilesIncludesDepsErrors(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	testenv.NeedsTool(t, "cgo")
 
 	dir := writeTree(t, `
 -- go.mod --
