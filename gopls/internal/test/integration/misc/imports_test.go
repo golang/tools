@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/test/compare"
@@ -407,52 +406,20 @@ return nil
 			t.Fatal(err)
 		}
 	}
+	// create the index deterministically. When gopls is invoked
+	// interactively, the module index is created or updated in
+	// a goroutine, so we can't rely on it being present
+	// immediately.
+	if _, err := modindex.Update(modcache); err != nil {
+		t.Fatal(err)
+	}
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		if true {
-			// according to https://github.com/golang/go/issues/78680
-			// this test is flaky. Print some possibly helpful diagnostic
-			// information. Logf is fine as the test will fail later.
-			ix, err := modindex.Read(modcache)
-			if err != nil {
-				// no index? maybe it's a rare race condition
-				time.Sleep(3 * time.Second)
-				ix, err = modindex.Read(modcache)
-				if err != nil {
-					t.Logf("could not read modcache index: %v", err)
-				} else {
-					t.Logf("re-read modcache index, found %d entries", len(ix.Entries))
-				}
-			} else if len(ix.Entries) != 2 {
-				t.Logf("%d modcache entries", len(ix.Entries))
-				if len(ix.Entries) == 0 {
-					fis, err := os.ReadDir(modcache)
-					if err != nil {
-						t.Logf("could not read modcache dir: %v", err)
-					}
-					t.Logf("%d modcache files", len(fis))
-				} else { // let's see what it looks like
-					for i, e := range ix.Entries {
-						t.Logf("ix %d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
-					}
-				}
-			}
-			env.SaveBuffer("main.go")
-			out := env.BufferText("main.go")
-			if !strings.Contains(out, "github.com/mvdan/xurls") {
-				/* Perhaps the index is bad? The correct result is:
-					0: github.com/mvdan/xurls/a, github.com/mvdan/xurls@v1.1.0/a, ["Relaxed F 1"]
-				   1: mvdan.cc/xurls/v2/a, mvdan.cc/xurls/v2@v2.5.0/a, ["Relaxed F 1"]
-				*/
-				for i, e := range ix.Entries {
-					t.Errorf("%d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
-				}
-			}
-		}
+		env.SaveBuffer("main.go")
 		out := env.BufferText("main.go")
 		if !strings.Contains(out, "github.com/mvdan/xurls") {
 			t.Errorf("did not get github.com/mvdan/xurls in %q", out)
