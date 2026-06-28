@@ -1033,9 +1033,10 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 		}, nil); err != nil {
 			return err
 		}
+		// Some commands may edit files on disk.
+		return e.sandbox.Workdir.CheckForFileChanges(ctx)
 	}
-	// Some commands may edit files on disk.
-	return e.sandbox.Workdir.CheckForFileChanges(ctx)
+	return nil
 }
 
 func (e *Editor) Diagnostics(ctx context.Context, path string) ([]protocol.Diagnostic, error) {
