@@ -16,7 +16,7 @@ import (
 
 // check implements the check verb for gopls.
 type check struct {
-	app      *Application
+	app      *application
 	Severity string `flag:"severity" help:"minimum diagnostic severity (hint, info, warning, or error)"`
 }
 

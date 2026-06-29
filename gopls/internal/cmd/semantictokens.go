@@ -43,7 +43,7 @@ import (
 //      the gopls coordinate system
 
 type semanticToken struct {
-	app *Application
+	app *application
 }
 
 func (c *semanticToken) Name() string      { return "semtok" }
@@ -114,8 +114,8 @@ type mark struct {
 
 // prefixes for semantic token comments
 const (
-	SemanticLeft  = "/*⇐"
-	SemanticRight = "/*⇒"
+	semanticLeft  = "/*⇐"
+	semanticRight = "/*⇒"
 )
 
 func markLine(m mark, lines [][]byte) {
@@ -126,7 +126,7 @@ func markLine(m mark, lines [][]byte) {
 	if m.typ == "namespace" && m.offset-1+m.len < len(l) && l[m.offset-1+m.len] == '"' {
 		// it is the last component of an import spec
 		// cannot put a comment inside a string
-		insert = fmt.Sprintf("%s%d,namespace,[]*/", SemanticLeft, length)
+		insert = fmt.Sprintf("%s%d,namespace,[]*/", semanticLeft, length)
 		splitAt = m.offset + m.len
 	} else {
 		// be careful not to generate //*
@@ -134,7 +134,7 @@ func markLine(m mark, lines [][]byte) {
 		if splitAt-1 >= 0 && l[splitAt-1] == '/' {
 			spacer = " "
 		}
-		insert = fmt.Sprintf("%s%s%d,%s,%v*/", spacer, SemanticRight, length, m.typ, m.mods)
+		insert = fmt.Sprintf("%s%s%d,%s,%v*/", spacer, semanticRight, length, m.typ, m.mods)
 	}
 	x := append([]byte(insert), l[splitAt:]...)
 	l = append(l[:splitAt], x...)

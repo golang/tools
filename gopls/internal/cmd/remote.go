@@ -14,15 +14,15 @@ import (
 	"os"
 
 	"golang.org/x/tools/gopls/internal/lsprpc"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
 )
 
 type remote struct {
-	app *Application
+	app *application
 	subcommands
 }
 
-func newRemote(app *Application) *remote {
+func newRemote(app *application) *remote {
 	return &remote{
 		app: app,
 		subcommands: subcommands{
@@ -44,7 +44,7 @@ func (r *remote) ShortHelp() string {
 
 // listSessions is an inspect subcommand to list current sessions.
 type listSessions struct {
-	app *Application
+	app *application
 }
 
 func (c *listSessions) Name() string   { return "sessions" }
@@ -91,7 +91,7 @@ func (c *listSessions) Run(ctx context.Context, args ...string) error {
 }
 
 type startDebugging struct {
-	app *Application
+	app *application
 }
 
 func (c *startDebugging) Name() string  { return "debug" }
@@ -132,11 +132,11 @@ func (c *startDebugging) Run(ctx context.Context, args ...string) error {
 	if len(args) > 0 {
 		debugAddr = args[0]
 	}
-	debugArgs := command.DebuggingArgs{
+	debugArgs := protocolcommand.DebuggingArgs{
 		Addr: debugAddr,
 	}
-	var result command.DebuggingResult
-	if err := lsprpc.ExecuteCommand(ctx, remote, command.StartDebugging.String(), debugArgs, &result); err != nil {
+	var result protocolcommand.DebuggingResult
+	if err := lsprpc.ExecuteCommand(ctx, remote, protocolcommand.StartDebugging.String(), debugArgs, &result); err != nil {
 		return err
 	}
 	if len(result.URLs) == 0 {

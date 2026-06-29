@@ -10,12 +10,11 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // foldingRanges implements the folding_ranges verb for gopls
 type foldingRanges struct {
-	app *Application
+	app *application
 }
 
 func (r *foldingRanges) Name() string      { return "folding_ranges" }
@@ -33,7 +32,7 @@ Example:
 
 func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("folding_ranges expects 1 argument (file)")
+		return commandLineErrorf("folding_ranges expects 1 argument (file)")
 	}
 
 	cli, _, err := r.app.connect(ctx)

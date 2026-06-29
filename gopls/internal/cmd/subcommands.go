@@ -9,13 +9,11 @@ import (
 	"flag"
 	"fmt"
 	"text/tabwriter"
-
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // subcommands is a helper that may be embedded for commands that delegate to
 // subcommands.
-type subcommands []tool.Command
+type subcommands []command
 
 func (s subcommands) DetailedHelp(f *flag.FlagSet) {
 	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
@@ -31,26 +29,26 @@ func (s subcommands) Usage() string { return "<subcommand> [arg]..." }
 
 func (s subcommands) Run(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
-		return tool.CommandLineErrorf("must provide subcommand")
+		return commandLineErrorf("must provide subcommand")
 	}
 	command, args := args[0], args[1:]
 	for _, c := range s {
 		if c.Name() == command {
 			s := flag.NewFlagSet(c.Name(), flag.ExitOnError)
-			return tool.Run(ctx, s, c, args)
+			return runCommand(ctx, s, c, args)
 		}
 	}
-	return tool.CommandLineErrorf("unknown subcommand %v", command)
+	return commandLineErrorf("unknown subcommand %v", command)
 }
 
-func (s subcommands) Commands() []tool.Command { return s }
+func (s subcommands) Commands() []command { return s }
 
-// getSubcommands returns the subcommands of a given Command.
-func getSubcommands(a tool.Command) []tool.Command {
-	// This interface is satisfied both by tool.Commands
-	// that embed subcommands, and by *cmd.Application.
+// getSubcommands returns the subcommands of a given command.
+func getSubcommands(a command) []command {
+	// This interface is satisfied both by commands
+	// that embed subcommands, and by *cmd.application.
 	type hasCommands interface {
-		Commands() []tool.Command
+		Commands() []command
 	}
 	if sub, ok := a.(hasCommands); ok {
 		return sub.Commands()

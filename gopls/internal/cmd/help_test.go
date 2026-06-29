@@ -29,15 +29,13 @@ var updateHelpFiles = flag.Bool("update-help-files", false, "Write out the help 
 func TestHelpFiles(t *testing.T) {
 	testenv.NeedsGoBuild(t) // This is a lie. We actually need the source code.
 	t.Parallel()
-	app := cmd.New()
 	tree := writeTree(t, "")
-	for _, cmd := range append(app.Commands(), app) {
-		name := cmd.Name()
+	for _, name := range cmd.CommandNames() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			args := []string{name, "-h"}
 			// The output of 'gopls -h' is in usage.hlp
-			if cmd == app {
+			if name == "gopls" {
 				args = args[1:]
 				name = "usage"
 			}

@@ -11,12 +11,11 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // implementation implements the implementation verb for gopls
 type implementation struct {
-	app *Application
+	app *application
 }
 
 func (i *implementation) Name() string      { return "implementation" }
@@ -36,7 +35,7 @@ Example:
 
 func (i *implementation) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("implementation expects 1 argument (position)")
+		return commandLineErrorf("implementation expects 1 argument (position)")
 	}
 
 	cli, _, err := i.app.connect(ctx)

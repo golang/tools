@@ -12,14 +12,13 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // workspaceSymbol implements the workspace_symbol verb for gopls.
 type workspaceSymbol struct {
 	Matcher string `flag:"matcher" help:"specifies the type of matcher: fuzzy, fastfuzzy, casesensitive, or caseinsensitive.\nThe default is caseinsensitive."`
 
-	app *Application
+	app *application
 }
 
 func (r *workspaceSymbol) Name() string      { return "workspace_symbol" }
@@ -39,7 +38,7 @@ workspace_symbol-flags:
 
 func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("workspace_symbol expects 1 argument")
+		return commandLineErrorf("workspace_symbol expects 1 argument")
 	}
 
 	opts := r.app.options

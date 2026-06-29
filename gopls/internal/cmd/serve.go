@@ -21,14 +21,13 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/fakenet"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
-// Serve is a struct that exposes the configurable parts of the LSP and MCP
+// serve is a struct that exposes the configurable parts of the LSP and MCP
 // server as flags, in the right form for tool.Main to consume.
-type Serve struct {
+type serve struct {
 	Logfile     string        `flag:"logfile" help:"filename to log to. if value is \"auto\", then logging to a default output file is enabled"`
 	Mode        string        `flag:"mode" help:"no effect"`
 	Address     string        `flag:"listen" help:"address on which to listen for remote connections. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. Otherwise, TCP is used."`
@@ -39,16 +38,16 @@ type Serve struct {
 	// MCP Server related configurations.
 	MCPAddress string `flag:"mcp.listen" help:"experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead."`
 
-	app *Application
+	app *application
 }
 
-func (s *Serve) Name() string   { return "serve" }
-func (s *Serve) Parent() string { return s.app.Name() }
-func (s *Serve) Usage() string  { return "[server-flags]" }
-func (s *Serve) ShortHelp() string {
+func (s *serve) Name() string   { return "serve" }
+func (s *serve) Parent() string { return s.app.Name() }
+func (s *serve) Usage() string  { return "[server-flags]" }
+func (s *serve) ShortHelp() string {
 	return "run a server for Go code using the Language Server Protocol"
 }
-func (s *Serve) DetailedHelp(f *flag.FlagSet) {
+func (s *serve) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `  gopls [flags] [server-flags]
 
 The server communicates using JSONRPC2 on stdin and stdout, and is intended to be run directly as
@@ -61,9 +60,9 @@ server-flags:
 
 // Run configures a server based on the flags, and then runs it.
 // It blocks until the server shuts down.
-func (s *Serve) Run(ctx context.Context, args ...string) error {
+func (s *serve) Run(ctx context.Context, args ...string) error {
 	if len(args) > 0 {
-		return tool.CommandLineErrorf("server does not take arguments, got %v", args)
+		return commandLineErrorf("server does not take arguments, got %v", args)
 	}
 
 	di := debug.GetInstance(ctx)

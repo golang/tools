@@ -21,7 +21,7 @@ import (
 )
 
 type headlessMCP struct {
-	app *Application
+	app *application
 
 	Address      string `flag:"listen" help:"the address on which to run the mcp server"`
 	Logfile      string `flag:"logfile" help:"filename to log to; if unset, logs to stderr"`
@@ -47,7 +47,12 @@ Examples:
 }
 
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
+	// TODO(hxjiang): properly support remote mode (https://github.com/golang/go/issues/78668).
+	if m.app.Remote != "" {
+		return commandLineErrorf("mcp does not currently support remote mode")
+	}
 	if m.Instructions {
+
 		fmt.Println(internalmcp.Instructions)
 		return nil
 	}

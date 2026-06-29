@@ -37,7 +37,7 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New()
+	app := newApplication()
 	ctx := context.Background()
 
 	// Initialize the client.

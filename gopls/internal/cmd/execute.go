@@ -15,15 +15,14 @@ import (
 
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/tool"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // execute implements the LSP ExecuteCommand verb for gopls.
 type execute struct {
 	EditFlags
-	app *Application
+	app *application
 }
 
 func (e *execute) Name() string      { return "execute" }
@@ -48,6 +47,7 @@ Examples:
 
 execute-flags:
 `)
+
 	printFlagDefaults(f)
 }
 
@@ -62,11 +62,11 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 	}
 
 	if len(args) == 0 {
-		return tool.CommandLineErrorf("execute requires a command name")
+		return commandLineErrorf("execute requires a command name")
 	}
 	cmd := args[0]
-	if !slices.Contains(command.Commands, command.Command(cmd)) {
-		return tool.CommandLineErrorf("unrecognized command: %s", cmd)
+	if !slices.Contains(protocolcommand.Commands, protocolcommand.Command(cmd)) {
+		return commandLineErrorf("unrecognized command: %s", cmd)
 	}
 
 	// A command may have multiple arguments, though the only one

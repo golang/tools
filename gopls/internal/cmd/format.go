@@ -15,7 +15,7 @@ import (
 // format implements the format verb for gopls.
 type format struct {
 	EditFlags
-	app *Application
+	app *application
 }
 
 func (c *format) Name() string      { return "format" }

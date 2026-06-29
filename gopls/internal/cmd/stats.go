@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
@@ -28,7 +28,7 @@ import (
 )
 
 type stats struct {
-	app *Application
+	app *application
 
 	Anon bool `flag:"anon" help:"hide any fields that may contain user names, file names, or source code"`
 }
@@ -55,19 +55,21 @@ Example:
 }
 
 func (s *stats) Run(ctx context.Context, args ...string) error {
+	// stats does not work with -remote yet.
+	// Other sessions on the daemon may interfere with results.
+	// Additionally, the type assertions in below only work if progress
+	// notifications bypass jsonrpc2 serialization.
+	// TODO(hyangah): support remote mode by fetching server-side
+	// statistics and avoiding hangs during InitialWorkspaceLoad.
 	if s.app.Remote != "" {
-		// stats does not work with -remote.
-		// Other sessions on the daemon may interfere with results.
-		// Additionally, the type assertions in below only work if progress
-		// notifications bypass jsonrpc2 serialization.
-		return fmt.Errorf("the stats subcommand does not work with -remote")
+		return commandLineErrorf("stats does not currently support remote mode")
 	}
 
 	if !s.app.Verbose {
 		event.SetExporter(nil) // don't log errors to stderr
 	}
 
-	stats := GoplsStats{
+	stats := statsJSON{
 		GOOS:             runtime.GOOS,
 		GOARCH:           runtime.GOARCH,
 		GOPLSCACHE:       os.Getenv("GOPLSCACHE"),
@@ -85,6 +87,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	// do executes a timed section of the stats command.
+
 	do := func(name string, f func() error) (time.Duration, error) {
 		start := time.Now()
 		fmt.Fprintf(os.Stderr, "%-30s", name+"...")
@@ -128,12 +131,12 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Querying memstats", func() error {
 		memStats, err := executeCommand(ctx, cli.server, &protocol.Command{
-			Command: command.MemStats.String(),
+			Command: protocolcommand.MemStats.String(),
 		})
 		if err != nil {
 			return err
 		}
-		stats.MemStats = memStats.(command.MemStatsResult)
+		stats.MemStats = memStats.(protocolcommand.MemStatsResult)
 		return nil
 	}); err != nil {
 		return err
@@ -141,12 +144,12 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Querying workspace stats", func() error {
 		wsStats, err := executeCommand(ctx, cli.server, &protocol.Command{
-			Command: command.WorkspaceStats.String(),
+			Command: protocolcommand.WorkspaceStats.String(),
 		})
 		if err != nil {
 			return err
 		}
-		stats.WorkspaceStats = wsStats.(command.WorkspaceStatsResult)
+		stats.WorkspaceStats = wsStats.(protocolcommand.WorkspaceStatsResult)
 		return nil
 	}); err != nil {
 		return err
@@ -192,13 +195,13 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-// GoplsStats holds information extracted from a gopls session in the current
+// statsJSON holds information extracted from a gopls session in the current
 // workspace.
 //
 // Fields that should be printed with the -anon flag should be explicitly
 // marked as `anon:"ok"`. Only fields that cannot refer to user files or code
 // should be marked as such.
-type GoplsStats struct {
+type statsJSON struct {
 	GOOS, GOARCH                 string `anon:"ok"`
 	GOPLSCACHE                   string
 	GoVersion                    string `anon:"ok"`
@@ -207,9 +210,9 @@ type GoplsStats struct {
 	InitialWorkspaceLoadDuration string `anon:"ok"` // in time.Duration string form
 	CacheDir                     string
 	BugReports                   []bug.Bug
-	MemStats                     command.MemStatsResult       `anon:"ok"`
-	WorkspaceStats               command.WorkspaceStatsResult `anon:"ok"`
-	DirStats                     dirStats                     `anon:"ok"`
+	MemStats                     protocolcommand.MemStatsResult       `anon:"ok"`
+	WorkspaceStats               protocolcommand.WorkspaceStatsResult `anon:"ok"`
+	DirStats                     dirStats                             `anon:"ok"`
 }
 
 type dirStats struct {

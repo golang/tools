@@ -5,7 +5,6 @@
 package integration
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -18,7 +17,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/tool"
 	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/gocommand"
@@ -144,7 +142,7 @@ func Main(m *testing.M) (code int) {
 	// If this magic environment variable is set, run gopls instead of the test
 	// suite. See the documentation for runTestAsGoplsEnvvar for more details.
 	if os.Getenv(runTestAsGoplsEnvvar) == "true" {
-		tool.Main(context.Background(), cmd.New(), os.Args[1:])
+		cmd.Main()
 		return 0
 	}
 

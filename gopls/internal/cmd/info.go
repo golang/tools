@@ -18,12 +18,11 @@ import (
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/doc"
 	licensespkg "golang.org/x/tools/gopls/internal/licenses"
-	"golang.org/x/tools/gopls/internal/tool"
 )
 
 // help implements the help command.
 type help struct {
-	app *Application
+	app *application
 }
 
 func (h *help) Name() string      { return "help" }
@@ -43,7 +42,7 @@ $ gopls help remote sessions         # help on 'remote sessions' subcommand
 
 // Run prints help information about a subcommand.
 func (h *help) Run(ctx context.Context, args ...string) error {
-	find := func(cmds []tool.Command, name string) tool.Command {
+	find := func(cmds []command, name string) command {
 		for _, cmd := range cmds {
 			if cmd.Name() == name {
 				return cmd
@@ -53,27 +52,27 @@ func (h *help) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Find the subcommand denoted by args (empty => h.app).
-	var cmd tool.Command = h.app
+	var cmd command = h.app
 	for i, arg := range args {
 		cmd = find(getSubcommands(cmd), arg)
 		if cmd == nil {
-			return tool.CommandLineErrorf(
+			return commandLineErrorf(
 				"no such subcommand: %s", strings.Join(args[:i+1], " "))
 		}
 	}
 
 	// 'gopls help cmd subcmd' is equivalent to 'gopls cmd subcmd -h'.
-	// The flag package prints the usage information (defined by tool.Run)
+	// The flag package prints the usage information (defined by Run)
 	// when it sees the -h flag.
 	fs := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
-	return tool.Run(ctx, fs, h.app, append(args[:len(args):len(args)], "-h"))
+	return runCommand(ctx, fs, h.app, append(args[:len(args):len(args)], "-h"))
 }
 
 // version implements the version command.
 type version struct {
 	JSON bool `flag:"json" help:"outputs in json format."`
 
-	app *Application
+	app *application
 }
 
 func (v *version) Name() string      { return "version" }
@@ -98,7 +97,7 @@ func (v *version) Run(ctx context.Context, args ...string) error {
 }
 
 type apiJSON struct {
-	app *Application
+	app *application
 }
 
 func (j *apiJSON) Name() string      { return "api-json" }
@@ -121,7 +120,7 @@ func (j *apiJSON) Run(ctx context.Context, args ...string) error {
 }
 
 type licenses struct {
-	app *Application
+	app *application
 }
 
 func (l *licenses) Name() string      { return "licenses" }

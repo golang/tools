@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package tool is a harness for writing Go tools.
-package tool
+package cmd
 
 import (
 	"context"
@@ -19,21 +18,12 @@ import (
 	"time"
 )
 
-// This file is a harness for writing your main function.
-//
-// It recursively scans the command object for fields with a tag containing
-//     `flag:"flagnames" help:"short help text"`
-// uses all those fields to build command line flags. It will split flagnames on
-// commas and add a flag per name.
-// It expects the Command type to have a method
-//     Run(context.Context, args...string) error
-// which it invokes only after all command line flag processing has been finished.
-// If Run returns an error, the error will be printed to stderr and the
-// application will quit with a non zero exit status.
+// This file defines common flags and helper functions
+// that coordinate flag registration via reflection.
 
-// Profile can be embedded in your application struct to automatically
-// add command line arguments and handling for the common profiling methods.
-type Profile struct {
+// ProfileFlags can be embedded in your application struct to automatically
+// add command line arguments and handling for common profiling methods.
+type ProfileFlags struct {
 	CPU    string `flag:"profile.cpu" help:"write CPU profile to this file"`
 	Memory string `flag:"profile.mem" help:"write memory profile to this file"`
 	Alloc  string `flag:"profile.alloc" help:"write alloc profile to this file"`
@@ -41,8 +31,8 @@ type Profile struct {
 	Block  string `flag:"profile.block" help:"write block profile to this file"`
 }
 
-// Command is the interface that must be satisfied by an object passed to Main.
-type Command interface {
+// command represents an executable CLI command or subcommand within gopls.
+type command interface {
 	// Name returns the command's name. It is used in help and error messages.
 	Name() string
 	// Most of the help usage is automatically generated, this string should only
@@ -61,21 +51,24 @@ type Command interface {
 	Run(ctx context.Context, args ...string) error
 }
 
-type Subcommand interface {
-	Command
+type subcommand interface {
+	// TODO(hyangah): merge with command. It is unclear why we need
+	// to keep command and subcommand separate.
+
+	command
 	Parent() string
 }
 
-// This is the type returned by CommandLineErrorf, which causes the outer main
+// This is the type returned by commandLineErrorf, which causes the outer main
 // to trigger printing of the command line help.
 type commandLineError string
 
 func (e commandLineError) Error() string { return string(e) }
 
-// CommandLineErrorf is like fmt.Errorf except that it returns a value that
+// commandLineErrorf is like fmt.Errorf except that it returns a value that
 // triggers printing of the command line help.
 // In general you should use this when generating command line validation errors.
-func CommandLineErrorf(message string, args ...any) error {
+func commandLineErrorf(message string, args ...any) error {
 	return commandLineError(fmt.Sprintf(message, args...))
 }
 
@@ -83,9 +76,12 @@ func CommandLineErrorf(message string, args ...any) error {
 // It will only return if there was no error.  If an error
 // was encountered it is printed to standard error and the
 // application exits with an exit code of 2.
-func Main(ctx context.Context, app Command, args []string) {
+func Main() {
+	ctx := context.Background()
+	args := os.Args[1:]
+	app := newApplication()
 	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-	if err := Run(ctx, s, app, args); err != nil {
+	if err := runCommand(ctx, s, app, args); err != nil {
 		fmt.Fprintf(s.Output(), "%s: %v\n", app.Name(), err)
 		if _, printHelp := err.(commandLineError); printHelp {
 			// TODO(adonovan): refine this. It causes
@@ -98,27 +94,30 @@ func Main(ctx context.Context, app Command, args []string) {
 	}
 }
 
-// Run is the inner loop for Main; invoked by Main, recursively by
-// Run, and by various tests.  It runs the application and returns an
-// error.
-func Run(ctx context.Context, s *flag.FlagSet, app Command, args []string) (resultErr error) {
-	s.Usage = func() {
-		if app.ShortHelp() != "" {
-			fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
-			if sub, ok := app.(Subcommand); ok && sub.Parent() != "" {
-				fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
-			} else {
-				fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
-			}
-			if usage := app.Usage(); usage != "" {
-				fmt.Fprintf(s.Output(), " %s", usage)
-			}
-			fmt.Fprint(s.Output(), "\n")
+// printHelp prints the usage and detailed help for any command to s.Output().
+func printHelp(s *flag.FlagSet, app command) {
+	if app.ShortHelp() != "" {
+		fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
+		if sub, ok := app.(subcommand); ok && sub.Parent() != "" {
+			fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
+		} else {
+			fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
 		}
-		app.DetailedHelp(s)
+		if usage := app.Usage(); usage != "" {
+			fmt.Fprintf(s.Output(), " %s", usage)
+		}
+		fmt.Fprintln(s.Output())
 	}
-	p := addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
-	if err := s.Parse(args); err != nil {
+	app.DetailedHelp(s)
+}
+
+// runCommand executes cmd with the provided flagset and arguments.
+func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []string) (resultErr error) {
+	flags.Usage = func() { printHelp(flags, cmd) }
+	// addFlags returns non-nil *ProfileFlags only if cmd embeds ProfileFlags.
+	// Only 'application' meets this criteria.
+	p := addFlags(flags, reflect.StructField{}, reflect.ValueOf(cmd))
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
@@ -204,12 +203,12 @@ func Run(ctx context.Context, s *flag.FlagSet, app Command, args []string) (resu
 		}()
 	}
 
-	return app.Run(ctx, s.Args()...)
+	return cmd.Run(ctx, flags.Args()...)
 }
 
 // addFlags scans fields of structs recursively to find things with flag tags
 // and add them to the flag set.
-func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *Profile {
+func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *ProfileFlags {
 	// is it a field we are allowed to reflect on?
 	if field.PkgPath != "" {
 		return nil
@@ -238,7 +237,7 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 
 	// TODO(adonovan): there's no need for this special treatment of Profile:
 	// The caller can use f.Lookup("profile.cpu") etc instead.
-	p, _ := value.Addr().Interface().(*Profile)
+	p, _ := value.Addr().Interface().(*ProfileFlags)
 	// go through all the fields of the struct
 	for i := 0; i < value.Type().NumField(); i++ {
 		child := value.Type().Field(i)
