@@ -15,7 +15,7 @@ const CodeActionUnknownTrigger CodeActionTriggerKind = 0
 
 var (
 	namesTextDocumentSyncKind   [int(Incremental) + 1]string
-	namesMessageType            [int(Log) + 1]string
+	namesMessageType            [int(Debug) + 1]string
 	namesFileChangeType         [int(Deleted) + 1]string
 	namesWatchKind              [int(WatchDelete) + 1]string
 	namesCompletionTriggerKind  [int(TriggerForIncompleteCompletions) + 1]string
@@ -37,6 +37,7 @@ func init() {
 	namesMessageType[int(Warning)] = "Warning"
 	namesMessageType[int(Info)] = "Info"
 	namesMessageType[int(Log)] = "Log"
+	namesMessageType[int(Debug)] = "Debug"
 
 	namesFileChangeType[int(Created)] = "Created"
 	namesFileChangeType[int(Changed)] = "Changed"

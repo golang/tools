@@ -635,9 +635,12 @@ func messageType(l log.Level) protocol.MessageType {
 	case log.Warning:
 		return protocol.Warning
 	case log.Debug:
-		return protocol.Log
+		return protocol.Debug
+	case log.Info:
+		return protocol.Info
+	default:
+		return protocol.Info
 	}
-	return protocol.Info
 }
 
 func makeInstanceExporter(i *Instance) event.Exporter {

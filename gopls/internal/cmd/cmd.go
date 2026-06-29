@@ -465,6 +465,10 @@ func (cli *client) LogMessage(ctx context.Context, p *protocol.LogMessageParams)
 		if cli.app.verbose() {
 			log.Print("Log:", p.Message)
 		}
+	case protocol.Debug:
+		if cli.app.verbose() {
+			log.Print("Debug:", p.Message)
+		}
 	default:
 		if cli.app.verbose() {
 			log.Print(p.Message)
