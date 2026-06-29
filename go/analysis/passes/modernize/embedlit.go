@@ -84,14 +84,12 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 			// Can't promote an unkeyed field; would result in a syntax error.
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
 				if innerLit := isEmbeddedFieldLit(info, compLitType, kv); innerLit != nil {
+					// Inv: len(innerLit.Elts) > 0. We skip empty struct literals.
 					// Emit edits to delete the unnecessary embedded field type specifier
 					// and its closing brace.
-					closingPos := innerLit.Rbrace
-					if len(innerLit.Elts) > 0 {
-						// Delete any inner trailing commas or white space. Extra trailing commas
-						// would result in invalid code.
-						closingPos = innerLit.Elts[len(innerLit.Elts)-1].End()
-					}
+					// Delete any inner trailing commas or white space. Extra trailing commas
+					// would result in invalid code.
+					closingPos := innerLit.Elts[len(innerLit.Elts)-1].End()
 					file := astutil.EnclosingFile(curLit)
 					// Enable modernizer only for Go1.27.
 					if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_27) {
@@ -132,11 +130,11 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 					}
 
 					// We can safely delete the entire line if the key value expression is
-					// on a different line than the previous element, and the closing
-					// brace of the inner literal is on a different line than its opening
-					// brace.
+					// alone on its line: it starts on a new line relative to the previous
+					// element (prevLine < curLine), and the first element of the inner
+					// literal starts on a subsequent line.
 					if prevLine < curLine && curLine < tokFile.LineCount() && // (1-based)
-						lineOf(innerLit.Lbrace) < lineOf(innerLit.Rbrace) {
+						lineOf(innerLit.Elts[0].Pos()) > curLine {
 						lineStart := tokFile.LineStart(curLine)
 						nextLineStart := tokFile.LineStart(curLine + 1)
 						// Check that there are no comments on the line we are going to delete.

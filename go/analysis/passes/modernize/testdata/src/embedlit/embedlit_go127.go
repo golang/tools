@@ -135,6 +135,12 @@ var (
 			},
 		},
 	}
+
+	_ = E{ // want "embedded field type can be removed from struct literal"
+		e: 2,
+		F: F{f: 1,
+		},
+	}
 )
 
 func _() {
