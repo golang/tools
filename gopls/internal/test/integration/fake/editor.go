@@ -982,10 +982,13 @@ func (e *Editor) RefactorRewrite(ctx context.Context, loc protocol.Location) err
 // ApplyQuickFixes requests and performs the quickfix codeAction.
 func (e *Editor) ApplyQuickFixes(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic) error {
 	applied, err := e.applyCodeActions(ctx, loc, diagnostics, protocol.SourceFixAll, protocol.QuickFix)
+	if err != nil {
+		return err
+	}
 	if applied == 0 {
 		return fmt.Errorf("no quick fixes were applied")
 	}
-	return err
+	return nil
 }
 
 // ApplyCodeAction applies the given code action.

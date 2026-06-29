@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -157,21 +156,8 @@ func (w *Workdir) EntireFile(path string) protocol.Location {
 
 // ReadFile reads a text file specified by a workdir-relative path.
 func (w *Workdir) ReadFile(path string) ([]byte, error) {
-	backoff := 1 * time.Millisecond
-	for {
-		b, err := os.ReadFile(w.AbsPath(path))
-		if err != nil {
-			if runtime.GOOS == "plan9" && strings.HasSuffix(err.Error(), " exclusive use file already open") {
-				// Plan 9 enforces exclusive access to locked files.
-				// Give the owner time to unlock it and retry.
-				time.Sleep(backoff)
-				backoff *= 2
-				continue
-			}
-			return nil, err
-		}
-		return b, nil
-	}
+	// Retry in case of (e.g.) Plan 9 locking of go.mod files.
+	return robustio.ReadFile(w.AbsPath(path))
 }
 
 // RegexpSearch searches the file corresponding to path for the first position
@@ -368,7 +354,7 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 		// must read the file contents.
 		id := fileID{mtime: info.ModTime()}
 		if time.Since(info.ModTime()) < 2*time.Second {
-			data, err := os.ReadFile(fp)
+			data, err := robustio.ReadFile(fp)
 			if err != nil {
 				return err
 			}
@@ -395,7 +381,7 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 				// In this case, read the content to check whether the file actually
 				// changed.
 				if oldID.mtime.Equal(id.mtime) && oldID.hash != "" && id.hash == "" {
-					data, err := os.ReadFile(fp)
+					data, err := robustio.ReadFile(fp)
 					if err != nil {
 						return err
 					}

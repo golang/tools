@@ -8,9 +8,35 @@ package robustio
 
 import (
 	"os"
+	"strings"
 	"syscall"
 	"time"
 )
+
+var errFileNotFound = syscall.ENOENT
+
+// lockedErrStrings are the errors Plan 9 file servers return for a file that is
+// already open for exclusive use, mirroring the set recognized by cmd/go's
+// lockedfile.
+var lockedErrStrings = [...]string{
+	"file is locked",                  // cwfs, kfs
+	"exclusive lock",                  // fossil
+	"exclusive use file already open", // ramfs
+}
+
+// isEphemeralError returns true if err may be resolved by waiting.
+func isEphemeralError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, frag := range lockedErrStrings {
+		if strings.Contains(s, frag) {
+			return true
+		}
+	}
+	return false
+}
 
 func getFileID(filename string) (FileID, time.Time, error) {
 	fi, err := os.Stat(filename)

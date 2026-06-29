@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build windows || darwin
+//go:build windows || darwin || plan9
 
 package robustio
 
@@ -17,7 +17,7 @@ import (
 const arbitraryTimeout = 2000 * time.Millisecond
 
 // retry retries ephemeral errors from f up to an arbitrary timeout
-// to work around filesystem flakiness on Windows and Darwin.
+// to work around filesystem flakiness on Windows, Darwin, and Plan 9.
 func retry(f func() (err error, mayRetry bool)) error {
 	var (
 		bestErr     error
