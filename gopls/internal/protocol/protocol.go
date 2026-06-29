@@ -294,3 +294,8 @@ func NonNilSlice[T comparable](x []T) []T {
 	}
 	return x
 }
+
+// MessageString returns the string value of diag.Message.
+func (diag Diagnostic) MessageString() string {
+	return diag.Message.Value.(string) // gopls only produces strings
+}

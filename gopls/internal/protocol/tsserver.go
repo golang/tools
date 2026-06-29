@@ -6,9 +6,9 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.14 (hash 66a087310eea0d60495ba3578d78f70409c403d9).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.14/protocol/metaModel.json
-// LSP metaData.version = 3.17.0.
+// Code generated from protocol/metaModel.json at ref release/protocol/3.18.2 (hash 20969f3e75cb3cd35c2bb794b1d15cc2dfbe4abb).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.18.2/protocol/metaModel.json
+// LSP metaData.version = 3.18.0.
 
 import (
 	"context"
@@ -19,17 +19,17 @@ import (
 )
 
 type Server interface {
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progress
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#progress
 	Progress(context.Context, *ProgressParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#setTrace
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#setTrace
 	SetTrace(context.Context, *SetTraceParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchy_incomingCalls
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#callHierarchy_incomingCalls
 	IncomingCalls(context.Context, *CallHierarchyIncomingCallsParams) ([]CallHierarchyIncomingCall, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchy_outgoingCalls
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#callHierarchy_outgoingCalls
 	OutgoingCalls(context.Context, *CallHierarchyOutgoingCallsParams) ([]CallHierarchyOutgoingCall, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeAction_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#codeAction_resolve
 	ResolveCodeAction(context.Context, *CodeAction) (*CodeAction, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLens_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#codeLens_resolve
 	ResolveCodeLens(context.Context, *CodeLens) (*CodeLens, error)
 	// ResolveCommand handles the interactive resolution of a command prior to
 	// its execution.
@@ -50,17 +50,17 @@ type Server interface {
 	//
 	// Note: This is a non-standard protocol extension.
 	ResolveCommand(context.Context, *ExecuteCommandParams) (*ExecuteCommandParams, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItem_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#completionItem_resolve
 	ResolveCompletionItem(context.Context, *CompletionItem) (*CompletionItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLink_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#documentLink_resolve
 	ResolveDocumentLink(context.Context, *DocumentLink) (*DocumentLink, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#exit
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#exit
 	Exit(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initialize
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#initialize
 	Initialize(context.Context, *ParamInitialize) (*InitializeResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initialized
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#initialized
 	Initialized(context.Context, *InitializedParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHint_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#inlayHint_resolve
 	Resolve(context.Context, *InlayHint) (*InlayHint, error)
 	// InteractiveListEnum is the request handler for fetching dynamic enum options.
 	//
@@ -72,129 +72,129 @@ type Server interface {
 	//
 	// Note: This is a non-standard protocol extension.
 	InteractiveListEnum(context.Context, *InteractiveListEnumParams) ([]FormEnumEntry, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didChange
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#notebookDocument_didChange
 	DidChangeNotebookDocument(context.Context, *DidChangeNotebookDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didClose
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#notebookDocument_didClose
 	DidCloseNotebookDocument(context.Context, *DidCloseNotebookDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didOpen
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#notebookDocument_didOpen
 	DidOpenNotebookDocument(context.Context, *DidOpenNotebookDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument_didSave
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#notebookDocument_didSave
 	DidSaveNotebookDocument(context.Context, *DidSaveNotebookDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#shutdown
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#shutdown
 	Shutdown(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_codeAction
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_codeAction
 	CodeAction(context.Context, *CodeActionParams) ([]CodeAction, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_codeLens
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_codeLens
 	CodeLens(context.Context, *CodeLensParams) ([]CodeLens, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_colorPresentation
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_colorPresentation
 	ColorPresentation(context.Context, *ColorPresentationParams) ([]ColorPresentation, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_completion
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_completion
 	Completion(context.Context, *CompletionParams) (*CompletionList, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_declaration
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_declaration
 	Declaration(context.Context, *DeclarationParams) (*Or_textDocument_declaration, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_definition
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_definition
 	Definition(context.Context, *DefinitionParams) ([]Location, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_diagnostic
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_diagnostic
 	Diagnostic(context.Context, *DocumentDiagnosticParams) (*DocumentDiagnosticReport, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didChange
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_didChange
 	DidChange(context.Context, *DidChangeTextDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didClose
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_didClose
 	DidClose(context.Context, *DidCloseTextDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didOpen
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_didOpen
 	DidOpen(context.Context, *DidOpenTextDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didSave
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_didSave
 	DidSave(context.Context, *DidSaveTextDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentColor
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_documentColor
 	DocumentColor(context.Context, *DocumentColorParams) ([]ColorInformation, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentHighlight
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_documentHighlight
 	DocumentHighlight(context.Context, *DocumentHighlightParams) ([]DocumentHighlight, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentLink
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_documentLink
 	DocumentLink(context.Context, *DocumentLinkParams) ([]DocumentLink, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentSymbol
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_documentSymbol
 	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]any, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_foldingRange
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_foldingRange
 	FoldingRange(context.Context, *FoldingRangeParams) ([]FoldingRange, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_formatting
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_formatting
 	Formatting(context.Context, *DocumentFormattingParams) ([]TextEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_hover
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_hover
 	Hover(context.Context, *HoverParams) (*Hover, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_implementation
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_implementation
 	Implementation(context.Context, *ImplementationParams) ([]Location, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_inlayHint
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_inlayHint
 	InlayHint(context.Context, *InlayHintParams) ([]InlayHint, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_inlineCompletion
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_inlineCompletion
 	InlineCompletion(context.Context, *InlineCompletionParams) (*Or_Result_textDocument_inlineCompletion, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_inlineValue
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_inlineValue
 	InlineValue(context.Context, *InlineValueParams) ([]InlineValue, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_linkedEditingRange
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_linkedEditingRange
 	LinkedEditingRange(context.Context, *LinkedEditingRangeParams) (*LinkedEditingRanges, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_moniker
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_moniker
 	Moniker(context.Context, *MonikerParams) ([]Moniker, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_onTypeFormatting
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_onTypeFormatting
 	OnTypeFormatting(context.Context, *DocumentOnTypeFormattingParams) ([]TextEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_prepareCallHierarchy
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_prepareCallHierarchy
 	PrepareCallHierarchy(context.Context, *CallHierarchyPrepareParams) ([]CallHierarchyItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_prepareRename
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_prepareRename
 	PrepareRename(context.Context, *PrepareRenameParams) (*PrepareRenameResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_prepareTypeHierarchy
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_prepareTypeHierarchy
 	PrepareTypeHierarchy(context.Context, *TypeHierarchyPrepareParams) ([]TypeHierarchyItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_rangeFormatting
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_rangeFormatting
 	RangeFormatting(context.Context, *DocumentRangeFormattingParams) ([]TextEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_rangesFormatting
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_rangesFormatting
 	RangesFormatting(context.Context, *DocumentRangesFormattingParams) ([]TextEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_references
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_references
 	References(context.Context, *ReferenceParams) ([]Location, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_rename
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_rename
 	Rename(context.Context, *RenameParams) (*WorkspaceEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_selectionRange
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_selectionRange
 	SelectionRange(context.Context, *SelectionRangeParams) ([]SelectionRange, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_full
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_semanticTokens_full
 	SemanticTokensFull(context.Context, *SemanticTokensParams) (*SemanticTokens, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_full_delta
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_semanticTokens_full_delta
 	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (any, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_range
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_semanticTokens_range
 	SemanticTokensRange(context.Context, *SemanticTokensRangeParams) (*SemanticTokens, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_signatureHelp
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_signatureHelp
 	SignatureHelp(context.Context, *SignatureHelpParams) (*SignatureHelp, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_typeDefinition
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_typeDefinition
 	TypeDefinition(context.Context, *TypeDefinitionParams) ([]Location, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_willSave
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_willSave
 	WillSave(context.Context, *WillSaveTextDocumentParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_willSaveWaitUntil
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_willSaveWaitUntil
 	WillSaveWaitUntil(context.Context, *WillSaveTextDocumentParams) ([]TextEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchy_subtypes
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#typeHierarchy_subtypes
 	Subtypes(context.Context, *TypeHierarchySubtypesParams) ([]TypeHierarchyItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchy_supertypes
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#typeHierarchy_supertypes
 	Supertypes(context.Context, *TypeHierarchySupertypesParams) ([]TypeHierarchyItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_workDoneProgress_cancel
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_workDoneProgress_cancel
 	WorkDoneProgressCancel(context.Context, *WorkDoneProgressCancelParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_diagnostic
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_diagnostic
 	DiagnosticWorkspace(context.Context, *WorkspaceDiagnosticParams) (*WorkspaceDiagnosticReport, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didChangeConfiguration
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didChangeConfiguration
 	DidChangeConfiguration(context.Context, *DidChangeConfigurationParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didChangeWatchedFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didChangeWatchedFiles
 	DidChangeWatchedFiles(context.Context, *DidChangeWatchedFilesParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didChangeWorkspaceFolders
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didChangeWorkspaceFolders
 	DidChangeWorkspaceFolders(context.Context, *DidChangeWorkspaceFoldersParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didCreateFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didCreateFiles
 	DidCreateFiles(context.Context, *CreateFilesParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didDeleteFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didDeleteFiles
 	DidDeleteFiles(context.Context, *DeleteFilesParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didRenameFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_didRenameFiles
 	DidRenameFiles(context.Context, *RenameFilesParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_executeCommand
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_executeCommand
 	ExecuteCommand(context.Context, *ExecuteCommandParams) (any, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_symbol
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_symbol
 	Symbol(context.Context, *WorkspaceSymbolParams) ([]SymbolInformation, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_textDocumentContent
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_textDocumentContent
 	TextDocumentContent(context.Context, *TextDocumentContentParams) (*TextDocumentContentResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_willCreateFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_willCreateFiles
 	WillCreateFiles(context.Context, *CreateFilesParams) (*WorkspaceEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_willDeleteFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_willDeleteFiles
 	WillDeleteFiles(context.Context, *DeleteFilesParams) (*WorkspaceEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_willRenameFiles
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_willRenameFiles
 	WillRenameFiles(context.Context, *RenameFilesParams) (*WorkspaceEdit, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbol_resolve
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspaceSymbol_resolve
 	ResolveWorkspaceSymbol(context.Context, *WorkspaceSymbol) (*WorkspaceSymbol, error)
 }
 

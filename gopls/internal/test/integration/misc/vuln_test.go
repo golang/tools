@@ -615,7 +615,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 					// We expect only one diagnostic for GO-2022-02.
 					count := 0
 					for _, diag := range gotDiagnostics.Diagnostics {
-						if strings.Contains(diag.Message, "GO-2022-02") {
+						if strings.Contains(diag.MessageString(), "GO-2022-02") {
 							count++
 							if got, want := diag.Severity, protocol.SeverityWarning; got != want {
 								t.Errorf("Diagnostic for GO-2022-02 = %v, want %v", got, want)
@@ -910,7 +910,7 @@ func testVulnDiagnostics(t *testing.T, env *Env, pattern string, want vulnDiagEx
 		// Find the diagnostics at loc.start.
 		var diag *protocol.Diagnostic
 		for _, g := range got.Diagnostics {
-			if g.Range.Start == loc.Range.Start && w.msg == g.Message {
+			if g.Range.Start == loc.Range.Start && w.msg == g.MessageString() {
 				modPathDiagnostics = append(modPathDiagnostics, g)
 				diag = &g
 				break

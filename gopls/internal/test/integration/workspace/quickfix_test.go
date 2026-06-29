@@ -382,8 +382,9 @@ type myerror struct{any}
 		// We check only for the first of these.
 		found := false
 		for i, diag := range d.Diagnostics {
-			t.Logf("Diagnostics[%d] = %q (%s)", i, diag.Message, diag.Source)
-			if strings.Contains(diag.Message, "too many return") {
+			msg := diag.MessageString()
+			t.Logf("Diagnostics[%d] = %q (%s)", i, msg, diag.Source)
+			if strings.Contains(msg, "too many return") {
 				found = true
 			}
 		}
@@ -436,8 +437,9 @@ var _ [int("")]byte
 
 		found := false
 		for i, diag := range d.Diagnostics {
-			t.Logf("Diagnostics[%d] = %q (%s)", i, diag.Message, diag.Source)
-			if strings.Contains(diag.Message, "cannot convert") {
+			msg := diag.MessageString()
+			t.Logf("Diagnostics[%d] = %q (%s)", i, msg, diag.Source)
+			if strings.Contains(msg, "cannot convert") {
 				found = true
 			}
 		}

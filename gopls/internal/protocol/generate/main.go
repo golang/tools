@@ -26,13 +26,13 @@ import (
 
 const vscodeRepo = "https://github.com/microsoft/vscode-languageserver-node"
 
-// lspGitRef names a branch or tag in vscodeRepo.
+// lspGitRef names a commit in vscodeRepo.
 // It implicitly determines the protocol version of the LSP used by gopls.
 // For example, tag release/protocol/3.17.3 of the repo defines
 // protocol version 3.17.0 (as declared by the metaData.version field).
 // (Point releases are reflected in the git tag version even when they are cosmetic
 // and don't change the protocol.)
-var lspGitRef = "release/protocol/3.17.6-next.14"
+var lspGitRef = "release/protocol/3.18.2"
 
 var (
 	repodir   = flag.String("d", "", "directory containing clone of "+vscodeRepo)
@@ -59,12 +59,18 @@ func processinline() {
 		defer os.RemoveAll(tmpdir) // ignore error
 
 		// Clone the repository.
-		cmd := exec.Command("git", "clone", "--quiet", "--depth=1", "-c", "advice.detachedHead=false", vscodeRepo, "--branch="+lspGitRef, "--single-branch", tmpdir)
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatal(err)
+		run := func(args ...string) {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = tmpdir
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Fatal(err)
+			}
 		}
+		run("init", "--quiet")
+		run("fetch", "--quiet", "--depth=1", vscodeRepo, lspGitRef) // (accepts any commit ref)
+		run("-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD")
 
 		*repodir = tmpdir
 	} else {

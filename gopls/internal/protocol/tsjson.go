@@ -6,9 +6,9 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.14 (hash 66a087310eea0d60495ba3578d78f70409c403d9).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.14/protocol/metaModel.json
-// LSP metaData.version = 3.17.0.
+// Code generated from protocol/metaModel.json at ref release/protocol/3.18.2 (hash 20969f3e75cb3cd35c2bb794b1d15cc2dfbe4abb).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.18.2/protocol/metaModel.json
+// LSP metaData.version = 3.18.0.
 
 import (
 	"encoding/json"
@@ -384,6 +384,36 @@ func (t *Or_Diagnostic_code) UnmarshalJSON(x []byte) error {
 	return &UnmarshalError{"unmarshal failed to match one of [int32 string]"}
 }
 
+func (t Or_Diagnostic_message) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case MarkupContent:
+		return json.Marshal(x)
+	case string:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [MarkupContent string]", t)
+}
+
+func (t *Or_Diagnostic_message) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 MarkupContent
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 string
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [MarkupContent string]"}
+}
+
 func (t Or_DocumentDiagnosticReport) MarshalJSON() ([]byte, error) {
 	switch x := t.Value.(type) {
 	case RelatedFullDocumentDiagnosticReport:
@@ -442,6 +472,36 @@ func (t *Or_DocumentDiagnosticReportPartialResult_relatedDocuments_Value) Unmars
 		return nil
 	}
 	return &UnmarshalError{"unmarshal failed to match one of [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]"}
+}
+
+func (t Or_DocumentDiagnosticReportProgress) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case DocumentDiagnosticReport:
+		return json.Marshal(x)
+	case DocumentDiagnosticReportPartialResult:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [DocumentDiagnosticReport DocumentDiagnosticReportPartialResult]", t)
+}
+
+func (t *Or_DocumentDiagnosticReportProgress) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 DocumentDiagnosticReport
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 DocumentDiagnosticReportPartialResult
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [DocumentDiagnosticReport DocumentDiagnosticReportPartialResult]"}
 }
 
 func (t Or_DocumentFilter) MarshalJSON() ([]byte, error) {

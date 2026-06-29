@@ -6,9 +6,9 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.14 (hash 66a087310eea0d60495ba3578d78f70409c403d9).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.14/protocol/metaModel.json
-// LSP metaData.version = 3.17.0.
+// Code generated from protocol/metaModel.json at ref release/protocol/3.18.2 (hash 20969f3e75cb3cd35c2bb794b1d15cc2dfbe4abb).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.18.2/protocol/metaModel.json
+// LSP metaData.version = 3.18.0.
 
 import (
 	"context"
@@ -19,47 +19,47 @@ import (
 )
 
 type Client interface {
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#logTrace
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#logTrace
 	LogTrace(context.Context, *LogTraceParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progress
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#progress
 	Progress(context.Context, *ProgressParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#client_registerCapability
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#client_registerCapability
 	RegisterCapability(context.Context, *RegistrationParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#client_unregisterCapability
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#client_unregisterCapability
 	UnregisterCapability(context.Context, *UnregistrationParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#telemetry_event
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#telemetry_event
 	Event(context.Context, *any) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_publishDiagnostics
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_publishDiagnostics
 	PublishDiagnostics(context.Context, *PublishDiagnosticsParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_logMessage
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_logMessage
 	LogMessage(context.Context, *LogMessageParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showDocument
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showDocument
 	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showMessage
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showMessage
 	ShowMessage(context.Context, *ShowMessageParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showMessageRequest
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showMessageRequest
 	ShowMessageRequest(context.Context, *ShowMessageRequestParams) (*MessageActionItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_workDoneProgress_create
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_workDoneProgress_create
 	WorkDoneProgressCreate(context.Context, *WorkDoneProgressCreateParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_applyEdit
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_applyEdit
 	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_codeLens_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_codeLens_refresh
 	CodeLensRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_configuration
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_configuration
 	Configuration(context.Context, *ParamConfiguration) ([]LSPAny, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_diagnostic_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_diagnostic_refresh
 	DiagnosticRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_foldingRange_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_foldingRange_refresh
 	FoldingRangeRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_inlayHint_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_inlayHint_refresh
 	InlayHintRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_inlineValue_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_inlineValue_refresh
 	InlineValueRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_semanticTokens_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_semanticTokens_refresh
 	SemanticTokensRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_textDocumentContent_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_textDocumentContent_refresh
 	TextDocumentContentRefresh(context.Context, *TextDocumentContentRefreshParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_workspaceFolders
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_workspaceFolders
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder, error)
 }
 

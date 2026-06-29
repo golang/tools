@@ -122,7 +122,7 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 		d.Tags = []protocol.DiagnosticTag{} // must be an actual slice
 		msg := d.Code.(string)
 		if msg != "" {
-			msg = fmt.Sprintf("%s(%s)", msg, d.Message)
+			msg = fmt.Sprintf("%s(%s)", msg, d.MessageString())
 		}
 		if !showDiagnostic(msg, d.Source, options) {
 			continue

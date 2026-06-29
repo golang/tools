@@ -67,7 +67,7 @@ func BenchmarkDiagnosePackageFiles(b *testing.B) {
 				fileDiags := env.Diagnostics(file)
 				for _, d := range fileDiags {
 					if d.Severity == protocol.SeverityError {
-						b.Errorf("unexpected error diagnostic: %s", d.Message)
+						b.Errorf("unexpected error diagnostic: %s", d.MessageString())
 					}
 				}
 			})

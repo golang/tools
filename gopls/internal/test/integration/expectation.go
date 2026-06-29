@@ -721,7 +721,7 @@ func jsonProperty(obj any, path ...string) any {
 }
 
 func formatDiagnostic(d protocol.Diagnostic) string {
-	return fmt.Sprintf("%d:%d [%s]: %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Source, d.Message)
+	return fmt.Sprintf("%d:%d [%s]: %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Source, d.MessageString())
 }
 
 // Diagnostics asserts that there is at least one diagnostic matching the given
@@ -877,7 +877,7 @@ func WithMessage(substring string) DiagnosticFilter {
 	return DiagnosticFilter{
 		desc: fmt.Sprintf("with message containing %q", substring),
 		check: func(_ string, d protocol.Diagnostic) bool {
-			return strings.Contains(d.Message, substring)
+			return strings.Contains(d.MessageString(), substring)
 		},
 	}
 }

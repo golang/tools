@@ -103,8 +103,10 @@ func ToProtocolDiagnostics(diagnostics ...*Diagnostic) []protocol.Diagnostic {
 	reports := []protocol.Diagnostic{}
 	for _, diag := range diagnostics {
 		pdiag := protocol.Diagnostic{
-			// diag.Message might start with \n or \t
-			Message:            strings.TrimSpace(diag.Message),
+			Message: protocol.Or_Diagnostic_message{
+				// diag.Message might start with \n or \t
+				Value: strings.TrimSpace(diag.Message),
+			},
 			Range:              diag.Range,
 			Severity:           diag.Severity,
 			Source:             string(diag.Source),

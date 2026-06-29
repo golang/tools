@@ -351,7 +351,7 @@ func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.D
 			for _, sd := range viewDiags.diagnostics {
 				// extra space may have been trimmed when
 				// converting to protocol.Diagnostic
-				sameDiagnostic := pd.Message == strings.TrimSpace(sd.Message) &&
+				sameDiagnostic := pd.MessageString() == strings.TrimSpace(sd.Message) &&
 					protocol.CompareRange(pd.Range, sd.Range) == 0 &&
 					pd.Source == string(sd.Source)
 

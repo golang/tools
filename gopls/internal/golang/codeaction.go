@@ -403,30 +403,31 @@ func importFixTitle(fix *imports.ImportFix) string {
 func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic) []protocol.Diagnostic {
 	var results []protocol.Diagnostic
 	for _, diagnostic := range diagnostics {
+		msg := diagnostic.MessageString()
 		switch {
 		// "undeclared name: X" may be an unresolved import.
-		case strings.HasPrefix(diagnostic.Message, "undeclared name: "):
-			ident := strings.TrimPrefix(diagnostic.Message, "undeclared name: ")
+		case strings.HasPrefix(msg, "undeclared name: "):
+			ident := strings.TrimPrefix(msg, "undeclared name: ")
 			if ident == fix.IdentName {
 				results = append(results, diagnostic)
 			}
 		// "undefined: X" may be an unresolved import at Go 1.20+.
-		case strings.HasPrefix(diagnostic.Message, "undefined: "):
-			ident := strings.TrimPrefix(diagnostic.Message, "undefined: ")
+		case strings.HasPrefix(msg, "undefined: "):
+			ident := strings.TrimPrefix(msg, "undefined: ")
 			if ident == fix.IdentName {
 				results = append(results, diagnostic)
 			}
 		// "could not import: X" may be an invalid import.
-		case strings.HasPrefix(diagnostic.Message, "could not import: "):
-			ident := strings.TrimPrefix(diagnostic.Message, "could not import: ")
+		case strings.HasPrefix(msg, "could not import: "):
+			ident := strings.TrimPrefix(msg, "could not import: ")
 			if ident == fix.IdentName {
 				results = append(results, diagnostic)
 			}
 		// "X imported but not used" is an unused import.
 		// "X imported but not used as Y" is an unused import.
-		case strings.Contains(diagnostic.Message, " imported but not used"):
-			idx := strings.Index(diagnostic.Message, " imported but not used")
-			importPath := diagnostic.Message[:idx]
+		case strings.Contains(msg, " imported but not used"):
+			idx := strings.Index(msg, " imported but not used")
+			importPath := msg[:idx]
 			if importPath == fmt.Sprintf("%q", fix.StmtInfo.ImportPath) {
 				results = append(results, diagnostic)
 			}

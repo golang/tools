@@ -86,7 +86,7 @@ func (h *handler) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, ur
 	actionMap := make(map[key]*protocol.CodeAction)
 	for _, action := range actions {
 		for _, d := range action.Diagnostics {
-			k := key{d.Message, d.Range}
+			k := key{d.MessageString(), d.Range}
 			if alt, ok := actionMap[k]; !ok || !alt.IsPreferred && action.IsPreferred {
 				actionMap[k] = &action
 			}

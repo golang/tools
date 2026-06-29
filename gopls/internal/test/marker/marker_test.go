@@ -289,7 +289,7 @@ func Test(t *testing.T) {
 							URI:   loc.URI,
 							Range: diag.Range,
 						}
-						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(exactLoc), diag.Message)
+						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(exactLoc), diag.MessageString())
 					}
 				}
 			}
@@ -1953,7 +1953,7 @@ func removeDiagnostic(mark marker, loc protocol.Location, matchEnd bool, re *reg
 	key.Range.End = key.Range.Start // diagnostics ignore end position.
 	diags := mark.run.diags[key]
 	for i, diag := range diags {
-		if re.MatchString(diag.Message) && (!matchEnd || diag.Range.End == loc.Range.End) {
+		if re.MatchString(diag.MessageString()) && (!matchEnd || diag.Range.End == loc.Range.End) {
 			mark.run.diags[key] = slices.Delete(diags, i, i+1)
 			return diag, true
 		}

@@ -179,7 +179,7 @@ require example.com v1.2.3
 		)
 		var goGetDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "could not import") {
+			if strings.Contains(diag.MessageString(), "could not import") {
 				goGetDiag = diag
 			}
 		}
@@ -226,7 +226,7 @@ require random.org v1.2.3
 		)
 		var randomDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "random.org") {
+			if strings.Contains(diag.MessageString(), "random.org") {
 				randomDiag = diag
 			}
 		}
@@ -279,7 +279,7 @@ require random.org v1.2.3
 		)
 		var randomDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "random.org") {
+			if strings.Contains(diag.MessageString(), "random.org") {
 				randomDiag = diag
 			}
 		}

@@ -1022,7 +1022,7 @@ func main() {
 			ReadDiagnostics("b/go.mod", params),
 		)
 		for _, d := range params.Diagnostics {
-			if !strings.Contains(d.Message, "go.sum is out of sync") {
+			if !strings.Contains(d.MessageString(), "go.sum is out of sync") {
 				continue
 			}
 			actions := env.GetQuickFixes("b/go.mod", []protocol.Diagnostic{d})
