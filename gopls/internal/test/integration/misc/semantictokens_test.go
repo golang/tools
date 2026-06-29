@@ -5,6 +5,7 @@
 package misc
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -314,6 +315,209 @@ package p
 			{Token: "`世", TokenType: "string"},
 			{Token: "😃`", TokenType: "string"},
 		}
+		if x := cmp.Diff(want, seen); x != "" {
+			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+		}
+	})
+}
+
+// This sets client capability fields:
+// - `textDocument.semanticTokens.tokenTypes`
+// - `textDocument.semanticTokens.tokenModifiers`
+func tokenClientCapabilities(t *testing.T, tokenTypes, tokenMods []string) RunOption {
+	t.Helper()
+	typeString, err := json.Marshal(tokenTypes)
+	if err != nil {
+		t.Fatalf("accepted token list failed to marshal: %v", err)
+	}
+	modString, err := json.Marshal(tokenMods)
+	if err != nil {
+		t.Fatalf("accepted mod list failed to marshal: %v", err)
+	}
+	// This will only update the specific client capabilities set.
+	return CapabilitiesJSON(fmt.Appendf(nil,
+		`{"textDocument": {"semanticTokens": {"tokenTypes": %s, "tokenModifiers": %s}}}`,
+		typeString, modString))
+}
+
+// This tests the Client Capabilities:
+// -  `textDocument.semanticTokens.tokenTypes`
+// -  `textDocument.semanticTokens.tokenModifiers`
+//
+// These two client capabilities determine the maximum set of types and mods
+// the server can send back to the client. So the intersection of these lists
+// with the lists of what the server supports is what gopls can return.
+func TestSemanticTokenClientCapabilitiesTypeAndModifier(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+
+go 1.19
+-- main.go --
+package foo
+
+// Comment
+type A struct {}
+`
+	tcs := []struct {
+		name           string
+		tokenTypes     []string
+		tokenModifiers []string
+		want           []fake.SemanticToken
+	}{{
+		name:           "base case",
+		tokenTypes:     []string{"comment", "keyword", "namespace", "type"},
+		tokenModifiers: []string{"definition", "struct"},
+		want: []fake.SemanticToken{
+			{Token: "package", TokenType: "keyword"},
+			{Token: "foo", TokenType: "namespace"},
+
+			{Token: "// Comment", TokenType: "comment"},
+			{Token: "type", TokenType: "keyword"},
+			{Token: "A", TokenType: "type", Mod: "definition struct"},
+			{Token: "struct", TokenType: "keyword"},
+		},
+	}, {
+		name:           "support subset of token types",
+		tokenTypes:     []string{"comment", "type"},
+		tokenModifiers: []string{"definition", "struct"},
+		want: []fake.SemanticToken{
+			{Token: "// Comment", TokenType: "comment"},
+			{Token: "A", TokenType: "type", Mod: "definition struct"},
+		},
+	}, {
+		name:           "support subset of modifiers",
+		tokenTypes:     []string{"comment", "keyword", "namespace", "type"},
+		tokenModifiers: []string{"definition"},
+		want: []fake.SemanticToken{
+			{Token: "package", TokenType: "keyword"},
+			{Token: "foo", TokenType: "namespace"},
+
+			{Token: "// Comment", TokenType: "comment"},
+			{Token: "type", TokenType: "keyword"},
+			// "struct" modifier no longer supported
+			{Token: "A", TokenType: "type", Mod: "definition"},
+			{Token: "struct", TokenType: "keyword"},
+		},
+	},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			WithOptions(
+				Modes(Default),
+				tokenClientCapabilities(t, tc.tokenTypes, tc.tokenModifiers),
+				Settings{"semanticTokens": true},
+			).Run(t, src, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				seen := env.SemanticTokensFull("main.go")
+				if x := cmp.Diff(tc.want, seen); x != "" {
+					t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+				}
+			})
+		})
+	}
+}
+
+// This test verifies that UI Setting's `semanticTokens` map only further
+// restricts the client capabilities `tokenTypes` list.
+//
+// TODO(aputman): Consider moving to marker test.
+func TestSemanticTokenTypesClientCapabilitiesWithUISettings(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+
+go 1.19
+-- main.go --
+package foo
+
+// Comment
+type A struct {}
+`
+	// What the client capability token types are.
+	clientTokenTypes := []string{"comment", "keyword", "type"}
+
+	// The UI Settings token types map
+	uiTokenTypes := map[string]bool{
+		// Since "namespace" isn't in the clientTokenTypes list, this
+		// won't do anything.
+		"namespace": true,
+		"type":      true,
+		// This will disable the keyword tokentypes even though the client
+		// supports them.
+		"keyword": false,
+		// Since "comment" is left out, it will be supported.
+	}
+
+	clientTokenModifiers := []string{"definition", "struct"}
+
+	// Only comment and type are left
+	want := []fake.SemanticToken{
+		{Token: "// Comment", TokenType: "comment"},
+		{Token: "A", TokenType: "type", Mod: "definition struct"},
+	}
+	WithOptions(
+		Modes(Default),
+		tokenClientCapabilities(t, clientTokenTypes, clientTokenModifiers),
+		Settings{"semanticTokens": true, "semanticTokenTypes": uiTokenTypes},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		seen := env.SemanticTokensFull("main.go")
+		if x := cmp.Diff(want, seen); x != "" {
+			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
+		}
+	})
+}
+
+// This test verifies that UI Setting's semanticTokenModifiers map only
+// further restricts the client capabilities tokenModifiers list.
+//
+// TODO(aputman): Consider moving to marker test.
+func TestSemanticTokenModifiersClientCapabilitiesWithUISettings(t *testing.T) {
+	src := `
+-- go.mod --
+module example.com
+
+go 1.19
+-- main.go --
+package foo
+
+type A struct {}
+
+func B(l []string) {}
+`
+	// Only these token types are returned.
+	clientTokenTypes := []string{"comment", "definition", "function", "parameter", "type"}
+
+	// What the client capability token modifiers are.
+	clientTokenModifiers := []string{"definition", "signature", "struct"}
+
+	// The UI Settings token mods map
+	uiTokenMods := map[string]bool{
+		// Since "slice" isn't in the clientTokenModifiers list, this won't do anything.
+		"slice":     true,
+		"signature": true,
+		// This will disable the definition modifiers even though the client supports them.
+		"definition": false,
+		// Since "struct" is left out, it will be supported.
+	}
+
+	// Only signature and struct modifiers are left
+	want := []fake.SemanticToken{
+		{Token: "A", TokenType: "type", Mod: "struct"},        // "definition" no longer returned
+		{Token: "B", TokenType: "function", Mod: "signature"}, // "definition" no longer returned
+		{Token: "l", TokenType: "parameter", Mod: ""},         // "slice" no longer returned
+		{Token: "string", TokenType: "type", Mod: ""},
+	}
+
+	WithOptions(
+		Modes(Default),
+		tokenClientCapabilities(t, clientTokenTypes, clientTokenModifiers),
+		Settings{"semanticTokens": true, "semanticTokenModifiers": uiTokenMods},
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		seen := env.SemanticTokensFull("main.go")
 		if x := cmp.Diff(want, seen); x != "" {
 			t.Errorf("Semantic tokens do not match (-want +got):\n%s", x)
 		}

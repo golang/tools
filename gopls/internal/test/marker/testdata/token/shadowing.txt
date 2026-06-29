@@ -1,6 +1,16 @@
+This test tests the token modifier "shadowing", which requires adding it to the client capabilities
+
 -- settings.json --
 {
 	"semanticTokens": true
+}
+-- capabilities.json --
+{
+	"textDocument": {
+		"semanticTokens": {
+			"tokenModifiers": ["definition", "number", "pointer", "readonly", "shadowing", "signature", "struct"]
+		}
+	}
 }
 -- universe/universe.go --
 package p

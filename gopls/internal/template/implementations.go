@@ -224,7 +224,7 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 		})
 	}
 	return &protocol.SemanticTokens{
-		Data: semtok.Encode(items, nil, nil),
+		Data: semtok.Encode(items, snapshot.Options().EnabledSemanticTokenTypes(), snapshot.Options().EnabledSemanticTokenModifiers()),
 		// for small cache, some day. for now, the LSP client ignores this
 		// (that is, when the LSP client starts returning these, we can cache)
 		ResultID: fmt.Sprintf("%v", time.Now()),

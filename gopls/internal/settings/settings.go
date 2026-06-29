@@ -1561,18 +1561,30 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 // EnabledSemanticTokenModifiers returns a map of modifiers to boolean.
 func (o *Options) EnabledSemanticTokenModifiers() map[semtok.Modifier]bool {
-	copy := make(map[semtok.Modifier]bool, len(o.SemanticTokenModifiers))
-	for k, v := range o.SemanticTokenModifiers {
-		copy[semtok.Modifier(k)] = v
+	copy := make(map[semtok.Modifier]bool, len(o.SemanticMods))
+	// Enable the modifiers defined in client capabilities
+	for _, m := range o.SemanticMods {
+		if enabled, found := o.SemanticTokenModifiers[m]; found && !enabled {
+			// If the client capabilities enables a semantic mod, but the
+			// user's UI settings disables it, keep it disabled.
+			continue
+		}
+		copy[semtok.Modifier(m)] = true
 	}
 	return copy
 }
 
 // EnabledSemanticTokenTypes returns a map of types to boolean.
 func (o *Options) EnabledSemanticTokenTypes() map[semtok.Type]bool {
-	copy := make(map[semtok.Type]bool, len(o.SemanticTokenTypes))
-	for k, v := range o.SemanticTokenTypes {
-		copy[semtok.Type(k)] = v
+	copy := make(map[semtok.Type]bool, len(o.SemanticTypes))
+	// Enable the tokens defined in client capabilities
+	for _, t := range o.SemanticTypes {
+		if enabled, found := o.SemanticTokenTypes[t]; found && !enabled {
+			// If the client capabilities enables a semantic type, but the
+			// user's UI settings disables it, keep it disabled.
+			continue
+		}
+		copy[semtok.Type(t)] = true
 	}
 	if o.NoSemanticString {
 		copy[semtok.TokString] = false

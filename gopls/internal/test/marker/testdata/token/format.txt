@@ -5,6 +5,15 @@ This test checks semanticTokens for format string placeholders.
 	"semanticTokens": true
 }
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"semanticTokens": {
+			"tokenModifiers": ["format"]
+		}
+	}
+
+}
 -- flags --
 -ignore_extra_diags
 

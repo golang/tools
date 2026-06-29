@@ -384,7 +384,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 		"declaration", "definition", "readonly", "static",
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
 		// Additional modifiers supported by this client:
-		"interface", "struct", "signature", "pointer", "array", "map", "slice", "chan", "string", "number", "bool", "invalid",
+		"interface", "struct", "signature", "pointer", "array", "map", "slice",
+		"chan", "string", "shadowing", "number", "bool", "invalid", "format",
 	}
 	// Request that the server provide its complete list of code action kinds.
 	capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{

@@ -143,8 +143,8 @@ var Modifiers = []Modifier{
 
 // Encode returns the LSP encoding of a sequence of tokens.
 // encodeType and encodeModifier maps control which types and modifiers are
-// excluded in the response. If a type or modifier maps to false, it will be
-// omitted from the output.
+// included in the response. A type or modifier must exist in the map and map
+// to true to be included in the output.
 func Encode(
 	tokens []Token,
 	encodeType map[Type]bool,
@@ -160,18 +160,16 @@ func Encode(
 
 	typeMap := make(map[Type]uint32)
 	for i, t := range Types {
-		if enable, ok := encodeType[t]; ok && !enable {
-			continue
+		if enable, ok := encodeType[t]; ok && enable {
+			typeMap[Type(t)] = uint32(i)
 		}
-		typeMap[Type(t)] = uint32(i)
 	}
 
 	modMap := make(map[Modifier]uint32)
 	for i, m := range Modifiers {
-		if enable, ok := encodeModifier[m]; ok && !enable {
-			continue
+		if enable, ok := encodeModifier[m]; ok && enable {
+			modMap[Modifier(m)] = 1 << i
 		}
-		modMap[Modifier(m)] = 1 << i
 	}
 
 	// Each semantic token needs five values but some tokens might be skipped.
