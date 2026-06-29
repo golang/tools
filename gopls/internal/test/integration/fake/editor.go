@@ -1855,6 +1855,10 @@ func (e *Editor) interpretTokens(m *protocol.Mapper, x []uint32) ([]SemanticToke
 		end := start + utf16IndexToBytes(m.Content[start:], int(length16))
 		text := string(m.Content[start:end])
 
+		if t >= uint32(len(legend.TokenTypes)) {
+			return nil, fmt.Errorf("tokenType index %d is out of bounds for SemanticTokensLegend.TokenTypes with length %d", t, len(legend.TokenTypes))
+		}
+
 		ans = append(ans, SemanticToken{
 			Token:     text,
 			TokenType: legend.TokenTypes[t],
