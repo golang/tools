@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"runtime"
 	"testing"
+
+	"golang.org/x/tools/gopls/internal/licenses"
 )
 
 func TestLicenses(t *testing.T) {
@@ -30,10 +32,7 @@ func TestLicenses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile("licenses.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := []byte(licenses.Text)
 	if !bytes.Equal(got, want) {
 		t.Error("combined license text needs updating. Run: `go generate ./internal/licenses` from the gopls module.")
 	}
