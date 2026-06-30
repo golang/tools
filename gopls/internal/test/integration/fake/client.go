@@ -175,6 +175,15 @@ func (c *Client) RegisterCapability(ctx context.Context, params *protocol.Regist
 			c.editor.watchPatterns = globs
 			c.editor.mu.Unlock()
 		}
+		if registration.Method == "textDocument/semanticTokens" {
+			opts, err := marshalUnmarshal[protocol.SemanticTokensOptions](registration.RegisterOptions)
+			if err != nil {
+				return fmt.Errorf("unmarshaling registration options: %v", err)
+			}
+			c.editor.mu.Lock()
+			c.editor.semTokOpts = opts
+			c.editor.mu.Unlock()
+		}
 	}
 	return nil
 }
