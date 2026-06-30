@@ -49,14 +49,13 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 func parseAsmFiles(ctx context.Context, fhs ...file.Handle) ([]*asm.File, error) {
 	pafs := make([]*asm.File, len(fhs))
 	for i, fh := range fhs {
-		var err error
+		// Check for context cancellation before reading file content.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		content, err := fh.Content()
 		if err != nil {
 			return nil, err
-		}
-		// Check for context cancellation before actually doing the parse.
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
 		}
 		pafs[i] = asm.Parse(fh.URI(), content)
 	}

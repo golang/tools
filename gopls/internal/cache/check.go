@@ -1254,7 +1254,7 @@ func (b *packageHandleBuilder) evaluatePackageHandle(ctx context.Context, n *han
 		ph.localInputs = inputs
 
 	checkOpen:
-		for _, files := range [][]file.Handle{inputs.goFiles, inputs.compiledGoFiles} {
+		for _, files := range [][]file.Handle{inputs.goFiles, inputs.compiledGoFiles, inputs.asmFiles} {
 			for _, fh := range files {
 				if _, ok := fh.(*overlay); ok {
 					ph.isOpen = true

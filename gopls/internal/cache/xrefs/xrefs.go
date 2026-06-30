@@ -167,6 +167,10 @@ func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package
 			}
 			if rng, err := af.IdentRange(id); err == nil {
 				gobObj.Refs = append(gobObj.Refs, gobRef{
+					// FileIndex for asm files is offset by len(files)
+					// (i.e. the number of compiledGoFiles).
+					// Lookup reverses this by comparing against
+					// len(mp.CompiledGoFiles); the two counts must be equal.
 					FileIndex: len(files) + fileIndex,
 					Range:     rng,
 				})
@@ -225,9 +229,15 @@ func (idx *Index) Lookup(mp *metadata.Package, targets map[metadata.PackagePath]
 					for _, ref := range gobObj.Refs {
 						var uri protocol.DocumentURI
 						if asmIndex := ref.FileIndex - len(mp.CompiledGoFiles); asmIndex < 0 {
+							// CompiledGoFile reference.
+							// Invariant: len(files) passed to NewIndex
+							// equals len(mp.CompiledGoFiles).
 							uri = mp.CompiledGoFiles[ref.FileIndex]
-						} else {
+						} else if asmIndex < len(mp.AsmFiles) {
 							uri = mp.AsmFiles[asmIndex]
+						} else {
+							// Corrupt index: skip.
+							continue
 						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,

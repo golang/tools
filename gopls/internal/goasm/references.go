@@ -133,6 +133,26 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
+	// For cross-package references, also scan assembly files
+	// in the declaring package.
+	if pkgpath != "" && pkgpath != string(mp.PkgPath) {
+		for _, asmFile := range declPkg.AsmFiles() {
+			for _, id := range asmFile.Idents {
+				if id.Name == found.Name {
+					if id.Kind == asm.Label {
+						continue
+					}
+					if !includeDeclaration && (id.Kind == asm.Text || id.Kind == asm.Global) {
+						continue
+					}
+					if loc, err := asmFile.IdentLocation(id); err == nil {
+						locations = append(locations, loc)
+					}
+				}
+			}
+		}
+	}
+
 	// Scan asm files in the current package for matching identifiers.
 	for _, asmFile := range pkg.AsmFiles() {
 		for _, id := range asmFile.Idents {
