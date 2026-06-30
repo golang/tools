@@ -36,7 +36,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, r
 		return nil, err
 	}
 	mapper := protocol.NewMapper(fh.URI(), content)
-	start, end, err := mapper.RangeOffsets(rng)
+	offset, err := mapper.PositionOffset(rng.Start)
 	if err != nil {
 		return nil, err
 	}
@@ -45,13 +45,13 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, r
 	//
 	// TODO(adonovan): make this just another
 	// attribute of the type-checked cache.Package.
-	file := asm.Parse(content)
+	file := asm.Parse(fh.URI(), content)
 
 	// Figure out the selected symbol.
 	// For now, just find the identifier around the cursor.
 	var found *asm.Ident
 	for _, id := range file.Idents {
-		if id.Offset <= start && end <= id.End() {
+		if id.Offset <= offset && offset <= id.End() {
 			found = &id
 			break
 		}
