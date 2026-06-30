@@ -51,12 +51,14 @@ type Package struct {
 	IgnoredFiles    []protocol.DocumentURI
 	OtherFiles      []protocol.DocumentURI
 
+	AsmFiles []protocol.DocumentURI // *.s subset of OtherFiles
+
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
 	Errors        []packages.Error          // must be set for packages in import cycles
 	DepsByImpPath map[ImportPath]PackageID  // may contain dups; empty ID => missing
 	DepsByPkgPath map[PackagePath]PackageID // values are unique and non-empty
-	Module        *packages.Module          // may be missing for std and cmd; see Go issue #65816.
+	Module        *packages.Module
 	DepsErrors    []*packagesinternal.PackageError
 	LoadDir       string // directory from which go/packages was run
 	Standalone    bool   // package synthesized for a standalone file (e.g. ignore-tagged)
