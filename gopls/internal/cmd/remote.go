@@ -48,7 +48,7 @@ type listSessions struct {
 }
 
 func (c *listSessions) Name() string   { return "sessions" }
-func (c *listSessions) Parent() string { return c.app.Name() }
+func (c *listSessions) Parent() string { return "gopls remote" }
 func (c *listSessions) Usage() string  { return "" }
 func (c *listSessions) ShortHelp() string {
 	return "print information about current gopls sessions"
@@ -94,8 +94,9 @@ type startDebugging struct {
 	app *application
 }
 
-func (c *startDebugging) Name() string  { return "debug" }
-func (c *startDebugging) Usage() string { return "[host:port]" }
+func (c *startDebugging) Name() string   { return "debug" }
+func (c *startDebugging) Parent() string { return "gopls remote" }
+func (c *startDebugging) Usage() string  { return "[host:port]" }
 func (c *startDebugging) ShortHelp() string {
 	return "start the debug server"
 }
