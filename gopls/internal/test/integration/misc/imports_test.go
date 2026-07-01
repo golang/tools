@@ -244,6 +244,13 @@ var _, _ = x.X, y.Y
 		WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {})
 	})
 
+	// according to https://github.com/golang/go/issues/77894
+	// this test is flaky. Create the index deterministically
+	// rather than hoping that a background go routine completes in time.
+	if _, err := modindex.Update(modcache); err != nil {
+		t.Fatal(err)
+	}
+
 	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
 		// Expect y is undefined.
 		env.OpenFile("main.go")
@@ -255,44 +262,6 @@ var _, _ = x.X, y.Y
 
 		// Apply suggested fix via OrganizeImports.
 		env.SaveBuffer("main.go") // => OrganizeImports
-		if true {
-			// according to https://github.com/golang/go/issues/77894
-			// this test is flaky. Print some possibly helpful diagnostic
-			// information.
-			ix, err := modindex.Read(modcache)
-			if err != nil {
-				t.Logf("could not read modcache index: %v", err)
-			} else if len(ix.Entries) != 2 {
-				t.Logf("%d modcache entries", len(ix.Entries))
-				if len(ix.Entries) == 0 {
-					fis, err := os.ReadDir(modcache)
-					if err != nil {
-						t.Logf("could not read modcache dir: %v", err)
-					}
-					t.Logf("%d modcache files", len(fis))
-				}
-			}
-			// because this test is flaky, replace the simple check with a detailed one
-			// env.AfterChange(NoDiagnostics(ForFile("main.go")))
-			diags := make(map[string]*protocol.PublishDiagnosticsParams)
-			env.AfterChange(ReadAllDiagnostics(&diags))
-			dump := false
-			for k, v := range diags {
-				if len(v.Diagnostics) != 0 {
-					t.Errorf("Unexpected diagnostics for %s: %#v", k, v)
-					dump = true
-				}
-			}
-			if dump {
-				/* the correct result is
-					0: example.com/x, example.com@v1.2.3/x, ["X C"]
-				   	1: example.com/y, example.com@v1.2.3/y, ["Y C"]
-				*/
-				for i, e := range ix.Entries {
-					t.Logf("%d: %s, %s, %q", i, e.ImportPath, e.Dir, e.Names)
-				}
-			}
-		}
 
 		// Verify that y.Y is defined within the module cache.
 		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
@@ -347,6 +316,9 @@ return nil
 			t.Logf("wrote %s:%d", fname, len(v))
 		}
 	}
+	// golang/go#77552 finds this test flaky, so create the index explicitly
+	// rather than hoping a background go routine finishes in time
+	modindex.Update(modcache)
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
 		WriteGoSum("."),
@@ -358,15 +330,6 @@ return nil
 		out := env.BufferText("main.go")
 		if !strings.Contains(out, "xurls/v2") {
 			t.Errorf("did not get v2 in %q", out)
-			// golang/go#77552 finds this test flaky, so print out more
-			ix, err := modindex.Read(modcache)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Logf("%d entries", len(ix.Entries))
-			for i, e := range ix.Entries {
-				t.Logf("%d: %s, %s, %d", i, e.ImportPath, e.Dir, len(e.Names))
-			}
 		}
 	})
 }
