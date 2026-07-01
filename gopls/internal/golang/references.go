@@ -643,7 +643,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			}
 			if rng, err := af.IdentRange(id); err == nil {
 				report(protocol.Location{
-					URI:   af.URI,
+					URI:   af.Mapper.URI,
 					Range: rng,
 				}, false)
 			}

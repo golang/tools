@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"slices"
 	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
@@ -220,12 +221,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	sort.Slice(locations, func(i, j int) bool {
 		return protocol.CompareLocation(locations[i], locations[j]) < 0
 	})
-	out := locations[:0]
-	for _, loc := range locations {
-		if len(out) == 0 || out[len(out)-1] != loc {
-			out = append(out, loc)
-		}
-	}
+	locations = slices.Compact(locations)
 
-	return out, nil
+	return locations, nil
 }

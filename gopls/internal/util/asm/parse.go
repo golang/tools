@@ -45,7 +45,6 @@ var kindString = [...]string{
 
 // A file represents a parsed file of Go assembly language.
 type File struct {
-	URI    protocol.DocumentURI
 	Idents []Ident
 
 	Mapper *protocol.Mapper
@@ -211,7 +210,7 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 
 	_ = scan.Err() // ignore scan errors
 
-	return &File{Idents: idents, Mapper: protocol.NewMapper(uri, content), URI: uri}
+	return &File{Idents: idents, Mapper: protocol.NewMapper(uri, content)}
 }
 
 // isIdent reports whether s is a valid Go assembly identifier.

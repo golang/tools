@@ -29,7 +29,7 @@ import (
 // Callers indexing many packages should share one objectpath Encoder
 // so that a heavily referenced package's object paths are encoded
 // once rather than once per referencing package.
-func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles []*asm.File) *Index {
+func NewIndex(enc *objectpath.Encoder, pkg *types.Package, info *types.Info, files []*parsego.File, asmFiles []*asm.File) *Index {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -122,8 +122,16 @@ func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package
 	// For each asm file, record cross-package references.
 	// Within-package asm references are found by localReferences
 	// scanning syntax, not by the xrefs index.
-	for fileIndex, af := range asmFiles {
-		for _, id := range af.Idents {
+
+	// Build a mapping from import path to package, so that each
+	// cross-package identifier can be resolved without a linear
+	// scan of pkg.Imports() for every identifier.
+	importsByPath := make(map[string]*types.Package, len(pkg.Imports()))
+	for _, imp := range pkg.Imports() {
+		importsByPath[imp.Path()] = imp
+	}
+	for fileIndex, file := range asmFiles {
+		for _, id := range file.Idents {
 			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
@@ -137,18 +145,12 @@ func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package
 			}
 			// Cross-package reference: find the dependency package.
 			//
-			// TODO(adonovan): assembly may legally reference
+			// TODO(Groot Guo): assembly may legally reference
 			// non-dependencies (e.g. sync/atomic calls internal/runtime/atomic).
 			// Currently we only search direct imports; see goasm.Definition
 			// which searches the full metadata graph.
-			var depPkg *types.Package
-			for _, imp := range pkg.Imports() {
-				if imp.Path() == pkgpath {
-					depPkg = imp
-					break
-				}
-			}
-			if depPkg == nil {
+			depPkg, ok := importsByPath[pkgpath]
+			if !ok {
 				continue
 			}
 			obj := depPkg.Scope().Lookup(name)
@@ -158,14 +160,14 @@ func NewIndex(enc *objectpath.Encoder, files []*parsego.File, pkg *types.Package
 			objects := getObjects(depPkg)
 			gobObj, ok := objects[obj]
 			if !ok {
-				path, err := objectpathFor(obj)
+				path, err := enc.For(obj)
 				if err != nil {
 					continue
 				}
 				gobObj = &gobObject{Path: path}
 				objects[obj] = gobObj
 			}
-			if rng, err := af.IdentRange(id); err == nil {
+			if rng, err := file.IdentRange(id); err == nil {
 				gobObj.Refs = append(gobObj.Refs, gobRef{
 					// FileIndex for asm files is offset by len(files)
 					// (i.e. the number of compiledGoFiles).
@@ -233,11 +235,8 @@ func (idx *Index) Lookup(mp *metadata.Package, targets map[metadata.PackagePath]
 							// Invariant: len(files) passed to NewIndex
 							// equals len(mp.CompiledGoFiles).
 							uri = mp.CompiledGoFiles[ref.FileIndex]
-						} else if asmIndex < len(mp.AsmFiles) {
-							uri = mp.AsmFiles[asmIndex]
 						} else {
-							// Corrupt index: skip.
-							continue
+							uri = mp.AsmFiles[asmIndex]
 						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,

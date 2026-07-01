@@ -73,7 +73,7 @@ type syntaxPackage struct {
 
 func (p *syntaxPackage) xrefs(enc *objectpath.Encoder) *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.NewIndex(enc, p.compiledGoFiles, p.types, p.typesInfo, p.asmFiles)
+		p._xrefs = xrefs.NewIndex(enc, p.types, p.typesInfo, p.compiledGoFiles, p.asmFiles)
 	})
 	return p._xrefs
 }
@@ -226,7 +226,7 @@ func (p *Package) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
 
 func (pkg *syntaxPackage) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
 	for _, af := range pkg.asmFiles {
-		if af.URI == uri {
+		if af.Mapper.URI == uri {
 			return af, nil
 		}
 	}
