@@ -10,7 +10,6 @@ import (
 	"errors"
 	"math/rand"
 	"os"
-	"syscall"
 	"time"
 )
 
@@ -21,7 +20,7 @@ const arbitraryTimeout = 2000 * time.Millisecond
 func retry(f func() (err error, mayRetry bool)) error {
 	var (
 		bestErr     error
-		lowestErrno syscall.Errno
+		lowestErrno uintptr
 		start       time.Time
 		nextSleep   time.Duration = 1 * time.Millisecond
 	)
@@ -31,8 +30,7 @@ func retry(f func() (err error, mayRetry bool)) error {
 			return err
 		}
 
-		var errno syscall.Errno
-		if errors.As(err, &errno) && (lowestErrno == 0 || errno < lowestErrno) {
+		if errno, ok := getErrno(err); ok && (lowestErrno == 0 || errno < lowestErrno) {
 			bestErr = err
 			lowestErrno = errno
 		} else if bestErr == nil {

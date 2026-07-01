@@ -38,6 +38,10 @@ func isEphemeralError(err error) bool {
 	return false
 }
 
+func getErrno(error) (uintptr, bool) {
+	return 0, false
+}
+
 func getFileID(filename string) (FileID, time.Time, error) {
 	fi, err := os.Stat(filename)
 	if err != nil {
