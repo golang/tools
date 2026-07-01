@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/modindex"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -58,6 +59,7 @@ var _ = zstd.EncoderLevelFromString
 // getting modules from the network, and not all
 // the builders have network access.
 func TestCmd(t *testing.T) {
+	testenv.NeedsExec(t)
 	log.SetFlags(log.Lshortfile)
 	dir := t.TempDir()
 	modindex.IndexDir = filepath.Join(modindex.IndexDir, "goimports")
