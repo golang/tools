@@ -41,7 +41,7 @@ func TestHelpFiles(t *testing.T) {
 			}
 			res := gopls(t, tree, args...)
 			res.checkExit(true) // -h should result in exit 0
-			got := res.stderr
+			got := res.stdout
 			helpFile := filepath.Join("usage", name+".hlp")
 			if *updateHelpFiles {
 				if err := os.WriteFile(helpFile, []byte(got), 0666); err != nil {
@@ -65,7 +65,7 @@ func TestVerboseHelp(t *testing.T) {
 	tree := writeTree(t, "")
 	res := gopls(t, tree, "-v", "-h")
 	res.checkExit(true) // -h should result in exit 0
-	got := res.stderr
+	got := res.stdout
 	helpFile := filepath.Join("usage", "usage-v.hlp")
 	if *updateHelpFiles {
 		if err := os.WriteFile(helpFile, []byte(got), 0666); err != nil {
@@ -138,9 +138,16 @@ func TestHelpTree(t *testing.T) {
 		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
 			res := gopls(t, tree, test.args...)
 			res.checkExit(test.wantSuccess)
-			res.checkStdout("^$") // no stdout
-			for _, pattern := range test.wantPatterns {
-				res.checkStderr(pattern)
+			if test.wantSuccess {
+				res.checkStderr("^$") // no stderr
+				for _, pattern := range test.wantPatterns {
+					res.checkStdout(pattern)
+				}
+			} else {
+				res.checkStdout("^$") // no stdout
+				for _, pattern := range test.wantPatterns {
+					res.checkStderr(pattern)
+				}
 			}
 		})
 	}

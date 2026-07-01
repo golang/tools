@@ -25,8 +25,7 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
-// serve is a struct that exposes the configurable parts of the LSP and MCP
-// server as flags, in the right form for tool.Main to consume.
+// serve defines the flags and working state of the gopls serve command.
 type serve struct {
 	Logfile     string        `flag:"logfile" help:"filename to log to. if value is \"auto\", then logging to a default output file is enabled"`
 	Mode        string        `flag:"mode" help:"no effect"`

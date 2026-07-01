@@ -62,10 +62,14 @@ func (h *help) Run(ctx context.Context, args ...string) error {
 	}
 
 	// 'gopls help cmd subcmd' is equivalent to 'gopls cmd subcmd -h'.
-	// The flag package prints the usage information (defined by Run)
-	// when it sees the -h flag.
-	fs := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
-	return runCommand(ctx, fs, h.app, append(args[:len(args):len(args)], "-h"))
+	// parseFlags prints the usage information when it sees the -h flag.
+	//
+	// TODO(hyangah): should we treat `gopls help cmd` and `gopls cmd -h`
+	// differently? For example, `gopls help cmd` can give a long help
+	// that explains a lot more details (DetailedHelp) than
+	// `gopls cmd -h` outputs (ShortHelp).
+	parseFlags(cmd, []string{"-h"})
+	return nil
 }
 
 // version implements the version command.

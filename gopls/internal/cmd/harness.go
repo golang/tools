@@ -8,14 +8,19 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/filecache"
 )
 
 // This file defines common flags and helper functions
@@ -72,56 +77,93 @@ func commandLineErrorf(message string, args ...any) error {
 	return commandLineError(fmt.Sprintf(message, args...))
 }
 
-// Main should be invoked directly by main function.
-// It will only return if there was no error.  If an error
-// was encountered it is printed to standard error and the
-// application exits with an exit code of 2.
+// Main is the main entry point for the gopls application, called by gopls main.
+// It never returns.
 func Main() {
 	ctx := context.Background()
 	args := os.Args[1:]
 	app := newApplication()
-	s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-	if err := runCommand(ctx, s, app, args); err != nil {
-		fmt.Fprintf(s.Output(), "%s: %v\n", app.Name(), err)
-		if _, printHelp := err.(commandLineError); printHelp {
-			// TODO(adonovan): refine this. It causes
-			// any command-line error to result in the full
-			// usage message, which typically obscures
-			// the actual error.
-			s.Usage()
+	cmd, globalArgs, cmdArgs, err := normalize(app, args)
+	if err != nil {
+		if cmd == nil {
+			cmd = app
+		}
+		fmt.Fprintf(os.Stderr, "%s: %v\n", cmdPath(cmd), err)
+		if isCommandLineError(err) {
+			printCommandHelp(os.Stderr, cmd)
 		}
 		os.Exit(2)
 	}
+
+	parseFlags(app, globalArgs)
+	cmdFlags := parseFlags(cmd, cmdArgs)
+
+	err = runWithProfile(&app.ProfileFlags, func() error {
+		// In the category of "things we can do while waiting for the
+		// Go command":
+
+		// TODO(hyangah): check if it's desirable to run filecache.Start unconditionally
+		// on every gopls subcommand, including CLI running with -remote or -help message.
+		// Pre-initialize the filecache, which takes ~50ms to hash the gopls
+		// executable, and immediately runs a gc.
+		filecache.Start()
+
+		ctx = debug.WithInstance(ctx, app.OTel)
+
+		return cmd.Run(ctx, cmdFlags.Args()...)
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gopls: %v\n", err)
+		if isCommandLineError(err) {
+			printCommandHelp(os.Stderr, cmd)
+		}
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+// isCommandLineError reports whether the error was created by [commandLineErrorf].
+func isCommandLineError(err error) bool {
+	_, ok := err.(commandLineError)
+	return ok
+}
+
+// cmdPath returns the full command path (e.g. "gopls remote debug") for target.
+func cmdPath(target command) string {
+	if sub, ok := target.(subcommand); ok && sub.Parent() != "" {
+		return sub.Parent() + " " + target.Name()
+	}
+	return target.Name()
 }
 
 // printHelp prints the usage and detailed help for any command to s.Output().
-func printHelp(s *flag.FlagSet, app command) {
-	if app.ShortHelp() != "" {
-		fmt.Fprintf(s.Output(), "%s\n\nUsage:\n  ", app.ShortHelp())
-		if sub, ok := app.(subcommand); ok && sub.Parent() != "" {
-			fmt.Fprintf(s.Output(), "%s [flags] %s", sub.Parent(), app.Name())
-		} else {
-			fmt.Fprintf(s.Output(), "%s [flags]", app.Name())
-		}
-		if usage := app.Usage(); usage != "" {
-			fmt.Fprintf(s.Output(), " %s", usage)
-		}
-		fmt.Fprintln(s.Output())
+func printHelp(s *flag.FlagSet, cmd command) {
+	if _, ok := cmd.(*application); !ok {
+		printCommandHelp(s.Output(), cmd)
 	}
-	app.DetailedHelp(s)
+	cmd.DetailedHelp(s)
 }
 
-// runCommand executes cmd with the provided flagset and arguments.
-func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []string) (resultErr error) {
-	flags.Usage = func() { printHelp(flags, cmd) }
-	// addFlags returns non-nil *ProfileFlags only if cmd embeds ProfileFlags.
-	// Only 'application' meets this criteria.
-	p := addFlags(flags, reflect.StructField{}, reflect.ValueOf(cmd))
-	if err := flags.Parse(args); err != nil {
-		return err
+// printCommandHelp prints a concise usage summary for cmd to w.
+func printCommandHelp(w io.Writer, cmd command) {
+	if _, ok := cmd.(*application); ok {
+		fmt.Fprintln(w, "Usage:\n  gopls help [<subject>]")
+		return
 	}
+	if short := cmd.ShortHelp(); short != "" {
+		fmt.Fprintf(w, "%s\n\n", short)
+	}
+	fmt.Fprintf(w, "Usage:\n  gopls [flags] %s", strings.TrimPrefix(cmdPath(cmd), "gopls "))
+	if usage := cmd.Usage(); usage != "" {
+		fmt.Fprintf(w, " %s", usage)
+	}
+	fmt.Fprintln(w)
+}
 
-	if p != nil && p.CPU != "" {
+// runWithProfile executes fn with active CPU, trace, memory, alloc, or block profiling
+// if requested in p.
+func runWithProfile(p *ProfileFlags, fn func() error) (resultErr error) {
+	if p.CPU != "" {
 		f, err := os.Create(p.CPU)
 		if err != nil {
 			return err
@@ -138,7 +180,7 @@ func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []st
 		}()
 	}
 
-	if p != nil && p.Trace != "" {
+	if p.Trace != "" {
 		f, err := os.Create(p.Trace)
 		if err != nil {
 			return err
@@ -156,7 +198,7 @@ func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []st
 		}()
 	}
 
-	if p != nil && p.Memory != "" {
+	if p.Memory != "" {
 		f, err := os.Create(p.Memory)
 		if err != nil {
 			return err
@@ -172,7 +214,7 @@ func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []st
 		}()
 	}
 
-	if p != nil && p.Alloc != "" {
+	if p.Alloc != "" {
 		f, err := os.Create(p.Alloc)
 		if err != nil {
 			return err
@@ -187,7 +229,7 @@ func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []st
 		}()
 	}
 
-	if p != nil && p.Block != "" {
+	if p.Block != "" {
 		f, err := os.Create(p.Block)
 		if err != nil {
 			return err
@@ -202,8 +244,7 @@ func runCommand(ctx context.Context, flags *flag.FlagSet, cmd command, args []st
 			}
 		}()
 	}
-
-	return cmd.Run(ctx, flags.Args()...)
+	return fn()
 }
 
 // addFlags scans fields of structs recursively to find things with flag tags
@@ -288,4 +329,109 @@ func resolve(v reflect.Value) reflect.Value {
 			return v
 		}
 	}
+}
+
+// parseFlags creates, configures, and parses a FlagSet for cmd using args.
+// If parsing fails or help is requested, it prints contextual help and exits.
+func parseFlags(cmd command, args []string) *flag.FlagSet {
+	// We use ContinueOnError and discard initial error output so we can intercept flag errors
+	// and produce contextual, user-friendly diagnostic messages rather than standard Go flag usage.
+	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addCommandFlags(fs, cmd)
+	err := fs.Parse(args)
+	if err == nil {
+		return fs
+	}
+
+	if err == flag.ErrHelp {
+		// POSIX convention requires writing explicit help requests
+		// (-h/-help) to stdout on exit 0.
+		fs.SetOutput(os.Stdout)
+		printHelp(fs, cmd)
+		os.Exit(0)
+	}
+
+	fs.SetOutput(os.Stderr)
+	// When standard flag parsing fails due to an undefined flag,
+	// inspect command hierarchy so we can guide the user
+	// if they misplaced a flag before or after a subcommand.
+	if prefix := "flag provided but not defined: -"; strings.HasPrefix(err.Error(), prefix) {
+		checkMisplacedFlag(fs, cmd, strings.TrimPrefix(err.Error(), prefix))
+	}
+
+	// Fallback diagnostic for general flag syntax errors
+	// or truly unknown flags.
+	fmt.Fprintf(os.Stderr, "%s: %v\n", cmdPath(cmd), err)
+	printCommandHelp(os.Stderr, cmd)
+	os.Exit(2)
+	return nil
+}
+
+// findCommandByName searches the command tree starting from root for a command named name.
+func findCommandByName(root command, name string) command {
+	if root.Name() == name {
+		return root
+	}
+	for _, sub := range getSubcommands(root) {
+		if sub.Name() == name {
+			return sub
+		}
+		if found := findCommandByName(sub, name); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// checkMisplacedFlag inspects ancestors and descendants to diagnose undefined flag errors.
+// If a misplaced flag is found, it prints where the flag belongs and exits with code 2.
+func checkMisplacedFlag(fs *flag.FlagSet, cmd command, name string) {
+	// Check descendants: e.g. placing a subcommand flag before specifying the subcommand.
+	if sub := findSubcommandWithFlag(cmd, name); sub != nil {
+		fmt.Fprintf(os.Stderr, "%s: flag -%s belongs to subcommand %s\n", cmdPath(cmd), name, sub.Name())
+		printCommandHelp(fs.Output(), cmd)
+		os.Exit(2)
+	}
+
+	// Walk up ancestors via lineage string: e.g. placing a global application flag after the subcommand name.
+	// Strict flag ordering requires parent/global flags to precede subcommands.
+	if sub, ok := cmd.(subcommand); ok && sub.Parent() != "" {
+		root := newApplication()
+		for _, currName := range slices.Backward(strings.Fields(sub.Parent())) {
+			curr := findCommandByName(root, currName)
+			if curr != nil && hasFlag(curr, name) {
+				fmt.Fprintf(os.Stderr, "%s: flag -%s must be placed before subcommand %s (after %s)\n", cmdPath(cmd), name, cmd.Name(), currName)
+				printCommandHelp(fs.Output(), cmd)
+				os.Exit(2)
+			}
+		}
+	}
+}
+
+// findSubcommandWithFlag recursively searches getSubcommands(target) to check
+// if flagName is registered on any child or descendant subcommand.
+func findSubcommandWithFlag(target command, flagName string) command {
+	for _, sub := range getSubcommands(target) {
+		if hasFlag(sub, flagName) {
+			return sub
+		}
+		if found := findSubcommandWithFlag(sub, flagName); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// hasFlag reports whether flagName is registered on cmd.
+func hasFlag(cmd command, flagName string) bool {
+	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addCommandFlags(fs, cmd)
+	return fs.Lookup(flagName) != nil
+}
+
+// addCommandFlags registers the flags defined in the app struct onto the FlagSet.
+func addCommandFlags(f *flag.FlagSet, app command) *ProfileFlags {
+	return addFlags(f, reflect.StructField{}, reflect.ValueOf(app))
 }

@@ -1102,6 +1102,57 @@ func someFunctionName()
 	}
 }
 
+func TestCommandLineErrors(t *testing.T) {
+	testenv.NeedsGoBuild(t)
+	t.Parallel()
+	tree := writeTree(t, "")
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantErrs []string
+	}{
+		{
+			name:     "MissingPositionalArgShowsUsage",
+			args:     []string{"definition"},
+			wantErrs: []string{"definition expects 1 argument", "Usage:\n  gopls \\[flags\\] definition \\[definition-flags\\] <position>"},
+		},
+		{
+			name:     "GlobalFlagAfterServe",
+			args:     []string{"serve", "-otel=http://localhost:4318"},
+			wantErrs: []string{`flag -otel must be placed before subcommand serve \(after gopls\)`},
+		},
+		{
+			name:     "MisplacedContainerFlag",
+			args:     []string{"remote", "-remote=localhost:12345", "sessions"},
+			wantErrs: []string{`flag -remote must be placed before subcommand remote \(after gopls\)`},
+		},
+
+		{
+			name:     "UnknownSubcommandFlag",
+			args:     []string{"-v", "execute", "-unknown"},
+			wantErrs: []string{"flag provided but not defined: -unknown"},
+		},
+		{
+			name:     "GlobalFlagAfterSubcommand",
+			args:     []string{"references", "-v", "./gopls/main.go:35:8"},
+			wantErrs: []string{`flag -v must be placed before subcommand references \(after gopls\)`},
+		},
+		{
+			name:     "GlobalFlagAfterNestedSubcommand",
+			args:     []string{"remote", "debug", "-v"},
+			wantErrs: []string{`gopls remote debug: flag -v must be placed before subcommand debug \(after gopls\)`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := gopls(t, tree, tc.args...)
+			res.checkExit(false)
+			for _, wantErr := range tc.wantErrs {
+				res.checkStderr(wantErr)
+			}
+		})
+	}
+}
+
 // -- test framework --
 
 func TestMain(m *testing.M) {
