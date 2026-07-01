@@ -12,14 +12,14 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"html"
+	"html/template"
+	"log"
 	"slices"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -36,18 +36,21 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 	// -- model --
 
 	type Import struct {
-		Path    metadata.PackagePath
-		Symbols []string
+		URL     string
+		Path    PackagePath
+		Symbols string
 	}
 	type Symbol struct {
 		Kind string
+		Name template.HTML
 		Type string
-		Refs []types.Object
 	}
+	// model is [freeSymbolsTmpl]'s operand.
 	var model struct {
 		Imported []Import
 		PkgLevel []Symbol
 		Local    []Symbol
+		Code     template.HTML
 	}
 
 	qualifier := typesinternal.NameRelativeTo(pkg.Types())
@@ -60,8 +63,8 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 		})
 
 		// Inspect the references.
-		imported := make(map[string][]*freeRef) // refs to imported symbols, by package path
-		seen := make(map[string]bool)           // to de-dup dotted paths
+		imported := make(map[PackagePath][]*freeRef) // refs to imported symbols
+		seen := make(map[string]bool)                // to de-dup dotted paths
 		for _, ref := range refs {
 			if seen[ref.dotted] {
 				continue // de-dup
@@ -73,7 +76,7 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 			case "file":
 				// imported symbol: group by package
 				if pkgname, ok := ref.objects[0].(*types.PkgName); ok {
-					path := pkgname.Imported().Path()
+					path := PackagePath(pkgname.Imported().Path())
 					imported[path] = append(imported[path], ref)
 				}
 				continue
@@ -110,10 +113,23 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 				typestr = "" // avoid "label L L"
 			}
 
+			// Join name with dots.
+			var nameHTML template.HTML
+			{
+				var buf strings.Builder
+				for i, obj := range ref.objects {
+					if i > 0 {
+						buf.WriteByte('.')
+					}
+					buf.WriteString(string(objHTML(pkg.FileSet(), web, obj)))
+				}
+				nameHTML = template.HTML(buf.String())
+			}
+
 			*symbols = append(*symbols, Symbol{
 				Kind: kind,
+				Name: nameHTML,
 				Type: typestr,
-				Refs: ref.objects,
 			})
 		}
 
@@ -131,83 +147,20 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 				syms[max-1] = fmt.Sprintf("... (%d)", len(syms))
 				syms = syms[:max]
 			}
+			symbols := strings.Join(syms, ", ")
 
 			model.Imported = append(model.Imported, Import{
-				Path:    PackagePath(pkgPath),
-				Symbols: syms,
+				URL:     web.PkgURL(viewID, pkgPath, ""),
+				Path:    pkgPath,
+				Symbols: symbols,
 			})
 		}
 	}
 
-	// -- presentation --
-
-	var buf bytes.Buffer
-	buf.WriteString(`<!DOCTYPE html>
-<html>
-<head>
-<style>
-.col-pkg { color: #2eb007 }
-.col-file { color: #a10b15 }
-.col-local { color: #0cb7c9 }
-li { font-family: monospace; }
-p { max-width: 6in; }
-</style>
-  <script src="/assets/common.js"></script>
-  <link rel="stylesheet" href="/assets/common.css">
-</head>
-<body>
-<h1>Free symbols</h1>
-<p>
-  The selected code contains references to these free* symbols:
-</p>
-`)
-
-	// Present the refs in three sections: imported, same package, local.
-
-	// -- imported symbols --
-
-	// Show one item per package, with a list of symbols.
-	fmt.Fprintf(&buf, "<h2><span class='col-file'>⬤</span> Imported symbols</h2>\n")
-	fmt.Fprintf(&buf, "<ul>\n")
-	for _, imp := range model.Imported {
-		fmt.Fprintf(&buf, "<li>import \"<a href='%s'>%s</a>\" // for %s</li>\n",
-			web.PkgURL(viewID, imp.Path, ""),
-			html.EscapeString(string(imp.Path)),
-			strings.Join(imp.Symbols, ", "))
-	}
-	if len(model.Imported) == 0 {
-		fmt.Fprintf(&buf, "<li>(none)</li>\n")
-	}
-	buf.WriteString("</ul>\n")
-
-	// -- package and local symbols --
-
-	showSymbols := func(scope, title string, symbols []Symbol) {
-		fmt.Fprintf(&buf, "<h2><span class='col-%s'>⬤</span> %s</h2>\n", scope, title)
-		fmt.Fprintf(&buf, "<ul>\n")
-		pre := buf.Len()
-		for _, sym := range symbols {
-			fmt.Fprintf(&buf, "<li>%s ", sym.Kind) // of rightmost symbol in dotted path
-			for i, obj := range sym.Refs {
-				if i > 0 {
-					buf.WriteByte('.')
-				}
-				buf.WriteString(objHTML(pkg.FileSet(), web, obj))
-			}
-			fmt.Fprintf(&buf, " %s</li>\n", html.EscapeString(sym.Type))
-		}
-		if buf.Len() == pre {
-			fmt.Fprintf(&buf, "<li>(none)</li>\n")
-		}
-		buf.WriteString("</ul>\n")
-	}
-	showSymbols("pkg", "Package-level symbols", model.PkgLevel)
-	showSymbols("local", "Local symbols", model.Local)
-
 	// -- code selection --
 
-	// Print the selection, highlighting references to free symbols.
-	buf.WriteString("<hr/>\n")
+	// Highlight references to free symbols in the selection.
+	var code strings.Builder // (valid HTML)
 	sort.Slice(refs, func(i, j int) bool {
 		return refs[i].expr.Pos() < refs[j].expr.Pos()
 	})
@@ -216,46 +169,25 @@ p { max-width: 6in; }
 		if pos < end {
 			fileStart := pgf.File.FileStart
 			text := pgf.Mapper.Content[pos-fileStart : end-fileStart]
-			buf.WriteString(html.EscapeString(string(text)))
+			code.WriteString(template.HTMLEscapeString(string(text)))
 			pos = end
 		}
 	}
-	buf.WriteString(`<pre>`)
 	for _, ref := range refs {
 		emitTo(ref.expr.Pos())
-		fmt.Fprintf(&buf, `<b class='col-%s'>`, ref.scope)
+		fmt.Fprintf(&code, `<b class='col-%s'>`, ref.scope) // no escaping needed
 		emitTo(ref.expr.End())
-		buf.WriteString(`</b>`)
+		code.WriteString(`</b>`)
 	}
 	emitTo(end)
-	buf.WriteString(`</pre>
-<hr>
-<p>
-  *A symbol is "free" if it is referenced within the selection but declared
-  outside of it.
+	model.Code = template.HTML(code.String())
 
-  The free variables are approximately the set of parameters that
-  would be needed if the block were extracted into its own function in
-  the same package.
+	// -- presentation --
 
-  Free identifiers may include local types and control labels as well.
-
-  Even when you don't intend to extract a block into a new function,
-  this information can help you to tell at a glance what names a block
-  of code depends on.
-</p>
-<p>
-  Each dotted path of identifiers (such as file.Name.Pos) is reported
-  as a separate item, so that you can see which parts of a complex
-  type are actually needed.
-
-  The free symbols referenced by the body of a function may
-  reveal that only a small part (a single field of a struct, say) of
-  one of the function's parameters is used, allowing you to simplify
-  and generalize the function by choosing a different type for that
-  parameter.
-</p>
-`)
+	var buf bytes.Buffer
+	if err := freeSymbolsTmpl.Execute(&buf, model); err != nil {
+		log.Fatal(err)
+	}
 	return buf.Bytes()
 }
 
@@ -399,22 +331,103 @@ func freeRefs(pkg *types.Package, info *types.Info, file *ast.File, start, end t
 // objHTML returns HTML for obj.Name(), possibly marked up as a link
 // to the web server that, when visited, opens the declaration in the
 // client editor.
-func objHTML(fset *token.FileSet, web Web, obj types.Object) string {
-	text := obj.Name()
+func objHTML(fset *token.FileSet, web Web, obj types.Object) template.HTML {
+	// Go symbol names don't need escaping, but be conservative.
+	html := template.HTML(template.HTMLEscapeString(obj.Name()))
 	if posn := safetoken.StartPosition(fset, obj.Pos()); posn.IsValid() {
-		url := web.SrcURL(posn.Filename, posn.Line, posn.Column)
-		return sourceLink(text, url)
+		return sourceLinkHTML(html, web.SrcURL(posn.Filename, posn.Line, posn.Column))
 	}
-	return text
+	return html
 }
 
-// sourceLink returns HTML for a link to open a file in the client editor.
-func sourceLink(text, url string) string {
+// sourceLinkHTML returns HTML for a link to open a file in the client editor.
+func sourceLinkHTML(body template.HTML, url string) template.HTML {
+	var buf strings.Builder
+	if err := sourceLinkTmpl.Execute(&buf, sourceLinkData{URL: url, Body: body}); err != nil {
+		panic(err)
+	}
+	return template.HTML(buf.String())
+}
+
+type sourceLinkData struct {
+	URL  string
+	Body template.HTML
+}
+
+var sourceLinkTmpl = template.Must(template.New("sourcelink").Parse(
 	// The /src URL returns nothing but has the side effect
 	// of causing the LSP client to open the requested file.
 	// So we use onclick to prevent the browser from navigating.
 	// We keep the href attribute as it causes the <a> to render
 	// as a link: blue, underlined, with URL hover information.
-	return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-		html.EscapeString(url), text)
-}
+	`<a href='{{.URL}}' onclick='return httpGET({{.URL}})'>{{.Body}}</a>`))
+
+var freeSymbolsTmpl = template.Must(template.New("freesymbols").Parse(`<!DOCTYPE html>
+<html>
+<head>
+<style>
+.col-pkg { color: #2eb007 }
+.col-file { color: #a10b15 }
+.col-local { color: #0cb7c9 }
+li { font-family: monospace; }
+p { max-width: 6in; }
+</style>
+  <script src="/assets/common.js"></script>
+  <link rel="stylesheet" href="/assets/common.css">
+</head>
+<body>
+<h1>Free symbols</h1>
+<p>
+  The selected code contains references to these free* symbols:
+</p>
+
+<h2><span class='col-file'>⬤</span> Imported symbols</h2>
+<ul>
+{{range .Imported}}<li>import "<a href='{{.URL}}'>{{.Path}}</a>" // for {{.Symbols}}</li>
+{{else}}<li>(none)</li>
+{{end}}</ul>
+
+<h2><span class='col-pkg'>⬤</span> Package-level symbols</h2>
+<ul>
+{{range .PkgLevel}}<li>{{.Kind}} {{.Name}} {{.Type}}</li>
+{{else}}<li>(none)</li>
+{{end}}</ul>
+
+<h2><span class='col-local'>⬤</span> Local symbols</h2>
+<ul>
+{{range .Local}}<li>{{.Kind}} {{.Name}} {{.Type}}</li>
+{{else}}<li>(none)</li>
+{{end}}
+</ul>
+
+<hr/>
+<pre>{{.Code}}</pre>
+<hr>
+<p>
+  * A symbol is "free" if it is referenced within the selection but declared
+  outside of it.
+
+  The free variables are approximately the set of parameters that
+  would be needed if the block were extracted into its own function in
+  the same package.
+
+  Free identifiers may include local types and control labels as well.
+
+  Even when you don't intend to extract a block into a new function,
+  this information can help you to tell at a glance what names a block
+  of code depends on.
+</p>
+<p>
+  Each dotted path of identifiers (such as file.Name.Pos) is reported
+  as a separate item, so that you can see which parts of a complex
+  type are actually needed.
+
+  The free symbols referenced by the body of a function may
+  reveal that only a small part (a single field of a struct, say) of
+  one of the function's parameters is used, allowing you to simplify
+  and generalize the function by choosing a different type for that
+  parameter.
+</p>
+</body>
+</html>
+`))

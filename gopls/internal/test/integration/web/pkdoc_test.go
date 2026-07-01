@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -60,8 +61,13 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 		// Grab the URL in the HTML source link for NewFunc.
 		// (We don't have a DOM or JS interpreter so we have
 		// to know something of the document internals here.)
-		rx := regexp.MustCompile(`<h3 id='NewFunc'.*httpGET\("(.*)"\)`)
-		srcURL := html.UnescapeString(string(rx.FindSubmatch(doc2)[1]))
+		rx := regexp.MustCompile(`<h3 id='NewFunc'.*httpGET\((.*)\)`)
+		raw := string(rx.FindSubmatch(doc2)[1])
+		jsUnquote := strconv.Unquote // close enough
+		srcURL, err := jsUnquote(html.UnescapeString(raw))
+		if err != nil {
+			t.Fatalf("can't extract URL from httpGET(%s): %v", raw, err)
+		}
 
 		// Fetch the document. Its result isn't important,
 		// but it must have the side effect of another showDocument

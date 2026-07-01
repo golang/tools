@@ -11,8 +11,7 @@ package golang
 // placeholder for a more sophisticated one.
 //
 // TODO(adonovan):
-// - rewrite using html/template.
-//   Or factor with golang.org/x/pkgsite/internal/godoc/dochtml.
+// - rewrite using html/template. No, really, let's do this.
 // - emit breadcrumbs for parent + sibling packages.
 // - list promoted methods---we have type information! (golang/go#67158)
 // - gather Example tests, following go/doc and pkgsite.
@@ -38,7 +37,7 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
-	"html"
+	"html/template"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -357,7 +356,7 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 	}
 
 	scope := pkg.Types().Scope()
-	escape := html.EscapeString
+	escape := template.HTMLEscapeString
 
 	title := fmt.Sprintf("%s package - %s - Gopls packages",
 		pkg.Types().Name(), escape(pkg.Types().Path()))
@@ -574,7 +573,7 @@ window.addEventListener('load', function() {
 						emit(n.Pos())
 						pos = n.End()
 						if url := linkify(n); url != "" {
-							fmt.Fprintf(&buf, "<a class='id' href='%s'>%s</a>", url, escape(n.Name))
+							fmt.Fprintf(&buf, "<a class='id' href='%s'>%s</a>", escape(url), escape(n.Name))
 						} else {
 							buf.WriteString(escape(n.Name)) // plain
 						}
@@ -831,7 +830,9 @@ window.addEventListener('load', function() {
 	fmt.Fprintf(&buf, "<h2 id='hdr-SourceFiles'>Source files</h2>\n")
 	for _, filename := range docpkg.Filenames {
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-			sourceLink(filepath.Base(filename), web.SrcURL(filename, 1, 1)))
+			sourceLinkHTML(
+				template.HTML(template.HTMLEscapeString(filepath.Base(filename))),
+				web.SrcURL(filename, 1, 1)))
 	}
 
 	fmt.Fprintf(&buf, "</main>\n")
