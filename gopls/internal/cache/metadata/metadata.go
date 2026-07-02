@@ -51,6 +51,8 @@ type Package struct {
 	IgnoredFiles    []protocol.DocumentURI
 	OtherFiles      []protocol.DocumentURI
 
+	AsmFiles []protocol.DocumentURI // *.s subset of OtherFiles
+
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
 	Errors        []packages.Error          // must be set for packages in import cycles

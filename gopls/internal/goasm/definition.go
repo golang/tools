@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package goasm provides language-server features for files in Go
-// assembly language (https://go.dev/doc/asm).
 package goasm
 
 import (
@@ -45,10 +43,11 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, r
 	//
 	// TODO(adonovan): make this just another
 	// attribute of the type-checked cache.Package.
-	file := asm.Parse(content)
+	file := asm.Parse(fh.URI(), content)
 
 	// Figure out the selected symbol.
-	// For now, just find the identifier around the cursor.
+	// Use the selection range so that haphazard selections that
+	// happen to start in an identifier don't produce spurious matches.
 	var found *asm.Ident
 	for _, id := range file.Idents {
 		if id.Offset <= start && end <= id.End() {

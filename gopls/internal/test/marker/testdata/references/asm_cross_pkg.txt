@@ -1,0 +1,24 @@
+Test cross-package references involving assembly files.
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- lib/lib.go --
+package lib
+
+func Helper() int { return 42 } //@loc(defHelper, "Helper"), refs("Helper", defHelper, goCallHelper, asmCallHelper)
+
+-- caller/caller.go --
+package caller
+
+import "example.com/lib"
+
+func Use() {
+    lib.Helper() //@loc(goCallHelper, "Helper")
+}
+
+-- caller/impl.s --
+TEXT ·Wrapper(SB), $0-0
+    CALL example·com∕lib·Helper(SB) //@loc(asmCallHelper, "example·com∕lib·Helper"), refs("Helper", defHelper, goCallHelper, asmCallHelper)
+    RET

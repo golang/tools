@@ -39,7 +39,7 @@ TEXT ·g(SB),NOSPLIT,$0
 `[1:])
 	const filename = "asm.s"
 	m := protocol.NewMapper(protocol.URIFromPath(filename), src)
-	file := asm.Parse(src)
+	file := asm.Parse(protocol.URIFromPath(filename), src)
 
 	want := `
 asm.s:5:6-11:	data "hello"

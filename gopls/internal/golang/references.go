@@ -33,7 +33,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 
 	"golang.org/x/tools/internal/event"
@@ -615,6 +617,35 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			}
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 				report(mustLocation(pgf, id), false)
+			}
+		}
+	}
+
+	// Scan assembly files for references to the target objects.
+	for _, af := range pkg.AsmFiles() {
+		for _, id := range af.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
+				continue
+			}
+			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			if pkgpath != "" && pkgpath != pkg.Types().Path() {
+				continue
+			}
+			obj := pkg.Types().Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			if !matches(obj) {
+				continue
+			}
+			if rng, err := af.IdentRange(id); err == nil {
+				report(protocol.Location{
+					URI:   af.Mapper.URI,
+					Range: rng,
+				}, false)
 			}
 		}
 	}

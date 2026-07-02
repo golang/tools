@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -51,6 +52,7 @@ type syntaxPackage struct {
 	fset            *token.FileSet // for now, same as the snapshot's FileSet
 	goFiles         []*parsego.File
 	compiledGoFiles []*parsego.File
+	asmFiles        []*asm.File
 	diagnostics     []*Diagnostic
 	parseErrors     []scanner.ErrorList
 	typeErrors      []types.Error
@@ -71,7 +73,7 @@ type syntaxPackage struct {
 
 func (p *syntaxPackage) xrefs(enc *objectpath.Encoder) *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.NewIndex(enc, p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.NewIndex(enc, p.types, p.typesInfo, p.compiledGoFiles, p.asmFiles)
 	})
 	return p._xrefs
 }
@@ -212,4 +214,21 @@ func (p *Package) ParseErrors() []scanner.ErrorList {
 // package, if any.
 func (p *Package) TypeErrors() []types.Error {
 	return p.pkg.typeErrors
+}
+
+func (p *Package) AsmFiles() []*asm.File {
+	return p.pkg.asmFiles
+}
+
+func (p *Package) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	return p.pkg.AsmFile(uri)
+}
+
+func (pkg *syntaxPackage) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	for _, af := range pkg.asmFiles {
+		if af.Mapper.URI == uri {
+			return af, nil
+		}
+	}
+	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)
 }
