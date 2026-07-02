@@ -45,6 +45,7 @@ var Suite = []*analysis.Analyzer{
 	OmitZeroAnalyzer,
 	PlusBuildAnalyzer,
 	RangeIntAnalyzer,
+	reflectTypeAssertAnalyzer, // awaiting public symbol
 	ReflectTypeForAnalyzer,
 	slicesBackwardAnalyzer, // awaiting public symbol
 	SlicesContainsAnalyzer,
