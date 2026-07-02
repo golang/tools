@@ -6,9 +6,11 @@ package shadow
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -243,6 +245,10 @@ func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast
 	if shadowed.Parent() == types.Universe {
 		return
 	}
+
+	shadowedPos := pass.Fset.Position(shadowed.Pos())
+	identPos := pass.Fset.Position(ident.Pos())
+
 	if strict {
 		// The shadowed identifier must appear before this one to be an instance of shadowing.
 		if shadowed.Pos() > ident.Pos() {
@@ -250,19 +256,35 @@ func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast
 		}
 	} else {
 		// Don't complain if the span of validity of the shadowed identifier doesn't include
-		// the shadowing identifier.
+		// the shadowing identifier, except for cross-file shadowing where file processing
+		// order affects span checks.
 		span, ok := spans[shadowed]
 		if !ok {
 			pass.ReportRangef(ident, "internal error: no range for %q", ident.Name)
 			return
 		}
-		if !span.contains(ident.Pos()) {
+
+		if shadowedPos.Filename == identPos.Filename && !span.contains(ident.Pos()) {
 			return
 		}
 	}
 	// Don't complain if the types differ: that implies the programmer really wants two different things.
 	if types.Identical(obj.Type(), shadowed.Type()) {
-		line := pass.Fset.Position(shadowed.Pos()).Line
-		pass.ReportRangef(ident, "declaration of %q shadows declaration at line %d", obj.Name(), line)
+		// Build the message, adding filename only if in a different file
+		message := fmt.Sprintf("declaration of %q shadows declaration at line %d", obj.Name(), shadowedPos.Line)
+		if shadowedPos.Filename != identPos.Filename {
+			message += fmt.Sprintf(" in %s", filepath.Base(shadowedPos.Filename))
+		}
+
+		pass.Report(analysis.Diagnostic{
+			Pos:     ident.Pos(),
+			End:     ident.End(),
+			Message: message,
+			Related: []analysis.RelatedInformation{{
+				Pos:     shadowed.Pos(),
+				End:     shadowed.Pos() + token.Pos(len(shadowed.Name())),
+				Message: fmt.Sprintf("shadowed symbol %q declared here", obj.Name()),
+			}},
+		})
 	}
 }
