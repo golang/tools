@@ -49,6 +49,25 @@ func _() {
 			wg.Done()
 		}()
 	}
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		defer func() {
+			println("cleanup")
+		}()
+		fmt.Println()
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		defer func() {
+			recover := func() {}
+			recover()
+		}()
+		fmt.Println()
+		wg.Done()
+	}()
 }
 
 // this function puts some wrong usages but waitgroupgo modernizer will still offer fixes.
@@ -162,7 +181,25 @@ func _() {
 		wg.Done()
 		return 0
 	}()
+
+	wg.Add(1) // noop: deferred recover changes panic/Done semantics.
+	go func() {
+		defer func() {
+			recover()
+		}()
+		panic("x")
+		wg.Done()
+	}()
+
+	wg.Add(1) // noop: named-function defer may recover.
+	go func() {
+		defer cleanup()
+		fmt.Println()
+		wg.Done()
+	}()
 }
+
+func cleanup() {}
 
 type Server struct {
 	wg sync.WaitGroup
