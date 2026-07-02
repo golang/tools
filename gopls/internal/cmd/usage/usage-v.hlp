@@ -2,8 +2,10 @@
 gopls is a Go language server.
 
 It is typically used with an editor to provide language features. When no
-command is specified, gopls will default to the 'serve' command. The language
-features can also be accessed via the gopls command-line interface.
+command is specified, gopls will default to the 'serve' command. To see flags
+for the 'serve' command, run 'gopls help serve'.
+
+The language features can also be accessed via the gopls command-line interface.
 
 For documentation of all its features, see:
 
@@ -49,18 +51,6 @@ Internal Use Only
   vulncheck         run vulncheck analysis (internal-use only)
 
 flags:
-  -debug=string
-    	serve debug information on the supplied address
-  -listen=string
-    	address on which to listen for remote connections. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. Otherwise, TCP is used.
-  -listen.timeout=duration
-    	when used with -listen, shut down the server when there are no connected clients for this duration
-  -logfile=string
-    	filename to log to. if value is "auto", then logging to a default output file is enabled
-  -mcp.listen=string
-    	experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead.
-  -mode=string
-    	no effect
   -otel=string
     	export telemetry to specified OpenTelemetry collector address (e.g. http://localhost:4318)
   -profile.alloc=string
@@ -81,9 +71,9 @@ flags:
     	when used with -remote=auto, the -listen.timeout value used to start the daemon (default 1m0s)
   -remote.logfile=string
     	when used with -remote=auto, the -logfile value used to start the daemon
-  -rpc.trace
-    	print the full rpc trace in lsp inspector format
   -v,-verbose
     	verbose output
   -vv,-veryverbose
     	very verbose output
+
+For flags specific to running the language server (such as -listen, -logfile, or -debug), run 'gopls help serve'.

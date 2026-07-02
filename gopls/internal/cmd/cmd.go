@@ -49,13 +49,13 @@ type Application struct {
 	// We include the server configuration directly for now, so the flags work
 	// even without the verb.
 	// TODO: Remove this when we stop allowing the serve verb by default.
-	Serve Serve
+	serve Serve
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)
 
-	// Support for remote LSP server.
-	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
+	// Remote LSP client connection flags.
+	RemoteFlags
 
 	// Verbose enables verbose logging.
 	Verbose bool `flag:"v,verbose" help:"verbose output"`
@@ -91,6 +91,36 @@ type EditFlags struct {
 	List     bool `flag:"l,list" help:"display names of edited files"`
 }
 
+// RemoteFlags defines the set of flags for the forward mode.
+type RemoteFlags struct {
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
+
+	// The following flags are used with -remote=auto mode.
+	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
+	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon"`
+
+	RemoteLogfile string `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
+}
+
+func (r *RemoteFlags) remoteArgs(network, address string) []string {
+	args := []string{
+		"serve",
+		"-listen", fmt.Sprintf(`%s;%s`, network, address),
+	}
+	if r.RemoteDebug != "" {
+		args = append(args, "-debug", r.RemoteDebug)
+	}
+	timeout := r.RemoteListenTimeout
+	if timeout == 0 {
+		timeout = 1 * time.Minute
+	}
+	args = append(args, "-listen.timeout", timeout.String())
+	if r.RemoteLogfile != "" {
+		args = append(args, "-logfile", r.RemoteLogfile)
+	}
+	return args
+}
+
 func (app *Application) verbose() bool {
 	return app.Verbose || app.VeryVerbose
 }
@@ -98,11 +128,11 @@ func (app *Application) verbose() bool {
 // New returns a new Application ready to run.
 func New() *Application {
 	app := &Application{
-		Serve: Serve{
+		RemoteFlags: RemoteFlags{
 			RemoteListenTimeout: 1 * time.Minute,
 		},
 	}
-	app.Serve.app = app
+	app.serve.app = app
 	return app
 }
 
@@ -127,8 +157,10 @@ func (app *Application) DetailedHelp(f *flag.FlagSet) {
 gopls is a Go language server.
 
 It is typically used with an editor to provide language features. When no
-command is specified, gopls will default to the 'serve' command. The language
-features can also be accessed via the gopls command-line interface.
+command is specified, gopls will default to the 'serve' command. To see flags
+for the 'serve' command, run 'gopls help serve'.
+
+The language features can also be accessed via the gopls command-line interface.
 
 For documentation of all its features, see:
 
@@ -155,6 +187,7 @@ Command:
 	}
 	fmt.Fprint(w, "\nflags:\n")
 	printFlagDefaults(f)
+	fmt.Fprint(w, "\nFor flags specific to running the language server (such as -listen, -logfile, or -debug), run 'gopls help serve'.\n")
 }
 
 // this is a slightly modified version of flag.PrintDefaults to give us control
@@ -239,7 +272,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 	ctx = debug.WithInstance(ctx, app.OTel)
 	if len(args) == 0 {
 		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-		return tool.Run(ctx, s, &app.Serve, args)
+		return tool.Run(ctx, s, &app.serve, args)
 	}
 	command, args := args[0], args[1:]
 	for _, c := range app.Commands() {
@@ -264,7 +297,7 @@ func (app *Application) Commands() []tool.Application {
 
 func (app *Application) mainCommands() []tool.Application {
 	return []tool.Application{
-		&app.Serve,
+		&app.serve,
 		&version{app: app},
 		&help{app: app},
 		&apiJSON{app: app},
