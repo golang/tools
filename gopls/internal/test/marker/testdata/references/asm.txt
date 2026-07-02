@@ -1,0 +1,22 @@
+Test of asm references.
+
+-- example/label_example.s --
+TEXT ·JumpDemo(SB), $0-0
+label1: //@loc(defLabel, "label1")
+    JMP label1 //@loc(refLabel, "label1")
+
+-- example/in_package_ref.s --
+TEXT ·Foo(SB), $0-8 //@loc(defFooAsm, "·Foo")
+    RET
+
+TEXT ·Bar(SB), $0-8
+    CALL ·Foo(SB) //@loc(callFooAsm, "·Foo")
+    RET
+
+-- example/example_data.s --
+DATA ·myGlobal+0(SB)/8, $42
+GLOBL ·myGlobal(SB), NOPTR, 8
+
+TEXT ·UseGlobal(SB), $0-0
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
+    RET
