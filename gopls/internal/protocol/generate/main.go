@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -78,28 +77,6 @@ func processinline() {
 	}
 
 	model := parse(filepath.Join(*repodir, "protocol/metaModel.json"))
-
-	// Although the LSP specification defines RenameParams as extending
-	// TextDocumentPositionParams, the metaModel.json definition flattens
-	// these properties (likely due to specific comments in the TS definition).
-	// See microsoft/vscode-languageserver-node#1698.
-	//
-	// TODO(hxjiang): delete the patch logic after releasing lsp 3.18.
-	for _, s := range model.Structures {
-		if s.Name == "RenameParams" {
-			s.Properties = slices.DeleteFunc(s.Properties, func(t NameType) bool {
-				return t.Name == "position" || t.Name == "textDocument"
-			})
-			if !slices.ContainsFunc(s.Extends, func(t *Type) bool {
-				return t.Kind == "reference" && t.Name == "TextDocumentPositionParams"
-			}) {
-				s.Extends = append(s.Extends, &Type{
-					Kind: "reference",
-					Name: "TextDocumentPositionParams",
-				})
-			}
-		}
-	}
 
 	// Add a client to server LSP method "command/resolve" for interactive
 	// refactoring. The method's param and result are both "ExecuteCommandParams".
