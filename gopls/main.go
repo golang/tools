@@ -11,12 +11,8 @@
 package main
 
 import (
-	"log"
-
 	"golang.org/x/telemetry"
-	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/filecache"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 )
 
@@ -29,24 +25,6 @@ func main() {
 		ReportCrashes: true,
 		Upload:        true,
 	})
-
-	// Force early creation of the filecache and refuse to start
-	// if there were unexpected errors such as ENOSPC. This
-	// minimizes the window of exposure to deletion of the
-	// executable, and ensures that all subsequent calls to
-	// filecache.Get cannot fail for these two reasons;
-	// see issue #67433.
-	//
-	// This leaves only one likely cause for later failures:
-	// deletion of the cache while gopls is running. If the
-	// problem continues, we could periodically stat the cache
-	// directory (for example at the start of every RPC) and
-	// either re-create it or just fail the RPC with an
-	// informative error and terminate the process.
-	if _, err := filecache.Get("nonesuch", [32]byte{}, filecache.Bytes); err != nil && err != filecache.ErrNotFound {
-		counter.Inc("gopls/nocache")
-		log.Fatalf("gopls cannot access its persistent index (disk full?): %v", err)
-	}
 
 	cmd.Main()
 }

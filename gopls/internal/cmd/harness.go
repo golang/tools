@@ -102,10 +102,12 @@ func Main() {
 		// In the category of "things we can do while waiting for the
 		// Go command":
 
-		// TODO(hyangah): check if it's desirable to run filecache.Start unconditionally
-		// on every gopls subcommand, including CLI running with -remote or -help message.
-		// Pre-initialize the filecache, which takes ~50ms to hash the gopls
-		// executable, and immediately runs a gc.
+		// Pre-initialize the filecache as early as possible.
+		// The work (hashing the executable, starting GC, and checking cache access)
+		// is done in a separate goroutine, so it doesn't block startup of short-lived
+		// commands (like help/version) which will exit before the goroutine finishes.
+		// Concurrent gopls processes (e.g. CLI and daemon) won't conflict because
+		// GC is delayed and concurrent writes to the shared cache are handled safely.
 		filecache.Start()
 
 		ctx = debug.WithInstance(ctx, app.OTel)

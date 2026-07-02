@@ -38,16 +38,35 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/lru"
 )
 
-// Start causes the filecache to initialize and start garbage gollection.
+// Start causes the filecache to initialize and start garbage collection.
 //
 // Start is automatically called by the first call to Get, but may be called
 // explicitly to pre-initialize the cache.
 func Start() {
-	go getCacheDir() // ignore error
+	go func() {
+		// Force early creation of the filecache and refuse to start
+		// if there were unexpected errors such as ENOSPC. This
+		// minimizes the window of exposure to deletion of the
+		// executable, and ensures that all subsequent calls to
+		// filecache.Get cannot fail for these two reasons;
+		// see issue #67433.
+		//
+		// This leaves only one likely cause for later failures:
+		// deletion of the cache while gopls is running. If the
+		// problem continues, we could periodically stat the cache
+		// directory (for example at the start of every RPC) and
+		// either re-create it or just fail the RPC with an
+		// informative error and terminate the process.
+		if _, err := Get("nonesuch", [32]byte{}, Bytes); err != nil && err != ErrNotFound {
+			counter.Inc("gopls/nocache")
+			log.Fatalf("gopls cannot access its persistent index (disk full?): %v", err)
+		}
+	}()
 }
 
 // memCache is a 100MB in-memory LRU cache in front of filecache
