@@ -1,0 +1,50 @@
+This test checks that hovering over the "func" keyword of a func literal
+that is implicitly converted to a named function type shows the named
+type's documentation.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+// WalkFunc is the type of the function called by Walk to visit each
+// file or directory.
+type WalkFunc func(path string, err error) error
+
+// Walk calls fn for each file.
+func Walk(root string, fn WalkFunc) {}
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func _() {
+	// Hovering over "func" shows WalkFunc's documentation.
+	a.Walk(".", func(path string, err error) error { //@hover("func", "func(path string, err error) error", funclittype)
+		return nil
+	})
+
+	// Hovering over "func" when no named type — falls back to showing type.
+	f := func(x int) int { return x } //@hover("func", "func(x int) int", funclitdefault)
+	_ = f
+}
+
+-- @funclittype --
+```go
+type a.WalkFunc func(path string, err error) error
+```
+
+---
+
+WalkFunc is the type of the function called by Walk to visit each file or directory.
+
+
+---
+
+[`a.WalkFunc` on pkg.go.dev](https://pkg.go.dev/example.com/a#WalkFunc)
+-- @funclitdefault --
+func(x int) int
