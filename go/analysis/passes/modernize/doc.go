@@ -182,6 +182,19 @@ unnecessary `x := x` statement.
 
 This fix only applies to `range` loops.
 
+# Analyzer importcomment
+
+importcomment: remove obsolete comments specifying canonical import path
+
+The importcomment analyzer removes comments specifying the canonical
+import path, such as
+
+	package foo // import "example.com/foo"
+
+The go command enforced these comments in GOPATH mode via "go get", but
+ignores them in module mode, so they are obsolete once the package
+belongs to a module. The fix removes the comment.
+
 # Analyzer mapsloop
 
 mapsloop: replace explicit loops over maps with calls to maps package

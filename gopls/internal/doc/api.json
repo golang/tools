@@ -1527,6 +1527,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"importcomment\"",
+							"Doc": "remove obsolete comments specifying canonical import path\n\nThe importcomment analyzer removes comments specifying the canonical\nimport path, such as\n\n\tpackage foo // import \"example.com/foo\"\n\nThe go command enforced these comments in GOPATH mode via \"go get\", but\nignores them in module mode, so they are obsolete once the package\nbelongs to a module. The fix removes the comment.",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"infertypeargs\"",
 							"Doc": "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 							"Default": "true",
@@ -3539,6 +3545,12 @@
 			"Name": "ifaceassert",
 			"Doc": "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert",
+			"Default": true
+		},
+		{
+			"Name": "importcomment",
+			"Doc": "remove obsolete comments specifying canonical import path\n\nThe importcomment analyzer removes comments specifying the canonical\nimport path, such as\n\n\tpackage foo // import \"example.com/foo\"\n\nThe go command enforced these comments in GOPATH mode via \"go get\", but\nignores them in module mode, so they are obsolete once the package\nbelongs to a module. The fix removes the comment.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#importcomment",
 			"Default": true
 		},
 		{
