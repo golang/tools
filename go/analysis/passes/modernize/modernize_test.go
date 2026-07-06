@@ -5,6 +5,7 @@
 package modernize_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	. "golang.org/x/tools/go/analysis/analysistest"
@@ -84,6 +85,13 @@ func TestPlusBuild(t *testing.T) {
 	// (But see above: IgnoredFiles lack version information
 	// so we can't safely apply any fixes to them.)
 	RunWithSuggestedFixes(t, TestData(), modernize.PlusBuildAnalyzer, "plusbuild")
+}
+
+func TestImportComment(t *testing.T) {
+	// Loaded in module mode (a go.mod at the testdata root) so that
+	// pass.Module is set, which the analyzer requires.
+	dir := filepath.Join(TestData(), "importcommentmod")
+	RunWithSuggestedFixes(t, dir, modernize.ImportCommentAnalyzer, "./...")
 }
 
 func TestReflectTypeFor(t *testing.T) {

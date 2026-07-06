@@ -3320,6 +3320,20 @@ Default: on.
 
 Package documentation: [ifaceassert](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert)
 
+<a id='importcomment'></a>
+## `importcomment`: remove obsolete comments specifying canonical import path
+
+The importcomment analyzer removes comments specifying the canonical import path, such as
+
+	package foo // import "example.com/foo"
+
+The go command enforced these comments in GOPATH mode via "go get", but ignores them in module mode, so they are obsolete once the package belongs to a module. The fix removes the comment.
+
+
+Default: on.
+
+Package documentation: [importcomment](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#importcomment)
+
 <a id='infertypeargs'></a>
 ## `infertypeargs`: check for unnecessary type arguments in call expressions
 
