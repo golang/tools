@@ -850,7 +850,7 @@ var printVerbs = []printVerb{
 	{'%', noFlag, 0},
 	{'b', sharpNumFlag, argInt | argFloat | argComplex | argPointer},
 	{'c', "-", argRune | argInt},
-	{'d', numFlag, argInt | argPointer},
+	{'d', numFlag, argInt | argPointer}, // note: when analyzing go1.27+ code, argPointer is disallowed
 	{'e', sharpNumFlag, argFloat | argComplex},
 	{'E', sharpNumFlag, argFloat | argComplex},
 	{'f', sharpNumFlag, argFloat | argComplex},
@@ -891,6 +891,13 @@ func okPrintfArg(pass *analysis.Pass, fileVersion string, call *ast.CallExpr, rn
 		fileVersion != "" && // fail open
 		versions.AtLeast(fileVersion, versions.Go1_26) {
 		v.typ = argRune | argByte | argString
+	}
+
+	// When analyzing go1.27 code, %d does not work on pointers (#62595).
+	if verb == 'd' &&
+		fileVersion != "" && // fail open
+		versions.AtLeast(fileVersion, versions.Go1_27) {
+		v.typ = argInt
 	}
 
 	// Could verb's arg implement fmt.Formatter?

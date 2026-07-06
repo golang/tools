@@ -886,7 +886,7 @@ func PointerVerbs() {
 	// %p, %b, %d, %o, %O, %x, and %X all support pointers.
 	fmt.Printf("%p", ptr)
 	fmt.Printf("%b", ptr)
-	fmt.Printf("%d", ptr)
+	fmt.Printf("%d", ptr) // only before go1.27; see tests of #62595
 	fmt.Printf("%o", ptr)
 	fmt.Printf("%O", ptr)
 	fmt.Printf("%x", ptr)
@@ -895,7 +895,7 @@ func PointerVerbs() {
 	// %p, %b, %d, %o, %O, %x, and %X all support channels.
 	fmt.Printf("%p", chan_)
 	fmt.Printf("%b", chan_)
-	fmt.Printf("%d", chan_)
+	fmt.Printf("%d", chan_) // only before go1.27; see tests of #62595
 	fmt.Printf("%o", chan_)
 	fmt.Printf("%O", chan_)
 	fmt.Printf("%x", chan_)
