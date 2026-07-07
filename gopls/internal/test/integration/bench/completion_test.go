@@ -39,6 +39,9 @@ func benchmarkCompletion(options completionBenchOptions, b *testing.B) {
 
 	// Run a completion to make sure the system is warm.
 	loc := env.RegexpSearch(options.file, options.locationRegexp)
+	if !loc.Range.Empty() {
+		b.Errorf("Completion locationRegexp only allows for empty ranges, so use an empty regex group: ()")
+	}
 	completions := env.Completion(loc)
 
 	if testing.Verbose() {
@@ -88,7 +91,7 @@ func BenchmarkStructCompletion(b *testing.B) {
 
 	benchmarkCompletion(completionBenchOptions{
 		file:           file,
-		locationRegexp: `var testVariable map\[string\]bool = Session{}(\.)`,
+		locationRegexp: `var testVariable map\[string\]bool = Session{}\.()`,
 		setup:          setup,
 	}, b)
 }
@@ -117,7 +120,7 @@ func BenchmarkSliceCompletion(b *testing.B) {
 
 	benchmarkCompletion(completionBenchOptions{
 		file:           file,
-		locationRegexp: `var testVariable \[\]byte (=)`,
+		locationRegexp: `var testVariable \[\]byte =()`,
 		setup:          setup,
 	}, b)
 }
@@ -142,7 +145,7 @@ func (c *completer) _() {
 
 	benchmarkCompletion(completionBenchOptions{
 		file:           file,
-		locationRegexp: `func \(c \*completer\) _\(\) {\n\tc\.inference\.kindMatches\((c)`,
+		locationRegexp: `func \(c \*completer\) _\(\) {\n\tc\.inference\.kindMatches\(c()`,
 		setup:          setup,
 	}, b)
 }
@@ -152,7 +155,7 @@ type completionTest struct {
 	name           string
 	file           string // repo-relative file to create
 	content        string // file content
-	locationRegexp string // regexp for completion
+	locationRegexp string // regexp for completion, use empty group: ()
 }
 
 var completionTests = []completionTest{
@@ -167,7 +170,7 @@ func (c *completer) _() {
 	c.inference.kindMatches(c.)
 }
 `,
-		`func \(c \*completer\) _\(\) {\n\tc\.inference\.kindMatches\((c)`,
+		`func \(c \*completer\) _\(\) {\n\tc\.inference\.kindMatches\(c()`,
 	},
 	{
 		"tools",
@@ -305,6 +308,10 @@ func runCompletion(b *testing.B, test completionTest, followingEdit, completeUni
 
 	// Run a completion to make sure the system is warm.
 	loc := env.RegexpSearch(test.file, test.locationRegexp)
+	if !loc.Range.Empty() {
+		b.Errorf("Completion locationRegexp only allows for empty ranges, so use an empty regex group: ()")
+	}
+	loc.Range.End = loc.Range.Start
 	completions := env.Completion(loc)
 
 	if testing.Verbose() {
@@ -323,6 +330,9 @@ func runCompletion(b *testing.B, test completionTest, followingEdit, completeUni
 			editPlaceholder()
 		}
 		loc := env.RegexpSearch(test.file, test.locationRegexp)
+		if !loc.Range.Empty() {
+			b.Errorf("Completion locationRegexp only allows for empty ranges, so use an empty regex group: ()")
+		}
 		env.Completion(loc)
 	}
 }
