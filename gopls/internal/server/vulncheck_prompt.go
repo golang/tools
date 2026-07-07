@@ -410,14 +410,14 @@ func parseVulnupgradeAction(s string) (vulnupgradeAction, bool) {
 
 // parseAction parses s against the list of allowed actions case-insensitively.
 // It returns the matching action and true if a match is found.
-// Otherwise, it returns the zero value of T and false.
+// Otherwise, it returns "" and false.
 func parseAction[T ~string](s string, actions []T) (T, bool) {
 	for _, a := range actions {
 		if strings.EqualFold(string(a), s) {
 			return a, true
 		}
 	}
-	return *new(T), false
+	return "", false
 }
 
 func getVulncheckPreference() (vulncheckAction, error) {
