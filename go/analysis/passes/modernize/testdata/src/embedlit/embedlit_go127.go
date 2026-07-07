@@ -63,6 +63,11 @@ type T struct {
 
 type U struct {
 	x int
+	V
+}
+
+type V struct {
+	x, y int
 }
 
 var (
@@ -222,6 +227,17 @@ func _() {
 	var v1, v2 = A{}, A{} // nope, multi-declaration
 	v2.e = 1
 	_ = v1
+
+	t17 := U{}
+	t17.x = 1 // nope: not embedded
+
+	t18 := V{}
+	t18.x = 1
+	t18.y = 2 // nope: not embedded
+
+	t19 := U{} // want "embedded field assignment can be moved to struct literal"
+	t19.y = 2
+	t19.x = 1
 }
 
 func foo() int {

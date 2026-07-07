@@ -241,7 +241,8 @@ func embedlitCombine(pass *analysis.Pass, index *typeindex.Index, info *types.In
 		tObj = info.ObjectOf(lhs)
 		// Marks the contiguous block of embedded field assign statements that will
 		// be moved into the struct initialization.
-		firstStmt, lastStmt inspector.Cursor
+		firstStmt, lastStmt  inspector.Cursor
+		hasEmbeddedSelection bool
 	)
 stmtloop:
 	for {
@@ -272,6 +273,15 @@ stmtloop:
 		if obj != tObj {
 			break
 		}
+		// The selection is from an embedded field if it directly
+		// assigns an embedded struct field (t.B = B{...}) or if
+		// the length of the index path is greater than one.
+		seln := info.Selections[sel]
+		if v, ok := seln.Obj().(*types.Var); ok && v.Embedded() ||
+			len(seln.Index()) > 1 {
+			hasEmbeddedSelection = true
+		}
+
 		rhsCur := curStmt.ChildAt(edge.AssignStmt_Rhs, 0)
 		if uses(index, rhsCur, tObj) {
 			break
@@ -294,7 +304,8 @@ stmtloop:
 		lastStmt = curStmt
 	}
 
-	if !firstStmt.Valid() {
+	if !firstStmt.Valid() || !hasEmbeddedSelection {
+		// We should not suggest a fix if none of the selections are from embedded fields.
 		return nil
 	}
 
