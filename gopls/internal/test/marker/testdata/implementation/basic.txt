@@ -47,6 +47,8 @@ var _ error //@defloc(StdError, "error")
 
 type MyError struct {} //@implementation("MyError", StdError)
 
+var _ error = MyError{} // pacify ptrtoerror analyzer
+
 func (MyError) Error() string { return "bah" }
 
 -- other/other.go --

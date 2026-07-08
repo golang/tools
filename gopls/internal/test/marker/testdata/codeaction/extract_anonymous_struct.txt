@@ -3,6 +3,7 @@ This test checks of the behavior of extract function when the extracted block in
 module mod.com
 
 go 1.12
+
 -- a/a.go --
 package a
 
@@ -151,6 +152,7 @@ func _() string {
 	type B struct {
 		A
 	}
+	var _ error = B{} // pacify ptrtoerror analyzer
 	a := B{A: fmt.Errorf("test error")} //@codeaction("a", "refactor.extract.function", end=endH, err="the code refers to a local type")
 	return a.Error() //@loc(endH, "Error()")
 }

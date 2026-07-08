@@ -1,0 +1,73 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package a
+
+import "io/fs"
+
+type ConflictErr struct {
+	error
+}
+
+func _(c ConflictErr) {
+	var _ error = c  // want "ConflictErr is converted to error both as a value and as a pointer"
+	var _ error = &c // want "ConflictErr is converted to error both as a value and as a pointer"
+}
+
+type AmbiguousErr struct { // want `both AmbiguousErr and \*AmbiguousErr implement the error interface, making the intent ambiguous`
+	error
+}
+
+type unexportedAmbiguousErr struct { // want `both unexportedAmbiguousErr and \*unexportedAmbiguousErr implement the error interface, making the intent ambiguous`
+	error
+}
+
+type PtrOnlyErr struct { // want PtrOnlyErr:`\*E`
+	msg string
+}
+
+func (p *PtrOnlyErr) Error() string { return p.msg }
+
+func _(p *PtrOnlyErr) {
+	var _ error = p
+}
+
+type ValErr struct { // want ValErr:`E`
+	msg string
+}
+
+func (v ValErr) Error() string { return v.msg }
+
+func _(v ValErr) {
+	var _ error = v
+}
+
+type PtrConvErr struct { // want PtrConvErr:`\*E`
+	error
+}
+
+func _(p *PtrConvErr) {
+	var _ error = p
+}
+
+type unexportedPtrConvErr struct {
+	error
+}
+
+func _(p *unexportedPtrConvErr) {
+	var _ error = p
+}
+
+func test() {
+	var pe fs.PathError
+	var _ error = &pe // ok
+
+	var _ error = &struct{ error }{} // OK (unnamed type)
+
+	type local struct{ error }
+	var _ error = local{}  // want `local is converted to error both as a value and as a pointer`
+	var _ error = &local{} // want `local is converted to error both as a value and as a pointer`
+
+	type localAmbiguousErr struct{ error } // want `both localAmbiguousErr and \*localAmbiguousErr implement the error interface, making the intent ambiguous`
+}

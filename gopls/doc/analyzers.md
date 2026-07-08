@@ -3751,6 +3751,18 @@ Default: on.
 
 Package documentation: [printf](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf)
 
+<a id='ptrtoerror'></a>
+## `ptrtoerror`: detect inconsistent conversions of concrete types to error
+
+The ptrtoerror analyzer detects when a concrete type E is converted to the error interface inconsistently, both as a value of type E and as a pointer of type \*E. Such inconsistency defeats attempts by client code to test for specific error types using type assertions or library functions such as [errors.As](/errors#As) and [errors.Is](/errors#Is).
+
+The analyzer also detects when both E and \*E implement error but neither of those types is converted to error within the defining package, leaving the intended error form (E or \*E) ambiguous. This diagnostic offers two alternative fixes to add declarations that make the intent explicit.
+
+
+Default: on.
+
+Package documentation: [ptrtoerror](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/ptrtoerror)
+
 <a id='rangeint'></a>
 ## `rangeint`: replace 3-clause for loops with for-range over integers
 

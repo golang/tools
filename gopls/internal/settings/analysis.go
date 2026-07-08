@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/maprange"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
 	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
+	"golang.org/x/tools/gopls/internal/analysis/ptrtoerror"
 	"golang.org/x/tools/gopls/internal/analysis/recursiveiter"
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
@@ -175,6 +176,7 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: recursiveiter.Analyzer},      // under evaluation
 		{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
 		{analyzer: writestring.Analyzer},        // under evaluation
+		{analyzer: ptrtoerror.Analyzer},         // under evaluation
 
 		// disabled due to high false positives
 		{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy

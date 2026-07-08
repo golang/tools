@@ -1,4 +1,4 @@
-This test verifies that we fine implementations of the built-in error interface.
+This test verifies that we find implementations of the built-in error interface.
 
 -- go.mod --
 module example.com
@@ -8,9 +8,11 @@ go 1.18
 package p
 
 type errA struct{ error } //@loc(errA, "errA")
+var _ error = errA{} // pacify ptrtoerror analyzer
 
 type errB struct{} //@loc(errB, "errB")
 func (errB) Error() string{ return "" } //@loc(errBError, "Error")
+var _ error = errB{} // pacify ptrtoerror analyzer
 
 type notAnError struct{}
 func (notAnError) Error() int { return 0 }

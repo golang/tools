@@ -1623,6 +1623,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"ptrtoerror\"",
+							"Doc": "detect inconsistent conversions of concrete types to error\n\nThe ptrtoerror analyzer detects when a concrete type E is converted\nto the error interface inconsistently, both as a value of type E\nand as a pointer of type *E. Such inconsistency defeats attempts by\nclient code to test for specific error types using type assertions\nor library functions such as [errors.As] and [errors.Is].\n\nThe analyzer also detects when both E and *E implement error but\nneither of those types is converted to error within the defining\npackage, leaving the intended error form (E or *E) ambiguous. This\ndiagnostic offers two alternative fixes to add declarations that\nmake the intent explicit.",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"rangeint\"",
 							"Doc": "replace 3-clause for loops with for-range over integers\n\nThe rangeint analyzer suggests replacing traditional for loops such\nas\n\n\tfor i := 0; i \u003c n; i++ { ... }\n\nwith the more idiomatic Go 1.22 style:\n\n\tfor i := range n { ... }\n\nThis transformation is applied only if (a) the loop variable is not\nmodified within the loop body and (b) the loop's limit expression\nis not modified within the loop, as `for range` evaluates its\noperand only once.",
 							"Default": "true",
@@ -3661,6 +3667,12 @@
 			"Name": "printf",
 			"Doc": "check consistency of Printf format strings and arguments\n\nThe check applies to calls of the formatting functions such as\n[fmt.Printf] and [fmt.Sprintf], as well as any detected wrappers of\nthose functions such as [log.Printf]. It reports a variety of\nmistakes such as syntax errors in the format string and mismatches\n(of number and type) between the verbs and their arguments.\n\nSee the documentation of the fmt package for the complete set of\nformat operators and their operand types.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf",
+			"Default": true
+		},
+		{
+			"Name": "ptrtoerror",
+			"Doc": "detect inconsistent conversions of concrete types to error\n\nThe ptrtoerror analyzer detects when a concrete type E is converted\nto the error interface inconsistently, both as a value of type E\nand as a pointer of type *E. Such inconsistency defeats attempts by\nclient code to test for specific error types using type assertions\nor library functions such as [errors.As] and [errors.Is].\n\nThe analyzer also detects when both E and *E implement error but\nneither of those types is converted to error within the defining\npackage, leaving the intended error form (E or *E) ambiguous. This\ndiagnostic offers two alternative fixes to add declarations that\nmake the intent explicit.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/ptrtoerror",
 			"Default": true
 		},
 		{
