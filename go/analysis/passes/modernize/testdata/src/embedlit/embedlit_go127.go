@@ -207,6 +207,21 @@ func _() {
 		a: 1, // comment, with a comma
 	}
 	t16.b = 2
+
+	assgn1, assgn2 := A{}, A{} // nope, multi-assign
+	assgn1.e = 1
+	assgn2.e = 1
+
+	var (
+		v        = A{} // nope, multi-declaration
+		othervar = 2
+	)
+	v.e = 1
+	_ = othervar
+
+	var v1, v2 = A{}, A{} // nope, multi-declaration
+	v2.e = 1
+	_ = v1
 }
 
 func foo() int {

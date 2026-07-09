@@ -209,15 +209,25 @@ func embedlitCombine(pass *analysis.Pass, index *typeindex.Index, info *types.In
 	case edge.AssignStmt_Rhs:
 		assign := curLit.Parent().Node().(*ast.AssignStmt)
 		// TODO(mkalil): Handle lhs forms that aren't idents, i.e. x.y[i] = T{...}.
-		if id, ok := assign.Lhs[curLit.ParentEdgeIndex()].(*ast.Ident); ok {
+		// TODO(mkalil): Handle multi-assignments like t1, t2 := A{}, B{}
+		if len(assign.Lhs) != 1 {
+			return nil
+		}
+		if id, ok := assign.Lhs[0].(*ast.Ident); ok {
 			lhs = id
 			curStmt = curLit.Parent()
 		}
 	case edge.ValueSpec_Values:
 		spec := curLit.Parent().Node().(*ast.ValueSpec)
-		lhs = spec.Names[curLit.ParentEdgeIndex()]
+		// TODO(mkalil): Handle multi-declarations like var (x = A{}; y = B{}) or var x, y = ...
+		if len(spec.Names) != 1 {
+			return nil
+		}
+		lhs = spec.Names[0]
 		if decl, ok := moreiters.First(curLit.Enclosing((*ast.DeclStmt)(nil))); ok {
-			curStmt = decl
+			if gdecl, ok := decl.Node().(*ast.DeclStmt).Decl.(*ast.GenDecl); ok && len(gdecl.Specs) == 1 {
+				curStmt = decl
+			}
 		}
 	default:
 		return nil
