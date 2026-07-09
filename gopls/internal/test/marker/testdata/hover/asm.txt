@@ -1,0 +1,35 @@
+Test of hover for assembly files.
+
+-- example/hover_text.s --
+// hover over TEXT symbol
+TEXT ·add(SB), $0-16 //@hover("·add", "·add", asm_text)
+
+-- example/hover_global.s --
+// hover over GLOBL symbol
+GLOBL ·counter(SB), $8 //@hover("·counter", "·counter", asm_global)
+
+-- example/hover_ref.s --
+// hover over a reference to a symbol
+TEXT ·main(SB), $0-0
+    CALL ·add(SB) //@hover("·add", "·add", asm_ref)
+
+-- example/hover_label.s --
+// hover over a label definition
+TEXT ·loopDemo(SB), $0-0
+loop: //@hover("loop", "loop", asm_label)
+    JMP loop
+
+-- example/hover_data.s --
+// hover over DATA symbol
+DATA ·val(SB)/4, $1 //@hover("·val", "·val", asm_data)
+
+-- @asm_text --
+**.add** — text
+-- @asm_global --
+**.counter** — global
+-- @asm_ref --
+**.add** — ref
+-- @asm_label --
+**loop** — label
+-- @asm_data --
+**.val** — data
