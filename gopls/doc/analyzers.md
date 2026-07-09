@@ -3838,6 +3838,20 @@ Default: on.
 
 Package documentation: [recursiveiter](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/recursiveiter)
 
+<a id='reflecttypeassert'></a>
+## `reflecttypeassert`: replace v.Interface().(T) with reflect.TypeAssert[T](v)
+
+This analyzer suggests fixes to replace two-valued type assertions on the result of (reflect.Value).Interface with reflect.TypeAssert, introduced in go1.25, which avoids the intermediate allocation of an interface value, for example:
+
+	x, ok := v.Interface().(string)  ->  x, ok := reflect.TypeAssert[string](v)
+
+No fix is offered for single-valued assertions, since they panic when the assertion fails whereas reflect.TypeAssert does not. Nor is a fix offered for a type switch.
+
+
+Default: on.
+
+Package documentation: [reflecttypeassert](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypeassert)
+
 <a id='reflecttypefor'></a>
 ## `reflecttypefor`: replace reflect.TypeOf(x) with TypeFor[T]()
 

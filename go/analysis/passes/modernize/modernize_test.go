@@ -99,6 +99,11 @@ func TestReflectTypeFor(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.ReflectTypeForAnalyzer, "reflecttypefor")
 }
 
+func TestReflectTypeAssert(t *testing.T) {
+	testenv.NeedsGo1Point(t, 25) // reflect.TypeAssert requires go1.25
+	RunWithSuggestedFixes(t, TestData(), modernize.ReflectTypeAssertAnalyzer, "reflecttypeassert")
+}
+
 func TestSlicesBackward(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
 	RunWithSuggestedFixes(t, TestData(), modernize.SlicesBackwardAnalyzer, "slicesbackward")
