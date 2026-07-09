@@ -130,3 +130,11 @@ func TestFreeRefs(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceLinkSanitizesText(t *testing.T) {
+	got := sourceLink("<img src=x onerror=alert(1)>", "/src?file=x%2Fbad.go&line=1&col=1")
+	want := `<a href="/src?file=x%2Fbad.go&amp;line=1&amp;col=1" onclick='return httpGET("/src?file=x%2Fbad.go&amp;line=1&amp;col=1")'>&lt;img src=x onerror=alert(1)&gt;</a>`
+	if got != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+}

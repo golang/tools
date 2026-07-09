@@ -416,5 +416,5 @@ func sourceLink(text, url string) string {
 	// We keep the href attribute as it causes the <a> to render
 	// as a link: blue, underlined, with URL hover information.
 	return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-		html.EscapeString(url), text)
+		html.EscapeString(url), html.EscapeString(text))
 }
