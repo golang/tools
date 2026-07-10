@@ -31,10 +31,10 @@ func _() {
 	var _ types.Info // ok: defined by go1.0
 
 	// new field of older type
-	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+	_ = new(types.Info).FileVersions // want `types.Info.FileVersions requires go1.22 or later \(module is go1.21\)`
 
 	// new method of older type
-	new(types.Info).PkgNameOf // want `types.PkgNameOf requires go1.22 or later \(module is go1.21\)`
+	new(types.Info).PkgNameOf // want `types.\(\*Info\).PkgNameOf requires go1.22 or later \(module is go1.21\)`
 
 	// new package-level type
 	var a types.Alias // want `types.Alias requires go1.22 or later \(module is go1.21\)`
@@ -53,7 +53,7 @@ import "go/types"
 
 func _() {
 	// report something before the syntax error.
-	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+	_ = new(types.Info).FileVersions // want `types.Info.FileVersions requires go1.22 or later \(module is go1.21\)`
 }
 
 invalid syntax // exercise RunDespiteErrors
@@ -122,10 +122,10 @@ func _() {
 	var _ types.Info // ok: defined by go1.0
 
 	// new field of older type
-	_ = new(types.Info).FileVersions // want `types.FileVersions requires go1.22 or later \(module is go1.21\)`
+	_ = new(types.Info).FileVersions // want `types.Info.FileVersions requires go1.22 or later \(module is go1.21\)`
 
 	// new method of older type
-	new(types.Info).PkgNameOf // want `types.PkgNameOf requires go1.22 or later \(module is go1.21\)`
+	new(types.Info).PkgNameOf // want `types.\(\*Info\).PkgNameOf requires go1.22 or later \(module is go1.21\)`
 
 	// new package-level type
 	var a types.Alias // want `types.Alias requires go1.22 or later \(module is go1.21\)`
