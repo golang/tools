@@ -135,25 +135,14 @@ type Hf64 = H[float64]
 		}
 
 		got := make(map[string]bool)
-		set := new(typeutil.Map)  // for de-duping
-		set2 := new(typeutil.Map) // for consistency check
-		typesinternal.ForEachElement(set, &msets, T, func(elem types.Type) {
-			got[toStr(elem)] = true
-			set2.Set(elem, true)
+		set := new(typeutil.Map) // for de-duping
+		typesinternal.ForEachElement(msets.MethodSet, T, func(T types.Type) bool {
+			seen, _ := set.Set(T, true).(bool)
+			if !seen {
+				got[toStr(T)] = true
+			}
+			return seen
 		})
-
-		// Assert that set==set2, meaning f(x) was
-		// called for each x in the de-duping map.
-		if set.Len() != set2.Len() {
-			t.Errorf("ForEachElement called f %d times yet de-dup set has %d elements",
-				set2.Len(), set.Len())
-		} else {
-			set.Iterate(func(key types.Type, _ any) {
-				if set2.At(key) == nil {
-					t.Errorf("ForEachElement did not call f(%v)", key)
-				}
-			})
-		}
 
 		// Assert than all expected (and no unexpected) elements were found.
 		fail := false
