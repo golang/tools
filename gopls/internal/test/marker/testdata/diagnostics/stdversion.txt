@@ -24,10 +24,10 @@ func _() {
 	var _ types.Info // ok: defined by go1.0
 
 	// new field of older type
-	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.Info.FileVersions requires go1.22 or later \(module is go1.21\)`)
 
 	// new method of older type
-	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.\(\*Info\).PkgNameOf requires go1.22 or later \(module is go1.21\)`)
 
 	// new package-level type
 	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)
@@ -51,10 +51,10 @@ func _() {
 	var _ types.Info // ok: defined by go1.0
 
 	// new field of older type
-	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.Info.FileVersions requires go1.22 or later \(module is go1.21\)`)
 
 	// new method of older type
-	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.\(\*Info\).PkgNameOf requires go1.22 or later \(module is go1.21\)`)
 
 	// new package-level type
 	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)

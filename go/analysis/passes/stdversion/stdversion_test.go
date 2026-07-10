@@ -10,15 +10,10 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/stdversion"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsGo1Point(t, 23) // TODO(#68658): Waiting on 1.22 backport.
-
-	// The test relies on go1.21 std symbols, but the analyzer
-	// itself requires the go1.22 implementation of versions.FileVersions.
 	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "test.txtar"))
 	analysistest.Run(t, dir, stdversion.Analyzer,
 		"example.com/basic",
