@@ -198,10 +198,15 @@ Suffixes:
 		}
 	}
 
+	// replacing suffix with conv.suffix was wrong (Issue 80268)
+	// That produced `(*[10]int)(array)` for passing an
+	// array to a function expecting an array pointer. But
+	// `(*[10]int)(array[:])` is what is wanted.
+	// (conv.suffix is always ")" or empty)
 	if cand.convertTo != nil {
 		conv := c.formatConversion(cand.convertTo)
 		prefix = conv.prefix + prefix
-		suffix = conv.suffix
+		suffix = suffix + conv.suffix
 	}
 
 	if prefix != "" {
