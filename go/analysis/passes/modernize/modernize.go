@@ -137,6 +137,7 @@ var (
 	builtinMake    = types.Universe.Lookup("make")
 	builtinNew     = types.Universe.Lookup("new")
 	builtinNil     = types.Universe.Lookup("nil")
+	builtinRecover = types.Universe.Lookup("recover")
 	builtinString  = types.Universe.Lookup("string")
 	builtinTrue    = types.Universe.Lookup("true")
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
