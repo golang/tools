@@ -5,7 +5,13 @@ import (
 	"os"
 )
 
+var packagePathErr *os.PathError
+
 func _(err error) {
+	if errors.As(err, &packagePathErr) { // nope: packagePathErr is not declared by a local statement
+		print(packagePathErr)
+	}
+
 	{
 		var patherr *os.PathError
 		if errors.As(err, &patherr) { // want `errors.As can be simplified using AsType\[\*os.PathError\]`
