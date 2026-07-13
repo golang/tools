@@ -1,0 +1,105 @@
+Test of documentHighlight for assembly files.
+
+-- example/highlight_text.s --
+TEXT ·foo(SB), $0-0 //@hiloc(defFoo, "·foo", write)
+    CALL ·foo(SB)   //@hiloc(refFoo, "·foo", read)
+//@highlightall(defFoo, refFoo)
+
+-- example/highlight_global.s --
+GLOBL ·bar(SB), $8     //@hiloc(defBar, "·bar", write)
+
+TEXT ·useBar(SB), $0-0
+    MOVQ ·bar(SB), AX  //@hiloc(refBar, "·bar", read)
+//@highlightall(defBar, refBar)
+
+-- example/highlight_label.s --
+TEXT ·loopDemo(SB), $0-0
+loop:        //@hiloc(defLoop, "loop", write)
+    JMP loop //@hiloc(refLoop, "loop", read)
+//@highlightall(defLoop, refLoop)
+
+-- example/highlight_register.s --
+TEXT ·useReg(SB), $0-0
+    MOVQ AX, BX //@hiloc(ax1, "AX", read)
+    ADDQ CX, AX //@hiloc(ax2, "AX", write)
+//@highlightall(ax1, ax2)
+
+-- example/highlight_register_scope.s --
+TEXT ·f1(SB), $0-0
+    MOVQ AX, BX //@hiloc(axF1, "AX", read)
+
+TEXT ·f2(SB), $0-0
+    MOVQ AX, CX
+//@highlightall(axF1)
+
+-- example/highlight_compare.s --
+TEXT ·cmpDemo(SB), $0-0
+    CMPQ AX, BX //@hiloc(cmpAX, "AX", read)
+//@highlightall(cmpAX)
+
+-- example/highlight_label_scope.s --
+TEXT ·f1(SB), $0-0
+loop:        //@hiloc(f1def, "loop", write)
+    JMP loop //@hiloc(f1ref, "loop", read)
+//@highlightall(f1def, f1ref)
+
+TEXT ·f2(SB), $0-0
+loop:        //@hiloc(f2def, "loop", write)
+    JMP loop //@hiloc(f2ref, "loop", read)
+//@highlightall(f2def, f2ref)
+
+-- example/highlight_mem_operand.s --
+TEXT ·storeLoad(SB), $0-0
+    MOVQ AX, (BX) //@hiloc(bxStore, "BX", read)
+    MOVQ (AX), BX //@hiloc(bxLoad, "BX", write)
+//@highlightall(bxStore, bxLoad)
+
+-- example/highlight_stack.s --
+TEXT ·stack(SB), $0-0
+    PUSHQ AX //@hiloc(axPush, "AX", read)
+    POPQ AX  //@hiloc(axPop, "AX", write)
+//@highlightall(axPush, axPop)
+
+-- example/highlight_immediate.s --
+TEXT ·imm(SB), $0-0
+    MOVQ $123, AX //@hiloc(imm, "123", read)
+//@highlight(imm)
+
+-- example/highlight_comment.s --
+TEXT ·c(SB), $0-0
+    MOVQ AX, BX
+    // ADDQ AX, CX //@hiloc(commentAX, "AX", read)
+//@highlight(commentAX)
+
+-- example/highlight_mnemonic.s --
+TEXT ·mn(SB), $0-0
+    MOVQ AX, BX //@hiloc(mnemonic, "MOVQ", read)
+//@highlight(mnemonic)
+
+-- example/highlight_bt.s --
+TEXT ·btDemo(SB), $0-0
+    BTQ $3, AX //@hiloc(btAX, "AX", read)
+//@highlightall(btAX)
+
+-- example/highlight_setcc.s --
+TEXT ·setcc(SB), $0-0
+    SETEQ AL //@hiloc(alSet, "AL", write)
+//@highlightall(alSet)
+
+-- example/highlight_bswap.s --
+TEXT ·bswap(SB), $0-0
+    BSWAPL AX //@hiloc(axBswap, "AX", write)
+//@highlightall(axBswap)
+
+-- example/highlight_cmpxchg.s --
+TEXT ·xchg(SB), $0-0
+    CMPXCHGQ AX, BX //@hiloc(bxXchg, "BX", write)
+//@highlightall(bxXchg)
+
+-- example/highlight_bare_text.s --
+TEXT ·f(SB), $0-0
+    MOVQ AX, BX //@hiloc(axBare1, "AX", read)
+TEXT
+    MOVQ AX, CX //@hiloc(axBare2, "AX", read)
+//@highlightall(axBare1, axBare2)
+
