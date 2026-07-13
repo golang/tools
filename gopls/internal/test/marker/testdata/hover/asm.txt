@@ -1,35 +1,81 @@
 Test of hover for assembly files.
 
--- example/hover_text.s --
-// hover over TEXT symbol
-TEXT ·add(SB), $0-16 //@hover("·add", "·add", asm_text)
+Hovering over an assembly symbol that has a Go declaration reports the
+declaration's signature (with packages qualified by name, not path) and
+its doc comment, rendered as Markdown. Labels and asm-only symbols have
+no Go declaration and thus no hover.
 
--- example/hover_global.s --
-// hover over GLOBL symbol
-GLOBL ·counter(SB), $8 //@hover("·counter", "·counter", asm_global)
+-- go.mod --
+module example.com
+go 1.18
 
--- example/hover_ref.s --
-// hover over a reference to a symbol
-TEXT ·main(SB), $0-0
-    CALL ·add(SB) //@hover("·add", "·add", asm_ref)
+-- a/a.go --
+package a
 
--- example/hover_label.s --
-// hover over a label definition
-TEXT ·loopDemo(SB), $0-0
-loop: //@hover("loop", "loop", asm_label)
-    JMP loop
+import "example.com/b"
 
--- example/hover_data.s --
-// hover over DATA symbol
-DATA ·val(SB)/4, $1 //@hover("·val", "·val", asm_data)
+// foo is the best function.
+// It returns its input unchanged.
+//
+// # Details
+//
+// There is nothing more to say.
+func foo(int) int
 
--- @asm_text --
-**.add** — text
--- @asm_global --
-**.counter** — global
--- @asm_ref --
-**.add** — ref
--- @asm_label --
-**loop** — label
--- @asm_data --
-**.val** — data
+// x is a global variable.
+var x int
+
+// g returns a new T.
+func g() *b.T
+
+var _, _, _ = foo, x, g // pacify unused{func,var} analyzers
+
+-- a/asm.s --
+// portable assembly
+
+TEXT ·foo(SB), $0-8                 //@hover("·foo", "·foo", foo)
+	MOVQ ·x(SB), R0             //@hover("·x", "·x", x)
+	CALL ·foo(SB)               //@hover("·foo", "·foo", foo)
+	CALL ·g(SB)                 //@hover("·g", "·g", g)
+	CALL example·com∕b·B(SB)    //@hover("B", "example·com∕b·B", bB)
+loop:
+	JMP loop
+	RET
+
+-- b/b.go --
+package b
+
+// B is a helper function.
+func B() {}
+
+// T is a helper type.
+type T struct{}
+
+-- @foo --
+```go
+func foo(int) int
+```
+
+foo is the best function. It returns its input unchanged.
+
+### Details
+
+There is nothing more to say.
+-- @x --
+```go
+var x int
+```
+
+x is a global variable.
+-- @g --
+```go
+func g() *b.T
+```
+
+g returns a new T.
+-- @bB --
+```go
+func B()
+```
+
+B is a helper function.
