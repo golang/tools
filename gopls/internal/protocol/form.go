@@ -20,12 +20,25 @@ type InteractiveResolveOptions struct {
 	Kinds []string `json:"kinds"`
 }
 
+// FormFieldKind represents the supported input kinds for form fields.
+type FormFieldKind string
+
+const (
+	FormFieldKindString   FormFieldKind = "string"
+	FormFieldKindFile     FormFieldKind = "file"
+	FormFieldKindBool     FormFieldKind = "bool"
+	FormFieldKindNumber   FormFieldKind = "number"
+	FormFieldKindEnum     FormFieldKind = "enum"
+	FormFieldKindLazyEnum FormFieldKind = "lazyEnum"
+	FormFieldKindList     FormFieldKind = "list"
+)
+
 // InteractiveResolveClientCapabilities represents the client capabilities for
 // interactive resolve.
 type InteractiveResolveClientCapabilities struct {
 	// The input types the client supports for interactive dialogs.
 	// The presence of this field implies support for interactive refactoring.
-	InputTypes []string `json:"inputTypes"`
+	InputTypes []FormFieldKind `json:"inputTypes"`
 }
 
 // FormFieldTypeString defines a text input.
@@ -34,7 +47,7 @@ type InteractiveResolveClientCapabilities struct {
 // adding regex validation or file URI constraints.
 type FormFieldTypeString struct {
 	// Kind must be "string".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 }
 
 // FileExistence whether the file denoted by a DocumentURI exists.
@@ -73,7 +86,7 @@ const (
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentUri
 type FormFieldTypeFile struct {
 	// Kind must be "file".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 
 	// Existence constraint.
 	Existence FileExistence `json:"existence"`
@@ -93,7 +106,7 @@ type FormFieldTypeFile struct {
 // FormFieldTypeBool defines a boolean input.
 type FormFieldTypeBool struct {
 	// Kind must be "bool".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 }
 
 // FormFieldTypeNumber defines a numeric input.
@@ -102,7 +115,7 @@ type FormFieldTypeBool struct {
 // adding range constraints (min/max) or precision requirements.
 type FormFieldTypeNumber struct {
 	// Kind must be "number".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 }
 
 // FormEnumEntry represents a single option in an enumeration.
@@ -124,7 +137,7 @@ type FormEnumEntry struct {
 // - All options are known at the time the form is created.
 type FormFieldTypeEnum struct {
 	// Kind must be "enum".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 
 	// Entries is the list of allowable options.
 	Entries []FormEnumEntry `json:"entries"`
@@ -142,7 +155,7 @@ type FormFieldTypeEnum struct {
 // a text input) and query the server via 'interactive/listEnum' as the user types.
 type FormFieldTypeLazyEnum struct {
 	// Kind must be "lazyEnum".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 
 	// TODO(hxjiang): consider make debounce configurable since fetching
 	// cloud resources could be expensive and slow.
@@ -161,7 +174,7 @@ type FormFieldTypeLazyEnum struct {
 // FormFieldTypeList defines a homogeneous list of items.
 type FormFieldTypeList struct {
 	// Kind must be "list".
-	Kind string `json:"kind"`
+	Kind FormFieldKind `json:"kind"`
 
 	// ElementType specifies the type of the items in the list.
 	// It must be one of the FormFieldType* structs (e.g., FormFieldTypeString).

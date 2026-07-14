@@ -50,7 +50,7 @@ var addTagsForm = []protocol.FormField{
 	{
 		ID:          "tags",
 		Description: `comma-separated list of tags to add; e.g.. "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: "string"},
+		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
 		Required:    true,
 		Default:     "json",
 	},
@@ -58,7 +58,7 @@ var addTagsForm = []protocol.FormField{
 		ID:          "transform",
 		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
 		Type: protocol.FormFieldTypeEnum{
-			Kind: "enum",
+			Kind: protocol.FormFieldKindEnum,
 			Entries: []protocol.FormEnumEntry{
 				{
 					Value:       "camelcase",
@@ -91,7 +91,7 @@ var removeTagsForm = []protocol.FormField{
 	{
 		ID:          "tags",
 		Description: `comma-separated list of tags to remove; e.g., "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: "string"},
+		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
 		Required:    true,
 		Default:     "json", // TODO(?): put the existing tags here?
 	},
@@ -202,7 +202,7 @@ var implementInterfaceFormLazyEnum = []protocol.FormField{
 		ID:          "interface",
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
 		Type: protocol.FormFieldTypeLazyEnum{
-			Kind:   "lazyEnum",
+			Kind:   protocol.FormFieldKindLazyEnum,
 			Source: "workspaceSymbol",
 			Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
 				Kinds: []protocol.SymbolKind{protocol.Interface},
@@ -218,7 +218,7 @@ var implementInterfaceFormString = []protocol.FormField{
 		ID:          "interface",
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
 		Type: protocol.FormFieldTypeString{
-			Kind: "string",
+			Kind: protocol.FormFieldKindString,
 		},
 		Required: true,
 		Default:  "error",
