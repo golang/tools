@@ -33,7 +33,7 @@ var slicesBackwardAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: slicesbackward,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesbackward",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicesbackward",
 }
 
 // slicesbackward offers a fix to replace a manually-written backward loop:

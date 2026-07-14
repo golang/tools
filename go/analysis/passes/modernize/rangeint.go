@@ -31,7 +31,7 @@ var RangeIntAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: rangeint,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#rangeint",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_rangeint",
 }
 
 // rangeint offers a fix to replace a 3-clause 'for' loop:

@@ -35,7 +35,7 @@ var StringsCutAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: stringscut,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscut",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringscut",
 }
 
 // stringscut offers a fix to replace an occurrence of strings.Index{,Byte} with

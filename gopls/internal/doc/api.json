@@ -3404,13 +3404,13 @@
 		{
 			"Name": "any",
 			"Doc": "replace interface{} with any\n\nThe any analyzer suggests replacing uses of the empty interface type,\n`interface{}`, with the `any` alias, which was introduced in Go 1.18.\nThis is a purely stylistic change that makes code more readable.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#any",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_any",
 			"Default": true
 		},
 		{
 			"Name": "appendclipped",
 			"Doc": "simplify append chains using slices.Concat\n\nThe appendclipped analyzer suggests replacing chains of append calls with a\nsingle call to slices.Concat, which was added in Go 1.21. For example,\nappend(append(s, s1...), s2...) would be simplified to slices.Concat(s, s1, s2).\n\nIn the simple case of appending to a newly allocated slice, such as\nappend([]T(nil), s...), the analyzer suggests the more concise slices.Clone(s).\nFor byte slices, it will prefer bytes.Clone if the \"bytes\" package is\nalready imported.\n\nThis fix is only applied when the base of the append tower is a\n\"clipped\" slice, meaning its length and capacity are equal (e.g.\nx[:0:0] or []T{}). This is to avoid changing program behavior by\neliminating intended side effects on the base slice's underlying\narray.\n\nThis analyzer is currently disabled by default as the\ntransformation does not preserve the nilness of the base slice in\nall cases; see https://go.dev/issue/73557.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#appendclipped",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_appendclipped",
 			"Default": false
 		},
 		{
@@ -3446,13 +3446,13 @@
 		{
 			"Name": "atomictypes",
 			"Doc": "replace basic types in sync/atomic calls with atomic types\n\nThe atomictypes analyzer suggests replacing the primitive sync/atomic functions with\nthe strongly typed atomic wrapper types introduced in Go1.19 (e.g.\natomic.Int32). For example,\n\n\tvar x int32\n\tatomic.AddInt32(\u0026x, 1)\n\nwould become\n\n\tvar x atomic.Int32\n\tx.Add(1)\n\nThe atomic types are safer because they don't allow non-atomic access, which is\na common source of bugs. These types also resolve memory alignment issues that\nplagued the old atomic functions on 32-bit architectures.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#atomictypes",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_atomictypes",
 			"Default": true
 		},
 		{
 			"Name": "bloop",
 			"Doc": "replace for-range over b.N with b.Loop\n\nThe bloop analyzer suggests replacing benchmark loops of the form\n`for i := 0; i \u003c b.N; i++` or `for range b.N` with the more modern\n`for b.Loop()`, which was added in Go 1.24.\n\nThis change makes benchmark code more readable and also removes the need for\nmanual timer control, so any preceding calls to b.StartTimer, b.StopTimer,\nor b.ResetTimer within the same function will also be removed.\n\nCaveats: The b.Loop() method is designed to prevent the compiler from\noptimizing away the benchmark loop, which can occasionally result in\nslower execution due to increased allocations in some specific cases.\nSince its fix may change the performance of nanosecond-scale benchmarks,\nbloop is disabled by default in the `go fix` analyzer suite; see golang/go#74967.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#bloop",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_bloop",
 			"Default": true
 		},
 		{
@@ -3518,7 +3518,7 @@
 		{
 			"Name": "embedlit",
 			"Doc": "simplify references to embedded fields in composite literals\n\nThe embedlit analyzer suggests removing redundant embedded field type specifiers\nfrom composite literals. Go1.27 introduced the ability to directly initialize\nfields promoted from embedded struct types without a nested literal. For\nexample, given the following structs:\n\n\ttype T struct {\n\t\tU\n\t}\n\n\ttype U struct {\n\t\tx int\n\t}\n\nA composite literal such as\n\n\tt := T{U: U{x: 1}}\n\nwould become\n\n\tt := T{x: 1}",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_embedlit",
 			"Default": true
 		},
 		{
@@ -3530,7 +3530,7 @@
 		{
 			"Name": "errorsastype",
 			"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_errorsastype",
 			"Default": true
 		},
 		{
@@ -3554,13 +3554,13 @@
 		{
 			"Name": "fmtappendf",
 			"Doc": "replace []byte(fmt.Sprintf) with fmt.Appendf\n\nThe fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with\n`fmt.Appendf(nil, ...)`. This avoids the intermediate allocation of a string\nby Sprintf, making the code more efficient. The suggestion also applies to\nfmt.Sprint and fmt.Sprintln.\n\nSince its fix is not a Pareto improvement, fmtappendf is disabled by default in\nthe `go fix` analyzer suite; see golang/go#77581.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#fmtappendf",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_fmtappendf",
 			"Default": true
 		},
 		{
 			"Name": "forvar",
 			"Doc": "remove redundant re-declaration of loop variables\n\nThe forvar analyzer removes unnecessary shadowing of loop variables.\nBefore Go 1.22, it was common to write `for _, x := range s { x := x ... }`\nto create a fresh variable for each iteration. Go 1.22 changed the semantics\nof `for` loops, making this pattern redundant. This analyzer removes the\nunnecessary `x := x` statement.\n\nThis fix only applies to `range` loops.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#forvar",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_forvar",
 			"Default": true
 		},
 		{
@@ -3590,7 +3590,7 @@
 		{
 			"Name": "importcomment",
 			"Doc": "remove obsolete comments specifying canonical import path\n\nThe importcomment analyzer removes comments specifying the canonical\nimport path, such as\n\n\tpackage foo // import \"example.com/foo\"\n\nThe go command enforced these comments in GOPATH mode via \"go get\", but\nignores them in module mode, so they are obsolete once the package\nbelongs to a module. The fix removes the comment.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#importcomment",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_importcomment",
 			"Default": true
 		},
 		{
@@ -3626,19 +3626,19 @@
 		{
 			"Name": "mapsloop",
 			"Doc": "replace explicit loops over maps with calls to maps package\n\nThe mapsloop analyzer replaces loops of the form\n\n\tfor k, v := range x { m[k] = v }\n\nwith a single call to a function from the `maps` package, added in Go 1.23.\nDepending on the context, this could be `maps.Copy`, `maps.Insert`,\n`maps.Clone`, or `maps.Collect`.\n\nThe transformation to `maps.Clone` is applied conservatively, as it\npreserves the nilness of the source map, which may be a subtle change in\nbehavior if the original code did not handle a nil map in the same way.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#mapsloop",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_mapsloop",
 			"Default": true
 		},
 		{
 			"Name": "minmax",
 			"Doc": "replace if/else statements with calls to min or max\n\nThe minmax analyzer simplifies conditional assignments by suggesting the use\nof the built-in `min` and `max` functions, introduced in Go 1.21. For example,\n\n\tif a \u003c b { x = a } else { x = b }\n\nis replaced by\n\n\tx = min(a, b).\n\nThis analyzer avoids making suggestions for floating-point types,\nas the behavior of `min` and `max` with NaN values can differ from\nthe original if/else statement.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_minmax",
 			"Default": true
 		},
 		{
 			"Name": "newexpr",
 			"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\t//go:fix inline\n\tfunc varOf(x int) *int { return new(x) }\n\n(The directive comment causes the 'inline' analyzer to suggest\nthat calls to such functions are inlined.)\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\nWrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#newexpr",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_newexpr",
 			"Default": true
 		},
 		{
@@ -3668,13 +3668,13 @@
 		{
 			"Name": "omitzero",
 			"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct\ntag on fields that are themselves structs. For struct-typed fields,\nthe `omitempty` tag has no effect on the behavior of json.Marshal and\njson.Unmarshal. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nHowever, some other serialization packages (notably kubebuilder, see\nhttps://book.kubebuilder.io/reference/markers.html) may have their own\ninterpretation of the `json:\",omitzero\"` tag, so removing it may affect\nprogram behavior. For this reason, the omitzero modernizer will not\nmake changes in any package that contains +kubebuilder annotations.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero",
 			"Default": true
 		},
 		{
 			"Name": "plusbuild",
 			"Doc": "remove obsolete //+build comments\n\nThe plusbuild analyzer suggests a fix to remove obsolete build tags\nof the form:\n\n\t//+build linux,amd64\n\nin files that also contain a Go 1.18-style tag such as:\n\n\t//go:build linux \u0026\u0026 amd64\n\n(It does not check that the old and new tags are consistent;\nthat is the job of the 'buildtag' analyzer in the vet suite.)",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#plusbuild",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_plusbuild",
 			"Default": true
 		},
 		{
@@ -3692,7 +3692,7 @@
 		{
 			"Name": "rangeint",
 			"Doc": "replace 3-clause for loops with for-range over integers\n\nThe rangeint analyzer suggests replacing traditional for loops such\nas\n\n\tfor i := 0; i \u003c n; i++ { ... }\n\nwith the more idiomatic Go 1.22 style:\n\n\tfor i := range n { ... }\n\nThis transformation is applied only if (a) the loop variable is not\nmodified within the loop body and (b) the loop's limit expression\nis not modified within the loop, as `for range` evaluates its\noperand only once.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#rangeint",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_rangeint",
 			"Default": true
 		},
 		{
@@ -3704,13 +3704,13 @@
 		{
 			"Name": "reflecttypeassert",
 			"Doc": "replace v.Interface().(T) with reflect.TypeAssert[T](v)\n\nThis analyzer suggests fixes to replace two-valued type assertions on\nthe result of (reflect.Value).Interface with reflect.TypeAssert,\nintroduced in go1.25, which avoids the intermediate allocation of an\ninterface value, for example:\n\n\tx, ok := v.Interface().(string)  -\u003e  x, ok := reflect.TypeAssert[string](v)\n\nNo fix is offered for single-valued assertions, since they panic when\nthe assertion fails whereas reflect.TypeAssert does not. Nor is a fix\noffered for a type switch.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypeassert",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_reflecttypeassert",
 			"Default": true
 		},
 		{
 			"Name": "reflecttypefor",
 			"Doc": "replace reflect.TypeOf(x) with TypeFor[T]()\n\nThis analyzer suggests fixes to replace uses of reflect.TypeOf(x) with\nreflect.TypeFor, introduced in go1.22, when the desired runtime type\nis known at compile time, for example:\n\n\treflect.TypeOf(uint32(0))        -\u003e reflect.TypeFor[uint32]()\n\treflect.TypeOf((*ast.File)(nil)) -\u003e reflect.TypeFor[*ast.File]()\n\nIt also offers a fix to simplify the constructions below, which use\nreflect.TypeOf to return the runtime type for an interface type,\n\n\treflect.TypeOf((*io.Reader)(nil)).Elem()\n\nor:\n\n\treflect.TypeOf([]io.Reader(nil)).Elem()\n\nto:\n\n\treflect.TypeFor[io.Reader]()\n\nNo fix is offered in cases when the runtime type is dynamic, such as:\n\n\tvar r io.Reader = ...\n\treflect.TypeOf(r)\n\nor when the operand has potential side effects.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypefor",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_reflecttypefor",
 			"Default": true
 		},
 		{
@@ -3758,25 +3758,25 @@
 		{
 			"Name": "slicesbackward",
 			"Doc": "replace backward loops over slices with slices.Backward\n\nThe slicesbackward analyzer suggests replacing manually-written backward\nloops of the form\n\n\tfor i := len(s) - 1; i \u003e= 0; i-- {\n\t    use(s[i])\n\t}\n\nwith the more readable Go 1.23 style using slices.Backward:\n\n\tfor _, v := range slices.Backward(s) {\n\t    use(v)\n\t}\n\nIf the loop index is needed beyond just indexing into the slice, both\nthe index and value variables are kept:\n\n\tfor i, v := range slices.Backward(s) { ... }",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesbackward",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicesbackward",
 			"Default": true
 		},
 		{
 			"Name": "slicescontains",
 			"Doc": "replace loops with slices.Contains or slices.ContainsFunc\n\nThe slicescontains analyzer simplifies loops that check for the existence of\nan element in a slice. It replaces them with calls to `slices.Contains` or\n`slices.ContainsFunc`, which were added in Go 1.21.\n\nIf the expression for the target element has side effects, this\ntransformation will cause those effects to occur only once, not\nonce per tested slice element.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicescontains",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicescontains",
 			"Default": true
 		},
 		{
 			"Name": "slicesdelete",
 			"Doc": "replace append-based slice deletion with slices.Delete\n\nThe slicesdelete analyzer suggests replacing the idiom\n\n\ts = append(s[:i], s[j:]...)\n\nwith the more explicit\n\n\ts = slices.Delete(s, i, j)\n\nintroduced in Go 1.21.\n\nThis analyzer is disabled by default. The `slices.Delete` function\nzeros the elements between the new length and the old length of the\nslice to prevent memory leaks, which is a subtle difference in\nbehavior compared to the append-based idiom; see https://go.dev/issue/73686.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesdelete",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicesdelete",
 			"Default": false
 		},
 		{
 			"Name": "slicessort",
 			"Doc": "replace sort.Slice with slices.Sort for basic types\n\nThe slicessort analyzer simplifies sorting slices of basic ordered\ntypes. It replaces\n\n\tsort.Slice(s, func(i, j int) bool { return s[i] \u003c s[j] })\n\nwith the simpler `slices.Sort(s)`, which was added in Go 1.21.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicessort",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicessort",
 			"Default": true
 		},
 		{
@@ -3800,7 +3800,7 @@
 		{
 			"Name": "stditerators",
 			"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(x.At(i)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stditerators",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stditerators",
 			"Default": true
 		},
 		{
@@ -3824,25 +3824,25 @@
 		{
 			"Name": "stringsbuilder",
 			"Doc": "replace += with strings.Builder\n\nThis analyzer replaces repeated string += string concatenation\noperations with calls to Go 1.10's strings.Builder.\n\nFor example:\n\n\tvar s = \"[\"\n\tfor x := range seq {\n\t\ts += x\n\t\ts += \".\"\n\t}\n\ts += \"]\"\n\tuse(s)\n\nis replaced by:\n\n\tvar s strings.Builder\n\ts.WriteString(\"[\")\n\tfor x := range seq {\n\t\ts.WriteString(x)\n\t\ts.WriteString(\".\")\n\t}\n\ts.WriteString(\"]\")\n\tuse(s.String())\n\nThis avoids quadratic memory allocation and improves performance.\n\nNo diagnostics are issued in tests, where data sizes are often\nsmall and asymptotic performance is not a security concern.\n\nThe analyzer requires that all references to s before the final uses\nare += operations. To avoid warning about trivial cases, at least one\nmust appear within a loop. The variable s must be a local\nvariable, not a global or parameter.\n\nAll uses of the finished string must come after the last += operation.\nEach such use will be replaced by a call to strings.Builder's String method.\n(These may appear within an intervening loop or function literal, since even\nif s.String() is called repeatedly, it does not allocate memory.)\n\nOften the addend is a call to fmt.Sprintf, as in this example:\n\n\tvar s string\n\tfor x := range seq {\n\t\ts += fmt.Sprintf(\"%v\", x)\n\t}\n\nwhich, once the suggested fix is applied, becomes:\n\n\tvar s strings.Builder\n\tfor x := range seq {\n\t\ts.WriteString(fmt.Sprintf(\"%v\", x))\n\t}\n\nThe WriteString call can be further simplified to the more efficient\nfmt.Fprintf(\u0026s, \"%v\", x), avoiding the allocation of an intermediary.\nHowever, stringsbuilder does not perform this simplification;\nit requires staticcheck analyzer QF1012. (See https://go.dev/issue/76918.)",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringbuilder",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringsbuilder",
 			"Default": true
 		},
 		{
 			"Name": "stringscut",
 			"Doc": "replace strings.Index etc. with strings.Cut\n\nThis analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.\n\nFor example:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return s[:idx]\n\t}\n\nis replaced by:\n\n\tbefore, _, ok := strings.Cut(s, substr)\n\tif ok {\n\t    return before\n\t}\n\nAnd:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return\n\t}\n\nis replaced by:\n\n\tfound := strings.Contains(s, substr)\n\tif found {\n\t    return\n\t}\n\nIt also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.\n\nFixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.\n\nIt also replaces [strings.SplitN](s, sep, 2)[0] and [strings.Split](s, sep)[0] with the \"before\" result of strings.Cut, when sep is a non-empty string constant:\n\n\tx := strings.SplitN(s, sep, 2)[0]\n\nis replaced by:\n\n\tx, _, _ := strings.Cut(s, sep)\n\nThe fix is only offered when sep is a non-empty string literal. When sep is a variable or the empty string, the semantics differ (strings.Split(s, \"\")[0] returns the first character of s, but strings.Cut(s, \"\").before is \"\"), so no fix is suggested.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscut",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringscut",
 			"Default": true
 		},
 		{
 			"Name": "stringscutprefix",
 			"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.\n\nFor example, this input:\n\n\tif strings.HasPrefix(s, prefix) {\n\t    use(strings.TrimPrefix(s, prefix))\n\t}\n\nis fixed to:\n\n\tif after, ok := strings.CutPrefix(s, prefix); ok {\n\t    use(after)\n\t}\n\nThe analyzer also offers fixes to use CutSuffix in a similar way.\nThis input:\n\n\tif strings.HasSuffix(s, suffix) {\n\t    use(strings.TrimSuffix(s, suffix))\n\t}\n\nis fixed to:\n\n\tif before, ok := strings.CutSuffix(s, suffix); ok {\n\t    use(before)\n\t}",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscutprefix",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringscutprefix",
 			"Default": true
 		},
 		{
 			"Name": "stringsseq",
 			"Doc": "replace ranging over Split/Fields with SplitSeq/FieldsSeq\n\nThe stringsseq analyzer improves the efficiency of iterating over substrings.\nIt replaces\n\n\tfor range strings.Split(...)\n\nwith the more efficient\n\n\tfor range strings.SplitSeq(...)\n\nwhich was added in Go 1.24 and avoids allocating a slice for the\nsubstrings. The analyzer also handles strings.Fields and the\nequivalent functions in the bytes package.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringsseq",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringsseq",
 			"Default": true
 		},
 		{
@@ -3854,7 +3854,7 @@
 		{
 			"Name": "testingcontext",
 			"Doc": "replace context.WithCancel with t.Context in tests\n\nThe testingcontext analyzer simplifies context management in tests. It\nreplaces the manual creation of a cancellable context,\n\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\nwith a single call to t.Context(), which was added in Go 1.24.\n\nThis change is only suggested if the `cancel` function is not used\nfor any other purpose.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#testingcontext",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_testingcontext",
 			"Default": true
 		},
 		{
@@ -3890,7 +3890,7 @@
 		{
 			"Name": "unsafefuncs",
 			"Doc": "replace unsafe pointer arithmetic with function calls\n\nThe unsafefuncs analyzer simplifies pointer arithmetic expressions by\nreplacing them with calls to helper functions such as unsafe.Add,\nadded in Go 1.17.\n\nExample:\n\n\tunsafe.Pointer(uintptr(ptr) + uintptr(n))\n\nwhere ptr is an unsafe.Pointer, is replaced by:\n\n\tunsafe.Add(ptr, n)",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#unsafefuncs",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_unsafefuncs",
 			"Default": true
 		},
 		{
@@ -3938,7 +3938,7 @@
 		{
 			"Name": "waitgroupgo",
 			"Doc": "replace wg.Add(1)/go/wg.Done() with wg.Go\n\nThe waitgroupgo analyzer simplifies goroutine management with `sync.WaitGroup`.\nIt replaces the common pattern\n\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\nwith a single call to\n\n\twg.Go(func(){ ... })\n\nwhich was added in Go 1.25.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroupgo",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_waitgroupgo",
 			"Default": true
 		},
 		{

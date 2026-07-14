@@ -32,7 +32,7 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: minmax,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_minmax",
 }
 
 // The minmax pass replaces if/else statements with calls to min or max,
