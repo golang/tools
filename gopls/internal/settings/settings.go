@@ -274,6 +274,10 @@ type UIOptions struct {
 	// MoveType enables producing Move Type codeactions. The implementation
 	// is unfinished so we use this setting to gate its use.
 	MoveType bool `status:"experimental"`
+
+	// MoveDeclaration enables producing Move Declaration codeactions. The implementation
+	// is unfinished so we use this setting to gate its use.
+	MoveDeclaration bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -1477,6 +1481,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "moveType":
 		return setBool(&o.MoveType, value)
+
+	case "moveDeclaration":
+		return setBool(&o.MoveDeclaration, value)
 
 	// deprecated and renamed settings
 	//

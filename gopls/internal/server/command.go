@@ -1954,3 +1954,15 @@ func (c *commandHandler) MoveType(ctx context.Context, args command.MoveTypeArgs
 	})
 	return err
 }
+
+func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveDeclarationArgs, params *protocol.InteractiveParams) error {
+	return c.run(ctx, commandConfig{
+		forURI: args.Location.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		changes, _, err := golang.MoveDeclaration(ctx, deps.fh, deps.snapshot)
+		if err != nil {
+			return err
+		}
+		return applyChanges(ctx, c.s.client, changes)
+	})
+}

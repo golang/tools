@@ -115,6 +115,10 @@ func ResolveCommand(ctx context.Context, params *protocol.ExecuteCommandParams, 
 		if err := resolveImplementInterface(options, params); err != nil {
 			return nil, err
 		}
+	case "gopls.move_declaration":
+		if err := resolveMoveDeclaration(options, params); err != nil {
+			return nil, err
+		}
 	}
 	return params, nil
 }
@@ -221,6 +225,28 @@ var implementInterfaceFormString = []protocol.FormField{
 	},
 }
 
+var moveDeclarationFormString = []protocol.FormField{
+	{
+		ID:          "string",
+		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
+		Type: protocol.FormFieldTypeFile{
+			Kind: "string",
+		},
+		Required: true,
+	},
+}
+
+var moveDeclarationFormFile = []protocol.FormField{
+	{
+		ID:          "file",
+		Description: "destination file for the moved declaration",
+		Type: protocol.FormFieldTypeFile{
+			Kind: "file",
+		},
+		Required: true,
+	},
+}
+
 func resolveImplementInterface(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
 	var a0 command.ImplementInterfaceArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
@@ -281,6 +307,39 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 		return nil
 	}
 
+	param.FormFields = nil
+	return nil
+}
+
+func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
+	var a0 command.MoveDeclarationArgs
+	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
+		return err
+	}
+	var form []protocol.FormField
+	if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeFile]; ok {
+		form = moveDeclarationFormFile
+	} else if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeString]; ok {
+		form = moveDeclarationFormString
+	} else {
+		// This should not happen because gopls should not offer this code action if the
+		// language client does not support any kind above.
+		return fmt.Errorf("internal error: unsupported interactive input types: %v", options.SupportedInteractiveInputTypes)
+	}
+
+	// First call, return the empty form.
+	if len(param.FormAnswers) == 0 {
+		param.FormFields = form
+		return nil
+	}
+
+	file, err := FormAnswer[string](&param.InteractiveParams, "file")
+	if err != nil {
+		return err
+	}
+	if _, err := protocol.ParseDocumentURI(file); err != nil {
+		return err
+	}
 	param.FormFields = nil
 	return nil
 }

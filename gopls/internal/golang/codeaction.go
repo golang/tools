@@ -257,6 +257,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorInlineVariable, fn: refactorInlineVariable, needPkg: true},
 	{kind: settings.RefactorMoveType, fn: refactorMoveType, needPkg: true},
+	{kind: settings.RefactorMoveDeclaration, fn: refactorMoveDeclaration, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
 	{kind: settings.RefactorRewriteFillSwitch, fn: refactorRewriteFillSwitch, needPkg: true},
@@ -1257,5 +1258,18 @@ func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
 		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", spec.Name.Name), command.MoveTypeArgs{Location: req.loc})
 		req.addCommandAction(cmd, false)
 	}
+	return nil
+}
+
+func refactorMoveDeclaration(_ context.Context, req *codeActionsRequest) error {
+	if !req.snapshot.Options().MoveDeclaration {
+		return nil
+	}
+	if !supportsDialog(req.snapshot.Options().ClientOptions, moveDeclarationFormFile, moveDeclarationFormString) {
+		return nil
+	}
+	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
+	cmd := command.NewMoveDeclarationCommand(fmt.Sprintf("Move declaration %s", curSel.Node()), command.MoveDeclarationArgs{Location: req.loc})
+	req.addCommandAction(cmd, false)
 	return nil
 }

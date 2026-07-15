@@ -336,6 +336,9 @@ type Interface interface {
 
 	// ImplementInterface: Add methods to a type to implement an interface.
 	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) error
+
+	// MoveDeclaration: Move a declaration to a different file.
+	MoveDeclaration(context.Context, MoveDeclarationArgs, *protocol.InteractiveParams) error
 }
 
 type RunTestsArgs struct {
@@ -913,4 +916,10 @@ type MoveTypeArgs struct {
 	Location protocol.Location
 	// TODO(mkalil): Determine format of the parameter that specifies where to
 	// move the type to.
+}
+
+// MoveDeclarationArgs specifies a "move declaration" refactoring to perform.
+type MoveDeclarationArgs struct {
+	// The location of the declaration to move.
+	Location protocol.Location
 }
