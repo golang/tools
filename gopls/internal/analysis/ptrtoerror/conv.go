@@ -35,6 +35,8 @@ func conversions(root inspector.Cursor, info *types.Info) iter.Seq[conversion] {
 			(*ast.ReturnStmt)(nil),
 			(*ast.CompositeLit)(nil),
 			(*ast.SendStmt)(nil),
+			(*ast.TypeAssertExpr)(nil),
+			(*ast.TypeSwitchStmt)(nil),
 		}
 
 		for c := range root.Preorder(nodeFilter...) {
@@ -225,6 +227,48 @@ func conversions(root inspector.Cursor, info *types.Info) iter.Seq[conversion] {
 				// channel send
 				if chanType, ok := info.TypeOf(n.Chan).Underlying().(*types.Chan); ok {
 					if !yield(conversion{chanType.Elem(), info.TypeOf(n.Value), n.Value}) {
+						return
+					}
+				}
+
+			case *ast.TypeAssertExpr:
+				// I(x).(E) acts like a pseudoconversion from E to E.
+				if n.Type != nil && // (not beneath type switch)
+					!yield(conversion{info.TypeOf(n.X), info.TypeOf(n.Type), n.Type}) {
+					return
+				}
+
+			case *ast.TypeSwitchStmt:
+				// switch I(x).(type) { case E: } depends on E being assignable to I.
+				// Report the (pseudo)conversion of type (not term) E to I.
+				var assert *ast.TypeAssertExpr
+				switch assign := n.Assign.(type) {
+				case *ast.ExprStmt:
+					assert = assign.X.(*ast.TypeAssertExpr)
+				case *ast.AssignStmt:
+					assert = assign.Rhs[0].(*ast.TypeAssertExpr)
+				}
+				for _, cc := range n.Body.List {
+					for _, typ := range cc.(*ast.CaseClause).List {
+						if !yield(conversion{info.TypeOf(assert.X), info.TypeOf(typ), typ}) {
+							return
+						}
+					}
+				}
+			}
+		}
+
+		// Yield conversions from type parameter instantiations
+		// e.g. errors.AsType[*E](err)
+		for id, inst := range info.Instances {
+			t := info.ObjectOf(id).Type()
+			type hasTypeParams interface{ TypeParams() *types.TypeParamList } // = Signature, Named, Alias
+			if t, ok := t.(hasTypeParams); ok {
+				tparams := t.TypeParams()
+				for i := 0; i < tparams.Len(); i++ {
+					tparam := tparams.At(i)
+					targ := inst.TypeArgs.At(i)
+					if !yield(conversion{tparam.Constraint(), targ, id}) {
 						return
 					}
 				}

@@ -12,5 +12,5 @@ import (
 )
 
 func Test(t *testing.T) {
-	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), ptrtoerror.Analyzer, "a", "b")
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), ptrtoerror.Analyzer, "a", "b", "c", "d")
 }
