@@ -140,6 +140,13 @@ func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 }
 
 func ignoredError(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
+	ignoreSubstrings := []string{
+		"ignore error",
+		"discard error",
+		"can't fail",
+		"cannot fail",
+	}
+
 outer:
 	for curCall := range cur.Preorder((*ast.ExprStmt)(nil)) {
 		stmt := curCall.Node().(*ast.ExprStmt)
@@ -171,7 +178,7 @@ outer:
 			continue
 		}
 
-		// Suppress if comment on same line contains "// ignore error".
+		// Suppress if comment on same line contains "ignore error" (etc).
 		line := func(pos token.Pos) int { return safetoken.Line(pgf.Tok, pos) }
 		comments := pgf.File.Comments
 		compare := func(cg *ast.CommentGroup, pos token.Pos) int {
@@ -180,8 +187,12 @@ outer:
 		i, _ := slices.BinarySearchFunc(comments, stmt.End(), compare)
 		if i >= 0 && i < len(comments) {
 			cg := comments[i]
-			if line(cg.Pos()) == line(stmt.End()) && strings.Contains(cg.Text(), "ignore error") {
-				continue outer // suppress
+			if line(cg.Pos()) == line(stmt.End()) {
+				for _, sub := range ignoreSubstrings {
+					if strings.Contains(cg.Text(), sub) {
+						continue outer // suppress
+					}
+				}
 			}
 		}
 

@@ -636,10 +636,18 @@ const (
 	// implicitly ignored.
 	//
 	// To suppress the hint, write an actual comment containing
-	// "ignore error" following the call statement, or explicitly
-	// assign the result to a blank variable. A handful of common
-	// functions such as `fmt.Println` are excluded from the
-	// check.
+	// one of the following strings:
+	// ```
+	// ignore error
+	// discard error
+	// can't fail
+	// cannot fail
+	// ```
+	// following the call statement, or explicitly assign the
+	// result to a blank variable.
+	//
+	// A handful of common functions such as `fmt.Println` are
+	// excluded from the check.
 	IgnoredError InlayHint = "ignoredError"
 )
 

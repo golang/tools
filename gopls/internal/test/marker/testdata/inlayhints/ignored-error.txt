@@ -36,7 +36,7 @@ func _() {
 func _(f *os.File) {
 	// Allow horizontal space before comment.
 	new(os.File).Close() // ignore error
-	f.Close()            // ignore error
+	f.Close()            // can't fail
 }
 
 -- @out --
@@ -68,6 +68,6 @@ func _() {
 func _(f *os.File) {
 	// Allow horizontal space before comment.
 	new(os.File).Close() // ignore error
-	f.Close()            // ignore error
+	f.Close()            // can't fail
 }
 
