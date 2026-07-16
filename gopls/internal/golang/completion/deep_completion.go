@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // MaxDeepCompletions limits deep completion results because in most cases
@@ -269,8 +270,9 @@ func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 		// If obj is a *types.TypeName that didn't otherwise match, check
 		// if a literal object of this type makes a good candidate.
 
-		// We only care about named types (i.e. don't want builtin types).
-		if _, isNamed := obj.Type().(*types.Named); isNamed {
+		// We only care about named or alias types without unspecified type
+		// params: instantiated generic types are already handled by injectType.
+		if pnt, ok := obj.Type().(typesinternal.NamedOrAlias); ok && pnt.TypeParams().Len() == 0 {
 			c.literal(ctx, obj.Type(), cand.imp)
 		}
 	}
