@@ -13,35 +13,35 @@ type T2 struct {
 }
 
 var _ = [42]T{
-	T{},     // want "redundant type from array, slice, or map composite literal"
-	T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	T{},     // want "redundant type in array literal"
+	T{1, 2}, // want "redundant type in array literal"
+	T{3, 4}, // want "redundant type in array literal"
 }
 
 var _ = [...]T{
-	T{},     // want "redundant type from array, slice, or map composite literal"
-	T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	T{},     // want "redundant type in array literal"
+	T{1, 2}, // want "redundant type in array literal"
+	T{3, 4}, // want "redundant type in array literal"
 }
 
 var _ = []T{
-	T{},     // want "redundant type from array, slice, or map composite literal"
-	T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	T{},     // want "redundant type in slice literal"
+	T{1, 2}, // want "redundant type in slice literal"
+	T{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []T{
-	T{}, // want "redundant type from array, slice, or map composite literal"
-	10:  T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	20:  T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	T{}, // want "redundant type in slice literal"
+	10:  T{1, 2}, // want "redundant type in slice literal"
+	20:  T{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []struct {
 	x, y int
 }{
-	struct{ x, y int }{}, // want "redundant type from array, slice, or map composite literal"
-	10:                   struct{ x, y int }{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	20:                   struct{ x, y int }{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	struct{ x, y int }{}, // want "redundant type in slice literal"
+	10:                   struct{ x, y int }{1, 2}, // want "redundant type in slice literal"
+	20:                   struct{ x, y int }{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []interface{}{
@@ -51,38 +51,38 @@ var _ = []interface{}{
 }
 
 var _ = [][]int{
-	[]int{},     // want "redundant type from array, slice, or map composite literal"
-	[]int{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	[]int{},     // want "redundant type in slice literal"
+	[]int{1, 2}, // want "redundant type in slice literal"
+	[]int{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = [][]int{
 	([]int{}),
 	([]int{1, 2}),
-	[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	[]int{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = [][][]int{
-	[][]int{}, // want "redundant type from array, slice, or map composite literal"
-	[][]int{ // want "redundant type from array, slice, or map composite literal"
-		[]int{},           // want "redundant type from array, slice, or map composite literal"
-		[]int{0, 1, 2, 3}, // want "redundant type from array, slice, or map composite literal"
-		[]int{4, 5},       // want "redundant type from array, slice, or map composite literal"
+	[][]int{}, // want "redundant type in slice literal"
+	[][]int{ // want "redundant type in slice literal"
+		[]int{},           // want "redundant type in slice literal"
+		[]int{0, 1, 2, 3}, // want "redundant type in slice literal"
+		[]int{4, 5},       // want "redundant type in slice literal"
 	},
 }
 
 var _ = map[string]T{
-	"foo": T{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": T{},     // want "redundant type in map literal"
+	"bar": T{1, 2}, // want "redundant type in map literal"
+	"bal": T{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string]struct {
 	x, y int
 }{
-	"foo": struct{ x, y int }{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": struct{ x, y int }{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": struct{ x, y int }{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": struct{ x, y int }{},     // want "redundant type in map literal"
+	"bar": struct{ x, y int }{1, 2}, // want "redundant type in map literal"
+	"bal": struct{ x, y int }{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string]interface{}{
@@ -92,15 +92,15 @@ var _ = map[string]interface{}{
 }
 
 var _ = map[string][]int{
-	"foo": []int{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": []int{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": []int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": []int{},     // want "redundant type in map literal"
+	"bar": []int{1, 2}, // want "redundant type in map literal"
+	"bal": []int{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string][]int{
 	"foo": ([]int{}),
 	"bar": ([]int{1, 2}),
-	"bal": []int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"bal": []int{3, 4}, // want "redundant type in map literal"
 }
 
 type Point struct {
@@ -117,44 +117,44 @@ type Piece struct {
 	f *Point
 }
 
-// from exp/4s/data.go
+// in exp/4s/data.go
 var pieces3 = []Piece{
-	Piece{0, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	Piece{1, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	Piece{2, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	Piece{3, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
+	Piece{0, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	Piece{1, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	Piece{2, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	Piece{3, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
 }
 
 var _ = [42]*T{
-	&T{},     // want "redundant type from array, slice, or map composite literal"
-	&T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	&T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&T{},     // want "redundant type in array literal"
+	&T{1, 2}, // want "redundant type in array literal"
+	&T{3, 4}, // want "redundant type in array literal"
 }
 
 var _ = [...]*T{
-	&T{},     // want "redundant type from array, slice, or map composite literal"
-	&T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	&T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&T{},     // want "redundant type in array literal"
+	&T{1, 2}, // want "redundant type in array literal"
+	&T{3, 4}, // want "redundant type in array literal"
 }
 
 var _ = []*T{
-	&T{},     // want "redundant type from array, slice, or map composite literal"
-	&T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	&T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&T{},     // want "redundant type in slice literal"
+	&T{1, 2}, // want "redundant type in slice literal"
+	&T{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []*T{
-	&T{}, // want "redundant type from array, slice, or map composite literal"
-	10:   &T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	20:   &T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&T{}, // want "redundant type in slice literal"
+	10:   &T{1, 2}, // want "redundant type in slice literal"
+	20:   &T{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []*struct {
 	x, y int
 }{
-	&struct{ x, y int }{}, // want "redundant type from array, slice, or map composite literal"
-	10:                    &struct{ x, y int }{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	20:                    &struct{ x, y int }{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&struct{ x, y int }{}, // want "redundant type in slice literal"
+	10:                    &struct{ x, y int }{1, 2}, // want "redundant type in slice literal"
+	20:                    &struct{ x, y int }{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []interface{}{
@@ -164,38 +164,38 @@ var _ = []interface{}{
 }
 
 var _ = []*[]int{
-	&[]int{},     // want "redundant type from array, slice, or map composite literal"
-	&[]int{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	&[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&[]int{},     // want "redundant type in slice literal"
+	&[]int{1, 2}, // want "redundant type in slice literal"
+	&[]int{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []*[]int{
 	(&[]int{}),
 	(&[]int{1, 2}),
-	&[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	&[]int{3, 4}, // want "redundant type in slice literal"
 }
 
 var _ = []*[]*[]int{
-	&[]*[]int{}, // want "redundant type from array, slice, or map composite literal"
-	&[]*[]int{ // want "redundant type from array, slice, or map composite literal"
-		&[]int{},           // want "redundant type from array, slice, or map composite literal"
-		&[]int{0, 1, 2, 3}, // want "redundant type from array, slice, or map composite literal"
-		&[]int{4, 5},       // want "redundant type from array, slice, or map composite literal"
+	&[]*[]int{}, // want "redundant type in slice literal"
+	&[]*[]int{ // want "redundant type in slice literal"
+		&[]int{},           // want "redundant type in slice literal"
+		&[]int{0, 1, 2, 3}, // want "redundant type in slice literal"
+		&[]int{4, 5},       // want "redundant type in slice literal"
 	},
 }
 
 var _ = map[string]*T{
-	"foo": &T{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": &T{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": &T{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": &T{},     // want "redundant type in map literal"
+	"bar": &T{1, 2}, // want "redundant type in map literal"
+	"bal": &T{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string]*struct {
 	x, y int
 }{
-	"foo": &struct{ x, y int }{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": &struct{ x, y int }{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": &struct{ x, y int }{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": &struct{ x, y int }{},     // want "redundant type in map literal"
+	"bar": &struct{ x, y int }{1, 2}, // want "redundant type in map literal"
+	"bal": &struct{ x, y int }{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string]interface{}{
@@ -205,30 +205,54 @@ var _ = map[string]interface{}{
 }
 
 var _ = map[string]*[]int{
-	"foo": &[]int{},     // want "redundant type from array, slice, or map composite literal"
-	"bar": &[]int{1, 2}, // want "redundant type from array, slice, or map composite literal"
-	"bal": &[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"foo": &[]int{},     // want "redundant type in map literal"
+	"bar": &[]int{1, 2}, // want "redundant type in map literal"
+	"bal": &[]int{3, 4}, // want "redundant type in map literal"
 }
 
 var _ = map[string]*[]int{
 	"foo": (&[]int{}),
 	"bar": (&[]int{1, 2}),
-	"bal": &[]int{3, 4}, // want "redundant type from array, slice, or map composite literal"
+	"bal": &[]int{3, 4}, // want "redundant type in map literal"
 }
 
 var pieces4 = []*Piece{
-	&Piece{0, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	&Piece{1, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	&Piece{2, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	&Piece{3, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
+	&Piece{0, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	&Piece{1, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	&Piece{2, 0, Point{4, 1}, []Point{Point{0, 0}, Point{1, 0}, Point{1, 0}, Point{1, 0}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
+	&Piece{3, 0, Point{1, 4}, []Point{Point{0, 0}, Point{0, 1}, Point{0, 1}, Point{0, 1}}, nil, nil}, // want "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal" "redundant type in slice literal"
 }
 
 var _ = map[T]T2{
-	T{1, 2}: T2{3, 4}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	T{5, 6}: T2{7, 8}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
+	T{1, 2}: T2{3, 4}, // want "redundant type in map literal" "redundant type in map literal"
+	T{5, 6}: T2{7, 8}, // want "redundant type in map literal" "redundant type in map literal"
 }
 
 var _ = map[*T]*T2{
-	&T{1, 2}: &T2{3, 4}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
-	&T{5, 6}: &T2{7, 8}, // want "redundant type from array, slice, or map composite literal" "redundant type from array, slice, or map composite literal"
+	&T{1, 2}: &T2{3, 4}, // want "redundant type in map literal" "redundant type in map literal"
+	&T{5, 6}: &T2{7, 8}, // want "redundant type in map literal" "redundant type in map literal"
+}
+
+type AliasT = T
+
+var _ = []T{
+	AliasT{}, // want "redundant type in slice literal"
+}
+
+var _ = []AliasT{
+	T{}, // want "redundant type in slice literal"
+}
+
+var _ = []*AliasT{
+	&T{}, // want "redundant type in slice literal"
+}
+
+var _ = map[string]AliasT{
+	"foo": T{}, // want "redundant type in map literal"
+}
+
+type SliceAlias = []T
+
+var _ = SliceAlias{
+	T{},
 }
