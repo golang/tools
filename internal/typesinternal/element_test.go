@@ -136,7 +136,10 @@ type Hf64 = H[float64]
 
 		got := make(map[string]bool)
 		set := new(typeutil.Map) // for de-duping
-		typesinternal.ForEachElement(msets.MethodSet, T, func(T types.Type) bool {
+		typesinternal.ForEachElement(msets.MethodSet, T, func(T types.Type, access bool) bool {
+			if !access {
+				return false // inaccessible to reflection
+			}
 			seen, _ := set.Set(T, true).(bool)
 			if !seen {
 				got[toStr(T)] = true

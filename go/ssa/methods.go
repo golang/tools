@@ -169,7 +169,10 @@ func (prog *Program) RuntimeTypes() []types.Type {
 	var runtimeTypes []types.Type
 	var set typeutil.Map // for de-duping identical types
 	for t := range prog.makeInterfaceTypes {
-		typesinternal.ForEachElement(prog.MethodSets.MethodSet, t, func(t types.Type) bool {
+		typesinternal.ForEachElement(prog.MethodSets.MethodSet, t, func(t types.Type, access bool) bool {
+			if !access {
+				return false // inaccessible to reflection
+			}
 			seen, _ := set.Set(t, true).(bool)
 			if !seen {
 				runtimeTypes = append(runtimeTypes, t)
