@@ -514,7 +514,7 @@ func indexArgValid(info *types.Info, index *typeindex.Index, expr ast.Expr, afte
 			indexArgValid(info, index, expr.Args[0], afterPos) // check s in []byte(s)
 	case *ast.Ident:
 		for use := range index.Uses(info.Uses[expr]) {
-			if isScalarLvalue(info, use) {
+			if typesinternal.IsAssignedOrAddressTaken(info, use) {
 				return false
 			}
 		}
