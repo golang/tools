@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/types"
 	"html/template"
 	"io"
 	stdlog "log"
@@ -803,6 +804,18 @@ Unknown page
 		}
 		return s
 	},
+	"objectString": func(obj types.Object) string {
+		// Assume we're printing objects from the package of interest.
+		this := obj.Pkg()
+		qual := func(pkg *types.Package) string {
+			if this == pkg {
+				return "" // same package; unqualified
+			}
+			return pkg.Name()
+		}
+		return types.ObjectString(obj, qual)
+	},
+
 	// TODO(rfindley): re-enable option inspection.
 	// "options": func(s *cache.Session) []sessionOption {
 	// 	return showOptions(s.Options())
@@ -1040,11 +1053,21 @@ var PackageTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
  {{end}}
 </ul>
 
+<h2>Package-level symbols</h2>
+<ul>
+ {{with $scope := .Package.Types.Scope}}
+ {{range $name := $scope.Names}}
+    {{with $obj := $scope.Lookup $name}}
+    <li>{{objectString .}}<br/>
+    {{end}}
+ {{end}}
+ {{end}}
+</ul>
+
 {{end}}
 {{/*
 TODO:
  - link to godoc (tricky: in server package)
- - show Object inventory of types.Package.Scope
  - show index info (xrefs, methodsets, tests)
  - call DiagnoseFile on each file?
 */}}
