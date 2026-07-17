@@ -4,7 +4,10 @@
 
 package slicesbackward
 
-import "slices"
+import (
+	"slices"
+	"sync"
+)
 
 var _ = slices.Backward[[]int] // force import of "slices" to avoid duplicate import edits
 
@@ -157,3 +160,118 @@ func indexExprAddr(s []int) {
 		_ = &s[i]
 	}
 }
+
+type item struct {
+	n int
+}
+
+// Should NOT fire: field mutation
+func indexExprMutated(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].n++
+	}
+}
+
+type outer struct {
+	inner item
+}
+
+// Should NOT fire: nested field mutation
+func indexExprNestedField(s []outer) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].inner.n++
+	}
+}
+
+// Should NOT fire: field assignment
+func indexExprFieldAssign(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].n = 5
+	}
+}
+
+// Should NOT fire: multi-field assignment
+func indexExprMultiAssign(s []int) {
+	for i := len(s) - 2; i >= 0; i-- {
+		s[i], s[i+1] = 1, 2
+	}
+}
+
+// Should NOT fire: parenthesized assignment
+func indexExprParenthesizedAssign(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		(s[i]) = 5
+	}
+}
+
+// Should NOT fire: address-taken
+func indexExprFieldAddr(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = &s[i].n
+	}
+}
+
+// Should NOT fire: method call with pointer receiver may mutate element
+func indexExprMethodCall(s []sync.Mutex) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].Lock()
+		s[i].Unlock()
+	}
+}
+
+type stringer struct{}
+
+func (stringer) String() string { return "" }
+
+func (*stringer) StringPtr() string { return "" }
+
+// SHOULD fire: method call with value receiver does not mutate element
+func indexExprValueReceiver(s []stringer) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		_ = v.String()
+	}
+}
+
+// SHOULD fire: method call with pointer receiver type and pointer receiver value does not mutate
+func indexExprPtrValueReceiver(s []*stringer) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		_ = v.StringPtr()
+	}
+}
+
+// Should NOT fire: range assignment mutating slice elements
+func indexExprRangeAssign(s []int, x []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		for s[i] = range x {
+		}
+	}
+}
+
+// SHOULD fire: slice of slices is indirect reference
+func indexExprSliceOfSlices(s [][]int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v[0]++
+	}
+}
+
+// SHOULD fire: slice of pointers is indirect reference
+func indexExprPointerSlice(s []*item) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v.n++
+	}
+}
+
+// Should NOT fire: slice of arrays, mutating array element is direct mutation
+func indexExprSliceOfArrays(s [][3]int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i][0]++
+	}
+}
+
+// SHOULD fire: index expression used as index of another slice which is mutated
+func indexExprUsedAsIndex(s []int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		s[v] = 5
+	}
+}
+

@@ -317,6 +317,14 @@ func issue77034() {
 	}
 }
 
+func issue77034_value(slice []int) {
+	for i := 0; i < 5; i++ { // nope: inner loop modifies i
+		for _, i = range slice {
+		}
+	}
+}
+
+
 func issue77034_define_inner() {
 	for i := 0; i < 5; i++ { // want "for loop can be modernized using range over int"
 		for i := range 10 { // inner "i" doesn't modify outer "i"
