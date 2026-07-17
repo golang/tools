@@ -377,6 +377,12 @@ func _() {
 		env.RunGoCommand("mod", "tidy")
 		env.Await(env.DoneWithChangeWatchedFiles())
 
+		// assure that the module cache index exists
+		// (rather than hoping the background goroutine finishes)
+		if _, err := modindex.Update(filepath.Join(env.Sandbox.GOPATH(), "pkg", "mod")); err != nil {
+			t.Fatal(err)
+		}
+
 		// Trigger unimported completions for the example.com/blah package.
 		env.OpenFile("main.go")
 		env.Await(env.DoneWithOpen())
