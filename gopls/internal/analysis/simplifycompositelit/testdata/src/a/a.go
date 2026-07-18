@@ -143,6 +143,11 @@ var _ = []*T{
 	&T{3, 4}, // want "redundant type in slice literal"
 }
 
+// Regression test for golang/go#80459.
+var _ = []*T{
+	& /* keep */ T{}, // want "redundant type in slice literal"
+}
+
 var _ = []*T{
 	&T{}, // want "redundant type in slice literal"
 	10:   &T{1, 2}, // want "redundant type in slice literal"

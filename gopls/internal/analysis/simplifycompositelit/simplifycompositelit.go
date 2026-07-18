@@ -103,18 +103,29 @@ func run(pass *analysis.Pass) (any, error) {
 func simplifyLiteral(pass *analysis.Pass, want, expr ast.Expr, kind string) {
 	info := pass.TypesInfo
 
-	report := func(start, end token.Pos, amp string, innerType ast.Expr) {
-		start -= token.Pos(len(amp)) // assumes "&" (if any) is immediately before
+	report := func(ampPos token.Pos, innerType ast.Expr) {
+		var (
+			start = innerType.Pos()
+			end   = innerType.End()
+			amp   string
+			edits []analysis.TextEdit
+		)
+		if ampPos.IsValid() {
+			amp = "&"
+			edits = append(edits, analysis.TextEdit{
+				Pos: ampPos,
+				End: ampPos + token.Pos(len("&")),
+			})
+			start = ampPos
+		}
+		edits = append(edits, analysis.TextEdit{Pos: innerType.Pos(), End: end})
 		pass.Report(analysis.Diagnostic{
 			Pos:     start,
 			End:     end,
 			Message: fmt.Sprintf("redundant type in %s literal", kind),
 			SuggestedFixes: []analysis.SuggestedFix{{
-				Message: fmt.Sprintf("Remove '%s%s'", amp, astutil.Format(pass.Fset, innerType)),
-				TextEdits: []analysis.TextEdit{{
-					Pos: start,
-					End: end,
-				}},
+				Message:   fmt.Sprintf("Remove '%s%s'", amp, astutil.Format(pass.Fset, innerType)),
+				TextEdits: edits,
 			}},
 		})
 	}
@@ -125,7 +136,7 @@ func simplifyLiteral(pass *analysis.Pass, want, expr ast.Expr, kind string) {
 	if inner, ok := expr.(*ast.CompositeLit); ok &&
 		inner.Type != nil &&
 		types.Identical(info.TypeOf(want), info.TypeOf(inner.Type)) {
-		report(inner.Type.Pos(), inner.Type.End(), "", inner.Type)
+		report(token.NoPos, inner.Type)
 	}
 
 	// if the outer literal's element type is a pointer type *T
@@ -136,7 +147,7 @@ func simplifyLiteral(pass *analysis.Pass, want, expr ast.Expr, kind string) {
 			if inner, ok := addr.X.(*ast.CompositeLit); ok &&
 				inner.Type != nil &&
 				types.Identical(info.TypeOf(star.X), info.TypeOf(inner.Type)) {
-				report(inner.Type.Pos(), inner.Type.End(), "&", inner.Type)
+				report(addr.OpPos, inner.Type)
 			}
 		}
 	}
