@@ -235,8 +235,9 @@ func MyFun() {}
 	// Wait for the MCP server to start listening. The referenced log occurs
 	// after the connection is opened via net.Listen and the HTTP handlers are
 	// set up.
-	ready := make(chan bool)
+	ready := make(chan bool, 1)
 	go func() {
+		defer close(ready)
 		// Copy from the pipe to stderr, keeping an eye out for the "mcp http
 		// server listening" string.
 		scan := bufio.NewScanner(stderr)
@@ -252,7 +253,15 @@ func MyFun() {}
 		}
 	}()
 
-	<-ready
+	select {
+	case ok := <-ready:
+		if !ok {
+			t.Fatalf("gopls mcp server exited without starting")
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatalf("timed out waiting for gopls mcp server to start")
+	}
+
 	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
 	ctx := t.Context()
 	mcpSession, err := client.Connect(ctx, &mcp.SSEClientTransport{Endpoint: "http://" + addr}, nil)
