@@ -56,18 +56,22 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 	if strings.HasPrefix(address, ":") {
 		return fmt.Errorf("address %s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", address)
 	}
-	log.Printf("Gopls MCP server: starting up on http")
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
-	// TODO(hxjiang): expose the MCP server address to the LSP client.
-	if isDaemon {
-		log.Printf("Gopls MCP daemon: listening on address %s...", listener.Addr())
+	{
+		kind := "server"
+		if isDaemon {
+			kind = "daemon"
+		}
+
+		log.Printf("Gopls MCP %s: listening on %s", kind, listener.Addr())
+		defer log.Printf("Gopls MCP %s: exiting", kind)
 	}
-	defer log.Printf("Gopls MCP server: exiting")
 
 	svr := http.Server{
 		Handler: HTTPHandler(sessions, isDaemon, rootsHandler),
@@ -81,7 +85,6 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 		<-ctx.Done()
 		svr.Close() // ignore error
 	}()
-	log.Printf("mcp http server listening")
 	return svr.Serve(listener)
 }
 
