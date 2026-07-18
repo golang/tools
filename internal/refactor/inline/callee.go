@@ -8,6 +8,7 @@ package inline
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/gob"
 	"fmt"
 	"go/ast"
@@ -18,6 +19,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -883,6 +885,34 @@ func (s shadowMap) add(info *types.Info, paramIndexes map[types.Object]int, excl
 		}
 	}
 	return s
+}
+
+var (
+	_ gob.GobEncoder = (*shadowMap)(nil)
+	_ gob.GobDecoder = (*shadowMap)(nil)
+)
+
+// GobEncode implements gob.GobEncoder, encoding the map's entries in a
+// deterministic order so that serialized facts are stable.
+func (s *shadowMap) GobEncode() ([]byte, error) {
+	entries := moremaps.Entries(*s)
+	slices.SortFunc(entries, func(x, y moremaps.Entry[string, int]) int {
+		return cmp.Compare(x.Key, y.Key)
+	})
+	var out bytes.Buffer
+	if err := gob.NewEncoder(&out).Encode(entries); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func (s *shadowMap) GobDecode(data []byte) error {
+	var entries []moremaps.Entry[string, int]
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&entries); err != nil {
+		return err
+	}
+	*s = moremaps.FromEntries(entries)
+	return nil
 }
 
 // fieldObjs returns a map of each types.Object defined by the given signature

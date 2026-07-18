@@ -90,3 +90,27 @@ func Delete[M ~map[K]V, K comparable, V any](m M, k K) bool {
 	delete(m, k)
 	return pre != len(m)
 }
+
+// Entry is a key-value pair obtained from a map.
+type Entry[K comparable, V any] struct {
+	Key   K
+	Value V
+}
+
+// Entries returns a new unordered array of the entries of a map.
+func Entries[M ~map[K]V, K comparable, V any](m M) []Entry[K, V] {
+	entries := make([]Entry[K, V], 0, len(m))
+	for k, v := range m {
+		entries = append(entries, Entry[K, V]{k, v})
+	}
+	return entries
+}
+
+// FromEntries returns a new map into which the entries have been inserted in order.
+func FromEntries[K comparable, V any](entries []Entry[K, V]) map[K]V {
+	m := make(map[K]V, len(entries))
+	for _, e := range entries {
+		m[e.Key] = e.Value
+	}
+	return m
+}
