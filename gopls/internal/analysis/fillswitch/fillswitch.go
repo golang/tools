@@ -21,6 +21,7 @@ import (
 // If either start or end is invalid, the entire file is inspected.
 func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
 	var diags []analysis.Diagnostic
+	qual := typesinternal.FileQualifier(f, pkg)
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
 			return true // pop
@@ -32,9 +33,9 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 		var fix *analysis.SuggestedFix
 		switch n := n.(type) {
 		case *ast.SwitchStmt:
-			fix = suggestedFixSwitch(n, pkg, info)
+			fix = suggestedFixSwitch(n, pkg, info, qual)
 		case *ast.TypeSwitchStmt:
-			fix = suggestedFixTypeSwitch(n, pkg, info)
+			fix = suggestedFixTypeSwitch(n, pkg, info, qual)
 		}
 		if fix != nil {
 			diags = append(diags, analysis.Diagnostic{
@@ -50,7 +51,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 	return diags
 }
 
-func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info) *analysis.SuggestedFix {
+func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
@@ -103,9 +104,10 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 			}
 
 			if p := key.named.Obj().Pkg(); p != pkg {
-				// TODO: use the correct package name when the import is renamed
-				buf.WriteString(p.Name())
-				buf.WriteByte('.')
+				if name := qual(p); name != "" { // not a dot import
+					buf.WriteString(name)
+					buf.WriteByte('.')
+				}
 			}
 			buf.WriteString(key.named.Obj().Name())
 			buf.WriteString(":\n")
@@ -126,7 +128,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	}
 
 	return &analysis.SuggestedFix{
-		Message: "Add cases for " + types.TypeString(namedType, typesinternal.NameRelativeTo(pkg)),
+		Message: "Add cases for " + types.TypeString(namedType, qual),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),
@@ -135,7 +137,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	}
 }
 
-func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info) *analysis.SuggestedFix {
+func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
@@ -162,8 +164,10 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 
 			buf.WriteString("case ")
 			if c.Pkg() != pkg {
-				buf.WriteString(c.Pkg().Name())
-				buf.WriteByte('.')
+				if name := qual(c.Pkg()); name != "" { // not a dot import
+					buf.WriteString(name)
+					buf.WriteByte('.')
+				}
 			}
 			buf.WriteString(c.Name())
 			buf.WriteString(":\n")
@@ -177,7 +181,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	addDefaultCase(&buf, namedType, stmt.Tag)
 
 	return &analysis.SuggestedFix{
-		Message: "Add cases for " + types.TypeString(namedType, typesinternal.NameRelativeTo(pkg)),
+		Message: "Add cases for " + types.TypeString(namedType, qual),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),

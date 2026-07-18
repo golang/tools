@@ -35,7 +35,7 @@ func doSwitch() {
 	}
 
 	var b altb.TypeB
-	switch b { // want `Add cases for b.TypeB`
+	switch b { // want `Add cases for altb.TypeB`
 	case altb.TypeBOne:
 	}
 }

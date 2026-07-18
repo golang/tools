@@ -24,7 +24,7 @@ const (
 package fillswitch
 
 import (
-	"golang.org/lsptests/fillswitch/data"
+	dataalias "golang.org/lsptests/fillswitch/data"
 )
 
 type typeA int
@@ -48,9 +48,9 @@ type notificationTwo struct{}
 func (notificationTwo) isNotification() {}
 
 func doSwitch() {
-	var b data.TypeB
+	var b dataalias.TypeB
 	switch b {
-	case data.TypeBOne: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a1)
+	case dataalias.TypeBOne: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a1)
 	}
 
 	var a typeA
@@ -75,8 +75,8 @@ func doSwitch() {
 }
 -- @a1/a.go --
 @@ -31 +31,4 @@
-+	case data.TypeBThree:
-+	case data.TypeBTwo:
++	case dataalias.TypeBThree:
++	case dataalias.TypeBTwo:
 +	default:
 +		panic(fmt.Sprintf("unexpected data.TypeB: %#v", b))
 -- @a2/a.go --
