@@ -28,6 +28,7 @@ TEXT ·ff(SB), $16                       //@ loc(ffasm, "ff"), def("ff", ffgo)
         JMP     ·ff                     //@ def("ff", ffgo)
 	JMP     label			//@ def("label", label)
 label:					//@ loc(label,"label")
+	CALL	other·bar(SB)		//@ def("bar") // not a dependency: no definition
         RET
 
 -- b/b.go --
