@@ -296,7 +296,7 @@ var (
 		return importerFunc(func(importPath string) (*types.Package, error) {
 			path, ok := cfg.ImportMap[importPath] // resolve vendoring, etc
 			if !ok {
-				return nil, fmt.Errorf("can't resolve import %q", path)
+				return nil, fmt.Errorf("can't resolve import %q", importPath)
 			}
 			return compilerImporter.Import(path)
 		})
