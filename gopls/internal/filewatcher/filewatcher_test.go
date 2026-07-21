@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/robustio"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"

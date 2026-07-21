@@ -13,8 +13,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/symbols"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // goplsSource is an imports.Source that provides import information using

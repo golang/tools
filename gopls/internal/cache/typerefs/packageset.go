@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // PackageIndex stores common data to enable efficient representation of

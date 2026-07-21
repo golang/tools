@@ -30,9 +30,9 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/moreslices"
 )
 
 // application represents the root gopls command and coordinates subcommand dispatch.

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package moreslices contains more functions for working with slices.
 package moreslices
 
 // Remove removes all values equal to elem from slice.

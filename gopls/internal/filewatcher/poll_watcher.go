@@ -19,8 +19,8 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 /*

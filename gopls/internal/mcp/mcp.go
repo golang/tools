@@ -23,7 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 //go:embed instructions.md

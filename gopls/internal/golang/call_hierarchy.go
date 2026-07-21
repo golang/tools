@@ -17,9 +17,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
 )
 

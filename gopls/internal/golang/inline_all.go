@@ -17,9 +17,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 )

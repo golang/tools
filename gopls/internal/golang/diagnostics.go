@@ -11,7 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // DiagnoseFile returns pull-based diagnostics for the given file.

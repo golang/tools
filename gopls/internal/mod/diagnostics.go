@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // ParseDiagnostics returns diagnostics from parsing the go.mod files in the workspace.
@@ -421,12 +422,9 @@ func foundVuln(finding *govulncheck.Finding) (*govulncheck.Frame, vulnFindingTyp
 }
 
 func sortedKeys(m map[string]bool) []string {
-	ret := make([]string, 0, len(m))
-	for k := range m {
-		ret = append(ret, k)
-	}
-	sort.Strings(ret)
-	return ret
+	keys := moremaps.KeySlice(m)
+	sort.Strings(keys)
+	return keys
 }
 
 // suggestGovulncheckAction returns a code action that suggests either run govulncheck

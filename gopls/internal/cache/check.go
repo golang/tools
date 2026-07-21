@@ -36,11 +36,11 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
@@ -1466,12 +1466,12 @@ type typeCheckInputs struct {
 	id PackageID
 
 	// Used for type checking:
-	pkgPath                  PackagePath
-	name                     PackageName
+	pkgPath                            PackagePath
+	name                               PackageName
 	goFiles, compiledGoFiles, asmFiles []file.Handle
 	sizes                              types.Sizes
-	depsByImpPath            map[ImportPath]PackageID
-	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
+	depsByImpPath                      map[ImportPath]PackageID
+	goVersion                          string // packages.Module.GoVersion, e.g. "1.18"
 
 	// Used for type check diagnostics:
 	// TODO(rfindley): consider storing less data in gobDiagnostics, and

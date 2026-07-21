@@ -39,13 +39,13 @@ import (
 	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/memoize"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // A Snapshot represents the current state for a given view.

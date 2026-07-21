@@ -26,11 +26,11 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // Diagnostic implements the textDocument/diagnostic LSP request, reporting

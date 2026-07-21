@@ -22,7 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/testenv"
 )
 
