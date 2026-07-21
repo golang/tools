@@ -59,7 +59,7 @@ import (
 // whose name ends with ".cfg".
 type Config struct {
 	ID                        string // e.g. "fmt [fmt.test]"
-	Compiler                  string // gc or gccgo, provided to MakeImporter
+	Compiler                  string // gc or gccgo, provided to makeTypesImporter
 	Dir                       string // (unused)
 	ImportPath                string // package path
 	GoVersion                 string // minimum required Go version, such as "go1.21.0"
