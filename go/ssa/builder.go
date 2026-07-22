@@ -85,6 +85,7 @@ import (
 	"slices"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -124,7 +125,7 @@ var (
 	// The ssa:deferstack intrinsic returns the current function's defer stack.
 	vDeferStack = &Builtin{
 		name: "ssa:deferstack",
-		sig:  types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(anonVar(tDeferStack)), false),
+		sig:  types.NewSignatureType(nil, nil, nil, nil, typesinternal.TupleOf(tDeferStack), false),
 	}
 )
 
@@ -1719,7 +1720,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 	for _, st := range states {
 		if st.Dir == types.RecvOnly {
 			chtyp := typeparams.CoreType(fn.typ(st.Chan.Type())).(*types.Chan)
-			vars = append(vars, anonVar(chtyp.Elem()))
+			vars = append(vars, newVar("", chtyp.Elem()))
 		}
 	}
 	sel.setType(types.NewTuple(vars...))

@@ -26,6 +26,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // -- wrappers -----------------------------------------------------------
@@ -118,10 +119,12 @@ func (b *builder) buildWrapper(fn *Function) {
 		// For simple indirection wrappers, perform an informative nil-check:
 		// "value method (T).f called using nil *T pointer"
 		if len(indices) == 1 && !isPointer(recvType(fn.object)) {
+			params := typesinternal.TupleOf(fn.method.recv, tString, tString)
+			results := typesinternal.TupleOf(fn.method.recv)
 			var c Call
 			c.Call.Value = &Builtin{
 				name: "ssa:wrapnilchk",
-				sig:  types.NewSignatureType(nil, nil, nil, types.NewTuple(anonVar(fn.method.recv), anonVar(tString), anonVar(tString)), types.NewTuple(anonVar(fn.method.recv)), false),
+				sig:  types.NewSignatureType(nil, nil, nil, params, results, false),
 			}
 			c.Call.Args = []Value{
 				v,
