@@ -35,7 +35,8 @@ type resolution struct {
 
 	// localDef is the defining identifier in the assembly file for a local
 	// symbol — a label, a bare TEXT/GLOBL symbol, or a current-package
-	// symbol without a Go declaration. It is nil if none was found.
+	// symbol without a Go declaration. It is nil if none was found. For a
+	// label, only the enclosing TEXT function is searched.
 	localDef *asm.Ident
 }
 
@@ -121,10 +122,23 @@ func resolve(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng 
 	// symbol, or a package-qualified symbol without a Go declaration — in
 	// the assembly file.
 	if res.obj == nil {
+		// Labels are function-scoped: a label definition matches only
+		// within the enclosing TEXT function, so that a jump doesn't land
+		// on a same-named label in another function.
+		lo, hi := functionRange(content, res.file, res.found.Offset)
 		for _, id := range res.file.Idents {
-			if id.Name == res.found.Name &&
-				(id.Kind == asm.Text || id.Kind == asm.Global || id.Kind == asm.Label) {
+			if id.Name != res.found.Name {
+				continue
+			}
+			switch id.Kind {
+			case asm.Text, asm.Global:
 				res.localDef = &id
+			case asm.Label:
+				if lo <= id.Offset && id.Offset < hi {
+					res.localDef = &id
+				}
+			}
+			if res.localDef != nil {
 				break
 			}
 		}
