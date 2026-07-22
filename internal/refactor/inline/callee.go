@@ -930,3 +930,48 @@ func (callee *Callee) GobEncode() ([]byte, error) {
 func (callee *Callee) GobDecode(data []byte) error {
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(&callee.impl)
 }
+
+var (
+	_ gob.GobEncoder = shadowMap(nil)
+	_ gob.GobDecoder = (*shadowMap)(nil)
+)
+
+// shadowEntry is the serialized form of a single [shadowMap] entry.
+type shadowEntry struct {
+	Name  string
+	Index int
+}
+
+// GobEncode implements [gob.GobEncoder]. It encodes the map as a slice of
+// entries sorted by name, because the gob encoding of a Go map iterates its
+// keys in an unspecified order. The analysis framework requires the gob
+// encoding of a fact to be deterministic to avoid spurious cache misses in
+// build systems; see golang/go#80237.
+func (s shadowMap) GobEncode() ([]byte, error) {
+	entries := make([]shadowEntry, 0, len(s))
+	for name, index := range s {
+		entries = append(entries, shadowEntry{name, index})
+	}
+	slices.SortFunc(entries, func(x, y shadowEntry) int {
+		return strings.Compare(x.Name, y.Name)
+	})
+	var out bytes.Buffer
+	if err := gob.NewEncoder(&out).Encode(entries); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// GobDecode implements [gob.GobDecoder].
+func (s *shadowMap) GobDecode(data []byte) error {
+	var entries []shadowEntry
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&entries); err != nil {
+		return err
+	}
+	m := make(shadowMap, len(entries))
+	for _, e := range entries {
+		m[e.Name] = e.Index
+	}
+	*s = m
+	return nil
+}
