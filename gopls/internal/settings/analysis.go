@@ -14,10 +14,8 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/modernize"
 	"golang.org/x/tools/go/analysis/passes/nilness"
-	"golang.org/x/tools/go/analysis/passes/scannererr"
 	"golang.org/x/tools/go/analysis/passes/shadow"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
-	"golang.org/x/tools/go/analysis/passes/sqlrowserr"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/suite/fix"
 	"golang.org/x/tools/go/analysis/suite/vet"
@@ -171,8 +169,6 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: yield.Analyzer},   // uses go/ssa
 		{analyzer: sortslice.Analyzer},
 		{analyzer: embeddirective.Analyzer},
-		{analyzer: scannererr.Analyzer},         // to appear in cmd/vet@go1.28
-		{analyzer: sqlrowserr.Analyzer},         // to appear in cmd/vet@go1.28
 		{analyzer: recursiveiter.Analyzer},      // under evaluation
 		{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
 		{analyzer: writestring.Analyzer},        // under evaluation
