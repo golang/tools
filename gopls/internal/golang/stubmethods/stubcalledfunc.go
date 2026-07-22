@@ -93,7 +93,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesutil.TypesFromContext(si.info, si.curCall)
+	ret := typesutil.FromContext(si.info, si.curCall)
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -140,17 +140,8 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	out.WriteString(") ")
 
 	// Emit result types.
-	if len(rets) > 1 {
-		out.WriteString("(")
-	}
-	for i, r := range rets {
-		if i > 0 {
-			out.WriteString(", ")
-		}
-		out.WriteString(types.TypeString(r, qual))
-	}
-	if len(rets) > 1 {
-		out.WriteString(")")
+	if ret != nil {
+		out.WriteString(types.TypeString(ret, qual))
 	}
 
 	// Emit body.

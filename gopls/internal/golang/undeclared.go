@@ -124,12 +124,14 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	if err != nil {
 		return nil, nil, err
 	}
-	typs := typesutil.TypesFromContext(info, curId)
-	if typs == nil {
+	typ := typesutil.FromContext(info, curId)
+	if tuple, ok := typ.(*types.Tuple); ok {
+		typ = tuple.At(0).Type()
+	} else if typ == nil {
 		// Default to 0.
-		typs = []types.Type{types.Typ[types.Int]}
+		typ = types.Typ[types.Int]
 	}
-	expr, _ := typesinternal.ZeroExpr(typs[0], typesinternal.FileQualifier(file, pkg.Types()))
+	expr, _ := typesinternal.ZeroExpr(typ, typesinternal.FileQualifier(file, pkg.Types()))
 	assignStmt := &ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
 		Tok: token.DEFINE,
@@ -267,19 +269,24 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 		})
 	}
 
-	rets := &ast.FieldList{}
-	retTypes := typesutil.TypesFromContext(info, curId.Parent())
-	for _, rt := range retTypes {
-		rets.List = append(rets.List, &ast.Field{
-			Type: typesinternal.TypeExpr(rt, qual),
-		})
+	var fields []*ast.Field
+	switch retType := typesutil.FromContext(info, curId.Parent()).(type) {
+	case nil:
+	case *types.Tuple:
+		for v := range retType.Variables() {
+			fields = append(fields, &ast.Field{
+				Type: typesinternal.TypeExpr(v.Type(), qual),
+			})
+		}
+	default:
+		fields = []*ast.Field{{Type: typesinternal.TypeExpr(retType, qual)}}
 	}
 
 	decl := &ast.FuncDecl{
 		Name: ast.NewIdent(id.Name),
 		Type: &ast.FuncType{
 			Params:  params,
-			Results: rets,
+			Results: &ast.FieldList{List: fields},
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{

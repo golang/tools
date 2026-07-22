@@ -6,6 +6,7 @@ package typesutil
 
 import (
 	"bytes"
+	"cmp"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -13,6 +14,8 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -34,26 +37,20 @@ func FormatTypeParams(tparams *types.TypeParamList) string {
 	return buf.String()
 }
 
-// TypesFromContext returns the type (or perhaps zero or multiple types)
-// of the "hole" into which the expression identified by path must fit.
+var anyType = types.Universe.Lookup("any").Type()
+
+// FromContext returns the type of the "hole" into which the
+// expression identified by path must fit.
 //
 // For example, given
 //
 //	s, i := "", 0
 //	s, i = EXPR
 //
-// the hole that must be filled by EXPR has type (string, int).
+// the hole that must be filled by EXPR has tuple type (string, int).
 //
 // It returns nil on failure.
-func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
-	anyType := types.Universe.Lookup("any").Type()
-	var typs []types.Type
-
-	// TODO: do cur = unparenEnclosing(cur), once CL 701035 lands.
-	for cur.ParentEdgeKind() == edge.ParenExpr_X {
-		cur = cur.Parent()
-	}
-
+func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
 	validType := func(t types.Type) types.Type {
 		if t != nil && !containsInvalid(t) {
 			return types.Default(t)
@@ -62,118 +59,226 @@ func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
 		}
 	}
 
+	cur = astutil.UnparenEnclosingCursor(cur)
 	ek, idx := cur.ParentEdge()
 	switch ek {
-	case edge.AssignStmt_Lhs, edge.AssignStmt_Rhs:
+	case edge.AssignStmt_Lhs:
 		assign := cur.Parent().Node().(*ast.AssignStmt)
-		// Append all lhs's type
+
+		// parallel assignment: lhs, ... = rhs, ...
+		if len(assign.Lhs) == len(assign.Rhs) {
+			return validType(info.TypeOf(assign.Rhs[idx]))
+		}
+
+		// tuple spread assignment: lhs0, lhs1 = rhs()
 		if len(assign.Rhs) == 1 {
+			rhsType := info.TypeOf(assign.Rhs[0])
+			if tuple, ok := rhsType.(*types.Tuple); ok && idx < tuple.Len() {
+				return validType(tuple.At(idx).Type())
+			}
+			if idx == 0 && rhsType != nil {
+				return validType(rhsType)
+			}
+		}
+
+	case edge.AssignStmt_Rhs:
+		assign := cur.Parent().Node().(*ast.AssignStmt)
+
+		// parallel assignment: lhs, ... = rhs, ...
+		if len(assign.Lhs) == len(assign.Rhs) {
+			return validType(info.TypeOf(assign.Lhs[idx]))
+		}
+
+		// tuple spread assignment: lhs0, lhs1 = rhs()
+		if len(assign.Rhs) == 1 {
+			var typs []types.Type
 			for _, lhs := range assign.Lhs {
-				t := info.TypeOf(lhs)
-				typs = append(typs, validType(t))
+				tlhs := validType(info.TypeOf(lhs))
+				if tlhs == nil {
+					return nil
+				}
+				typs = append(typs, tlhs)
 			}
-			break
+			return typesinternal.TupleOf(typs...)
 		}
-		// Lhs and Rhs counts do not match, give up
-		if len(assign.Lhs) != len(assign.Rhs) {
-			break
-		}
-		// Append corresponding index of lhs's type
-		if ek == edge.AssignStmt_Rhs {
-			t := info.TypeOf(assign.Lhs[idx])
-			typs = append(typs, validType(t))
-		}
-	case edge.ValueSpec_Names, edge.ValueSpec_Type, edge.ValueSpec_Values:
+
+	case edge.ValueSpec_Names:
 		spec := cur.Parent().Node().(*ast.ValueSpec)
+
+		// explicit type: var x T = ...
+		if spec.Type != nil {
+			return validType(info.TypeOf(spec.Type))
+		}
+
+		// parallel assignment: var lhs, ... = rhs, ...
+		if len(spec.Values) == len(spec.Names) {
+			return validType(info.TypeOf(spec.Values[idx]))
+		}
+
+		// tuple spread assignment: var lhs, ... = rhs()
 		if len(spec.Values) == 1 {
-			for _, lhs := range spec.Names {
-				t := info.TypeOf(lhs)
-				typs = append(typs, validType(t))
+			rhsType := info.TypeOf(spec.Values[0])
+			if tuple, ok := rhsType.(*types.Tuple); ok && idx < tuple.Len() {
+				return validType(tuple.At(idx).Type())
 			}
-			break
+			if idx == 0 && rhsType != nil {
+				return validType(rhsType)
+			}
 		}
-		if len(spec.Values) != len(spec.Names) {
-			break
+
+	case edge.ValueSpec_Type:
+		spec := cur.Parent().Node().(*ast.ValueSpec)
+		return validType(info.TypeOf(spec.Type))
+
+	case edge.ValueSpec_Values:
+		spec := cur.Parent().Node().(*ast.ValueSpec)
+
+		// If type is explicit (var x T = ...), prefer it.
+
+		// parallel assignment: var lhs, ... = rhs, ...
+		if len(spec.Values) == len(spec.Names) {
+			return validType(info.TypeOf(cmp.Or[ast.Expr](spec.Type, spec.Names[idx])))
 		}
-		t := info.TypeOf(spec.Type)
-		typs = append(typs, validType(t))
+
+		// tuple spread assignment: var lhs, ... = rhs()
+		if len(spec.Values) == 1 {
+			var typs []types.Type
+			for _, name := range spec.Names {
+				tlhs := validType(info.TypeOf(cmp.Or[ast.Expr](spec.Type, name)))
+				if tlhs == nil {
+					return nil
+				}
+				typs = append(typs, tlhs)
+			}
+			return typesinternal.TupleOf(typs...)
+		}
+
 	case edge.ReturnStmt_Results:
-		returnstmt := cur.Parent().Node().(*ast.ReturnStmt)
+		ret := cur.Parent().Node().(*ast.ReturnStmt)
 		sig := EnclosingSignature(cur, info)
-		if sig == nil || sig.Results() == nil {
-			break
+		if sig == nil || sig.Results() == nil || sig.Results().Len() == 0 {
+			return nil
 		}
-		retsig := sig.Results()
-		// Append all return declarations' type
-		if len(returnstmt.Results) == 1 {
-			for v := range retsig.Variables() {
-				t := v.Type()
-				typs = append(typs, validType(t))
+		results := sig.Results()
+
+		// parallel return assignment
+		if results.Len() == len(ret.Results) {
+			return validType(results.At(idx).Type())
+		}
+
+		// spread return
+		if len(ret.Results) == 1 {
+			var typs []types.Type
+			for v := range results.Variables() {
+				vt := validType(v.Type())
+				if vt == nil {
+					return nil
+				}
+				typs = append(typs, vt)
 			}
-			break
+			return typesinternal.TupleOf(typs...)
 		}
-		// Return declaration and actual return counts do not match, give up
-		if retsig.Len() != len(returnstmt.Results) {
-			break
-		}
-		// Append corresponding index of return declaration's type
-		t := retsig.At(idx).Type()
-		typs = append(typs, validType(t))
 
 	case edge.CallExpr_Args:
 		call := cur.Parent().Node().(*ast.CallExpr)
 		t := info.TypeOf(call.Fun)
 		if t == nil {
-			break
+			return nil
+		}
+		sig, ok := t.Underlying().(*types.Signature)
+		if !ok {
+			return nil
 		}
 
-		if sig, ok := t.Underlying().(*types.Signature); ok {
-			var paramType types.Type
-			if sig.Variadic() && idx >= sig.Params().Len()-1 {
-				v := sig.Params().At(sig.Params().Len() - 1)
-				if s, _ := v.Type().(*types.Slice); s != nil {
-					paramType = s.Elem()
+		params := sig.Params()
+
+		fixed := params.Len() // number of non-variadic params
+		if sig.Variadic() {
+			fixed--
+		}
+
+		// spread call f(g()): single argument supplying >=2 fixed parameters.
+		if len(call.Args) == 1 && !call.Ellipsis.IsValid() && fixed >= 2 {
+			var typs []types.Type
+			for i := 0; i < fixed; i++ {
+				tparam := validType(params.At(i).Type())
+				if tparam == nil {
+					return nil
 				}
-			} else if idx < sig.Params().Len() {
-				paramType = sig.Params().At(idx).Type()
-			} else {
-				break
+				typs = append(typs, tparam)
 			}
-			if paramType == nil || containsInvalid(paramType) {
-				paramType = anyType
-			}
-			typs = append(typs, paramType)
+			return typesinternal.TupleOf(typs...)
 		}
-	case edge.IfStmt_Cond:
-		typs = append(typs, types.Typ[types.Bool])
-	case edge.ForStmt_Cond:
-		typs = append(typs, types.Typ[types.Bool])
+
+		// ellipsis call: f(..., slice...)
+		if call.Ellipsis.IsValid() {
+			if !sig.Variadic() || len(call.Args) != params.Len() {
+				return nil
+			}
+			return validType(params.At(idx).Type()) // ([]T for final ...T param)
+		}
+
+		// Individual argument (single or multiple):
+		if idx < fixed {
+			return validType(params.At(idx).Type())
+		}
+		if sig.Variadic() {
+			return validType(params.At(fixed).Type().(*types.Slice).Elem())
+		}
+		return nil
+
+	case edge.IfStmt_Cond, edge.ForStmt_Cond:
+		return types.Typ[types.Bool]
+
 	case edge.UnaryExpr_X:
-		unexpr := cur.Parent().Node().(*ast.UnaryExpr)
-		var t types.Type
-		switch unexpr.Op {
+		unary := cur.Parent().Node().(*ast.UnaryExpr)
+		switch unary.Op {
 		case token.NOT:
-			t = types.Typ[types.Bool]
+			return types.Typ[types.Bool]
 		case token.ADD, token.SUB, token.XOR:
-			t = types.Typ[types.Int]
-		default:
-			t = anyType
+			return types.Typ[types.Int]
 		}
-		typs = append(typs, t)
-	case edge.BinaryExpr_X, edge.BinaryExpr_Y:
-		binexpr := cur.Parent().Node().(*ast.BinaryExpr)
-		switch ek {
-		case edge.BinaryExpr_X:
-			t := info.TypeOf(binexpr.Y)
-			typs = append(typs, validType(t))
-		case edge.BinaryExpr_Y:
-			t := info.TypeOf(binexpr.X)
-			typs = append(typs, validType(t))
-		}
+		return anyType
+
+	case edge.BinaryExpr_X:
+		binary := cur.Parent().Node().(*ast.BinaryExpr)
+		return validType(info.TypeOf(binary.Y))
+
+	case edge.BinaryExpr_Y:
+		binary := cur.Parent().Node().(*ast.BinaryExpr)
+		return validType(info.TypeOf(binary.X))
+
 	default:
-		// TODO: support other kinds of "holes" as the need arises.
+		// TODO(adonovan): support other kinds of "holes" as the need arises.
+
+		// ArrayType_Elt
+		// ArrayType_Len
+		// CaseClause_List
+		// ChanType_Value
+		// CommClause_Comm
+		// CompositeLit_Elts
+		// CompositeLit_Type
+		// Field_Type
+		// IncDecStmt_X
+		// IndexExpr_Index
+		// IndexExpr_X
+		// IndexListExpr_Indices
+		// KeyValueExpr_Key
+		// KeyValueExpr_Value
+		// MapType_Key
+		// RangeStmt_Key
+		// RangeStmt_X
+		// SendStmt_Chan
+		// SendStmt_Value
+		// SliceExpr_Low
+		// SliceExpr_X
+		// StarExpr_X
+		// SwitchStmt_Tag
+		// TypeAssertExpr_Type
+		// TypeSpec_Type
 	}
-	return typs
+
+	return nil // unknown
 }
 
 // containsInvalid checks if the type name contains "invalid type",
