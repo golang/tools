@@ -30,10 +30,10 @@ func _[T any]() {
 	_ = userdefs.MustUse[int](2)
 
 	s := userdefs.SingleTypeParam[int]{X: 1}
-	s.String() // want `result of \(\*typeparams/userdefs.SingleTypeParam\[int\]\).String call not used`
+	s.String() // want `result of \(\*typeparams/userdefs.SingleTypeParam\[T\]\).String call not used`
 	_ = s.String()
 
 	m := userdefs.MultiTypeParam[int, string]{X: 1, Y: "one"}
-	m.String() // want `result of \(\*typeparams/userdefs.MultiTypeParam\[int, string\]\).String call not used`
+	m.String() // want `result of \(\*typeparams/userdefs.MultiTypeParam\[T, U\]\).String call not used`
 	_ = m.String()
 }
