@@ -15,13 +15,16 @@ causing build breakage. However, these problems are generally
 trivial to fix. We regard any modernizer whose fix changes program
 behavior to have a serious bug and will endeavor to fix it.
 
-To apply all modernization fixes en masse, you can use the
+Since Go 1.26, the 'go fix' command has included the modernize suite,
+so to apply all modernization fixes en masse, you can use the
 following command:
 
-	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
+	$ go fix ./...
 
-(Do not use "go get -tool" to add gopls as a dependency of your
-module; gopls commands must be built from their release branch.)
+If you need to run a modernizer added or modified since the Go
+release, you can use this standalone command:
+
+	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
 
 If the tool warns of conflicting fixes, you may need to run it more
 than once until it has applied all fixes cleanly. This command is
