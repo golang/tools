@@ -1184,15 +1184,6 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 			}
 		}
 	}
-	if strings.HasSuffix(name, "ln") {
-		// The last item, if a string, should not have a newline.
-		arg = args[len(args)-1]
-		if s, ok := stringConstantExpr(pass, arg); ok {
-			if strings.HasSuffix(s, "\n") {
-				pass.ReportRangef(call, "%s arg list ends with redundant newline", name)
-			}
-		}
-	}
 	for _, arg := range args {
 		if isFunctionValue(pass, arg) {
 			pass.ReportRangef(call, "%s arg %s is a func value, not called", name, astutil.Format(pass.Fset, arg))

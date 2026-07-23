@@ -803,8 +803,8 @@ func UnexportedStringerOrError() {
 	fmt.Printf("%s", uei)       // want "Printf format %s has arg uei of wrong type a.unexportedErrorInterface"
 	fmt.Println("foo\n", "bar") // not an error
 
-	fmt.Println("foo\n")      // want "Println arg list ends with redundant newline"
-	fmt.Println("foo" + "\n") // want "Println arg list ends with redundant newline"
+	fmt.Println("foo\n")      // not an error
+	fmt.Println("foo" + "\n") // not an error
 	fmt.Println("foo\\n")     // not an error
 	fmt.Println(`foo\n`)      // not an error
 
