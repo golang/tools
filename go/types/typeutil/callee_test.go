@@ -110,91 +110,6 @@ func TestTypeParamStaticCallee(t *testing.T) {
 		`})
 }
 
-func TestGenericCalleeDeclarationIdentity(t *testing.T) {
-	const src = `package p
-
-func F[T any]() {}
-
-type G[T any] struct{}
-
-func (G[T]) M() {}
-
-func calls() {
-	F[int]()
-	G[int]{}.M()
-}
-`
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "test.go", src, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info := &types.Info{
-		Defs:  make(map[*ast.Ident]types.Object),
-		Types: make(map[ast.Expr]types.TypeAndValue),
-		Uses:  make(map[*ast.Ident]types.Object),
-	}
-	if _, err := new(types.Config).Check("p", fset, []*ast.File{f}, info); err != nil {
-		t.Fatal(err)
-	}
-
-	var fDecl, mDecl, callsDecl *ast.FuncDecl
-	for _, decl := range f.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if ok {
-			switch fn.Name.Name {
-			case "F":
-				fDecl = fn
-			case "M":
-				mDecl = fn
-			case "calls":
-				callsDecl = fn
-			}
-		}
-	}
-
-	if fDecl == nil || mDecl == nil || callsDecl == nil {
-		t.Fatalf("failed to locate F, M, or calls declaration")
-	}
-	fObj, ok := info.Defs[fDecl.Name].(*types.Func)
-	if !ok {
-		t.Fatalf("F declaration has no *types.Func object")
-	}
-	mObj, ok := info.Defs[mDecl.Name].(*types.Func)
-	if !ok {
-		t.Fatalf("M declaration has no *types.Func object")
-	}
-	call := func(index int) *ast.CallExpr {
-		stmt, ok := callsDecl.Body.List[index].(*ast.ExprStmt)
-		if !ok {
-			t.Fatalf("calls statement %d is not an expression statement", index)
-		}
-		call, ok := stmt.X.(*ast.CallExpr)
-		if !ok {
-			t.Fatalf("calls statement %d is not a call expression", index)
-		}
-		return call
-	}
-
-	tests := []struct {
-		name string
-		call *ast.CallExpr
-		want *types.Func
-	}{
-		{"F[int]()", call(0), fObj},
-		{"G[int]{}.M()", call(1), mObj},
-	}
-	for _, test := range tests {
-		if got := typeutil.Callee(info, test.call); got != test.want {
-			t.Errorf("call %s: Callee returned %v, want declaration %v", test.name, got, test.want)
-		}
-		if got := typeutil.StaticCallee(info, test.call); got != test.want {
-			t.Errorf("call %s: StaticCallee returned %v, want declaration %v", test.name, got, test.want)
-		}
-	}
-}
-
 // testStaticCallee parses and type checks each file content in contents
 // as a single file package in order. Within functions that have the suffix
 // "calls" it checks that the CallExprs within have a static callee.
@@ -249,6 +164,62 @@ func testStaticCallee(t *testing.T, contents []string) {
 					return true
 				})
 			}
+		}
+	}
+}
+
+// TestCalleeReturnsOrigin ensures that Callee and StaticCallee
+// return the generic (origin) symbol, not the instance.
+func TestCalleeReturnsOrigin(t *testing.T) {
+	const src = `package p
+
+func F[T any]() {}
+
+type G[T any] struct{}
+
+func (G[T]) M() {}
+
+func calls() {
+	F[int]()
+	G[int]{}.M()
+}
+`
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := f.Decls[3].(*ast.FuncDecl).Body.List
+	call := func(index int) *ast.CallExpr {
+		return calls[index].(*ast.ExprStmt).X.(*ast.CallExpr)
+	}
+
+	info := &types.Info{
+		Types: make(map[ast.Expr]types.TypeAndValue),
+		Uses:  make(map[*ast.Ident]types.Object),
+	}
+	pkg, err := new(types.Config).Check("p", fset, []*ast.File{f}, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fObj := pkg.Scope().Lookup("F")
+	mObj := pkg.Scope().Lookup("G").Type().(*types.Named).Method(0)
+
+	tests := []struct {
+		name string
+		call *ast.CallExpr
+		want types.Object
+	}{
+		{"F[int]()", call(0), fObj},
+		{"G[int]{}.M()", call(1), mObj},
+	}
+	for _, test := range tests {
+		if got := typeutil.Callee(info, test.call); got != test.want {
+			t.Errorf("call %s: Callee returned %v, want declaration %v", test.name, got, test.want)
+		}
+		if got := typeutil.StaticCallee(info, test.call); got != test.want {
+			t.Errorf("call %s: StaticCallee returned %v, want declaration %v", test.name, got, test.want)
 		}
 	}
 }
