@@ -611,6 +611,15 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		targets = []objectAt{{obj, cur}}
 	}
 
+	// A field selected from an instantiated generic type is represented by a
+	// synthetic *types.Var. Normalize it to the declared field so that a rename
+	// initiated at the selection updates the declaration too (golang/go#80542).
+	for i := range targets {
+		if field, ok := targets[i].obj.(*types.Var); ok && field.IsField() {
+			targets[i].obj = field.Origin()
+		}
+	}
+
 	// Pick a representative object arbitrarily.
 	// (All share the same name, pos, and kind.)
 	obj, node := targets[0].obj, targets[0].cur.Node()
@@ -654,8 +663,6 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		case *types.Func:
 			obj = obj0.Origin()
 		case *types.Var:
-			// TODO(adonovan): do vars need the origin treatment too? (issue #58462)
-
 			// Function parameter and result vars that are (unusually)
 			// capitalized are technically exported, even though they
 			// cannot be referenced, because they may affect downstream

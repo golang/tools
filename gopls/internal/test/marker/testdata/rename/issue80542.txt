@@ -1,0 +1,63 @@
+This test verifies that a rename of a field selected from an instantiated
+generic type updates the field declaration, including across packages.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a.go --
+package a
+
+type box[T any] struct {
+	value T
+}
+
+func (b box[T]) use() {
+	_ = b.value //@rename("value", "renamed", valueToRenamed)
+}
+
+var _ = box[int]{value: 1}
+
+-- lib/lib.go --
+package lib
+
+type Box[T any] struct {
+	Value T
+}
+
+-- use/use.go --
+package use
+
+import "example.com/lib"
+
+func use(b lib.Box[int]) {
+	_ = b.Value //@rename("Value", "Renamed", crossPackage)
+}
+
+var _ = lib.Box[int]{Value: 1}
+
+-- @valueToRenamed/a.go --
+@@ -4 +4 @@
+-	value T
++	renamed T
+@@ -8 +8 @@
+-	_ = b.value //@rename("value", "renamed", valueToRenamed)
++	_ = b.renamed //@rename("value", "renamed", valueToRenamed)
+@@ -11 +11 @@
+-var _ = box[int]{value: 1}
++var _ = box[int]{renamed: 1}
+-- @crossPackage/lib/lib.go --
+@@ -4 +4 @@
+-	Value T
++	Renamed T
+-- @crossPackage/use/use.go --
+@@ -6 +6 @@
+-	_ = b.Value //@rename("Value", "Renamed", crossPackage)
++	_ = b.Renamed //@rename("Value", "Renamed", crossPackage)
+@@ -9 +9 @@
+-var _ = lib.Box[int]{Value: 1}
++var _ = lib.Box[int]{Renamed: 1}
