@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -33,9 +34,9 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 		var fix *analysis.SuggestedFix
 		switch n := n.(type) {
 		case *ast.SwitchStmt:
-			fix = suggestedFixSwitch(n, pkg, info, qual)
+			fix = suggestedFixSwitch(f, n, pkg, info, qual)
 		case *ast.TypeSwitchStmt:
-			fix = suggestedFixTypeSwitch(n, pkg, info, qual)
+			fix = suggestedFixTypeSwitch(f, n, pkg, info, qual)
 		}
 		if fix != nil {
 			diags = append(diags, analysis.Diagnostic{
@@ -51,7 +52,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 	return diags
 }
 
-func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
+func suggestedFixTypeSwitch(f *ast.File, stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
@@ -118,26 +119,29 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 		return nil
 	}
 
+	rBracePos := stmt.Body.Rbrace
+	var edits []analysis.TextEdit
 	switch assign := stmt.Assign.(type) {
 	case *ast.AssignStmt:
-		addDefaultCase(&buf, namedType, assign.Lhs[0])
+		edits = addDefaultCase(f, info, &buf, namedType, assign.Lhs[0], rBracePos)
 	case *ast.ExprStmt:
 		if assert, ok := assign.X.(*ast.TypeAssertExpr); ok {
-			addDefaultCase(&buf, namedType, assert.X)
+			edits = addDefaultCase(f, info, &buf, namedType, assert.X, rBracePos)
 		}
 	}
+	edits = append(edits, analysis.TextEdit{
+		Pos:     rBracePos,
+		End:     rBracePos,
+		NewText: buf.Bytes(),
+	})
 
 	return &analysis.SuggestedFix{
-		Message: "Add cases for " + types.TypeString(namedType, qual),
-		TextEdits: []analysis.TextEdit{{
-			Pos:     stmt.End() - token.Pos(len("}")),
-			End:     stmt.End() - token.Pos(len("}")),
-			NewText: buf.Bytes(),
-		}},
+		Message:   "Add cases for " + types.TypeString(namedType, qual),
+		TextEdits: edits,
 	}
 }
 
-func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
+func suggestedFixSwitch(f *ast.File, stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
@@ -178,19 +182,23 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 		return nil
 	}
 
-	addDefaultCase(&buf, namedType, stmt.Tag)
+	rBracePos := stmt.Body.Rbrace
+	edits := addDefaultCase(f, info, &buf, namedType, stmt.Tag, rBracePos)
+	edits = append(edits, analysis.TextEdit{
+		Pos:     rBracePos,
+		End:     rBracePos,
+		NewText: buf.Bytes(),
+	})
 
 	return &analysis.SuggestedFix{
-		Message: "Add cases for " + types.TypeString(namedType, qual),
-		TextEdits: []analysis.TextEdit{{
-			Pos:     stmt.End() - token.Pos(len("}")),
-			End:     stmt.End() - token.Pos(len("}")),
-			NewText: buf.Bytes(),
-		}},
+		Message:   "Add cases for " + types.TypeString(namedType, qual),
+		TextEdits: edits,
 	}
 }
 
-func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
+// addDefaultCase writes a default switch case to buf containing an
+// "unexpected" panic message. It returns edits for any added imports.
+func addDefaultCase(f *ast.File, info *types.Info, buf *bytes.Buffer, named *types.Named, expr ast.Expr, rBracePos token.Pos) (importEdits []analysis.TextEdit) {
 	var dottedBuf bytes.Buffer
 	// writeDotted emits a dotted path a.b.c.
 	var writeDotted func(e ast.Expr) bool
@@ -215,11 +223,15 @@ func addDefaultCase(buf *bytes.Buffer, named *types.Named, expr ast.Expr) {
 	if writeDotted(expr) {
 		// Switch tag expression is a dotted path.
 		// It is safe to re-evaluate it in the default case.
+		var fmtPrefix string
+		fmtPrefix, importEdits = refactor.AddImport(info, f, "fmt", "fmt", "Sprintf", rBracePos)
 		format := fmt.Sprintf("unexpected %s: %%#v", typeName)
-		fmt.Fprintf(buf, "\t\tpanic(fmt.Sprintf(%q, %s))\n\t", format, dottedBuf.String())
+		fmt.Fprintf(buf, "\t\tpanic(%sSprintf(%q, %s))\n\t", fmtPrefix, format, dottedBuf.String())
+		return importEdits
 	} else {
 		// Emit simpler message, without re-evaluating tag expression.
 		fmt.Fprintf(buf, "\t\tpanic(%q)\n\t", "unexpected "+typeName)
+		return nil
 	}
 }
 
