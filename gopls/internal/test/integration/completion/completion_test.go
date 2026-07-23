@@ -1463,6 +1463,7 @@ var _ = blah.
 			t.Fatal(err)
 		}
 	}
+	modindex.Update(modcache)
 
 	WithOptions(
 		EnvVars{"GOMODCACHE": modcache},
