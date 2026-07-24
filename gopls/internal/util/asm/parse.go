@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -61,6 +62,55 @@ func (f *File) IdentRange(ident Ident) (protocol.Range, error) {
 // IdentLocation returns a protocol Location for the identifier in this file.
 func (f *File) IdentLocation(ident Ident) (protocol.Location, error) {
 	return f.Mapper.OffsetLocation(ident.Offset, ident.Offset+ident.OrigLen)
+}
+
+// IdentAt returns the identifier containing the byte range [start, end),
+// or nil if none. Because [File.Idents] are ordered by Offset, the
+// lookup uses a binary search.
+func (f *File) IdentAt(start, end int) *Ident {
+	// Find the last identifier whose Offset <= start.
+	idx := sort.Search(len(f.Idents), func(i int) bool {
+		return f.Idents[i].Offset > start
+	})
+	if idx == 0 {
+		return nil
+	}
+	id := &f.Idents[idx-1]
+	if end <= id.End() {
+		return id
+	}
+	return nil
+}
+
+// FunctionRange returns the byte range [start, end) of the TEXT function
+// enclosing offset: start is the beginning of the line containing the
+// enclosing TEXT directive, end is the beginning of the line containing
+// the next TEXT directive, or len(content) if there is none. If offset
+// precedes the first TEXT directive, the range covers from 0 to the
+// first TEXT directive.
+//
+// TEXT directives are taken from the parsed file rather than re-detected
+// here, so that scoping stays consistent with the identifiers the parser
+// reports (e.g. a bare "TEXT" line with no symbol is not a boundary).
+func (f *File) FunctionRange(offset int) (int, int) {
+	content := f.Mapper.Content
+	funcStart, funcEnd := 0, len(content)
+	for i := range f.Idents {
+		id := &f.Idents[i]
+		if id.Kind != Text {
+			continue
+		}
+		lineStart := id.Offset
+		for lineStart > 0 && content[lineStart-1] != '\n' {
+			lineStart--
+		}
+		if lineStart > offset {
+			funcEnd = lineStart
+			break
+		}
+		funcStart = lineStart
+	}
+	return funcStart, funcEnd
 }
 
 // Ident represents an identifier in an assembly file.
