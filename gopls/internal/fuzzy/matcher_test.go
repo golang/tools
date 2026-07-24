@@ -250,6 +250,12 @@ var scoreTestCases = []struct {
 	// We want the next two items to have roughly similar scores.
 	{p: "up", str: "unique_ptr", want: 0.75},
 	{p: "up", str: "upper_bound", want: 1},
+	// Pattern with some spelling errors.
+	{p: "tstincrementatlnope", str: "TestIncrementalNope", want: 0.61842},
+	{p: "tstincre", str: "TestIncrementalNope", want: 0.84375},
+	{p: "testssssss", str: "TestIncrementalNope", want: 0.4},
+	// Pattern longer than candidate.
+	{p: "foobarbaz", str: "foo", want: 0},
 }
 
 func TestScores(t *testing.T) {
