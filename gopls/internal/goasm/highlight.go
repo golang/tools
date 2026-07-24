@@ -7,7 +7,6 @@ package goasm
 import (
 	"bytes"
 	"context"
-	"regexp"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -46,14 +45,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 	}
 
 	// Identifier (symbol or label) under the cursor?
-	var found *asm.Ident
-	for _, id := range asmFile.Idents {
-		if id.Offset <= start && end <= id.End() {
-			found = &id
-			break
-		}
-	}
-	if found != nil {
+	if found := asmFile.IdentAt(start, end); found != nil {
 		return highlightIdents(content, asmFile, found)
 	}
 
@@ -68,21 +60,21 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 // labels are function-scoped and the same label name may be reused in
 // different functions.
 func highlightIdents(content []byte, asmFile *asm.File, found *asm.Ident) ([]protocol.DocumentHighlight, error) {
-	isLabel := false
+	// Heuristic: if the name is used as a label anywhere in the file,
+	// assume every occurrence is a label. A label and a global symbol
+	// sharing a name is implausible in practice, so per-occurrence
+	// disambiguation is not worth the cost.
+	lo, hi := 0, len(content)
 	for _, id := range asmFile.Idents {
-		if id.Name == found.Name && id.Kind == asm.Label {
-			isLabel = true
+		if id.Kind == asm.Label && id.Name == found.Name {
+			lo, hi = asmFile.FunctionRange(found.Offset)
 			break
 		}
-	}
-	lo, hi := 0, len(content)
-	if isLabel {
-		lo, hi = functionRange(content, asmFile, found.Offset)
 	}
 
 	var highlights []protocol.DocumentHighlight
 	for _, id := range asmFile.Idents {
-		if id.Name != found.Name || id.Offset < lo || hi <= id.Offset {
+		if id.Name != found.Name || !(lo <= id.Offset && id.Offset < hi) {
 			continue
 		}
 		idRange, err := asmFile.IdentRange(id)
@@ -104,9 +96,8 @@ func highlightIdents(content []byte, asmFile *asm.File, found *asm.Ident) ([]pro
 // highlightRegister highlights all occurrences of the register under the
 // cursor within the enclosing TEXT function.
 func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protocol.DocumentHighlight, error) {
-	stripped := stripComments(content)
-	word, wordStart := wordAt(stripped, offset)
-	if word == "" || !isRegisterWord(word) {
+	word, wordStart := wordAt(content, offset)
+	if word == "" || !isRegisterWord(word) || inComment(content, offset) {
 		return nil, nil
 	}
 	// The first word on a line is the mnemonic, not a register.
@@ -114,28 +105,39 @@ func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protoco
 		return nil, nil
 	}
 
-	funcStart, funcEnd := functionRange(content, asmFile, offset)
-	funcContent := stripped[funcStart:funcEnd]
-
-	pattern := regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`)
+	funcStart, funcEnd := asmFile.FunctionRange(offset)
+	wordBytes := []byte(word)
 	var highlights []protocol.DocumentHighlight
-	for _, m := range pattern.FindAllIndex(funcContent, -1) {
-		absOff := funcStart + m[0]
+	pos := funcStart
+	for pos < funcEnd {
+		i := bytes.Index(content[pos:funcEnd], wordBytes)
+		if i < 0 {
+			break
+		}
+		absOff := pos + i
+		pos = absOff + len(word)
+		// Skip occurrences inside comments, within a larger word
+		// (e.g. "AX" in "MAX"), or at the start of a line (mnemonic).
+		if inComment(content, absOff) ||
+			!isWordBoundary(content, absOff, absOff+len(word)) ||
+			isLineStart(content, absOff) {
+			continue
+		}
 		rng, err := asmFile.Mapper.OffsetRange(absOff, absOff+len(word))
 		if err != nil {
 			return nil, err
 		}
 		highlights = append(highlights, protocol.DocumentHighlight{
 			Range: rng,
-			Kind:  registerKind(funcContent, m[0]),
+			Kind:  registerKind(content, absOff),
 		})
 	}
 	return highlights, nil
 }
 
-// registerKind classifies the register occurrence at matchOff (an offset
-// within comment-stripped funcContent) as Read or Write. It follows the
-// Plan 9 assembly convention that the destination operand is the last
+// registerKind classifies the register occurrence at offset (a byte
+// offset within content) as Read or Write. It follows the Plan 9
+// assembly convention that the destination operand is the last
 // operand: a register in the last operand is a definition (Write), and a
 // register in any earlier operand is a use (Read), with three exceptions:
 //
@@ -154,20 +156,25 @@ func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protoco
 // instructions may be misclassified.
 //
 // TODO(golang/go#71754): model implicit operands.
-func registerKind(funcContent []byte, matchOff int) protocol.DocumentHighlightKind {
-	// Find the line containing matchOff.
-	lineStart := matchOff
-	for lineStart > 0 && funcContent[lineStart-1] != '\n' {
+func registerKind(content []byte, offset int) protocol.DocumentHighlightKind {
+	// Find the line containing offset.
+	lineStart := offset
+	for lineStart > 0 && content[lineStart-1] != '\n' {
 		lineStart--
 	}
-	lineEnd := matchOff
-	for lineEnd < len(funcContent) && funcContent[lineEnd] != '\n' {
+	lineEnd := offset
+	for lineEnd < len(content) && content[lineEnd] != '\n' {
 		lineEnd++
 	}
-	line := funcContent[lineStart:lineEnd]
+	line := content[lineStart:lineEnd]
+	// Strip a trailing comment so its commas and parentheses are not
+	// mistaken for operand syntax.
+	if i := bytes.Index(line, []byte("//")); i >= 0 {
+		line = line[:i]
+	}
 
 	// A register inside parentheses is a memory address: always Read.
-	rel := matchOff - lineStart
+	rel := offset - lineStart
 	if bytes.Count(line[:rel], []byte{'('}) > bytes.Count(line[:rel], []byte{')'}) {
 		return protocol.Read
 	}
@@ -191,13 +198,7 @@ func registerKind(funcContent []byte, matchOff int) protocol.DocumentHighlightKi
 	// determine which operand the occurrence is in; the last operand is the
 	// destination.
 	operandArea := line[i:]
-	relMatch := rel - i
-	if relMatch < 0 {
-		relMatch = 0
-	}
-	if relMatch > len(operandArea) {
-		relMatch = len(operandArea)
-	}
+	relMatch := min(max(rel-i, 0), len(operandArea))
 	commaBefore := bytes.Count(operandArea[:relMatch], []byte{','})
 	totalCommas := bytes.Count(operandArea, []byte{','})
 	if totalCommas == 0 {
@@ -256,26 +257,25 @@ func trimSizeSuffix(m string) string {
 	return m
 }
 
-// stripComments returns a copy of b with each // line comment replaced by
-// spaces (newlines preserved), so that identifiers mentioned in comments
-// are not treated as code. Offsets are unchanged.
-func stripComments(b []byte) []byte {
-	out := make([]byte, len(b))
-	copy(out, b)
-	inComment := false
-	for i := 0; i < len(out); i++ {
-		if !inComment && i+1 < len(out) && out[i] == '/' && out[i+1] == '/' {
-			inComment = true
-		}
-		if inComment {
-			if out[i] == '\n' {
-				inComment = false
-			} else {
-				out[i] = ' '
-			}
-		}
+// inComment reports whether offset falls within a // line comment.
+func inComment(content []byte, offset int) bool {
+	lineStart := offset
+	for lineStart > 0 && content[lineStart-1] != '\n' {
+		lineStart--
 	}
-	return out
+	return bytes.Contains(content[lineStart:offset], []byte("//"))
+}
+
+// isWordBoundary reports whether content[start:end] is a whole word: the
+// bytes immediately before start and after end are not word bytes.
+func isWordBoundary(content []byte, start, end int) bool {
+	if start > 0 && isWordByte(content[start-1]) {
+		return false
+	}
+	if end < len(content) && isWordByte(content[end]) {
+		return false
+	}
+	return true
 }
 
 // wordAt returns the maximal run of ASCII word bytes ([A-Za-z0-9])
@@ -322,9 +322,9 @@ func isRegisterWord(word string) bool {
 	for i := 0; i < len(word); i++ {
 		c := word[i]
 		switch {
-		case c >= 'A' && c <= 'Z':
+		case 'A' <= c && c <= 'Z':
 			hasLetter = true
-		case c < '0' || c > '9':
+		case !('0' <= c && c <= '9'):
 			return false
 		}
 	}
@@ -345,33 +345,4 @@ func isLineStart(content []byte, offset int) bool {
 		}
 	}
 	return true // beginning of file
-}
-
-// functionRange returns the byte range of the TEXT function enclosing
-// offset. funcStart is the start of the line containing the enclosing
-// TEXT directive; funcEnd is the start of the line containing the next
-// TEXT directive, or len(content) if there is none. If offset is before
-// the first TEXT directive, the range covers from 0 to the first TEXT
-// directive.
-//
-// TEXT directives are taken from the parsed file rather than re-detected
-// here, so that scoping stays consistent with the identifiers the parser
-// reports (e.g. a bare "TEXT" line with no symbol is not a boundary).
-func functionRange(content []byte, asmFile *asm.File, offset int) (int, int) {
-	funcStart, funcEnd := 0, len(content)
-	for _, id := range asmFile.Idents {
-		if id.Kind != asm.Text {
-			continue
-		}
-		lineStart := id.Offset
-		for lineStart > 0 && content[lineStart-1] != '\n' {
-			lineStart--
-		}
-		if lineStart > offset {
-			funcEnd = lineStart
-			break
-		}
-		funcStart = lineStart
-	}
-	return funcStart, funcEnd
 }
