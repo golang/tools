@@ -68,6 +68,13 @@ type Awaiter struct {
 	// received since the registration was created.
 	docCollectors     map[uint64][]*protocol.ShowDocumentParams
 	messageCollectors map[uint64][]*protocol.ShowMessageParams
+	diagCollectors    map[uint64]diagCollector
+}
+
+// diagCollector records all diagnostic notifications for a specific file path.
+type diagCollector struct {
+	path   string
+	params []*protocol.PublishDiagnosticsParams
 }
 
 func NewAwaiter(workdir *fake.Workdir) *Awaiter {
@@ -142,6 +149,15 @@ func (a *Awaiter) onDiagnostics(_ context.Context, d *protocol.PublishDiagnostic
 
 	pth := a.workdir.URIToPath(d.URI)
 	a.state.diagnostics[pth] = d
+
+	// Update any outstanding diagnostic listeners for this path.
+	for id, dc := range a.diagCollectors {
+		if dc.path == pth {
+			dc.params = append(dc.params, d)
+			a.diagCollectors[id] = dc
+		}
+	}
+
 	a.checkConditionsLocked()
 	return nil
 }
@@ -223,6 +239,32 @@ func (a *Awaiter) ListenToShownMessages() func() []*protocol.ShowMessageParams {
 		params := a.messageCollectors[id]
 		delete(a.messageCollectors, id)
 		return params
+	}
+}
+
+// ListenToDiagnostics registers a listener that records all diagnostic
+// notifications for the given file path. Unlike the normal diagnostics
+// tracking which overwrites per-file state, this records the full history
+// including intermediate empty notifications (e.g. from eager clearing).
+// Call the resulting func to deregister the listener and receive all
+// notifications in order.
+func (a *Awaiter) ListenToDiagnostics(path string) func() []*protocol.PublishDiagnosticsParams {
+	id := nextAwaiterRegistration.Add(1)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.diagCollectors == nil {
+		a.diagCollectors = make(map[uint64]diagCollector)
+	}
+	a.diagCollectors[id] = diagCollector{path: path}
+
+	return func() []*protocol.PublishDiagnosticsParams {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		dc := a.diagCollectors[id]
+		delete(a.diagCollectors, id)
+		return dc.params
 	}
 }
 
