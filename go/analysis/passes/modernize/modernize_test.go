@@ -136,7 +136,7 @@ func TestStringsCutPrefix(t *testing.T) {
 }
 
 func TestStringsSeq(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), modernize.StringsSeqAnalyzer, "splitseq", "fieldsseq")
+	RunWithSuggestedFixes(t, TestData(), modernize.StringsSeqAnalyzer, "splitseq/...", "fieldsseq")
 }
 
 func TestTestingContext(t *testing.T) {
