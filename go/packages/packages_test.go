@@ -3493,7 +3493,7 @@ func Foo() int { return a.Foo() }
 	type result struct{ Dir, ForTest string }
 	got := make(map[string]result)
 	for pkg := range packages.Postorder(pkgs) {
-		if !packagepath.IsStdPackage(pkg.PkgPath) {
+		if !packagepath.MaybeStdPackage(pkg.PkgPath) {
 			rel, err := filepath.Rel(dir, pkg.Dir)
 			if err != nil {
 				t.Errorf("Rel(%q, %q) failed: %v", dir, pkg.Dir, err)

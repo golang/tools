@@ -2,7 +2,8 @@ This test tests the token modifier "shadowing", which requires adding it to the 
 
 -- settings.json --
 {
-	"semanticTokens": true
+	"semanticTokens": true,
+	"analyses": {"unusedfunc": false}
 }
 -- capabilities.json --
 {

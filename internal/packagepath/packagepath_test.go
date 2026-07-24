@@ -39,7 +39,7 @@ func TestCanImport(t *testing.T) {
 	}
 }
 
-func TestIsStdPackage(t *testing.T) {
+func TestMaybeStdPackage(t *testing.T) {
 	testCases := []struct {
 		pkgpath string
 		isStd   bool
@@ -49,11 +49,12 @@ func TestIsStdPackage(t *testing.T) {
 		{pkgpath: "vendor/golang.org/x/net/dns/dnsmessage", isStd: true},
 		{pkgpath: "golang.org/x/net/dns/dnsmessage", isStd: false},
 		{pkgpath: "testdata", isStd: false},
+		{pkgpath: "myprivateapp", isStd: true}, // a false positive (go.dev/issue/80555)
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.pkgpath, func(t *testing.T) {
-			got := IsStdPackage(tc.pkgpath)
+			got := MaybeStdPackage(tc.pkgpath)
 			if got != tc.isStd {
 				t.Fatalf("got %t want %t", got, tc.isStd)
 			}

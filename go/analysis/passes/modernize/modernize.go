@@ -123,7 +123,7 @@ func filesUsingGoVersion(pass *analysis.Pass, version string) iter.Seq[inspector
 // specified standard packages or their dependencies.
 func within(pass *analysis.Pass, pkgs ...string) bool {
 	path := pass.Pkg.Path()
-	return packagepath.IsStdPackage(path) &&
+	return packagepath.MaybeStdPackage(path) &&
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
 }
 

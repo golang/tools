@@ -5,7 +5,6 @@
 package unusedfunc_test
 
 import (
-	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -14,6 +13,6 @@ import (
 )
 
 func Test(t *testing.T) {
-	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "basic.txtar"))
-	analysistest.RunWithSuggestedFixes(t, dir, unusedfunc.Analyzer, "example.com/a")
+	analysistest.RunWithSuggestedFixes(t, testfiles.ExtractTxtarFileToTmp(t, "testdata/basic.txtar"), unusedfunc.Analyzer, "example.com/a")
+	analysistest.Run(t, testfiles.ExtractTxtarFileToTmp(t, "testdata/issue80555.txtar"), unusedfunc.Analyzer, "myapp/a")
 }

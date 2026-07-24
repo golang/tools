@@ -108,7 +108,7 @@ func (h *handler) contextHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			// Skip the standard library to reduce token usage, operating on
 			// the assumption that the LLM is already familiar with its
 			// symbols and documentation.
-			if packagepath.IsStdPackage(spec.Path.Value) {
+			if packagepath.MaybeStdPackage(spec.Path.Value) {
 				continue
 			}
 			toSummarize = append(toSummarize, spec)
