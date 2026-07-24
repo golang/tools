@@ -1688,3 +1688,25 @@ func Bar() {
 		}
 	})
 }
+
+// Check that the completion code no longer panics.
+func TestIssue75192(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+go 1.22
+-- main.go --
+package main
+
+func main() {
+	_ = notypeinfo.(type)
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `notypeinfo\.\(ty()pe\)`)
+		// this used to panic.
+		env.Completion(loc)
+	})
+}
