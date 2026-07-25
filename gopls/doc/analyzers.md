@@ -4066,6 +4066,24 @@ Default: on.
 
 Package documentation: [slicesbackward](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicesbackward)
 
+<a id='slicesclip'></a>
+## `slicesclip`: replace three-index slice expressions with slices.Clip
+
+The slicesclip analyzer suggests replacing a full slice expression of the form
+
+	x[:len(x):len(x)]
+
+which clips the capacity of a slice to its length, with the simpler and more readable
+
+	slices.Clip(x)
+
+added in Go 1.21.
+
+
+Default: on.
+
+Package documentation: [slicesclip](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_slicesclip)
+
 <a id='slicescontains'></a>
 ## `slicescontains`: replace loops with slices.Contains or slices.ContainsFunc
 

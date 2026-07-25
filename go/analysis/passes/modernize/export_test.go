@@ -10,5 +10,6 @@ var (
 	ImportCommentAnalyzer     = importCommentAnalyzer
 	ReflectTypeAssertAnalyzer = reflectTypeAssertAnalyzer
 	SlicesBackwardAnalyzer    = slicesBackwardAnalyzer
+	SlicesClipAnalyzer        = slicesClipAnalyzer
 	UnsafeFuncsAnalyzer       = unsafeFuncsAnalyzer
 )

@@ -384,6 +384,22 @@ the index and value variables are kept:
 
 	for i, v := range slices.Backward(s) { ... }
 
+# Analyzer slicesclip
+
+slicesclip: replace three-index slice expressions with slices.Clip
+
+The slicesclip analyzer suggests replacing a full slice expression of
+the form
+
+	x[:len(x):len(x)]
+
+which clips the capacity of a slice to its length, with the simpler
+and more readable
+
+	slices.Clip(x)
+
+added in Go 1.21.
+
 # Analyzer slicescontains
 
 slicescontains: replace loops with slices.Contains or slices.ContainsFunc

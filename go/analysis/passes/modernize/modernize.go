@@ -48,6 +48,7 @@ var Suite = []*analysis.Analyzer{
 	reflectTypeAssertAnalyzer, // awaiting public symbol
 	ReflectTypeForAnalyzer,
 	slicesBackwardAnalyzer, // awaiting public symbol
+	slicesClipAnalyzer,     // awaiting public symbol
 	SlicesContainsAnalyzer,
 	SlicesSortAnalyzer,
 	StdIteratorsAnalyzer,

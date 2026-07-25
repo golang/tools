@@ -109,6 +109,10 @@ func TestSlicesBackward(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.SlicesBackwardAnalyzer, "slicesbackward")
 }
 
+func TestSlicesClip(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), modernize.SlicesClipAnalyzer, "slicesclip")
+}
+
 func TestSlicesContains(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.SlicesContainsAnalyzer, "slicescontains")
 }
