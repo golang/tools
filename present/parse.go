@@ -458,6 +458,9 @@ func parseSections(ctx *Context, name, prefix string, lines *Lines, number []int
 			case strings.HasPrefix(text, "."):
 				args := strings.Fields(text)
 				if args[0] == ".background" {
+					if len(args) != 2 {
+						return nil, fmt.Errorf("%s:%d: .background expects exactly one argument", name, lines.line)
+					}
 					section.Classes = append(section.Classes, "background")
 					section.Styles = append(section.Styles, "background-image: url('"+args[1]+"')")
 					break

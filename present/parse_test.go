@@ -12,8 +12,34 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestBackgroundErrors(t *testing.T) {
+	const input = `Title
+
+* Slide
+
+%s
+`
+	const want = "test.slide:5: .background expects exactly one argument"
+
+	for _, directive := range []string{
+		".background",
+		".background a.png b.png",
+	} {
+		t.Run(directive, func(t *testing.T) {
+			_, err := Parse(strings.NewReader(fmt.Sprintf(input, directive)), "test.slide", 0)
+			if err == nil {
+				t.Fatalf("Parse did not return an error")
+			}
+			if got := err.Error(); got != want {
+				t.Errorf("Parse error = %q, want %q", got, want)
+			}
+		})
+	}
+}
 
 func TestTestdata(t *testing.T) {
 	tmpl := template.Must(Template().Parse(testTmpl))
