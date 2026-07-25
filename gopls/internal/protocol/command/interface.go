@@ -204,7 +204,7 @@ type Interface interface {
 	// runner.
 	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
 
-	// GoVulncheck: run vulncheck synchronously.
+	// Vulncheck: run vulncheck synchronously.
 	//
 	// Run vulnerability check (`govulncheck`).
 	//
