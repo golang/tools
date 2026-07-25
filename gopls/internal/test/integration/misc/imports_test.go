@@ -300,27 +300,8 @@ func Relaxed() *regexp.Regexp {
 return nil
 }
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-	mx := fake.UnpackTxt(cache)
-
-	for k, v := range mx {
-		fname := filepath.Join(modcache, k)
-		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777) // ignore error
-		if err := os.WriteFile(fname, v, 0644); err != nil {
-			t.Fatal(err)
-		}
-		if true {
-			// for diagnosing flakiness
-			t.Logf("wrote %s:%d", fname, len(v))
-		}
-	}
-	// golang/go#77552 finds this test flaky, so create the index explicitly
-	// rather than hoping a background go routine finishes in time
-	modindex.Update(modcache)
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
+		CacheFiles(cache),
 		WriteGoSum("."),
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
@@ -358,26 +339,8 @@ func Relaxed() *regexp.Regexp {
 return nil
 }
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-	mx := fake.UnpackTxt(cache)
-	for k, v := range mx {
-		fname := filepath.Join(modcache, k)
-		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777) // ignore error
-		if err := os.WriteFile(fname, v, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// create the index deterministically. When gopls is invoked
-	// interactively, the module index is created or updated in
-	// a goroutine, so we can't rely on it being present
-	// immediately.
-	if _, err := modindex.Update(modcache); err != nil {
-		t.Fatal(err)
-	}
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
+		CacheFiles(cache),
 		WriteGoSum("."),
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {

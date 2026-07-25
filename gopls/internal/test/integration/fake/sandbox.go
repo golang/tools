@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/robustio"
 	"golang.org/x/tools/txtar"
 )
@@ -54,6 +55,9 @@ type SandboxConfig struct {
 	// ProxyFiles holds a txtar-encoded archive of files to populate a file-based
 	// Go proxy.
 	ProxyFiles map[string][]byte
+	// CacheFiles holds a txtar-encoded archive of files to populate the sandbox's
+	// module cache.
+	CacheFiles map[string][]byte
 	// GOPROXY is the explicit GOPROXY value that should be used for the sandbox.
 	//
 	// This option is incompatible with ProxyFiles.
@@ -110,6 +114,25 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 		sb.goproxy, err = WriteProxy(proxydir, config.ProxyFiles)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if len(config.CacheFiles) > 0 {
+		modcache := filepath.Join(sb.gopath, "pkg", "mod")
+		if err := os.MkdirAll(modcache, 0755); err != nil {
+			return nil, err
+		}
+		for name, content := range config.CacheFiles {
+			fname := filepath.Join(modcache, name)
+			dir := filepath.Dir(fname)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(fname, content, 0644); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := modindex.Update(modcache); err != nil {
+			return nil, fmt.Errorf("failed to create modindex: %w", err)
 		}
 	}
 	// Short-circuit writing the workdir if we're given an absolute path, since

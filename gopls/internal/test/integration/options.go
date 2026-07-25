@@ -58,6 +58,13 @@ func ProxyFiles(txt string) RunOption {
 	})
 }
 
+// CacheFiles configures a module cache using the given txtar-encoded string.
+func CacheFiles(txt string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.sandbox.CacheFiles = fake.UnpackTxt(txt)
+	})
+}
+
 // WriteGoSum causes the environment to write a go.sum file for the requested
 // relative directories (via `go list -mod=mod`), before starting gopls.
 //

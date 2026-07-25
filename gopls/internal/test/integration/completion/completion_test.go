@@ -1452,21 +1452,8 @@ require random.org v1.2.3
 package main
 var _ = blah.
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-	mx := fake.UnpackTxt(cache)
-	for k, v := range mx {
-		fname := filepath.Join(modcache, k)
-		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777) // ignore error
-		if err := os.WriteFile(fname, v, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	modindex.Update(modcache)
-
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
+		CacheFiles(cache),
 		WriteGoSum("."),
 		NoLogsOnError(),
 	).Run(t, files, func(t *testing.T, env *Env) {
