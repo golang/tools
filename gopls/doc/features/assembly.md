@@ -11,21 +11,39 @@ languages. A good heuristic is that if a file named `*.s` belongs to a
 directory containing at least one `*.go` file, then the `.s` file is
 Go assembly, and its appropriate language server is gopls.
 
-Only Definition (`textDocument/definition`) requests are currently
-supported. For example, a Definition request on the `sigpanic`
-symbol in this file in GOROOT/src/runtime/asm.s:
+The following requests are currently supported:
 
-```asm
-	JMP	·sigpanic<ABIInternal>(SB)
-```
+- Definition (`textDocument/definition`): on a reference to a symbol,
+  returns the location of its declaration. For example, a Definition
+  request on the `sigpanic` symbol in this file in
+  GOROOT/src/runtime/asm.s:
 
-returns the location of the function declaration in
-GOROOT/src/runtime/signal_unix.go:
+  ```asm
+  	JMP	·sigpanic<ABIInternal>(SB)
+  ```
 
-```go
-//go:linkname sigpanic
-func sigpanic() {
-```
+  returns the location of the function declaration in
+  GOROOT/src/runtime/signal_unix.go:
+
+  ```go
+  //go:linkname sigpanic
+  func sigpanic() {
+  ```
+
+- References (`textDocument/references`): finds all references to the
+  symbol under the cursor, in both Go and assembly files within the
+  same package.
+
+- Hover (`textDocument/hover`): reports the signature and doc comment
+  of the symbol's Go declaration.
+
+- DocumentHighlight (`textDocument/documentHighlight`): highlights all
+  occurrences of the symbol, control label, or machine register under
+  the cursor. Labels and registers are scoped to the enclosing TEXT
+  function, and occurrences are classified as reads or writes.
+  Register highlighting requires the file name to carry a GOARCH
+  suffix (e.g. `foo_amd64.s`) and currently supports x86 (amd64, 386)
+  and arm64.
 
 See also issue https://go.dev/issue/71754, which tracks the development of LSP
 features in Go assembly files.

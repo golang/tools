@@ -27,7 +27,8 @@ import (
 // If the cursor is on a machine register, all occurrences of that
 // register within the enclosing TEXT function are highlighted,
 // approximating its def/use chain: occurrences classified as
-// definitions are Write, uses are Read.
+// definitions are Write, uses are Read. Register highlighting requires
+// a GOARCH file name suffix (e.g. *_amd64.s, *_arm64.s).
 func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentHighlight, error) {
 	ctx, done := event.Start(ctx, "goasm.Highlight")
 	defer done()
@@ -46,11 +47,11 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 
 	// Identifier (symbol or label) under the cursor?
 	if found := asmFile.IdentAt(start, end); found != nil {
-		return highlightIdents(content, asmFile, found)
+		return highlightIdents(asmFile, found)
 	}
 
 	// Register under the cursor?
-	return highlightRegister(content, asmFile, start)
+	return highlightRegister(asmFile, start)
 }
 
 // highlightIdents highlights every identifier with the same name as
@@ -59,25 +60,25 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rn
 // occurrences within the enclosing TEXT function are highlighted, since
 // labels are function-scoped and the same label name may be reused in
 // different functions.
-func highlightIdents(content []byte, asmFile *asm.File, found *asm.Ident) ([]protocol.DocumentHighlight, error) {
+func highlightIdents(file *asm.File, found *asm.Ident) ([]protocol.DocumentHighlight, error) {
 	// Heuristic: if the name is used as a label anywhere in the file,
 	// assume every occurrence is a label. A label and a global symbol
 	// sharing a name is implausible in practice, so per-occurrence
 	// disambiguation is not worth the cost.
-	lo, hi := 0, len(content)
-	for _, id := range asmFile.Idents {
+	lo, hi := 0, len(file.Mapper.Content)
+	for _, id := range file.Idents {
 		if id.Kind == asm.Label && id.Name == found.Name {
-			lo, hi = asmFile.FunctionRange(found.Offset)
+			lo, hi = file.FunctionRange(found.Offset)
 			break
 		}
 	}
 
 	var highlights []protocol.DocumentHighlight
-	for _, id := range asmFile.Idents {
+	for _, id := range file.Idents {
 		if id.Name != found.Name || !(lo <= id.Offset && id.Offset < hi) {
 			continue
 		}
-		idRange, err := asmFile.IdentRange(id)
+		idRange, err := file.IdentRange(id)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +96,17 @@ func highlightIdents(content []byte, asmFile *asm.File, found *asm.Ident) ([]pro
 
 // highlightRegister highlights all occurrences of the register under the
 // cursor within the enclosing TEXT function.
-func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protocol.DocumentHighlight, error) {
+func highlightRegister(file *asm.File, offset int) ([]protocol.DocumentHighlight, error) {
+	content := file.Mapper.Content
+	// wordAt requires 0 <= offset < len(content); a cursor at EOF
+	// violates it.
+	if offset >= len(content) {
+		return nil, nil
+	}
+	arch := fileArch(file.Mapper.URI.Path())
+	if arch == "" {
+		return nil, nil
+	}
 	word, wordStart := wordAt(content, offset)
 	if word == "" || !isRegisterWord(word) || inComment(content, offset) {
 		return nil, nil
@@ -105,12 +116,11 @@ func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protoco
 		return nil, nil
 	}
 
-	funcStart, funcEnd := asmFile.FunctionRange(offset)
-	wordBytes := []byte(word)
+	funcStart, funcEnd := file.FunctionRange(offset)
 	var highlights []protocol.DocumentHighlight
 	pos := funcStart
 	for pos < funcEnd {
-		i := bytes.Index(content[pos:funcEnd], wordBytes)
+		i := bytes.Index(content[pos:funcEnd], []byte(word))
 		if i < 0 {
 			break
 		}
@@ -123,20 +133,44 @@ func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protoco
 			isLineStart(content, absOff) {
 			continue
 		}
-		rng, err := asmFile.Mapper.OffsetRange(absOff, absOff+len(word))
+		rng, err := file.Mapper.OffsetRange(absOff, absOff+len(word))
 		if err != nil {
 			return nil, err
 		}
 		highlights = append(highlights, protocol.DocumentHighlight{
 			Range: rng,
-			Kind:  registerKind(content, absOff),
+			Kind:  registerKind(content, absOff, arch),
 		})
 	}
 	return highlights, nil
 }
 
+// fileArch returns the instruction set used by an assembly file,
+// inferred from its file name suffix: "x86" for *_amd64.s and *_386.s,
+// and "arm64" for *_arm64.s. It returns "" for other architectures and
+// for file names without a GOARCH suffix (which select their
+// architecture using build constraints); register highlighting is not
+// yet supported for those files.
+func fileArch(path string) string {
+	base := path[strings.LastIndexByte(path, '/')+1:]
+	name, ok := strings.CutSuffix(base, ".s")
+	if !ok {
+		return ""
+	}
+	if i := strings.LastIndexByte(name, '_'); i >= 0 {
+		switch name[i+1:] {
+		case "amd64", "386":
+			return "x86"
+		case "arm64":
+			return "arm64"
+		}
+	}
+	return ""
+}
+
 // registerKind classifies the register occurrence at offset (a byte
-// offset within content) as Read or Write. It follows the Plan 9
+// offset within content) as Read or Write, where arch is the file's
+// instruction set ("x86" or "arm64"). It follows the Plan 9
 // assembly convention that the destination operand is the last
 // operand: a register in the last operand is a definition (Write), and a
 // register in any earlier operand is a use (Read), with three exceptions:
@@ -144,19 +178,23 @@ func highlightRegister(content []byte, asmFile *asm.File, offset int) ([]protoco
 //   - A register inside parentheses is part of a memory address operand
 //     (as in (AX) or 8(AX)(BX*4)) and is always Read, even in the
 //     destination operand of a store.
-//   - Comparison and test instructions (CMP, TEST, COMIS*, UCOMIS*, BT*)
-//     have no destination, so all their operands are Read.
+//   - Comparison and test instructions (x86: CMP, TEST, COMIS*, UCOMIS*,
+//     BT*; arm64: CMP, CMN, TST) have no destination, so all their
+//     operands are Read.
 //   - Single-operand instructions write their operand only in a few
-//     cases: POP stores into it, INC/DEC/NEG/NOT/BSWAP update it in
-//     place, and SETcc sets it to 0 or 1. For all others (PUSH,
-//     MUL/DIV, ...) the operand is a source and is Read.
+//     cases, all x86-specific: POP stores into it, INC/DEC/NEG/NOT/BSWAP
+//     update it in place, and SETcc sets it to 0 or 1. For all others
+//     (PUSH, MUL/DIV, ...) the operand is a source and is Read.
 //
 // Implicit register operands are not modeled — for example MUL/DIV
 // clobber DX:AX, and CALL may clobber CX — so occurrences in such
 // instructions may be misclassified.
 //
 // TODO(golang/go#71754): model implicit operands.
-func registerKind(content []byte, offset int) protocol.DocumentHighlightKind {
+//
+// TODO(golang/go#71754): consider linking instruction mnemonics to
+// their CPU documentation (e.g. https://www.felixcloutier.com/x86/movzx).
+func registerKind(content []byte, offset int, arch string) protocol.DocumentHighlightKind {
 	// Find the line containing offset.
 	lineStart := offset
 	for lineStart > 0 && content[lineStart-1] != '\n' {
@@ -190,7 +228,7 @@ func registerKind(content []byte, offset int) protocol.DocumentHighlightKind {
 	}
 	mnemonic := string(line[mnStart:i])
 
-	if isCompareMnemonic(mnemonic) {
+	if isCompareMnemonic(arch, mnemonic) {
 		return protocol.Read
 	}
 
@@ -202,7 +240,12 @@ func registerKind(content []byte, offset int) protocol.DocumentHighlightKind {
 	commaBefore := bytes.Count(operandArea[:relMatch], []byte{','})
 	totalCommas := bytes.Count(operandArea, []byte{','})
 	if totalCommas == 0 {
-		// Single-operand instruction.
+		// Single-operand instruction. The write cases below are
+		// all x86-specific; on other architectures the operand is
+		// always a source.
+		if arch != "x86" {
+			return protocol.Read
+		}
 		m := strings.ToUpper(mnemonic)
 		if strings.HasPrefix(m, "SET") { // SETcc; also avoids trimSizeSuffix("SETEQ") = "SETE"
 			return protocol.Write
@@ -220,14 +263,21 @@ func registerKind(content []byte, offset int) protocol.DocumentHighlightKind {
 }
 
 // isCompareMnemonic reports whether mnemonic is a comparison or test
-// instruction, whose operands are all reads (no destination). BT (bit
-// test) only reads its destination operand to set flags, so it is a
-// comparison; BTS/BTR/BTC are read-modify-write and are not — their
-// destination is classified as Write by the default rule.
-// CMPXCHG/CMPXCHG8B/CMPXCHG16B are read-modify-write and are excluded
-// from CMP prefix matching for the same reason.
-func isCompareMnemonic(mnemonic string) bool {
+// instruction on arch, whose operands are all reads (no destination).
+// On arm64 these are CMP/CMN/TST (the prefixes cover the W width
+// variants). On x86, BT (bit test) only reads its destination operand
+// to set flags, so it is a comparison; BTS/BTR/BTC are read-modify-
+// write and are not — their destination is classified as Write by the
+// default rule. CMPXCHG/CMPXCHG8B/CMPXCHG16B are read-modify-write and
+// are excluded from CMP prefix matching for the same reason.
+func isCompareMnemonic(arch, mnemonic string) bool {
 	m := strings.ToUpper(mnemonic)
+	if arch == "arm64" {
+		return strings.HasPrefix(m, "CMP") ||
+			strings.HasPrefix(m, "CMN") ||
+			strings.HasPrefix(m, "TST")
+	}
+	// x86.
 	if trimSizeSuffix(m) == "BT" {
 		return true
 	}
@@ -266,8 +316,9 @@ func inComment(content []byte, offset int) bool {
 	return bytes.Contains(content[lineStart:offset], []byte("//"))
 }
 
-// isWordBoundary reports whether content[start:end] is a whole word: the
-// bytes immediately before start and after end are not word bytes.
+// isWordBoundary reports whether content[start:end], which contains
+// only word bytes and is nonempty, is a whole word: the bytes
+// immediately before start and after end are not word bytes.
 func isWordBoundary(content []byte, start, end int) bool {
 	if start > 0 && isWordByte(content[start-1]) {
 		return false
@@ -279,11 +330,12 @@ func isWordBoundary(content []byte, start, end int) bool {
 }
 
 // wordAt returns the maximal run of ASCII word bytes ([A-Za-z0-9])
-// containing pos, together with its start offset.
+// containing pos, together with its start offset. If the run is empty
+// (pos is on a non-word byte whose left neighbor is also a non-word
+// byte), wordAt returns ("", pos).
+//
+// Precondition: 0 <= pos < len(content).
 func wordAt(content []byte, pos int) (string, int) {
-	if pos < 0 || pos >= len(content) {
-		return "", 0
-	}
 	start := pos
 	for start > 0 && isWordByte(content[start-1]) {
 		start--
@@ -291,9 +343,6 @@ func wordAt(content []byte, pos int) (string, int) {
 	end := pos
 	for end < len(content) && isWordByte(content[end]) {
 		end++
-	}
-	if start >= end {
-		return "", 0
 	}
 	return string(content[start:end]), start
 }
