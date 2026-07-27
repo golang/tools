@@ -115,3 +115,27 @@ TEXT ·armDemo(SB), $0-0
     TST $1, R0  //@hiloc(r0tst, "R0", read)
 //@highlightall(r0mov, r0cmp, r0tst)
 
+-- example/highlight_regpair_arm64.s --
+TEXT ·pair(SB), $0-0
+    LDP (0*8)(R0), (R4, R5) //@hiloc(r4load, "R4", write)
+    STP (R4, R5), (0*8)(R0) //@hiloc(r4store, "R4", read)
+//@highlightall(r4load, r4store)
+
+-- example/highlight_macro_arm64.s --
+#define QR(a, b, c, d) VADD a, b, c
+TEXT ·macro(SB), $0-0
+    QR(V0, V4, V8, V12) //@hiloc(v12, "V12", read)
+//@highlightall(v12)
+
+-- example/highlight_macro_amd64.s --
+#define QR(a, b, c, d) PADDL a, b
+TEXT ·macro(SB), $0-0
+    QR(X0, X4, X8, X12) //@hiloc(x12, "X12", read)
+//@highlightall(x12)
+
+-- example/highlight_xmm_amd64.s --
+TEXT ·xmm(SB), $0-0
+    MOVOU X0, X1 //@hiloc(x1mov, "X1", write)
+    PXOR X1, X0  //@hiloc(x1xor, "X1", read)
+//@highlightall(x1mov, x1xor)
+

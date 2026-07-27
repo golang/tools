@@ -103,7 +103,7 @@ func highlightRegister(file *asm.File, offset int) ([]protocol.DocumentHighlight
 	if offset >= len(content) {
 		return nil, nil
 	}
-	arch := fileArch(file.Mapper.URI.Path())
+	arch := fileArch(file.Mapper.URI.Base())
 	if arch == "" {
 		return nil, nil
 	}
@@ -145,14 +145,13 @@ func highlightRegister(file *asm.File, offset int) ([]protocol.DocumentHighlight
 	return highlights, nil
 }
 
-// fileArch returns the instruction set used by an assembly file,
-// inferred from its file name suffix: "x86" for *_amd64.s and *_386.s,
-// and "arm64" for *_arm64.s. It returns "" for other architectures and
-// for file names without a GOARCH suffix (which select their
-// architecture using build constraints); register highlighting is not
-// yet supported for those files.
-func fileArch(path string) string {
-	base := path[strings.LastIndexByte(path, '/')+1:]
+// fileArch returns the instruction set used by an assembly file, given
+// its base name: "x86" for *_amd64.s and *_386.s, and "arm64" for
+// *_arm64.s. It returns "" for other architectures and for file names
+// without a GOARCH suffix (which select their architecture using build
+// constraints); register highlighting is not yet supported for those
+// files.
+func fileArch(base string) string {
 	name, ok := strings.CutSuffix(base, ".s")
 	if !ok {
 		return ""
@@ -177,7 +176,10 @@ func fileArch(path string) string {
 //
 //   - A register inside parentheses is part of a memory address operand
 //     (as in (AX) or 8(AX)(BX*4)) and is always Read, even in the
-//     destination operand of a store.
+//     destination operand of a store. A parenthesized register pair,
+//     such as the (R4, R5) of arm64 LDP/STP, is not a memory address
+//     but a single operand in its own right, and is classified by its
+//     position like any other operand; see enclosingGroup.
 //   - Comparison and test instructions (x86: CMP, TEST, COMIS*, UCOMIS*,
 //     BT*; arm64: CMP, CMN, TST) have no destination, so all their
 //     operands are Read.
@@ -187,7 +189,8 @@ func fileArch(path string) string {
 //     (PUSH, MUL/DIV, ...) the operand is a source and is Read.
 //
 // Implicit register operands are not modeled — for example MUL/DIV
-// clobber DX:AX, and CALL may clobber CX — so occurrences in such
+// clobber DX:AX, CALL may clobber CX, and the post-increment forms such
+// as arm64 LDP.P update their base register — so occurrences in such
 // instructions may be misclassified.
 //
 // TODO(golang/go#71754): model implicit operands.
@@ -211,10 +214,15 @@ func registerKind(content []byte, offset int, arch string) protocol.DocumentHigh
 		line = line[:i]
 	}
 
-	// A register inside parentheses is a memory address: always Read.
+	// A register inside parentheses is a memory address: always Read,
+	// unless the parentheses enclose a register pair, in which case the
+	// pair is classified by its position as a whole.
 	rel := offset - lineStart
-	if bytes.Count(line[:rel], []byte{'('}) > bytes.Count(line[:rel], []byte{')'}) {
-		return protocol.Read
+	if open, isPair := enclosingGroup(line, rel); open >= 0 {
+		if !isPair {
+			return protocol.Read
+		}
+		rel = open // classify the pair by the position of its '('
 	}
 
 	// Identify the mnemonic: the first non-space token on the line.
@@ -237,8 +245,8 @@ func registerKind(content []byte, offset int, arch string) protocol.DocumentHigh
 	// destination.
 	operandArea := line[i:]
 	relMatch := min(max(rel-i, 0), len(operandArea))
-	commaBefore := bytes.Count(operandArea[:relMatch], []byte{','})
-	totalCommas := bytes.Count(operandArea, []byte{','})
+	commaBefore := topLevelCommas(operandArea[:relMatch])
+	totalCommas := topLevelCommas(operandArea)
 	if totalCommas == 0 {
 		// Single-operand instruction. The write cases below are
 		// all x86-specific; on other architectures the operand is
@@ -262,6 +270,76 @@ func registerKind(content []byte, offset int, arch string) protocol.DocumentHigh
 	return protocol.Read
 }
 
+// enclosingGroup reports whether index rel of line is inside a
+// parenthesized group, returning the index of the group's '(', or -1 if
+// there is none, and whether the group is a register pair such as the
+// (R4, R5) of arm64 LDP/STP.
+//
+// A group is taken to be a register pair if it contains a comma at its
+// own nesting level and its '(' does not immediately follow an
+// identifier. Memory address operands contain no comma at that level (as
+// in (AX) or 8(AX)(BX*4)), and in a macro invocation the '(' is glued to
+// the macro name (as in QR(V0, V4, V8, V12)).
+func enclosingGroup(line []byte, rel int) (int, bool) {
+	// Find the innermost unclosed '(' before rel.
+	open := -1
+	for depth, j := 0, rel-1; j >= 0 && open < 0; j-- {
+		switch line[j] {
+		case ')':
+			depth++
+		case '(':
+			if depth == 0 {
+				open = j
+			} else {
+				depth--
+			}
+		}
+	}
+	if open < 0 {
+		return -1, false
+	}
+	if open > 0 && isWordByte(line[open-1]) {
+		return open, false // macro invocation
+	}
+	depth := 0
+	for j := open; j < len(line); j++ {
+		switch line[j] {
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return open, false // closed with no comma of its own
+			}
+		case ',':
+			if depth == 1 {
+				return open, true
+			}
+		}
+	}
+	return open, false // unterminated
+}
+
+// topLevelCommas counts the commas of s that are not nested within
+// parentheses, that is, the operand separators of an instruction.
+func topLevelCommas(s []byte) int {
+	n, depth := 0, 0
+	for _, b := range s {
+		switch b {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // isCompareMnemonic reports whether mnemonic is a comparison or test
 // instruction on arch, whose operands are all reads (no destination).
 // On arm64 these are CMP/CMN/TST (the prefixes cover the W width
@@ -270,6 +348,13 @@ func registerKind(content []byte, offset int, arch string) protocol.DocumentHigh
 // write and are not — their destination is classified as Write by the
 // default rule. CMPXCHG/CMPXCHG8B/CMPXCHG16B are read-modify-write and
 // are excluded from CMP prefix matching for the same reason.
+//
+// The x86 predicate comparisons CMPPD/CMPPS/CMPSD/CMPSS do have a
+// destination, and it is their second operand rather than their last
+// (as in CMPPD X1, X2, $7), so both this function and the default rule
+// misclassify it as Read. Their mnemonics are also ambiguous: CMPSD and
+// CMPSS name both these instructions and the operand-free string
+// comparisons.
 func isCompareMnemonic(arch, mnemonic string) bool {
 	m := strings.ToUpper(mnemonic)
 	if arch == "arm64" {
@@ -308,6 +393,7 @@ func trimSizeSuffix(m string) string {
 }
 
 // inComment reports whether offset falls within a // line comment.
+// Like [asm.Parse], it does not recognize /* */ block comments.
 func inComment(content []byte, offset int) bool {
 	lineStart := offset
 	for lineStart > 0 && content[lineStart-1] != '\n' {
@@ -381,7 +467,11 @@ func isRegisterWord(word string) bool {
 }
 
 // isLineStart reports whether offset begins a line, i.e. it is preceded
-// only by whitespace or the start of the file.
+// only by whitespace or the start of the file. Callers use it to reject
+// instruction mnemonics, which assumes each line holds at most one
+// instruction and that it is not preceded by a label; neither holds for
+// "label: RET" or for instructions separated by ';', though no such line
+// appears in GOROOT for the architectures supported by fileArch.
 func isLineStart(content []byte, offset int) bool {
 	for i := offset - 1; i >= 0; i-- {
 		switch content[i] {

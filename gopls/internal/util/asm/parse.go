@@ -46,6 +46,8 @@ var kindString = [...]string{
 
 // A file represents a parsed file of Go assembly language.
 type File struct {
+	// Idents holds the identifiers of the file, ordered by Offset;
+	// [File.IdentAt] relies on that order for its binary search.
 	Idents []Ident
 
 	Mapper *protocol.Mapper
