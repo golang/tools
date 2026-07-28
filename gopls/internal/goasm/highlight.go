@@ -98,11 +98,6 @@ func highlightIdents(file *asm.File, found *asm.Ident) ([]protocol.DocumentHighl
 // cursor within the enclosing TEXT function.
 func highlightRegister(file *asm.File, offset int) ([]protocol.DocumentHighlight, error) {
 	content := file.Mapper.Content
-	// wordAt requires 0 <= offset < len(content); a cursor at EOF
-	// violates it.
-	if offset >= len(content) {
-		return nil, nil
-	}
 	arch := fileArch(file.Mapper.URI.Base())
 	if arch == "" {
 		return nil, nil
@@ -145,23 +140,20 @@ func highlightRegister(file *asm.File, offset int) ([]protocol.DocumentHighlight
 	return highlights, nil
 }
 
-// fileArch returns the instruction set used by an assembly file, given
-// its base name: "x86" for *_amd64.s and *_386.s, and "arm64" for
-// *_arm64.s. It returns "" for other architectures and for file names
-// without a GOARCH suffix (which select their architecture using build
-// constraints); register highlighting is not yet supported for those
-// files.
+// fileArch returns the GOARCH suffix of an assembly file's base name. It
+// returns "" for unsupported architectures and for file names without a
+// GOARCH suffix (which select their architecture using build constraints);
+// register highlighting is not yet supported for those files.
 func fileArch(base string) string {
 	name, ok := strings.CutSuffix(base, ".s")
 	if !ok {
 		return ""
 	}
 	if i := strings.LastIndexByte(name, '_'); i >= 0 {
-		switch name[i+1:] {
-		case "amd64", "386":
-			return "x86"
-		case "arm64":
-			return "arm64"
+		arch := name[i+1:]
+		switch arch {
+		case "386", "amd64", "arm64":
+			return arch
 		}
 	}
 	return ""
@@ -169,7 +161,7 @@ func fileArch(base string) string {
 
 // registerKind classifies the register occurrence at offset (a byte
 // offset within content) as Read or Write, where arch is the file's
-// instruction set ("x86" or "arm64"). It follows the Plan 9
+// GOARCH ("386", "amd64", or "arm64"). It follows the Plan 9
 // assembly convention that the destination operand is the last
 // operand: a register in the last operand is a definition (Write), and a
 // register in any earlier operand is a use (Read), with three exceptions:
@@ -251,7 +243,7 @@ func registerKind(content []byte, offset int, arch string) protocol.DocumentHigh
 		// Single-operand instruction. The write cases below are
 		// all x86-specific; on other architectures the operand is
 		// always a source.
-		if arch != "x86" {
+		if arch != "386" && arch != "amd64" {
 			return protocol.Read
 		}
 		m := strings.ToUpper(mnemonic)
@@ -357,12 +349,16 @@ func topLevelCommas(s []byte) int {
 // comparisons.
 func isCompareMnemonic(arch, mnemonic string) bool {
 	m := strings.ToUpper(mnemonic)
-	if arch == "arm64" {
+	switch arch {
+	case "arm64":
 		return strings.HasPrefix(m, "CMP") ||
 			strings.HasPrefix(m, "CMN") ||
 			strings.HasPrefix(m, "TST")
+	case "386", "amd64":
+		// Continue below with the x86 cases.
+	default:
+		return false
 	}
-	// x86.
 	if trimSizeSuffix(m) == "BT" {
 		return true
 	}
@@ -420,7 +416,7 @@ func isWordBoundary(content []byte, start, end int) bool {
 // (pos is on a non-word byte whose left neighbor is also a non-word
 // byte), wordAt returns ("", pos).
 //
-// Precondition: 0 <= pos < len(content).
+// Precondition: 0 <= pos <= len(content).
 func wordAt(content []byte, pos int) (string, int) {
 	start := pos
 	for start > 0 && isWordByte(content[start-1]) {

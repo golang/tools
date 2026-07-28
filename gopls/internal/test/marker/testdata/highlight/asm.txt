@@ -60,6 +60,12 @@ TEXT ·stack(SB), $0-0
     POPQ AX  //@hiloc(axPop, "AX", write)
 //@highlightall(axPush, axPop)
 
+-- example/highlight_register_386.s --
+TEXT ·reg386(SB), $0-0
+    POPL AX     //@hiloc(axPop386, "AX", write)
+    CMPL CX, AX //@hiloc(axCmp386, "AX", read)
+//@highlightall(axPop386, axCmp386)
+
 -- example/highlight_immediate_amd64.s --
 TEXT ·imm(SB), $0-0
     MOVQ $123, AX //@hiloc(imm, "123", read)
