@@ -1744,7 +1744,7 @@
 						},
 						{
 							"Name": "\"stditerators\"",
-							"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(x.At(i)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
+							"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(elem)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3811,7 +3811,7 @@
 		},
 		{
 			"Name": "stditerators",
-			"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(x.At(i)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
+			"Doc": "use iterators instead of Len/At-style APIs\n\nThis analyzer suggests a fix to replace each loop of the form:\n\n\tfor i := 0; i \u003c x.Len(); i++ {\n\t\tuse(x.At(i))\n\t}\n\nor its \"for elem := range x.Len()\" equivalent by a range loop over an\niterator offered by the same data type:\n\n\tfor elem := range x.All() {\n\t\tuse(elem)\n\t}\n\nwhere x is one of various well-known types in the standard library.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stditerators",
 			"Default": true
 		},

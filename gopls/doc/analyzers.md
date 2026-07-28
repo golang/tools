@@ -4200,7 +4200,7 @@ This analyzer suggests a fix to replace each loop of the form:
 or its "for elem := range x.Len()" equivalent by a range loop over an iterator offered by the same data type:
 
 	for elem := range x.All() {
-		use(x.At(i)
+		use(elem)
 	}
 
 where x is one of various well-known types in the standard library.
