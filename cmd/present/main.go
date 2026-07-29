@@ -117,7 +117,7 @@ and is configured to run code snippets locally. Anyone with access to this addre
 and port will have access to this machine as the user running present.
 
 To avoid this message, listen on localhost, run with -play=false, or run with
--play_socket=false.
+-use_playground=true.
 
 If you don't understand this message, hit Control-C to terminate this process.
 
