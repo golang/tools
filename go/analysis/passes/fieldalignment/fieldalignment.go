@@ -122,9 +122,8 @@ func fieldalignment(pass *analysis.Pass, node *ast.StructType, name string) {
 			fmt.Fprintf(&message, " (allocator size class %d)", optimalClass)
 		}
 
-		wastage := actualClass - optimalClass
-		if percentage := wastage * 100 / actualClass; percentage > 25 {
-			fmt.Fprintf(&message, " leading to a waste of %d bytes (%d%%)", wastage, percentage)
+		if wastage := actualClass - optimalClass; wastage > 0 {
+			fmt.Fprintf(&message, " leading to a waste of %d bytes (%d%%)", wastage, wastage*100/actualClass)
 		}
 	} else if actualPtrs != optimalPtrs {
 		// Struct could place pointers more efficiently for GC marking.
