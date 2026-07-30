@@ -697,37 +697,11 @@ func main() {
 }
 `
 
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-
-	opts := []RunOption{
-		EnvVars{"GOMODCACHE": modcache},
+	WithOptions(
+		// for the go get executed by the quick fix.
 		ProxyFiles(ardanLabsProxy),
-		// WriteGoSum() cannot be uncommented because it has a side effect
-		// that breaks the test. The test relies on go.mod not having a
-		// require statement for the package imported by main.go. However
-		// WriteGoSum() causes the execution of go list -mod=mod ./...
-		// which both writes go.sum and adds the require statement to go.mod.
-		//WriteGoSum("."),
-	}
-
-	t.Run("setup", func(t *testing.T) {
-		// Forcibly populate GOMODCACHE
-		// so OrganizeImports can later rely on it.
-		WithOptions(opts...).Run(t, ardanLabs, func(t *testing.T, env *Env) {
-			// TODO(adonovan): why doesn't RunGoCommand respect EnvVars??
-			// (That was the motivation to use Sandbox.RunGoCommand
-			// rather than execute go mod download directly!)
-			// See comment at CleanModCache and golang/go#74595.
-			environ := []string{"GOMODCACHE=" + modcache}
-			_, err := env.Sandbox.RunGoCommand(env.Ctx, "", "get", []string{"github.com/ardanlabs/conf@v1.2.3"}, environ, false)
-			if err != nil {
-				t.Error(err)
-			}
-		})
-	})
-
-	WithOptions(opts...).Run(t, ardanLabs, func(t *testing.T, env *Env) {
+		CacheFiles(ardanLabsProxy),
+	).Run(t, ardanLabs, func(t *testing.T, env *Env) {
 		// Expect a "no module provides package" diagnostic.
 		env.OpenFile("go.mod")
 		env.OpenFile("main.go")

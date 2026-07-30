@@ -117,7 +117,7 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 		}
 	}
 	if len(config.CacheFiles) > 0 {
-		modcache := filepath.Join(sb.gopath, "pkg", "mod")
+		modcache := sb.GOMODCACHE()
 		if err := os.MkdirAll(modcache, 0755); err != nil {
 			return nil, err
 		}
@@ -221,6 +221,11 @@ func (sb *Sandbox) GOPATH() string {
 	return sb.gopath
 }
 
+// GOMODCACHE returns the default module cache directory in the sandbox ($GOPATH/pkg/mod).
+func (sb *Sandbox) GOMODCACHE() string {
+	return filepath.Join(sb.gopath, "pkg", "mod")
+}
+
 // GoEnv returns the default environment variables that can be used for
 // invoking Go commands in the sandbox.
 func (sb *Sandbox) GoEnv() map[string]string {
@@ -231,8 +236,7 @@ func (sb *Sandbox) GoEnv() map[string]string {
 		"GOSUMDB":          "off",
 		"GOPACKAGESDRIVER": "off",
 		"GOTOOLCHAIN":      "local", // tests should not download toolchains
-		// TODO(golang/go#74595): Why don't we respect GOMODCACHE in the
-		// settings.env? See comment at env.CleanModCache.
+		// Explicitly empty so the go command defaults to $GOPATH/pkg/mod within the sandbox.
 		"GOMODCACHE": "",
 	}
 }

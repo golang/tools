@@ -7,7 +7,6 @@ package completion
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -379,7 +378,7 @@ func _() {
 
 		// assure that the module cache index exists
 		// (rather than hoping the background goroutine finishes)
-		if _, err := modindex.Update(filepath.Join(env.Sandbox.GOPATH(), "pkg", "mod")); err != nil {
+		if _, err := modindex.Update(env.Sandbox.GOMODCACHE()); err != nil {
 			t.Fatal(err)
 		}
 

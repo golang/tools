@@ -14,7 +14,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/modindex"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -229,29 +228,12 @@ import "example.com/x"
 
 var _, _ = x.X, y.Y
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-
-	opts := []RunOption{
-		EnvVars{"GOMODCACHE": modcache},
+	WithOptions(
+		// go list needs to compute go.sum
 		ProxyFiles(exampleProxy),
+		CacheFiles(exampleProxy),
 		WriteGoSum("."),
-	}
-
-	// Force go list to populate GOMODCACHE
-	// so OrganizeImports can later rely on it.
-	t.Run("setup", func(t *testing.T) {
-		WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {})
-	})
-
-	// according to https://github.com/golang/go/issues/77894
-	// this test is flaky. Create the index deterministically
-	// rather than hoping that a background go routine completes in time.
-	if _, err := modindex.Update(modcache); err != nil {
-		t.Fatal(err)
-	}
-
-	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
+	).Run(t, files, func(t *testing.T, env *Env) {
 		// Expect y is undefined.
 		env.OpenFile("main.go")
 		env.AfterChange(
@@ -266,6 +248,7 @@ var _, _ = x.X, y.Y
 		// Verify that y.Y is defined within the module cache.
 		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
 		path := env.Sandbox.Workdir.URIToPath(loc.URI)
+		modcache := env.Sandbox.GOMODCACHE()
 		if !strings.HasPrefix(path, filepath.ToSlash(modcache)) {
 			t.Errorf("found module dependency outside of GOMODCACHE: got %v, wanted subdir of %v", path, filepath.ToSlash(modcache))
 		}
@@ -380,19 +363,9 @@ func Relaxed() *regexp.Regexp {
 return nil
 }
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-	mx := fake.UnpackTxt(cache)
-	for k, v := range mx {
-		fname := filepath.Join(modcache, k)
-		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777) // ignore error
-		if err := os.WriteFile(fname, v, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
+
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
+		CacheFiles(cache),
 		WriteGoSum("."),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
@@ -445,14 +418,25 @@ import "example.com/x"
 
 var _, _ = x.X, y.Y
 `
-	modcache := t.TempDir()
-	base := filepath.Base(modcache)
-	defer CleanModCache(t, modcache)
+	tmpdir := t.TempDir()
+	// The go command creates read-only files and directories in the module cache.
+	// Since this test tests a custom unclean path and cannot use CacheFiles,
+	// make directories writable before removing tmpdir.
+	defer func() {
+		filepath.Walk(tmpdir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() {
+				os.Chmod(path, 0777)
+			}
+			return nil
+		})
+		os.RemoveAll(tmpdir)
+	}()
+	base := filepath.Base(tmpdir)
 
 	// Construct a very unclean module cache whose length exceeds the length of
 	// the clean directory path, to reproduce the crash in golang/go#67156
 	const sep = string(filepath.Separator)
-	modcache += strings.Repeat(sep+".."+sep+base, 10)
+	modcache := tmpdir + strings.Repeat(sep+".."+sep+base, 10)
 
 	opts := []RunOption{
 		EnvVars{"GOMODCACHE": modcache},
@@ -630,19 +614,8 @@ return nil
 }
 var A int
 `
-	modcache := t.TempDir()
-	defer CleanModCache(t, modcache)
-	mx := fake.UnpackTxt(cache)
-	for k, v := range mx {
-		fname := filepath.Join(modcache, k)
-		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777) // ignore error
-		if err := os.WriteFile(fname, v, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
+		CacheFiles(cache),
 		WriteGoSum("."),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
