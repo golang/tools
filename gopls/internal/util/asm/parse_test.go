@@ -7,6 +7,7 @@ package asm_test
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -63,5 +64,67 @@ asm.s:18:11-24:	ref "g_stackguard0"
 	got := buf.String()
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s\ndiff:\n%s", got, want, cmp.Diff(want, got))
+	}
+}
+
+// TestLineEndings checks that identifier and function offsets refer to the
+// original content, regardless of whether lines end in LF or CRLF.
+func TestLineEndings(t *testing.T) {
+	const source = `TEXT ·foo(SB)
+	CALL ·bar(SB)
+// Padding lines make the CRLF drift exceed the column of the next TEXT symbol.
+// padding
+// padding
+// padding
+// padding
+// padding
+TEXT ·baz(SB)
+	CALL ·foo(SB)
+`
+	wantIdents := []string{"·foo", "·bar", "·baz", "·foo"}
+
+	for _, test := range []struct {
+		name    string
+		newline string
+	}{
+		{"LF", "\n"},
+		{"CRLF", "\r\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			content := []byte(strings.ReplaceAll(source, "\n", test.newline))
+			file := asm.Parse(protocol.URIFromPath("asm.s"), content)
+			indexOf := func(s string) int {
+				t.Helper()
+				index := bytes.Index(content, []byte(s))
+				if index < 0 {
+					t.Fatalf("%q not found", s)
+				}
+				return index
+			}
+
+			if got, want := len(file.Idents), len(wantIdents); got != want {
+				t.Fatalf("Parse returned %d identifiers, want %d", got, want)
+			}
+
+			for i, id := range file.Idents {
+				if got, want := string(content[id.Offset:id.End()]), wantIdents[i]; got != want {
+					t.Errorf("identifier %d: content at offset is %q, want %q", i, got, want)
+				}
+			}
+
+			firstFuncStart := indexOf("TEXT ·foo")
+			refInFirstFunc := indexOf("CALL ·bar")
+			secondFuncStart := indexOf("TEXT ·baz")
+			refInSecondFunc := indexOf("CALL ·foo")
+
+			if start, end := file.FunctionRange(refInFirstFunc); start != firstFuncStart || end != secondFuncStart {
+				t.Errorf("FunctionRange(·foo) = (%d, %d), want (%d, %d)",
+					start, end, firstFuncStart, secondFuncStart)
+			}
+			if start, end := file.FunctionRange(refInSecondFunc); start != secondFuncStart || end != len(content) {
+				t.Errorf("FunctionRange(·baz) = (%d, %d), want (%d, %d)",
+					start, end, secondFuncStart, len(content))
+			}
+		})
 	}
 }

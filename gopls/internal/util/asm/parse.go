@@ -6,7 +6,6 @@
 package asm
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"sort"
@@ -130,13 +129,17 @@ func (id Ident) End() int { return id.Offset + id.OrigLen }
 // Since it is a best-effort parser, it never returns an error.
 func Parse(uri protocol.DocumentURI, content []byte) *File {
 	var idents []Ident
-	offset := 0 // byte offset of start of current line
+	offset := 0 // byte offset of next raw line
 
 	// TODO(adonovan) use a proper tokenizer that respects
 	// comments, string literals, line continuations, etc.
-	scan := bufio.NewScanner(bytes.NewReader(content))
-	for ; scan.Scan(); offset += len(scan.Bytes()) + len("\n") {
-		line := scan.Text()
+	for rawLine := range bytes.SplitSeq(content, []byte("\n")) {
+		lineOffset := offset
+		offset += len(rawLine)
+		if offset < len(content) {
+			offset++ // skip '\n'
+		}
+		line := strings.TrimSuffix(string(rawLine), "\r")
 
 		// Strip comments.
 		if idx := strings.Index(line, "//"); idx >= 0 {
@@ -154,7 +157,7 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 			if isIdent(label) {
 				idents = append(idents, Ident{
 					Name:    label,
-					Offset:  offset + strings.Index(line, label),
+					Offset:  lineOffset + strings.Index(line, label),
 					OrigLen: len(label),
 					Kind:    Label,
 				})
@@ -192,7 +195,7 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 					idents = append(idents, Ident{
 						Name:    cleanup(sym),
 						Kind:    kind,
-						Offset:  offset + strings.Index(line, sym),
+						Offset:  lineOffset + strings.Index(line, sym),
 						OrigLen: len(sym),
 					})
 				}
@@ -253,14 +256,12 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 				idents = append(idents, Ident{
 					Name:    cleanup(sym),
 					Kind:    Ref,
-					Offset:  offset + tokenPos,
+					Offset:  lineOffset + tokenPos,
 					OrigLen: len(sym),
 				})
 			}
 		}
 	}
-
-	_ = scan.Err() // ignore scan errors
 
 	return &File{Idents: idents, Mapper: protocol.NewMapper(uri, content)}
 }
