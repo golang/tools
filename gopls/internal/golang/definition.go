@@ -266,15 +266,17 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 	if obj.Pkg() == types.Unsafe {
 		// package "unsafe":
 		// parse $GOROOT/src/unsafe/unsafe.go
-		//
-		// (Strictly, we shouldn't assume that the ID of a std
-		// package is its PkgPath, but no Bazel+gopackagesdriver
-		// users have complained about this yet.)
-		unsafe := snapshot.Metadata("unsafe")
+		var unsafe *metadata.Package
+		if mps := snapshot.MetadataGraph().ForPackagePath[metadata.PackagePath("unsafe")]; len(mps) > 0 {
+			unsafe = mps[0]
+		}
 		if unsafe == nil {
 			// If the type checker somehow resolved 'unsafe', we must have metadata
 			// for it.
 			return nil, nil, bug.Errorf("no metadata for package 'unsafe'")
+		}
+		if len(unsafe.GoFiles) == 0 {
+			return nil, nil, bug.Errorf("no files for package 'unsafe'")
 		}
 		uri := unsafe.GoFiles[0]
 		fh, err := snapshot.ReadFile(ctx, uri)
