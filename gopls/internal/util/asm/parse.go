@@ -84,6 +84,27 @@ func (f *File) IdentAt(start, end int) *Ident {
 	return nil
 }
 
+// IsLabel reports whether id denotes a control label: it is a label
+// definition, or a bare reference to a label of the same name defined
+// within the enclosing TEXT function.
+func (f *File) IsLabel(id Ident) bool {
+	if id.Kind == Label {
+		return true
+	}
+	if id.Kind != Ref || !id.Bare {
+		return false
+	}
+	lo, hi := f.FunctionRange(id.Offset)
+	for _, label := range f.Idents {
+		if label.Kind == Label &&
+			label.Name == id.Name &&
+			lo <= label.Offset && label.Offset < hi {
+			return true
+		}
+	}
+	return false
+}
+
 // FunctionRange returns the byte range [start, end) of the TEXT function
 // enclosing offset: start is the beginning of the line containing the
 // enclosing TEXT directive, end is the beginning of the line containing
@@ -121,6 +142,8 @@ type Ident struct {
 	Offset  int    // zero-based byte offset
 	OrigLen int    // original length of the symbol name (before cleanup)
 	Kind    Kind
+	Local   bool // whether the symbol uses the file-local <> suffix
+	Bare    bool // whether a reference is an unadorned control-label candidate
 }
 
 // End returns the identifier's end offset.
@@ -148,7 +171,9 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 			continue
 		}
 
-		// Check for label definitions (ending with colon).
+		// Check for label definitions (ending with colon); the rest of
+		// the line (e.g. "loop: JMP loop") is scanned for references
+		// below.
 		if colon := strings.IndexByte(line, ':'); colon > 0 {
 			label := strings.TrimSpace(line[:colon])
 			if isIdent(label) {
@@ -158,7 +183,6 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 					OrigLen: len(label),
 					Kind:    Label,
 				})
-				continue
 			}
 		}
 
@@ -183,17 +207,24 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 			}
 			if kind != Invalid {
 				sym := words[1]
-				sym = cutBefore(sym, ",") // strip ",NOSPLIT,$12" etc
-				sym = cutBefore(sym, "(") // "sym(SB)" -> "sym"
-				sym = cutBefore(sym, "<") // "sym<ABIInternal>" -> "sym"
+				sym = cutBefore(sym, ",")             // strip ",NOSPLIT,$12" etc
+				sym = cutBefore(sym, "(")             // "sym(SB)" -> "sym"
+				sym = cutBefore(sym, "+")             // "sym+8(SB)" -> "sym"
+				local := strings.HasSuffix(sym, "<>") // "table<>+0(SB)" -> "table<>"
+				sym = cutBefore(sym, "<")             // "sym<ABIInternal>" -> "sym"
 				sym = strings.TrimSpace(sym)
 				if isIdent(sym) {
-					// (The Index call assumes sym is not itself "TEXT" etc.)
+					// The symbol is a prefix of the declaration token, so its
+					// position is that of words[1]; indexing the line by the
+					// shortened name alone could hit an earlier occurrence
+					// (e.g. the "T" inside "DATA T+0(SB)").
+					tokenPos := strings.Index(line, words[1])
 					idents = append(idents, Ident{
 						Name:    cleanup(sym),
 						Kind:    kind,
-						Offset:  offset + strings.Index(line, sym),
+						Offset:  offset + tokenPos,
 						OrigLen: len(sym),
+						Local:   local,
 					})
 				}
 				continue
@@ -217,7 +248,8 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 				continue
 			}
 
-			if word[0] == '$' {
+			immediate := word[0] == '$'
+			if immediate {
 				word = word[1:]
 				tokenPos++
 
@@ -246,15 +278,19 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 			//    MOVD	$runtime·g0(SB), g      // pseudoreg
 			//    MOVD	R0, g_stackguard0(g)    // field ref
 
-			sym := cutBefore(word, "(") // "·sym(SB)" => "sym"
-			sym = cutBefore(sym, "+")   // "sym+8(FP)" => "sym"
-			sym = cutBefore(sym, "<")   // "sym<ABIInternal>" =>> "sym"
+			sym := cutBefore(word, "(")           // "·sym(SB)" => "sym"
+			sym = cutBefore(sym, "+")             // "sym+8(FP)" => "sym"
+			local := strings.HasSuffix(sym, "<>") // "table<>(SB)" -> "table<>"
+			sym = cutBefore(sym, "<")             // "sym<ABIInternal>" =>> "sym"
+			bare := !immediate && sym == word
 			if isIdent(sym) {
 				idents = append(idents, Ident{
 					Name:    cleanup(sym),
 					Kind:    Ref,
 					Offset:  offset + tokenPos,
 					OrigLen: len(sym),
+					Local:   local,
+					Bare:    bare,
 				})
 			}
 		}

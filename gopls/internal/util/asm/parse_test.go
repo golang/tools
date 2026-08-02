@@ -65,3 +65,67 @@ asm.s:18:11-24:	ref "g_stackguard0"
 		t.Errorf("got:\n%s\nwant:\n%s\ndiff:\n%s", got, want, cmp.Diff(want, got))
 	}
 }
+
+func TestIdentProperties(t *testing.T) {
+	src := []byte(`
+TEXT ·f(SB), $0-0
+loop:
+	JMP loop
+	CALL loop(SB)
+	MOVQ $table<>(SB), AX
+DATA table<>+0(SB)/8, $1
+GLOBL table<>(SB), RODATA, $8
+DATA ·global+0(SB)/8, $1
+DATA T+0(SB)/8, $1
+spin: JMP spin
+MOVQ foo<>bar(SB), AX
+`[1:])
+	file := asm.Parse(protocol.URIFromPath("asm.s"), src)
+
+	type ident struct {
+		Name  string
+		Kind  asm.Kind
+		Local bool
+		Bare  bool
+	}
+	var got []ident
+	for _, id := range file.Idents {
+		got = append(got, ident{
+			Name:  id.Name,
+			Kind:  id.Kind,
+			Local: id.Local,
+			Bare:  id.Bare,
+		})
+	}
+	want := []ident{
+		{Name: ".f", Kind: asm.Text},
+		{Name: "loop", Kind: asm.Label},
+		{Name: "loop", Kind: asm.Ref, Bare: true},
+		{Name: "loop", Kind: asm.Ref},
+		{Name: "table", Kind: asm.Ref, Local: true},
+		{Name: "table", Kind: asm.Data, Local: true},
+		{Name: "table", Kind: asm.Global, Local: true},
+		{Name: ".global", Kind: asm.Data},
+		{Name: "T", Kind: asm.Data},
+		{Name: "spin", Kind: asm.Label},
+		{Name: "spin", Kind: asm.Ref, Bare: true},
+		{Name: "foo", Kind: asm.Ref},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("identifier properties mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestDataPlusOffset checks that a DATA symbol with a +offset is located
+// at the symbol, not at an earlier occurrence of its shortened name
+// (e.g. the "T" inside "DATA").
+func TestDataPlusOffset(t *testing.T) {
+	src := []byte("DATA T+0(SB)/8, $1\n")
+	file := asm.Parse(protocol.URIFromPath("asm.s"), src)
+	want := []asm.Ident{
+		{Name: "T", Offset: 5, OrigLen: 1, Kind: asm.Data},
+	}
+	if diff := cmp.Diff(want, file.Idents); diff != "" {
+		t.Errorf("idents mismatch (-want +got):\n%s", diff)
+	}
+}
