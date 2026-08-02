@@ -1024,3 +1024,67 @@ func checkTestdata(t *testing.T, env *Env) {
 		}
 	}
 }
+
+// TestRenameIssue71657 checks that a panic no longer occurs in Rename
+func TestRenameIssue71657(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- dep/dep.go --
+package dep
+
+type U struct {
+	F nonexistentType
+}
+-- foo.go --
+package foo
+
+import "mod.com/dep"
+
+type I interface {
+	M()
+}
+
+type T struct{}
+func (T) M() {}
+
+var _ I = T{}
+
+func _(u dep.U) {
+	_ = u.F.M
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo.go")
+		// The rename operation should succeed despite type errors in dep,
+		// and it must not panic.
+		env.Rename(env.RegexpSearch("foo.go", "M"), "N")
+
+		// Verify that M was renamed to N in the interface and struct,
+		// but the invalid selection u.F.M was left untouched.
+		want := `package foo
+
+import "mod.com/dep"
+
+type I interface {
+	N()
+}
+
+type T struct{}
+func (T) N() {}
+
+var _ I = T{}
+
+func _(u dep.U) {
+	_ = u.F.M
+}
+`
+		got := env.BufferText("foo.go")
+		if got != want {
+			t.Errorf("unexpected content of foo.go after rename:\n%s", compare.Text(want, got))
+		}
+	})
+}
