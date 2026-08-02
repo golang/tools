@@ -11,7 +11,7 @@ func Add(a, b int) int //@loc(defAddGo, "Add"), refs("Add", defAddGo, callAddGo)
 func UseAdd() int {
     return Add(1, 2) //@loc(callAddGo, "Add")
 }
-var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal"), refs("myGlobal", defMyGlobalGo, refMyGlobal, refMyGlobalGo)
+var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal"), refs("myGlobal", defMyGlobalGo, dataMyGlobalAsm, refMyGlobal, refMyGlobalGo)
 var _ = myGlobal   //@loc(refMyGlobalGo, "myGlobal")
 
 -- go_call_asm/example_asm.s --
@@ -20,7 +20,7 @@ TEXT ·Add(SB), $0-24 //@loc(defAddGoAsm, "·Add"), refs("Add", defAddGoAsm, def
     ADDQ b+8(FP), AX
     RET
 
-DATA ·myGlobal+0(SB)/8, $42
+DATA ·myGlobal+0(SB)/8, $42 //@loc(dataMyGlobalAsm, "·myGlobal")
 GLOBL ·myGlobal(SB), NOPTR, 8
 TEXT ·UseGlobal(SB), $0-0
     MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
