@@ -9,6 +9,10 @@ package lib
 
 func Helper() int { return 42 } //@loc(defHelper, "Helper"), refs("Helper", defHelper, goCallHelper, asmCallHelper)
 
+-- lib/asm_only.s --
+TEXT ·Only(SB), $0-0 //@loc(defOnlyAsm, "·Only")
+    RET
+
 -- caller/caller.go --
 package caller
 
@@ -21,4 +25,8 @@ func Use() {
 -- caller/impl.s --
 TEXT ·Wrapper(SB), $0-0
     CALL example·com∕lib·Helper(SB) //@loc(asmCallHelper, "example·com∕lib·Helper"), refs("Helper", defHelper, goCallHelper, asmCallHelper)
+    RET
+
+TEXT ·WrapperOnly(SB), $0-0
+    CALL example·com∕lib·Only(SB) //@loc(asmCallOnly, "example·com∕lib·Only"), refs("Only", defOnlyAsm, asmCallOnly)
     RET
