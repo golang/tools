@@ -91,10 +91,11 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 			break
 		}
 
-		inf.objType = deslice(inf.objType)
-
-		// Check if we are completing the variadic append() param.
-		inf.variadic = exprIdx == 1 && len(call.Args) <= 2
+		if !call.Ellipsis.IsValid() {
+			inf.objType = deslice(inf.objType)
+			// Check if we are completing the variadic append() param. (TestIssue74564)
+			inf.variadic = exprIdx == 1 && len(call.Args) <= 2
+		}
 
 		// Penalize the first append() argument as a candidate. You
 		// don't normally append a slice to itself.

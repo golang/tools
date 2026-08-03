@@ -1697,3 +1697,25 @@ func main() {
 		env.Completion(loc)
 	})
 }
+
+func TestIssue74564(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+go 1.22
+-- main.go --
+package main
+
+func f[T ~[]int](x T) {
+	var s string
+	_ = append(x, append(x, x...)...)
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		// Place cursor inside the first 'x' of the inner append call.
+		loc := env.RegexpSearch("main.go", `append\(x, append\(()x,`)
+		env.Completion(loc)
+	})
+}

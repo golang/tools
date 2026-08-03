@@ -2723,7 +2723,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 		inf.objType = sig.Params().At(exprIdx).Type()
 	}
 
-	if sig.Variadic() && exprIdx >= (numParams-1) {
+	if sig.Variadic() && exprIdx >= (numParams-1) && !node.Ellipsis.IsValid() {
 		// If we are completing a variadic param, deslice the variadic type.
 		inf.objType = deslice(inf.objType)
 		// Record whether we are completing the initial variadic param.
