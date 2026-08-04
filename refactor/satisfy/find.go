@@ -11,7 +11,7 @@
 // It requires well-typed inputs, and may panic otherwise.
 //
 // This package reimplements parts of the type checker. See
-// https://go.dev/issue/70638 for a proposal to expose the the work
+// https://go.dev/issue/70638 for a proposal to expose the work
 // already done by the type checker, which would make this package
 // redundant.
 package satisfy
