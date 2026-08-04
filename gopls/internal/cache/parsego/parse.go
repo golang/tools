@@ -507,6 +507,8 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		return false
 	}
 
+	fileEnd := token.Pos(tok.Base() + tok.Size())
+
 	// If the parent statement doesn't already have an "init" statement,
 	// move the extracted statement into the "init" field and insert a
 	// dummy expression into the required "cond" field.
@@ -518,7 +520,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		p.Init = stmt
 		p.Cond = &ast.Ident{
 			Name:    "_",
-			NamePos: stmt.End(),
+			NamePos: min(stmt.End(), fileEnd),
 		}
 		return true
 	case *ast.ForStmt:
@@ -528,7 +530,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		p.Init = stmt
 		p.Cond = &ast.Ident{
 			Name:    "_",
-			NamePos: stmt.End(),
+			NamePos: min(stmt.End(), fileEnd),
 		}
 		return true
 	case *ast.SwitchStmt:
@@ -866,11 +868,12 @@ func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
 				}
 
 				// Clamp value to valid range; see #64335.
-				//
-				// TODO(golang/go#64335): this is a hack, because our fixes should not
-				// produce positions that overflow (but they do; see golang/go#64488,
-				// #73438, #66790, #66683, #67704).
-				pos = min(max(pos+offset, fileBase), fileEnd)
+				// We clamp the start position of the token so that its End()
+				// (start + size) does not exceed fileEnd + 1 (workaround EOF limit).
+				structField := v.Type().Field(i)
+				size := posSize(n, structField.Name)
+				maxPos := max(fileEnd+1-token.Pos(size), fileBase)
+				pos = min(max(pos+offset, fileBase), maxPos)
 
 				f.SetInt(int64(pos))
 			}
@@ -878,6 +881,210 @@ func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
 
 		return true
 	})
+}
+
+func posSize(n ast.Node, fieldName string) int {
+	switch n := n.(type) {
+	case *ast.AssignStmt:
+		if fieldName == "TokPos" {
+			return len(n.Tok.String())
+		}
+	case *ast.BadDecl:
+		if fieldName == "From" {
+			return int(n.To - n.From)
+		}
+		if fieldName == "To" {
+			return 0
+		}
+	case *ast.BadExpr:
+		if fieldName == "From" {
+			return int(n.To - n.From)
+		}
+		if fieldName == "To" {
+			return 0
+		}
+	case *ast.BadStmt:
+		if fieldName == "From" {
+			return int(n.To - n.From)
+		}
+		if fieldName == "To" {
+			return 0
+		}
+	case *ast.BasicLit:
+		if fieldName == "ValuePos" {
+			return len(n.Value)
+		}
+		if fieldName == "ValueEnd" {
+			return 0
+		}
+	case *ast.BinaryExpr:
+		if fieldName == "OpPos" {
+			return len(n.Op.String())
+		}
+	case *ast.BlockStmt:
+		if fieldName == "Lbrace" || fieldName == "Rbrace" {
+			return 1
+		}
+	case *ast.BranchStmt:
+		if fieldName == "TokPos" {
+			return len(n.Tok.String())
+		}
+	case *ast.CallExpr:
+		if fieldName == "Lparen" || fieldName == "Rparen" {
+			return 1
+		}
+		if fieldName == "Ellipsis" {
+			return 3 // "..."
+		}
+	case *ast.CaseClause:
+		if fieldName == "Case" {
+			if n.List == nil {
+				return 7 // "default"
+			}
+			return 4 // "case"
+		}
+		if fieldName == "Colon" {
+			return 1
+		}
+	case *ast.ChanType:
+		if fieldName == "Begin" {
+			return 4 // "chan"
+		}
+		if fieldName == "Arrow" {
+			return 2 // "<-"
+		}
+	case *ast.CommClause:
+		if fieldName == "Case" {
+			if n.Comm == nil {
+				return 7 // "default"
+			}
+			return 4 // "case"
+		}
+		if fieldName == "Colon" {
+			return 1
+		}
+	case *ast.Comment:
+		if fieldName == "Slash" {
+			return len(n.Text)
+		}
+	case *ast.CompositeLit:
+		if fieldName == "Lbrace" || fieldName == "Rbrace" {
+			return 1
+		}
+	case *ast.DeferStmt:
+		if fieldName == "Defer" {
+			return 5 // "defer"
+		}
+	case *ast.Ellipsis:
+		if fieldName == "Ellipsis" {
+			return 3 // "..."
+		}
+	case *ast.EmptyStmt:
+		if fieldName == "Semicolon" {
+			return 1
+		}
+	case *ast.File:
+		if fieldName == "Package" {
+			return 7 // "package"
+		}
+		if fieldName == "FileStart" || fieldName == "FileEnd" {
+			return 0
+		}
+	case *ast.ForStmt:
+		if fieldName == "For" {
+			return 3 // "for"
+		}
+	case *ast.FuncType:
+		if fieldName == "Func" {
+			return 4 // "func"
+		}
+	case *ast.GenDecl:
+		if fieldName == "TokPos" {
+			return len(n.Tok.String())
+		}
+		if fieldName == "Lparen" || fieldName == "Rparen" {
+			return 1
+		}
+	case *ast.GoStmt:
+		if fieldName == "Go" {
+			return 2 // "go"
+		}
+	case *ast.Ident:
+		if fieldName == "NamePos" {
+			return len(n.Name)
+		}
+	case *ast.IfStmt:
+		if fieldName == "If" {
+			return 2 // "if"
+		}
+	case *ast.ImportSpec:
+		if fieldName == "EndPos" {
+			return 0
+		}
+	case *ast.IncDecStmt:
+		if fieldName == "TokPos" {
+			return 2 // "++" or "--"
+		}
+	case *ast.InterfaceType:
+		if fieldName == "Interface" {
+			return 9 // "interface"
+		}
+	case *ast.KeyValueExpr:
+		if fieldName == "Colon" {
+			return 1
+		}
+	case *ast.LabeledStmt:
+		if fieldName == "Colon" {
+			return 1
+		}
+	case *ast.MapType:
+		if fieldName == "Map" {
+			return 3 // "map"
+		}
+	case *ast.RangeStmt:
+		if fieldName == "For" {
+			return 3 // "for"
+		}
+		if fieldName == "TokPos" {
+			return len(n.Tok.String())
+		}
+		if fieldName == "Range" {
+			return 5 // "range"
+		}
+	case *ast.ReturnStmt:
+		if fieldName == "Return" {
+			return 6 // "return"
+		}
+	case *ast.SelectStmt:
+		if fieldName == "Select" {
+			return 6 // "select"
+		}
+	case *ast.SendStmt:
+		if fieldName == "Arrow" {
+			return 2 // "<-"
+		}
+	case *ast.StructType:
+		if fieldName == "Struct" {
+			return 6 // "struct"
+		}
+	case *ast.SwitchStmt:
+		if fieldName == "Switch" {
+			return 6 // "switch"
+		}
+	case *ast.TypeSpec:
+		if fieldName == "Assign" {
+			return 1 // "="
+		}
+	case *ast.TypeSwitchStmt:
+		if fieldName == "Switch" {
+			return 6 // "switch"
+		}
+	case *ast.UnaryExpr:
+		if fieldName == "OpPos" {
+			return len(n.Op.String())
+		}
+	}
+	return 1 // default fallback
 }
 
 // replaceNode updates parent's child oldChild to be newChild. It
