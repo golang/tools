@@ -44,6 +44,9 @@ const (
 	//
 	// If you move types to above, document it in
 	// gopls/doc/features/passive.md#semantic-tokens.
+	//
+	// Sync any changes below with the vscode-go custom token type list.
+	// See: extension/src/language/goSemanticTokens.ts
 	// TokClass      Type = "class"
 	// TokDecorator  Type = "decorator"
 	// TokEnum       Type = "enum"
@@ -103,6 +106,9 @@ const (
 	// Since the type of a symbol is orthogonal to its kind,
 	// (e.g. a variable can have function type),
 	// we use modifiers for the top-level type constructor.
+	//
+	// Sync any changes below with the vscode-go custom token modifier list.
+	// See: extension/src/language/goSemanticTokens.ts
 	ModArray     Modifier = "array"
 	ModBool      Modifier = "bool"
 	ModChan      Modifier = "chan"
