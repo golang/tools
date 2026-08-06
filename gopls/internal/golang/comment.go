@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
 )
 
 var errNoCommentReference = errors.New("no comment reference found")
@@ -297,7 +298,7 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 					// package's declared name instead of this heuristic,
 					// but we don't have access to the graph here.
 					for path := range pkg.Metadata().DepsByPkgPath {
-						if pathpkg.Base(trimVersionSuffix(string(path))) == name {
+						if pathpkg.Base(packagepath.TrimVersionSuffix(string(path))) == name {
 							return string(path), true
 						}
 					}

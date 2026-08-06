@@ -13,7 +13,6 @@ import (
 	"go/token"
 	"go/types"
 	pathpkg "path"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
@@ -25,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/packagepath"
 )
 
 // stubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing
@@ -143,7 +143,7 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 			new := newImport{importPath: string(importPath)}
 			// For clarity, use a renaming import whenever the
 			// local name does not match the path's last segment.
-			if name != pathpkg.Base(trimVersionSuffix(new.importPath)) {
+			if name != pathpkg.Base(packagepath.TrimVersionSuffix(new.importPath)) {
 				new.name = name
 			}
 			newImports = append(newImports, new)
@@ -219,20 +219,4 @@ func diffToTextEdits(tok *token.File, diffs []diff.Edit) []analysis.TextEdit {
 		})
 	}
 	return edits
-}
-
-// trimVersionSuffix removes a trailing "/v2" (etc) suffix from a module path.
-//
-// This is only a heuristic as to the package's declared name, and
-// should only be used for stylistic decisions, such as whether it
-// would be clearer to use an explicit local name in the import
-// because the declared name differs from the result of this function.
-// When the name matters for correctness, look up the imported
-// package's Metadata.Name.
-func trimVersionSuffix(path string) string {
-	dir, base := pathpkg.Split(path)
-	if len(base) > 1 && base[0] == 'v' && strings.Trim(base[1:], "0123456789") == "" {
-		return dir // sans "/v2"
-	}
-	return path
 }

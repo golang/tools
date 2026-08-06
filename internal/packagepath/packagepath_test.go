@@ -61,3 +61,23 @@ func TestMaybeStdPackage(t *testing.T) {
 		})
 	}
 }
+
+func TestTrimVersionSuffix(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"math/rand/v2", "math/rand"},
+		{"example.com/foo/bar/v3", "example.com/foo/bar"},
+		{"math/rand", "math/rand"},
+		{"fmt", "fmt"},
+		{"example.com/lib/valid", "example.com/lib/valid"},
+		{"example.com/lib/v1", "example.com/lib"},
+		{"v2", "v2"},
+	}
+	for _, test := range tests {
+		if got := TrimVersionSuffix(test.path); got != test.want {
+			t.Errorf("TrimVersionSuffix(%q) = %q, want %q", test.path, got, test.want)
+		}
+	}
+}
