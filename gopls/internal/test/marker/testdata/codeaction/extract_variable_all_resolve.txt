@@ -114,11 +114,11 @@ func _() {
 -- @sel/selector.go --
 @@ -9 +9,2 @@
 -	v := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
-+	newVar := s.Value
-+	v := newVar //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
++	value := s.Value
++	v := value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
 @@ -11 +12 @@
 -		w := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
-+		w := newVar //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
++		w := value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
 -- index.go --
 package extract_all
 
