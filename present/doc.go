@@ -287,6 +287,24 @@ on the displayed source so the program can be run from the browser.
 Although only the selected text is shown, all the source is included
 in the HTML output so it can be presented to the compiler.
 
+By default, "play" compiles and executes Go code. But it is also
+possible to execute generic scripts if they start with a shebang.
+
+When the Go code imports packages, they are expected to be present in
+the GOPATH.
+
+However, Go modules are also possible for each "play" instruction if the
+input is txtar-encoded. See
+
+	https://pkg.go.dev/golang.org/x/tools/txtar
+
+for a format description. The txtar input must contain a valid go.mod
+and go.sum file. A minimal Go module project of main.go, go.mod and
+go.sum can be txtar'ed like the following in a POSIX Shell:
+
+	$ cp main.go demo.txtar
+	$ for f in go.{mod,sum}; do echo "-- $f --"; cat "$f"; done >> demo.txtar
+
 link:
 
 Create a hyperlink. The syntax is 1 or 2 space-separated arguments.
