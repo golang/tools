@@ -579,17 +579,6 @@ func getFixes(ctx context.Context, fset *token.FileSet, f *ast.File, filename st
 }
 
 func getFixesWithSource(ctx context.Context, fset *token.FileSet, f *ast.File, filename string, goroot string, logf func(string, ...any), source Source) ([]*ImportFix, error) {
-	// If there is an Index for the GOMODCACHE, remember that, and later make it so that the
-	// directory walk doesn't go into the module cache, since we already have all the information
-	var ix *modindex.Index
-	src, ok := source.(*ProcessEnvSource)
-	if ok {
-		var err error
-		if ix, err = modindex.Read(src.env.Env["GOMODCACHE"]); err != nil {
-			ix = nil // don't use it if there was an error
-		}
-	}
-
 	// This logic is defensively duplicated from getFixes.
 	abs, err := filepath.Abs(filename)
 	if err != nil {
@@ -648,6 +637,17 @@ func getFixesWithSource(ctx context.Context, fset *token.FileSet, f *ast.File, f
 	}
 	p.loadRealPackageNames = true
 	p.otherFiles = otherFiles
+
+	// If there is an Index for the GOMODCACHE, remember that, and later make it so that the
+	// directory walk doesn't go into the module cache, since we already have all the information.
+	var ix *modindex.Index
+	if src, ok := source.(*ProcessEnvSource); ok {
+		var err error
+		if ix, err = modindex.Read(src.env.Env["GOMODCACHE"]); err != nil {
+			ix = nil // don't use it if there was an error
+		}
+	}
+
 	if ix != nil {
 		src, ok := p.source.(*ProcessEnvSource)
 		if ok {
