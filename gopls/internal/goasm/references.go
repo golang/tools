@@ -12,7 +12,6 @@ import (
 	"go/ast"
 	"go/types"
 	"slices"
-	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -54,24 +53,63 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, err
 	}
 
-	// Figure out the selected symbol.
-	// For now, just find the identifier around the cursor.
-	var found *asm.Ident
-	for _, id := range asmFile.Idents {
-		if id.Offset <= offset && offset <= id.End() {
-			found = &id
-			break
-		}
-	}
+	found := asmFile.IdentAt(offset, offset)
 	if found == nil {
 		return nil, fmt.Errorf("not an identifier")
 	}
 
 	var locations []protocol.Location
 
+	// Labels are scoped to the enclosing TEXT function.
+	if asmFile.IsLabel(*found) {
+		lo, hi := asmFile.FunctionRange(found.Offset)
+		for _, id := range asmFile.Idents {
+			if id.Name != found.Name ||
+				!(lo <= id.Offset && id.Offset < hi) ||
+				(id.Kind != asm.Label && (id.Kind != asm.Ref || !id.Bare)) ||
+				(!includeDeclaration && id.Kind == asm.Label) {
+				continue
+			}
+			loc, err := asmFile.IdentLocation(id)
+			if err != nil {
+				return nil, err
+			}
+			locations = append(locations, loc)
+		}
+		slices.SortFunc(locations, protocol.CompareLocation)
+		return slices.Compact(locations), nil
+	}
+
 	pkgpath, name, ok := morestrings.CutLast(found.Name, ".")
 	if !ok {
-		return nil, fmt.Errorf("not found")
+		pkgpath, name = "", found.Name
+	}
+	if found.Local {
+		// A file-local <> symbol is always defined in the current file,
+		// even if its name contains a dot (e.g. "foo·bar<>").
+		pkgpath = ""
+	}
+	samePackage := pkgpath == "" || pkgpath == string(mp.PkgPath)
+	// matchesSymbol reports whether id refers to the selected symbol.
+	// inDeclPkg is true when the scanned file belongs to the declaring
+	// package, in which case a package-qualified name also matches the
+	// "."-prefixed form of a package-level declaration ("pkg.foo" and
+	// "·foo" denote the same symbol; a bare name never does, since
+	// cmd/asm qualifies only names starting with "."). A control label
+	// is handled by the label path above.
+	dotName := "." + name
+	matchesSymbol := func(file *asm.File, id asm.Ident, inDeclPkg bool) bool {
+		if id.Kind == asm.Label || id.Local != found.Local {
+			return false
+		}
+		if id.Name != found.Name && !(inDeclPkg && pkgpath != "" && !id.Local && id.Name == dotName) {
+			return false
+		}
+		return !file.IsLabel(id)
+	}
+	asmFiles := pkg.AsmFiles()
+	if found.Local {
+		asmFiles = []*asm.File{asmFile}
 	}
 
 	// Determine the declaring package for this symbol.
@@ -80,9 +118,11 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		declMP    = mp
 		symbolObj types.Object
 	)
-	if pkgpath == "" || pkgpath == string(mp.PkgPath) {
-		// Same-package reference: look up in the current package.
-		symbolObj = pkg.Types().Scope().Lookup(name)
+	if samePackage {
+		if !found.Local {
+			// Same-package reference: look up in the current package.
+			symbolObj = pkg.Types().Scope().Lookup(name)
+		}
 	} else {
 		// Cross-package reference: find the declaring package.
 		// See goasm.Definition for the same approach.
@@ -105,7 +145,48 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		symbolObj = declPkg.Types().Scope().Lookup(name)
 	}
 	if symbolObj == nil {
-		return nil, fmt.Errorf("symbol %q not found in package %q", name, pkgpath)
+		// Assembly-only TEXT/GLOBL symbols have no Go object. Scan the
+		// asm files of the declaring package for the declaration and its
+		// references; for a file-local <> symbol, asmFiles is already
+		// restricted to the source file.
+		hasDeclaration := false
+		scan := func(files []*asm.File, inDeclPkg bool) error {
+			for _, file := range files {
+				for _, id := range file.Idents {
+					if !matchesSymbol(file, id, inDeclPkg) {
+						continue
+					}
+					if id.Kind == asm.Text || id.Kind == asm.Global {
+						hasDeclaration = true
+						if !includeDeclaration {
+							continue
+						}
+					}
+					loc, err := file.IdentLocation(id)
+					if err != nil {
+						return err
+					}
+					locations = append(locations, loc)
+				}
+			}
+			return nil
+		}
+		if !samePackage {
+			if err := scan(declPkg.AsmFiles(), true); err != nil {
+				return nil, err
+			}
+		}
+		if err := scan(asmFiles, samePackage); err != nil {
+			return nil, err
+		}
+		if !hasDeclaration && len(locations) <= 1 {
+			// The only match, if any, is the identifier under the
+			// cursor: the symbol has no declaration or other
+			// references, so the reference is dangling.
+			return nil, fmt.Errorf("symbol %q not found in package %q", name, pkgpath)
+		}
+		slices.SortFunc(locations, protocol.CompareLocation)
+		return slices.Compact(locations), nil
 	}
 
 	// Scan Go files in the declaring package for references to the symbol.
@@ -122,7 +203,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 				// and should be excluded when not including declarations.
 				// For same-package references, the asm TEXT line
 				// is the declaration, so Go Defs are reference targets.
-				if pkgpath != "" && pkgpath != string(mp.PkgPath) {
+				if !samePackage {
 					continue
 				}
 			}
@@ -136,17 +217,14 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// For cross-package references, also scan assembly files
 	// in the declaring package.
-	if pkgpath != "" && pkgpath != string(mp.PkgPath) {
-		for _, asmFile := range declPkg.AsmFiles() {
-			for _, id := range asmFile.Idents {
-				if id.Name == found.Name {
-					if id.Kind == asm.Label {
-						continue
-					}
+	if !samePackage {
+		for _, file := range declPkg.AsmFiles() {
+			for _, id := range file.Idents {
+				if matchesSymbol(file, id, true) {
 					if !includeDeclaration && (id.Kind == asm.Text || id.Kind == asm.Global) {
 						continue
 					}
-					if loc, err := asmFile.IdentLocation(id); err == nil {
+					if loc, err := file.IdentLocation(id); err == nil {
 						locations = append(locations, loc)
 					}
 				}
@@ -155,16 +233,13 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Scan asm files in the current package for matching identifiers.
-	for _, asmFile := range pkg.AsmFiles() {
-		for _, id := range asmFile.Idents {
-			if id.Name == found.Name {
-				if id.Kind == asm.Label {
-					continue
-				}
+	for _, file := range asmFiles {
+		for _, id := range file.Idents {
+			if matchesSymbol(file, id, samePackage) {
 				if !includeDeclaration && (id.Kind == asm.Text || id.Kind == asm.Global) {
 					continue
 				}
-				if loc, err := asmFile.IdentLocation(id); err == nil {
+				if loc, err := file.IdentLocation(id); err == nil {
 					locations = append(locations, loc)
 				}
 			}
@@ -218,9 +293,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Deduplicate by location.
-	sort.Slice(locations, func(i, j int) bool {
-		return protocol.CompareLocation(locations[i], locations[j]) < 0
-	})
+	slices.SortFunc(locations, protocol.CompareLocation)
 	locations = slices.Compact(locations)
 
 	return locations, nil
