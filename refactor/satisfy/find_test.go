@@ -289,3 +289,47 @@ func constraints(t *testing.T, src string) []string {
 	sort.Strings(constraints)
 	return constraints
 }
+
+// avoid panic on ill-typed input
+func TestIllTyped73109(t *testing.T) {
+	const src = `package p
+var x, y = f()
+var _ = func(a undefined) {}
+var g int
+func g() {}
+`
+	// parse
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []*ast.File{f}
+
+	// type-check (expecting errors)
+	info := &types.Info{
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
+	}
+	conf := types.Config{
+		Importer: importer.Default(),
+		Error:    func(err error) {}, // ignore errors
+	}
+	conf.Check("p", fset, files, info)
+
+	// Convert panic into failure
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Finder.Find panicked on ill-typed input: %v", r)
+		}
+	}()
+	// used to panic
+	var finder satisfy.Finder
+	finder.Find(info, files)
+}

@@ -108,7 +108,9 @@ func (f *Finder) Find(info *types.Info, files []*ast.File) {
 
 			case *ast.FuncDecl:
 				if d.Body != nil {
-					f.sig = f.info.Defs[d.Name].Type().(*types.Signature)
+					if obj := f.info.Defs[d.Name]; obj != nil {
+						f.sig, _ = obj.Type().(*types.Signature)
+					}
 					f.stmt(d.Body)
 					f.sig = nil
 				}
@@ -126,7 +128,7 @@ var (
 
 // exprN visits an expression in a multi-value context.
 func (f *Finder) exprN(e ast.Expr) types.Type {
-	typ := f.info.Types[e].Type.(*types.Tuple)
+	typ, _ := f.info.Types[e].Type.(*types.Tuple)
 	switch e := e.(type) {
 	case *ast.ParenExpr:
 		return f.exprN(e.X)
@@ -146,7 +148,11 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 
 	case *ast.TypeAssertExpr:
 		// y, ok := x.(T)
-		f.typeAssert(f.expr(e.X), typ.At(0).Type())
+		if typ != nil && typ.Len() > 0 {
+			f.typeAssert(f.expr(e.X), typ.At(0).Type())
+		} else {
+			f.expr(e.X)
+		}
 
 	case *ast.UnaryExpr: // must be receive <-
 		// y, ok := <-x
@@ -155,7 +161,10 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 	default:
 		panic(e)
 	}
-	return typ
+	if typ != nil {
+		return typ
+	}
+	return tInvalid
 }
 
 func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
@@ -365,7 +374,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 
 	case *ast.FuncLit:
 		saved := f.sig
-		f.sig = tv.Type.(*types.Signature)
+		f.sig, _ = tv.Type.(*types.Signature)
 		f.stmt(e.Body)
 		f.sig = saved
 
@@ -597,6 +606,12 @@ func (f *Finder) stmt(s ast.Stmt) {
 		f.expr(s.Call)
 
 	case *ast.ReturnStmt:
+		if f.sig == nil {
+			for _, result := range s.Results {
+				f.expr(result)
+			}
+			break
+		}
 		formals := f.sig.Results()
 		switch len(s.Results) {
 		case formals.Len(): // 1:1
