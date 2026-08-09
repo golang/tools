@@ -1,5 +1,8 @@
 This test checks that rename fails in the presence of errors.
 
+Also exercises golang/go#71538: rename should not panic on invalid composite literals
+caused by type errors in dependency packages.
+
 -- go.mod --
 module golang.org/lsptests/bad
 
@@ -27,3 +30,46 @@ type S struct {}
 func (s *S) sFunc() bool { //@renameerr("sFunc", "rFunc", "not possible because \"badsyntax.go\" in \"golang.org/lsptests/bad/badsyntax\" has errors")
 	# //@diag("#", re"expected statement, found")
 }
+
+-- dep/dep.go --
+package dep
+
+type T UnknownType //@diag("UnknownType", re"undefined: UnknownType")
+
+-- main/main.go --
+package main
+
+import "golang.org/lsptests/bad/dep"
+
+type S struct{}
+func (S) Method() {} //@rename("Method", "NewMethod", mainRename)
+
+var _ = dep.T{}
+
+-- @mainRename/main/main.go --
+@@ -6 +6 @@
+-func (S) Method() {} //@rename("Method", "NewMethod", mainRename)
++func (S) NewMethod() {} //@rename("Method", "NewMethod", mainRename)
+
+-- foo/foo.go --
+package foo
+
+import "golang.org/lsptests/bad/dep"
+
+type I interface {
+	M()
+}
+
+type T struct{}
+
+func (T) M() {} //@renameerr("M", "N", "would make golang.org/lsptests/bad/foo.T no longer assignable to interface I")
+
+func use(i I) int { return 0 }
+
+var _ = dep.T{
+	use(T{}),      // constraint: assign T to I
+	key: use(T{}), // constraint in key-value element
+}
+
+
+

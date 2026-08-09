@@ -414,6 +414,19 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 						f.assign(tElem, f.expr(elem))
 					}
 				}
+			case *types.Basic:
+				if T.Kind() == types.Invalid {
+					for _, elem := range e.Elts {
+						if kv, ok := elem.(*ast.KeyValueExpr); ok {
+							f.expr(kv.Key)
+							f.expr(kv.Value)
+						} else {
+							f.expr(elem)
+						}
+					}
+					continue
+				}
+				panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
 			default:
 				panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
 			}
