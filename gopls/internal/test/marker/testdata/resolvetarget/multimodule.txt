@@ -1,0 +1,48 @@
+Tests for cross module queries.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.work --
+go 1.25
+
+use ./x
+use ./y
+use ./z
+
+-- x/go.mod --
+
+module x.mod.test/resolvetarget
+
+go 1.25
+
+require y.mod.test/resolvetarget v0.0.1
+require z.mod.test/resolvetarget v0.0.1
+
+-- x/query.go --
+package main
+
+//@resolvetarget("y.mod.test/resolvetarget/a.T", "", y_T)
+//@resolvetarget("T", "y.mod.test/resolvetarget/a", y_T)
+//@resolvetarget("z.mod.test/resolvetarget/a.T", "", z_T)
+//@resolvetarget("T", "z.mod.test/resolvetarget/a", z_T)
+
+-- y/go.mod --
+module y.mod.test/resolvetarget
+
+go 1.25
+
+-- y/a/a.go --
+package a
+
+var T string = "a" //@target(y_T, "y.mod.test/resolvetarget/a", "T", "T")
+
+-- z/go.mod --
+module z.mod.test/resolvetarget
+
+go 1.25
+
+-- z/a/a.go --
+package a
+
+var T string = "a" //@target(z_T, "z.mod.test/resolvetarget/a", "T", "T")

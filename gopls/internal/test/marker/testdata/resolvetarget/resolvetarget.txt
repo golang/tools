@@ -1,0 +1,59 @@
+Tests for the gopls.resolve_target command.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- query.go --
+package main
+
+// Resolves full package path and target name
+//@resolvetarget("mod.test/resolvetarget/a.GopherA", "", GopherA)
+//@resolvetarget("GopherA", "mod.test/resolvetarget/a", GopherA)
+//@resolvetarget("mod.test/resolvetarget/b.localStructB", "", localStructB)
+//@resolvetarget("localStructB", "mod.test/resolvetarget/b", localStructB)
+
+// Resolves in different package variants, e.g. test variant
+//@resolvetarget("mod.test/resolvetarget/a.ATest", "", ATest)
+//@resolvetarget("ATest", "mod.test/resolvetarget/a", ATest)
+
+// Subscopes
+//@resolvetarget("mod.test/resolvetarget/a.InterfaceA.MethodOne", "", InterfaceA_MethodOne)
+//@resolvetarget("mod.test/resolvetarget/b.localStructB.bar", "", localStructB_bar)
+
+// Package not found errors
+//@resolvetarget("mod.test/resolvetarget/notfound", "", err="target mod.test/resolvetarget/notfound is invalid, as it is only a pkg path")
+//@resolvetarget("mod.test/resolvetarget/notfound.a", "", err="package not found: mod.test/resolvetarget/notfound")
+//@resolvetarget("a", "mod.test/resolvetarget/notfound", err="package not found: mod.test/resolvetarget/notfound")
+
+// Target not found errors
+//@resolvetarget("mod.test/resolvetarget/b.NotFound", "", err="target NotFound not found in mod.test/resolvetarget/b")
+//@resolvetarget("NotFound", "mod.test/resolvetarget/b", err="target NotFound not found in mod.test/resolvetarget/b")
+//@resolvetarget("mod.test/resolvetarget/a.InterfaceA.NotFound", "", err="method NotFound not found in InterfaceA")
+//@resolvetarget("mod.test/resolvetarget/b.localStructB.NotFound", "", err="field NotFound not found in localStructB")
+
+-- a/a.go --
+package a
+
+var GopherA = "a" //@target(GopherA, "mod.test/resolvetarget/a", "GopherA", "GopherA")
+
+type InterfaceA interface { //@target(InterfaceA, "mod.test/resolvetarget/a", "InterfaceA", "InterfaceA")
+	MethodOne() int //@target(InterfaceA_MethodOne, "mod.test/resolvetarget/a", "MethodOne", "MethodOne")
+}
+
+-- a/a_test.go --
+package a
+
+// Test that package variants work
+var ATest = "a" //@target(ATest, "mod.test/resolvetarget/a", "ATest", "ATest")
+
+-- b/b.go --
+package b
+
+type localStructB struct {  //@target(localStructB, "mod.test/resolvetarget/b", "localStructB", "localStructB")
+	bar int  //@target(localStructB_bar, "mod.test/resolvetarget/b", "bar", "bar")
+}

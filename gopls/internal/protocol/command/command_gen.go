@@ -57,6 +57,7 @@ const (
 	RegenerateCgo           Command = "gopls.regenerate_cgo"
 	RemoveDependency        Command = "gopls.remove_dependency"
 	ResetGoModDiagnostics   Command = "gopls.reset_go_mod_diagnostics"
+	ResolveTarget           Command = "gopls.resolve_target"
 	RunGoWorkCommand        Command = "gopls.run_go_work_command"
 	RunGovulncheck          Command = "gopls.run_govulncheck"
 	RunTests                Command = "gopls.run_tests"
@@ -108,6 +109,7 @@ var Commands = []Command{
 	RegenerateCgo,
 	RemoveDependency,
 	ResetGoModDiagnostics,
+	ResolveTarget,
 	RunGoWorkCommand,
 	RunGovulncheck,
 	RunTests,
@@ -320,6 +322,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.ResetGoModDiagnostics(ctx, a0)
+	case ResolveTarget:
+		var a0 ResolveTargetParams
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.ResolveTarget(ctx, a0)
 	case RunGoWorkCommand:
 		var a0 RunGoWorkArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -663,6 +671,14 @@ func NewResetGoModDiagnosticsCommand(title string, a0 ResetGoModDiagnosticsArgs)
 	return &protocol.Command{
 		Title:     title,
 		Command:   ResetGoModDiagnostics.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewResolveTargetCommand(title string, a0 ResolveTargetParams) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   ResolveTarget.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

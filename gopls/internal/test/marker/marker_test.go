@@ -37,6 +37,8 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
+
 	"golang.org/x/tools/gopls/internal/test/compare"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -598,6 +600,7 @@ var valueMarkerFuncs = map[string]func(marker){
 	"item":   valueMarkerFunc(completionItemMarker),
 	"hiloc":  valueMarkerFunc(highlightLocationMarker),
 	"defloc": valueMarkerFunc(defLocMarker),
+	"target": valueMarkerFunc(targetMarker),
 }
 
 // Supported action marker functions. See [actionMarkerFunc] for more details.
@@ -626,6 +629,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"refs":             actionMarkerFunc(refsMarker),
 	"rename":           actionMarkerFunc(renameMarker),
 	"renameerr":        actionMarkerFunc(renameErrMarker),
+	"resolvetarget":    actionMarkerFunc(resolveTargetMarker, "err"),
 	"selectionrange":   actionMarkerFunc(selectionRangeMarker),
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
@@ -1933,6 +1937,15 @@ func defLocMarker(mark marker, loc protocol.Location) protocol.Location {
 	return mark.run.env.FirstDefinition(loc)
 }
 
+// targetMarker implements the @target marker.
+func targetMarker(mark marker, pkg string, name string, loc protocol.Location) command.TargetMatch {
+	return command.TargetMatch{
+		Package:  pkg,
+		Name:     name,
+		Location: loc,
+	}
+}
+
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
 func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
@@ -2724,6 +2737,50 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 	}
 
 	compareGolden(mark, got.Bytes(), golden)
+}
+
+func resolveTargetMarker(mark marker, target, pkgScope string, want ...command.TargetMatch) {
+
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
+
+	cmd := command.NewResolveTargetCommand("ResolveTarget", command.ResolveTargetParams{
+		TextDocument: mark.document(),
+		Target:       target,
+		PkgScope:     pkgScope,
+	})
+	res, err := mark.server().ExecuteCommand(mark.ctx(), &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	})
+	if err != nil && wantErr.empty() {
+		mark.errorf("ResolveTarget(%q) failed: %v", target, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
+		return
+	}
+	var got []command.TargetMatch
+	if res != nil {
+		// decode the result
+		b, err := json.Marshal(res)
+		if err != nil {
+			mark.errorf("failed to marshal result: %v", err)
+			return
+		}
+		var gotResult command.ResolveTargetResult
+		if err := json.Unmarshal(b, &gotResult); err != nil {
+			mark.errorf("failed to unmarshal result: %v", err)
+			return
+		}
+		got = gotResult.Matches
+	}
+	if len(want) == 0 {
+		want = nil // got is nil if empty
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		mark.errorf("unexpected ResolveTarget results (-want +got):\n%s", diff)
+	}
 }
 
 // compareGolden compares the content of got with that of g.Get(""), reporting

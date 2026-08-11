@@ -325,6 +325,16 @@ type Interface interface {
 	// called on a path that has not already been loaded.
 	Modules(context.Context, ModulesArgs) (ModulesResult, error)
 
+	// ResolveTarget: Resolve a target query to it's definition.
+	//
+	// This command will resolve targets for the closest & longest matching
+	// package in the workspace, returning multiple only if there is unresolvable
+	// ambiguity.
+	//
+	// See here for a full description of the query logic:
+	//  https://go.dev/gopls/design/design/gopls-cli#target-symbol-resolution
+	ResolveTarget(context.Context, ResolveTargetParams) (ResolveTargetResult, error)
+
 	// PackageSymbols: Return information about symbols in the given file's package.
 	PackageSymbols(context.Context, PackageSymbolsArgs) (PackageSymbolsResult, error)
 
@@ -922,4 +932,40 @@ type MoveTypeArgs struct {
 type MoveDeclarationArgs struct {
 	// The location of the declaration to move.
 	Location protocol.Location
+}
+
+// ResolveTargetParams are the arguments for the ResolveTarget command.
+type ResolveTargetParams struct {
+	// TextDocument identifies the document context (e.g. CWD file or -pos file).
+	TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
+
+	// Target is the literal name or regex pattern (enclosed in slashes).
+	Target string `json:"target"`
+
+	// PkgScope optionally overrides the package search scope (from -pkg).
+	PkgScope string `json:"pkgScope,omitempty"`
+
+	// Range optionally restricts the search to a specific span within the file.
+	//
+	// TODO(aputman): Implement support for this.
+	Range protocol.Range `json:"range,omitempty"`
+}
+
+// ResolveTargetResult is the result of the ResolveTarget command.
+type ResolveTargetResult struct {
+	Matches []TargetMatch `json:"matches"`
+}
+
+// TargetMatch is a single match returned by the ResolveTarget command.
+type TargetMatch struct {
+	// Package is the Go package path of the symbol.
+	Package string `json:"package,omitempty"`
+
+	// Name is the name of the symbol.
+	Name string `json:"name"`
+
+	// Location is LSP protocol location because gopls.resolve_target
+	// is an internal utility command to map the target symbol position to
+	// LSP protocol locations.
+	Location protocol.Location `json:"location"`
 }
