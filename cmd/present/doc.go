@@ -6,6 +6,8 @@
 Present displays slide presentations and articles. It runs a web server that
 presents slide and article files from the current directory.
 
+Present assumes presentation authors are trusted, and should not be used with untrusted inputs.
+
 It may be run as a stand-alone command or an App Engine app.
 
 To use with App Engine, copy the files in the tools/cmd/present directory to the

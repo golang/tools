@@ -7,6 +7,9 @@ Package present implements parsing and rendering of present files,
 which can be slide presentations as in golang.org/x/tools/cmd/present
 or articles as in golang.org/x/blog (the Go blog).
 
+This package assumes presentation authors are trusted,
+and should not be used with untrusted inputs.
+
 # File Format
 
 Present files begin with a header giving the title of the document

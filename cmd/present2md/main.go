@@ -4,6 +4,8 @@
 
 // Present2md converts legacy-syntax present files to Markdown-syntax present files.
 //
+// It assumes presentation authors are trusted, and should not be used with untrusted inputs.
+//
 // Usage:
 //
 //	present2md [-w] [file ...]
