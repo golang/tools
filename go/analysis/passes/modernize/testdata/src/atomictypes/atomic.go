@@ -9,6 +9,23 @@ type X struct {
 	x int32 // want "var x int32 may be simplified using atomic.Int32"
 }
 
+type Unkeyed struct {
+	x int32
+}
+
+var _ = Unkeyed{1}     // nope: can't assign an int to an atomic.Int32
+var _ = []Unkeyed{{1}} // also detect literals whose type is elided
+
+func unkeyed(s *Unkeyed) {
+	atomic.AddInt32(&s.x, 1)
+}
+
+var unkeyedAnonymous = struct{ x int32 }{1}
+
+func useUnkeyedAnonymous() {
+	atomic.AddInt32(&unkeyedAnonymous.x, 1)
+}
+
 type Z struct {
 	y int64 // want "var y int64 may be simplified using atomic.Int64"
 	z int64
