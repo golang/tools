@@ -22,6 +22,20 @@ func _(x *struct{ s []int }) {
 	sort.Slice(x.s, func(first, second int) bool { return x.s[first] < x.s[second] }) // want "sort.Slice can be modernized using slices.Sort"
 }
 
+var sideEffectSlice []int
+var sliceCalls int
+
+func getSlice() []int {
+	sliceCalls++
+	return sideEffectSlice
+}
+
+func _() {
+	// Replacing this call with slices.Sort(getSlice()) would reduce the
+	// number of evaluations of getSlice from many to one.
+	sort.Slice(getSlice(), func(i, j int) bool { return getSlice()[i] < getSlice()[j] }) // nope: slice expression may have effects
+}
+
 func _(s []int) {
 	sort.Slice(s, func(i, j int) bool { return s[i] > s[j] }) // nope: wrong comparison operator
 }

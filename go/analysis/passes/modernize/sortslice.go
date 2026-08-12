@@ -15,6 +15,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -88,6 +89,7 @@ func slicessort(pass *analysis.Pass) (any, error) {
 					}
 					file := astutil.EnclosingFile(curCall)
 					if isIndex(compare.X, i) && isIndex(compare.Y, j) &&
+						typesinternal.NoEffects(info, s) &&
 						analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_21) {
 						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
