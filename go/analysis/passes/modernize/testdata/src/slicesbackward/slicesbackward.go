@@ -107,13 +107,23 @@ func namedSlice() {
 	}
 }
 
-// Should fire: i is declared before the loop but not address-taken.
+// Should NOT fire: init assigns to a pre-existing variable.
 func iDeclaredBeforeLoop(s []int) {
 	var i int
-	for i = len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+	for i = len(s) - 1; i >= 0; i-- {
 		println(s[i])
 	}
 	_ = i
+}
+
+// Should NOT fire: the value of a pre-existing index variable is observable
+// after the loop and must remain -1 after the original loop.
+func preexistingIndexValue(s []int) int {
+	i := 123
+	for i = len(s) - 1; i >= 0; i-- {
+		println(s[i])
+	}
+	return i
 }
 
 // Should NOT fire: i is address-taken before the loop (init uses =, not :=).
