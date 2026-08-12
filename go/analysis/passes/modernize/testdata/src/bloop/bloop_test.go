@@ -15,6 +15,24 @@ func BenchmarkA(b *testing.B) {
 	}
 }
 
+var otherBenchmark *testing.B
+
+func BenchmarkOtherReceiver(b *testing.B) {
+	other := new(testing.B)
+	other.ResetTimer() // not deleted: receiver is not b
+	otherBenchmark = other
+
+	for range b.N { // want "b.N can be modernized using b.Loop.."
+	}
+}
+
+func BenchmarkMethodExpression(b *testing.B) {
+	(*testing.B).ResetTimer(b) // conservatively not deleted
+
+	for range b.N { // want "b.N can be modernized using b.Loop.."
+	}
+}
+
 func BenchmarkB(b *testing.B) {
 	// setup
 	{
