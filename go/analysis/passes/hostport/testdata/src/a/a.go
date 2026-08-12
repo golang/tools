@@ -52,3 +52,12 @@ func _() {
 	const port = 0x7B
 	_, _ = net.Dial("tcp", fmt.Sprintf("%s:%d", "localhost", port)) // want `address format "%s:%d" does not work with IPv6`
 }
+
+func dialArgs() (string, string) {
+	return "tcp", "localhost:80"
+}
+
+func multiValueDial() {
+	// A multi-valued call may supply the complete argument list.
+	_, _ = net.Dial(dialArgs())
+}

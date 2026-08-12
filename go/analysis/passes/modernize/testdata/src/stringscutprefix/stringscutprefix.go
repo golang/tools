@@ -8,6 +8,16 @@ var (
 	s, pre, suf string
 )
 
+func prefixArgs() (string, string) {
+	return "abc", "a"
+}
+
+func multiValuePrefix() {
+	if strings.HasPrefix(prefixArgs()) {
+		_ = strings.TrimPrefix("abc", "a")
+	}
+}
+
 // test supported cases of pattern 1 - CutPrefix
 func _() {
 	if strings.HasPrefix(s, pre) { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"

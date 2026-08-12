@@ -136,6 +136,10 @@ func stringscut(pass *analysis.Pass) (any, error) {
 				continue // strings.Index not available in this file
 			}
 			indexCall := curCall.Node().(*ast.CallExpr) // the call to strings.Index, etc.
+			if len(indexCall.Args) != 2 {
+				// A multi-valued call may supply the complete argument list.
+				continue
+			}
 			obj := typeutil.Callee(info, indexCall)
 			if obj == nil {
 				continue
@@ -390,15 +394,19 @@ func stringscut(pass *analysis.Pass) (any, error) {
 func stringsplitCut(pass *analysis.Pass, index *typeindex.Index) {
 	info := pass.TypesInfo
 
-	stringsSplit := index.Object("strings", "Split")
-	stringsSplitN := index.Object("strings", "SplitN")
-
-	for _, obj := range []types.Object{stringsSplit, stringsSplitN} {
+	for obj, expectedArgs := range map[types.Object]int{
+		index.Object("strings", "Split"):  2,
+		index.Object("strings", "SplitN"): 3,
+	} {
 		for curCall := range index.Calls(obj) {
 			callExpr := curCall.Node().(*ast.CallExpr)
+			if len(callExpr.Args) != expectedArgs {
+				// A multi-valued call may supply the complete argument list.
+				continue
+			}
 
 			// For SplitN, the third argument must be the integer constant 2.
-			if obj.Name() == "SplitN" && !isIntLiteral(info, callExpr.Args[2], 2) {
+			if expectedArgs == 3 && !isIntLiteral(info, callExpr.Args[2], 2) {
 				continue
 			}
 
@@ -468,7 +476,7 @@ func stringsplitCut(pass *analysis.Pass, index *typeindex.Index) {
 			})
 
 			// For SplitN: remove the ", 2" third argument.
-			if obj.Name() == "SplitN" {
+			if expectedArgs == 3 {
 				edits = append(edits, analysis.TextEdit{
 					Pos: callExpr.Args[1].End(), // after sep
 					End: callExpr.Rparen,        // before )

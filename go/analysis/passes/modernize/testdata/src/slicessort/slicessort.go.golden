@@ -4,6 +4,16 @@ import "slices"
 
 import "sort"
 
+func sortArgs() ([]int, func(int, int) bool) {
+	s := []int{2, 1}
+	return s, func(i, j int) bool { return s[i] < s[j] }
+}
+
+func multiValueSort() {
+	// A multi-valued call may supply the complete argument list.
+	sort.Slice(sortArgs())
+}
+
 type myint int
 
 func _(s []myint) {

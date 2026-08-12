@@ -64,6 +64,10 @@ func slicessort(pass *analysis.Pass) (any, error) {
 	)
 	for curCall := range index.Calls(sortSlice) {
 		call := curCall.Node().(*ast.CallExpr)
+		if len(call.Args) != 2 {
+			// A multi-valued call may supply the complete argument list.
+			continue
+		}
 		if lit, ok := call.Args[1].(*ast.FuncLit); ok && len(lit.Body.List) == 1 {
 			sig := info.Types[lit.Type].Type.(*types.Signature)
 

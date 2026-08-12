@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+func indexArgs() (string, string) {
+	return "abc", "b"
+}
+
+func multiValueIndex() bool {
+	i := strings.Index(indexArgs())
+	return i >= 0
+}
+
 func basic() bool {
 	s := "value"
 	i := strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
