@@ -51,6 +51,7 @@ func main() {
 	TestReturns("TestReturns")
 	TestGotoA("TestGotoA")
 	TestGotoB("TestGotoB")
+	TestGotoRestart("TestGotoRestart")
 	TestPanicReturns("TestPanicReturns")
 }
 
@@ -1679,6 +1680,21 @@ func TestGotoB(t testingT) {
 	} else {
 		matchErrorHelper(t, err, RERR_DONE)
 	}
+}
+
+func TestGotoRestart(t testingT) {
+	var result []int
+	restarts := 0
+
+again:
+	for _, x := range OfSliceIndex([]int{1, 2, 3, 4}) {
+		result = append(result, x)
+		if x == 1 && restarts < 2 {
+			restarts++
+			goto again
+		}
+	}
+	t.Log(result)
 }
 
 // once returns an iterator that runs its loop body once with the supplied value
