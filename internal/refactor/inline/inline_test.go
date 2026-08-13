@@ -1196,6 +1196,62 @@ func TestAssignmentCallStrategy(t *testing.T) {
 	_, _, _ = x, y, z
 }`,
 		},
+		// golang/go#70759: _ = f(...) with a binding decl should reduce
+		// instead of literalizing; braces stay if names would conflict.
+		{
+			"binding decl: assign-context reduces",
+			`func f(n int) bool { return n > 0 && n < 10 }`,
+			`func _() { _ = f(recover().(int)) }`,
+			`func _() {
+	n := recover().(int)
+	_ = n > 0 && n < 10
+}`,
+		},
+		{
+			"binding decl: assign-context name conflict keeps braces",
+			`func f(n int) bool { return n > 0 && n < 10 }`,
+			`func _() { n := 1; _ = n; _ = f(recover().(int)) }`,
+			`func _() {
+	n := 1
+	_ = n
+	{
+		n := recover().(int)
+		_ = n > 0 && n < 10
+	}
+}`,
+		},
+		{
+			"binding decl: NodeContains-style dual use of param",
+			`type Node interface{ Pos() int; End() int }; func f(n Node, pos int) bool { return n.Pos() <= pos && pos < n.End() }`,
+			`func _(pos int) { _ = f(recover().(Node), pos) }`,
+			`func _(pos int) {
+	n := recover().(Node)
+	_ = n.Pos() <= pos && pos < n.End()
+}`,
+		},
+		{
+			"binding decl: parenthesized call reduces",
+			`func f(n int) bool { return n > 0 && n < 10 }`,
+			`func _() { _ = (f(recover().(int))) }`,
+			`func _() {
+	n := recover().(int)
+	_ = n > 0 && n < 10
+}`,
+		},
+		// Named binding + multiple RHS must not reduce: prepending the binding
+		// would shadow sibling RHS (len(n)) or reorder evaluation (first/second).
+		{
+			"binding decl: multi-RHS blank assign does not reduce (shadowing)",
+			`func f(n int) bool { return n > 0 && n < 10 }`,
+			`func _(n string) { _, _ = f(recover().(int)), len(n) }`,
+			`func _(n string) { _, _ = func() bool { n := recover().(int); return n > 0 && n < 10 }(), len(n) }`,
+		},
+		{
+			"binding decl: multi-RHS blank assign does not reduce (reordering)",
+			`func f(n int) bool { return n > 0 && n < 10 }; func first() int; func second() int`,
+			`func _() { _, _ = first(), f(second()) }`,
+			`func _() { _, _ = first(), func() bool { n := second(); return n > 0 && n < 10 }() }`,
+		},
 	})
 }
 
@@ -1757,10 +1813,14 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func _() { var t T; _ = &t == (t).id() }`,
 		},
 		{
-			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
+			"Implicit dereference is made explicit outside of selector",
 			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
 			`func _() { var t *T; _ = t.f() }`,
-			`func _() { var t *T; _ = func() bool { x := *t; return x == x.id() }() }`,
+			`func _() {
+	var t *T
+	x := *t
+	_ = x == x.id()
+}`,
 		},
 		{
 			"Check for shadowing error on type used in the conversion.",
