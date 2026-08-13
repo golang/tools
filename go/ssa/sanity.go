@@ -235,13 +235,17 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 			s.errorf("no type: %s = %s", v.Name(), v)
 		} else if t == tRangeIter || t == tDeferStack {
 			// not a proper type; ignore.
-		} else if b, ok := t.Underlying().(*types.Basic); ok && b.Info()&types.IsUntyped != 0 {
+		} else if b, ok := t.Underlying().(*types.Basic); ok &&
+			b.Info()&types.IsUntyped != 0 && b.Info()&types.IsInteger == 0 {
+			// Non-constant untyped integer values may arise transiently
+			// while evaluating shift expressions.
 			s.errorf("instruction has 'untyped' result: %s = %s : %s", v.Name(), v, t)
 		}
 		s.checkReferrerList(v)
 	}
 
-	// Untyped constants are legal as instruction Operands(),
+	// Untyped constants and transient untyped integer values are legal
+	// as instruction Operands(),
 	// for example:
 	//   _ = "foo"[0]
 	// or:
@@ -369,10 +373,11 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 				continue // a nil operand is ok
 			}
 
-			// Check that "untyped" types only appear on constant operands.
+			// Check that "untyped" types only appear on constant operands
+			// or transient integer values produced by shift expressions.
 			if _, ok := (*op).(*Const); !ok {
 				if basic, ok := (*op).Type().Underlying().(*types.Basic); ok {
-					if basic.Info()&types.IsUntyped != 0 {
+					if basic.Info()&types.IsUntyped != 0 && basic.Info()&types.IsInteger == 0 {
 						s.errorf("operand #%d of %s is untyped: %s", i, instr, basic)
 					}
 				}

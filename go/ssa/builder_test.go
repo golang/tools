@@ -1061,6 +1061,7 @@ func TestFixedBugs(t *testing.T) {
 		"issue66783a",
 		"issue66783b",
 		"issue73594",
+		"issue77067",
 		"issue78110",
 		"issue73871",
 	} {
