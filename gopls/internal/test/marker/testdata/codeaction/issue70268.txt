@@ -25,9 +25,28 @@ package b
 
 import "unused.mod/a"
 
-func main(){
+func main() {
+	var x Undeclared //@diag("Undeclared", re"undeclared|undefined")
+	_ = &x.S.F
+	_ = &x.A[0]
+	_ = &(1 + 2) //@diag("(1 + 2)", re"cannot take address")
+	a.A(1, 2)
 	a.A/*dsdd*/(/*cccc*/ 1,
 
 
 	) //@diag(")", re"not enough arguments")
+}
+
+-- @a/b/b.go --
+package b
+
+import "unused.mod/a"
+
+func main() {
+	var x Undeclared //@diag("Undeclared", re"undeclared|undefined")
+	_ = &x.S.F
+	_ = &x.A[0]
+	_ = &(1 + 2) //@diag("(1 + 2)", re"cannot take address")
+	a.A(1)
+	a.A /*dsdd*/ ( /*cccc*/ 1) //@diag(")", re"not enough arguments")
 }

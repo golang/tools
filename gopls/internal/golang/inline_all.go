@@ -76,8 +76,9 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		// The inliner assumes that input is well-typed, but that is frequently not
 		// the case within gopls.
 		// Until we're able to harden the inliner, report panics as errors to avoid
-		// crashing the server.
-		badPkg = false
+		// crashing the server. Recover when inputs are not transitively
+		// error-free (golang/go#75236).
+		needRecover = false
 	)
 	{
 		needPkgs := make(map[PackageID]struct{})
@@ -98,14 +99,12 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 
 		for _, p := range refPkgs {
 			pkgs[p.Metadata().ID] = p
-			if len(p.ParseErrors())+len(p.TypeErrors()) > 0 {
-				badPkg = true
-			}
 		}
+		needRecover = transitivelyIllTyped(snapshot, refPkgs...)
 	}
 
 	// Be defensive about panics if the inputs are ill-typed.
-	if badPkg {
+	if needRecover {
 		if opts == nil {
 			opts = new(inline.Options)
 		} else {

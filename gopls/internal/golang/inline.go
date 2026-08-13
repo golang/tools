@@ -86,8 +86,9 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// The inliner assumes that input is well-typed, but that is frequently
 	// not the case within gopls. Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
-	bad := func(p *cache.Package) bool { return len(p.ParseErrors())+len(p.TypeErrors()) > 0 }
-	if bad(calleePkg) || bad(callerPkg) {
+	// Recover when the inputs are not transitively error-free
+	// (golang/go#75236).
+	if transitivelyIllTyped(snapshot, callerPkg, calleePkg) {
 		defer func() {
 			if x := recover(); x != nil {
 				err = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
@@ -116,7 +117,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	res, err := inline.Inline(caller, callee, &inline.Options{
 		Logf: logf,
 		// inlineAllCalls needs per-call recovery in its loops without aborting the whole process.
-		Recover: bad(calleePkg) || bad(callerPkg),
+		Recover: transitivelyIllTyped(snapshot, callerPkg, calleePkg),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -126,6 +127,35 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		Message:   fmt.Sprintf("inline call of %v", callee),
 		TextEdits: res.Edits,
 	}, nil
+}
+
+// transitivelyIllTyped is a heuristic for whether any root package has
+// parse/type errors, or any package in the roots' forward dependency
+// closure has list/deps errors (golang/go#75236).
+//
+// It is only a heuristic: type errors in dependencies are not discovered
+// by re-type-checking the whole closure here (too expensive for Inline).
+// Incomplete types from such errors are handled by hardening call sites
+// such as escape. The precise predicate we want is a transitively
+// error-free / "Compiles" check; see golang/go#82159.
+func transitivelyIllTyped(snapshot *cache.Snapshot, roots ...*cache.Package) bool {
+	var ids []PackageID
+	for _, root := range roots {
+		if len(root.ParseErrors())+len(root.TypeErrors()) > 0 {
+			return true
+		}
+		mp := root.Metadata()
+		if len(mp.Errors) > 0 || len(mp.DepsErrors) > 0 {
+			return true
+		}
+		ids = append(ids, mp.ID)
+	}
+	for mp := range snapshot.MetadataGraph().ForwardReflexiveTransitiveClosure(ids...) {
+		if len(mp.Errors) > 0 || len(mp.DepsErrors) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // TODO(adonovan): change the inliner to instead accept an io.Writer.
