@@ -504,3 +504,45 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 		}
 	}
 }
+
+// TestIssue73854 verifies that writing export data for a constant whose type is
+// an instantiated generic type (such as Generic[interface{}], Generic[func()],
+// or Generic[struct{}]) does not panic.
+//
+// In golang/go#73854, exportWriter.value passed pkg=nil to exportWriter.typ
+// under the assumption that constant types cannot contain named objects or
+// packages. However, with generics, a constant's type may be instantiated with
+// type arguments such as interfaces, signatures, or structs that require a
+// qualifying package during export.
+func TestIssue73854(t *testing.T) {
+	const src = `package pkg
+
+type Generic[T any] int
+
+const C1 Generic[interface{}] = 1
+const C2 Generic[func()] = 2
+const C3 Generic[struct{}] = 3
+`
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conf types.Config
+	pkg, err := conf.Check("pkg", fset, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := iexport(fset, gcimporter.IExportVersion, pkg)
+	if err != nil {
+		t.Fatalf("iexport: %v", err)
+	}
+
+	imports := make(map[string]*types.Package)
+	fset2 := token.NewFileSet()
+	if _, _, err := gcimporter.IImportData(fset2, imports, data, pkg.Path()); err != nil {
+		t.Fatalf("IImportData: %v", err)
+	}
+}

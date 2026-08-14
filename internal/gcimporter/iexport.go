@@ -745,7 +745,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 	case *types.Const:
 		w.tag(constTag)
 		w.pos(obj.Pos())
-		w.value(obj.Type(), obj.Val())
+		w.value(obj.Type(), obj.Val(), obj.Pkg())
 
 	case *types.TypeName:
 		t := obj.Type()
@@ -970,9 +970,11 @@ func (w *exportWriter) qualifiedType(obj *types.TypeName) {
 // typ emits the specified type.
 //
 // Objects within the type (struct fields and interface methods) are
-// qualified by pkg. It may be nil if the type cannot contain objects,
-// such as the type of a constant.
+// qualified by pkg.
 func (w *exportWriter) typ(t types.Type, pkg *types.Package) {
+	if pkg == nil {
+		pkg = w.p.localpkg
+	}
 	w.data.uint64(w.p.typOff(t, pkg))
 }
 
@@ -1295,8 +1297,12 @@ func (w *exportWriter) param(obj types.Object) {
 	w.typ(obj.Type(), obj.Pkg())
 }
 
-func (w *exportWriter) value(typ types.Type, v constant.Value) {
-	w.typ(typ, nil)
+// only called for constants
+func (w *exportWriter) value(typ types.Type, v constant.Value, pkg *types.Package) {
+	if pkg == nil {
+		pkg = w.p.localpkg
+	}
+	w.typ(typ, pkg)
 	if w.p.version >= iexportVersionGo1_18 {
 		w.int64(int64(v.Kind()))
 	}
