@@ -1,0 +1,125 @@
+Tests for relative pkg path queries.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- f/a/a.go --
+package a
+
+var XYZ = "a" //@target(f_a_XYZ, "mod.test/resolvetarget/f/a", "XYZ", "XYZ")
+var ABC = "a" //@target(f_a_ABC, "mod.test/resolvetarget/f/a", "ABC", "ABC")
+
+//@resolvetarget("XYZ", "", f_a_XYZ)
+
+// can't access things in test package.
+//@resolvetarget("XYZ_TEST", "", err="target XYZ_TEST not found in mod.test/resolvetarget/f/a")
+
+-- f/a/a_test.go --
+package a_test
+
+var XYZ = "a_test" //@target(f_a_test_XYZ, "mod.test/resolvetarget/f/a_test", "XYZ", "XYZ")
+
+var XYZ_TEST = "a_test" //@target(f_a_test_XYZ_TEST, "mod.test/resolvetarget/f/a_test", "XYZ_TEST", "XYZ_TEST")
+
+// prefers the XYZ in the current package (a_test)
+//@resolvetarget("XYZ", "", f_a_test_XYZ)
+
+// can't access anything in non-test package.
+// TODO: maybe change this to be resolved correctly
+//@resolvetarget("ABC", "", err="target ABC not found in mod.test/resolvetarget/f/a_test")
+
+-- f/a/ --
+
+// users need to be able to specify a pkg in the directory they are currently in.
+//@resolvetarget("a.XYZ", "", f_a_XYZ)
+//@resolvetarget("a_test.XYZ", "", f_a_test_XYZ)
+
+// If calling with a pkg directory, only the non-test is found.
+//@resolvetarget("f/a.XYZ", "", f_a_XYZ)
+
+// Can't even query for unique test package targets using a pkg path.
+// This can only be done using local directory resolution (as in relying on the current directory).
+//@resolvetarget("f/a.XYZ_TEST", "", err="target XYZ_TEST not found in mod.test/resolvetarget/f/a")
+
+// Returns both matching targets in this directory
+//@resolvetarget("XYZ", "", f_a_XYZ, f_a_test_XYZ)
+
+//@resolvetarget("XYZ_TEST", "", f_a_test_XYZ_TEST)
+
+-- b/b.go --
+package b
+
+var XYZ = "b" //@target(b_XYZ, "mod.test/resolvetarget/b", "XYZ", "XYZ")
+
+//@resolvetarget("XYZ", "", b_XYZ)
+//@resolvetarget("XYZ_test", "", b_XYZ_test)
+
+-- b/b_test.go --
+package b
+
+var XYZ_test = "b" //@target(b_XYZ_test, "mod.test/resolvetarget/b", "XYZ_test", "XYZ_test")
+
+//@resolvetarget("XYZ_test", "", b_XYZ_test)
+
+
+-- b/v2/b.go --
+package b
+
+var XYZ = "b" //@target(b_v2_XYZ, "mod.test/resolvetarget/b/v2", "XYZ", "XYZ")
+
+//@resolvetarget("XYZ", "", b_v2_XYZ)
+
+-- b/v2/ --
+
+//@resolvetarget("XYZ", "", b_v2_XYZ)
+//@resolvetarget("b.XYZ", "", b_v2_XYZ)
+
+-- b/ --
+
+//@resolvetarget("XYZ", "", b_XYZ)
+//@resolvetarget("v2.XYZ", "", b_v2_XYZ)
+
+-- t/t.go --
+// only exists to test directory calls from `q/t/`
+package t
+
+-- t/ --
+// TODO(aputman): get working if the directory doesn't have any go files too (no package).
+
+// FIX? This should go to the v2 version of package b?
+//@resolvetarget("b.XYZ", "", b_XYZ)
+//@resolvetarget("b/v2.XYZ", "", b_v2_XYZ)
+//@resolvetarget("XYZ", "b", b_XYZ)
+//@resolvetarget("b.XYZ_test", "", b_XYZ_test)
+
+// TODO(aputman): Consider what will be best for pkg name != directory name. (e.g. b/v2/b.go above)
+
+// This should resolve the relative path `../b` to the package `mod.test/resolvetarget/b`
+//@resolvetarget("XYZ", "../b", b_XYZ)
+//@resolvetarget("XYZ", "./resolvetarget/b", err="package not found: ./resolvetarget/b")
+//@resolvetarget("XYZ", "../resolvetarget/b", err="package not found: ../resolvetarget/b")
+//@resolvetarget("./resolvetarget/b.XYZ", "", err="package not found: ./resolvetarget/b")
+//@resolvetarget("../resolvetarget/b.XYZ", "", err="package not found: ../resolvetarget/b")
+
+// And finally, in a completely unrelated package, it returns an error
+//@resolvetarget("XYZ", "", err="target XYZ not found in mod.test/resolvetarget")
+
+-- x/y/z/b/b.go --
+package b
+var SubTarget = "sub" //@target(SubTarget, "mod.test/resolvetarget/x/y/z/b", "SubTarget", "SubTarget")
+
+-- x/y/z/b/ --
+
+//@resolvetarget("SubTarget", "./", SubTarget)
+
+-- x/y/z/ --
+
+//@resolvetarget("./b.SubTarget", "", SubTarget)
+//@resolvetarget("SubTarget", "./b", SubTarget)
+//@resolvetarget("../../y/z/b.SubTarget", "", SubTarget)
+//@resolvetarget("SubTarget", "../../y/z/b", SubTarget)
