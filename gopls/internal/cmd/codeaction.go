@@ -57,6 +57,7 @@ Valid kinds include:
 	refactor.extract.variable
 	refactor.inline
 	refactor.inline.call
+	refactor.inline.variable
 	refactor.rewrite
 	refactor.rewrite.changeQuote
 	refactor.rewrite.fillStruct

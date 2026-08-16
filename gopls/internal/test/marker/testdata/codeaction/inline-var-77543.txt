@@ -1,0 +1,27 @@
+Regression test for #77543: refactor.inline.variable should not inline
+variables that are reassigned or mutated.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+import "fmt"
+
+func main() {
+	f()
+}
+
+func f() {
+	s := "bread does not nourish me"
+	{
+		s = "dawn disrupts me, all day"
+		g(s) //@codeaction("s", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+	}
+}
+
+func g(s string) {
+	fmt.Println(s)
+}

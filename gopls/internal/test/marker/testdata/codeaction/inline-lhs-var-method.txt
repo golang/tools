@@ -1,5 +1,10 @@
-We should not offer a code action to inline 'v' where it appears on the
-left-hand side of an assignment: method with pointer receiver.
+We test the interaction of refactor.inline.variable with method receivers
+and mutation:
+1. Calling a value-receiver method on an unassigned variable (v0) can be inlined.
+2. Calling a pointer-receiver method on a value variable (v) implicitly takes
+   the variable's address (&v), so inlining is rejected.
+3. Variables that are reassigned or address-taken (v) cannot be inlined.
+4. An unmutated pointer variable (vptr) can be inlined into pointer-receiver calls.
 
 Regression test for issue #75200.
 
@@ -19,18 +24,25 @@ func (V) Method() { }
 func (*V) PointerMethod() { }
 
 func _() {
+    // Value receiver method on unassigned variable can be inlined.
+    var v0 V = V(123)
+    v0.Method() //@codeaction("v0", "refactor.inline.variable", result=inlineV0)
+
+    // v is reassigned and has its address taken implicitly by PointerMethod
+    // and explicitly by &v; inlining v must be rejected.
     var v V = V(123)
     v = V(13)
-    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
     v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    // vptr is initialized to &v and never mutated, so inlining vptr is allowed.
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
     fmt.Println(v, vptr)
 }
 
--- @inlineV/c/c.go --
+-- @inlineV0/c/c.go --
 package c
 
 import "fmt"
@@ -42,11 +54,18 @@ func (V) Method() { }
 func (*V) PointerMethod() { }
 
 func _() {
+    // Value receiver method on unassigned variable can be inlined.
+    var v0 V = V(123)
+    V(123).Method() //@codeaction("v0", "refactor.inline.variable", result=inlineV0)
+
+    // v is reassigned and has its address taken implicitly by PointerMethod
+    // and explicitly by &v; inlining v must be rejected.
     var v V = V(123)
     v = V(13)
-    V(123).Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
     v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    // vptr is initialized to &v and never mutated, so inlining vptr is allowed.
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
@@ -65,11 +84,18 @@ func (V) Method() { }
 func (*V) PointerMethod() { }
 
 func _() {
+    // Value receiver method on unassigned variable can be inlined.
+    var v0 V = V(123)
+    v0.Method() //@codeaction("v0", "refactor.inline.variable", result=inlineV0)
+
+    // v is reassigned and has its address taken implicitly by PointerMethod
+    // and explicitly by &v; inlining v must be rejected.
     var v V = V(123)
     v = V(13)
-    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
     v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    // vptr is initialized to &v and never mutated, so inlining vptr is allowed.
     var vptr *V = &v
     (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
@@ -88,11 +114,18 @@ func (V) Method() { }
 func (*V) PointerMethod() { }
 
 func _() {
+    // Value receiver method on unassigned variable can be inlined.
+    var v0 V = V(123)
+    v0.Method() //@codeaction("v0", "refactor.inline.variable", result=inlineV0)
+
+    // v is reassigned and has its address taken implicitly by PointerMethod
+    // and explicitly by &v; inlining v must be rejected.
     var v V = V(123)
     v = V(13)
-    v.Method() //@codeaction("v", "refactor.inline.variable", result=inlineV)
     v.PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     (v).PointerMethod() //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    // vptr is initialized to &v and never mutated, so inlining vptr is allowed.
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
