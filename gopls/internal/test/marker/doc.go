@@ -144,7 +144,7 @@ Here is the list of supported action markers:
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start location, kind string, diag=regexp, end=location, action=golden, edit=golden, result=golden, err=stringMatcher, answers=string)
+  - codeaction(start location, kind string, diag=regexp, end=location, action=golden, edit=golden, result=golden, err=stringMatcher, title=stringMatcher, answers=string)
 
     Specifies a code action to request at the location, with given kind.
     If diag is set, the code action must be associated with the given
@@ -155,7 +155,7 @@ Here is the list of supported action markers:
     respective answer values (e.g. answers=`{"tags":"xml"}`), representing the
     user's response to interactive refactoring dialogs.
 
-    Exactly one of action, edit, result, or err must be set:
+    Exactly one of action, edit, result, err, or title must be set:
     If action is set, it is a golden reference to a JSON blob representing the
     resolved code action, which is not applied.
     If edit is set, it is a golden reference to the edits resulting from the
@@ -164,6 +164,8 @@ Here is the list of supported action markers:
     resulting from the code action.
     If err is set, it is expected to match the error resulting from applying
     the code action.
+    If title is set, it is expected to match the title of the resolved code
+    action.
 
   - codelens(location, title): specifies that a codelens is expected at the
     given location, with given title. Must be used in conjunction with

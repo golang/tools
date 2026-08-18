@@ -20,7 +20,7 @@ import (
 )
 
 func codeActionMarker(mark marker, loc protocol.Location, kind string) {
-	if !exactlyOneNamedArg(mark, "action", "edit", "result", "err") {
+	if !exactlyOneNamedArg(mark, "action", "edit", "result", "err", "title") {
 		return
 	}
 
@@ -37,6 +37,7 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 		result     = namedArg(mark, "result", expect.Identifier(""))
 		wantAction = namedArg(mark, "action", expect.Identifier(""))
 		wantErr    = namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+		wantTitle  = namedArgFunc(mark, "title", convertStringMatcher, stringMatcher{})
 	)
 
 	var diag *protocol.Diagnostic
@@ -56,6 +57,11 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 		} else {
 			mark.errorf("resolveCodeAction failed: %v", err)
 		}
+		return
+	}
+
+	if !wantTitle.empty() {
+		wantTitle.check(mark, action.Title)
 		return
 	}
 

@@ -1269,7 +1269,9 @@ func refactorMoveDeclaration(_ context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
-	cmd := command.NewMoveDeclarationCommand(fmt.Sprintf("Move declaration %s", curSel.Node()), command.MoveDeclarationArgs{Location: req.loc})
-	req.addCommandAction(cmd, false)
+	if cur, name := moveDeclTarget(curSel); cur.Valid() {
+		cmd := command.NewMoveDeclarationCommand(fmt.Sprintf("Move declaration %s", name), command.MoveDeclarationArgs{Location: req.loc})
+		req.addCommandAction(cmd, false)
+	}
 	return nil
 }

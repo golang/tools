@@ -1,0 +1,38 @@
+Test move declaration refactoring with dialogue support.
+For now, just assert that we produce a codeaction with a title that specifies
+the declaration to move. Later, this test will be updated to verify the edits
+produced by the codeaction.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/movedecl
+
+go 1.20
+
+-- move/availability.go --
+package move //@codeaction(re"m()ove", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+import "strings" //@codeaction(re"import()", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+func Foo(a, b int) int { //@codeaction(re"fu()nc", "refactor.move.moveDeclaration", title="Move declaration Foo")
+    type Bar strings.Builder //@codeaction(re"B()ar", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+    return 1 //@codeaction(re"return()", "refactor.move.moveDeclaration", title="Move declaration Foo")
+}
+
+var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", title="Move declaration a")
+
+var c, d int //@codeaction(re"va()r", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+type A struct {} //@codeaction(re"A", "refactor.move.moveDeclaration", title="Move declaration A")
