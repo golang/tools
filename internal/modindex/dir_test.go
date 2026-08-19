@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	. "golang.org/x/tools/internal/modindex"
 )
@@ -48,7 +49,7 @@ var idtests = []id{
 	},
 }
 
-func testModCache(t *testing.T) string {
+func testModCache(t testing.TB) string {
 	IndexDir = t.TempDir()
 	return IndexDir
 }
@@ -109,8 +110,8 @@ func TestIncremental(t *testing.T) {
 		t.Fatal(err)
 	}
 	// they should be the same except maybe for the time
-	index1.ValidAt = index2.ValidAt
-	if diff := cmp.Diff(index1, index2); diff != "" {
+	// (Read may return a shared Index, so don't modify it.)
+	if diff := cmp.Diff(index1, index2, cmpopts.IgnoreFields(Index{}, "ValidAt")); diff != "" {
 		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
 	}
 }
@@ -156,8 +157,8 @@ func TestIncrementalNope(t *testing.T) {
 		t.Fatal(err)
 	}
 	// they should be the same except maybe for the time
-	index1.ValidAt = index2.ValidAt
-	if diff := cmp.Diff(index1, index2); diff != "" {
+	// (Read may return a shared Index, so don't modify it.)
+	if diff := cmp.Diff(index1, index2, cmpopts.IgnoreFields(Index{}, "ValidAt")); diff != "" {
 		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
 	}
 }
@@ -229,5 +230,80 @@ func TestMissingIndex(t *testing.T) {
 	}
 	if len(des) != 2 {
 		t.Errorf("got %d, but expected two entries in index dir", len(des))
+	}
+}
+
+// TestReadCache checks that Read memoizes the index it parses, but
+// does not return a stale one once a new index has been written.
+func TestReadCache(t *testing.T) {
+	dir := testModCache(t)
+	if err := addPkg(dir, idtests[0].dirs[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Create(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	parses := ParseCount()
+	index1, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ParseCount() - parses; got != 1 {
+		t.Errorf("first Read parsed the payload file %d times, want 1", got)
+	}
+
+	// A second Read of the same index parses nothing.
+	index2, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index2 != index1 {
+		t.Error("second Read did not return the memoized index")
+	}
+	if got := ParseCount() - parses; got != 1 {
+		t.Errorf("second Read parsed the payload file again (%d parses in all, want 1)", got)
+	}
+
+	// A new payload file invalidates the memoized index.
+	if err := addPkg(dir, idtests[1].dirs[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update(dir); err != nil {
+		t.Fatal(err)
+	}
+	index3, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index3 == index1 {
+		t.Fatal("Read returned the stale memoized index after Update")
+	}
+	if got := ParseCount() - parses; got != 2 {
+		t.Errorf("got %d parses in all, want 2", got)
+	}
+	if before, after := len(index1.Entries), len(index3.Entries); after <= before {
+		t.Errorf("index read after Update is not larger (before %d, after %d)", before, after)
+	}
+}
+
+// BenchmarkRead measures repeated reads of an unchanged index, as done
+// by a client such as goimports that processes many files in turn.
+func BenchmarkRead(b *testing.B) {
+	dir := testModCache(b)
+	for _, it := range idtests {
+		for _, d := range it.dirs {
+			if err := addPkg(dir, d); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	if _, err := Create(dir); err != nil {
+		b.Fatal(err)
+	}
+	for b.Loop() {
+		if _, err := Read(dir); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

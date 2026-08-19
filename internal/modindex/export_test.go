@@ -14,3 +14,7 @@ var Uniquify = uniquify
 func Create(gomodcache string) (*Index, error) {
 	return update(gomodcache, nil)
 }
+
+// ParseCount returns the number of times [Read] has parsed a payload
+// file, as opposed to returning a memoized index.
+func ParseCount() int64 { return parseCount.Load() }
