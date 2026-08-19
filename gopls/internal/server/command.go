@@ -1959,7 +1959,8 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	return c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		changes, _, err := golang.MoveDeclaration(ctx, deps.fh, deps.snapshot)
+		// TODO(mkalil): implement with interactive params
+		changes, _, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, "") // dummy for now
 		if err != nil {
 			return err
 		}
