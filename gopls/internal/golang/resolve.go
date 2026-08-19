@@ -227,7 +227,7 @@ var implementInterfaceFormString = []protocol.FormField{
 
 var moveDeclarationFormString = []protocol.FormField{
 	{
-		ID:          "string",
+		ID:          "file",
 		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
 		Type: protocol.FormFieldTypeFile{
 			Kind: "string",
