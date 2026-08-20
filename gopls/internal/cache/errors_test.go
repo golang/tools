@@ -5,12 +5,16 @@
 package cache
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -124,5 +128,69 @@ func TestDiagnosticEncoding(t *testing.T) {
 
 	if diff := cmp.Diff(diags, diags2); diff != "" {
 		t.Errorf("decoded diagnostics do not match (-original +decoded):\n%s", diff)
+	}
+}
+
+type fakeFileSource map[protocol.DocumentURI][]byte
+
+func (s fakeFileSource) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {
+	data, ok := s[uri]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return makeFakeFileHandle(uri, data), nil
+}
+
+func TestParseGoListImportCycleError(t *testing.T) {
+	const (
+		fileURI = protocol.DocumentURI("file:///a/a_test.go")
+		src     = `package a
+
+import (
+	_ "example.com/b"
+)
+`
+	)
+
+	fs := fakeFileSource{
+		fileURI: []byte(src),
+	}
+	mp := &metadata.Package{
+		CompiledGoFiles: []protocol.DocumentURI{fileURI},
+	}
+
+	tests := []struct {
+		name    string
+		errMsg  string
+		wantMsg string
+	}{
+		{
+			name:    "standard import cycle",
+			errMsg:  "import cycle not allowed: import stack: [example.com/a example.com/b example.com/a]",
+			wantMsg: "import cycle not allowed",
+		},
+		{
+			name:    "test import cycle",
+			errMsg:  "import cycle not allowed in test: import stack: [example.com/a example.com/b example.com/a]",
+			wantMsg: "import cycle not allowed in test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diag, err := parseGoListImportCycleError(context.Background(), packages.Error{Msg: tt.errMsg}, mp, fs)
+			if err != nil {
+				t.Fatalf("parseGoListImportCycleError failed: %v", err)
+			}
+			if diag == nil {
+				t.Fatalf("expected diagnostic, got nil")
+			}
+			if diag.Message != tt.wantMsg {
+				t.Errorf("Message: want %q, got %q", tt.wantMsg, diag.Message)
+			}
+			if diag.Range.Start.Line != 3 { // 0-based line of import _ "example.com/b"
+				t.Errorf("Range.Start.Line: want 3, got %d", diag.Range.Start.Line)
+			}
+		})
 	}
 }

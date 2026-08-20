@@ -691,9 +691,14 @@ func (state *golistState) createDriverResponse(words ...string) (*DriverResponse
 
 		if p.Error != nil {
 			msg := strings.TrimSpace(p.Error.Err) // Trim to work around golang.org/issue/32363.
-			// Address golang.org/issue/35964 by appending import stack to error message.
-			if msg == "import cycle not allowed" && len(p.Error.ImportStack) != 0 {
-				msg += fmt.Sprintf(": import stack: %v", p.Error.ImportStack)
+			// Address golang.org/issue/35964 and golang.org/issue/38826 by appending import stack to error message.
+			// Address golang/go#38826 by removing " (test)"
+			if (msg == "import cycle not allowed" || msg == "import cycle not allowed in test") && len(p.Error.ImportStack) != 0 {
+				stack := make([]string, len(p.Error.ImportStack))
+				for i, s := range p.Error.ImportStack {
+					stack[i] = strings.TrimSuffix(s, " (test)")
+				}
+				msg += fmt.Sprintf(": import stack: %v", stack)
 			}
 			pkg.Errors = append(pkg.Errors, Error{
 				Pos:  p.Error.Pos,

@@ -2609,6 +2609,43 @@ func testCycleImportStack(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+// TestCycleImportStackInTest checks that import cycles in tests include the import stack.
+// See golang.org/issue/38826.
+func TestCycleImportStackInTest(t *testing.T) {
+	testAllOrModulesParallel(t, testCycleImportStackInTest)
+}
+func testCycleImportStackInTest(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"a/a.go":      `package a`,
+			"a/a_test.go": `package a; import _ "golang.org/fake/b"`,
+			"b/b.go":      `package b; import _ "golang.org/fake/a"`,
+		}}})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.NeedName | packages.NeedImports
+	exported.Config.Tests = true
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var testPkg *packages.Package
+	for _, p := range pkgs {
+		if len(p.Errors) > 0 {
+			testPkg = p
+			break
+		}
+	}
+	if testPkg == nil {
+		t.Fatalf("Expected test package with error, got %v", pkgs)
+	}
+	expected := "import cycle not allowed in test: import stack: [golang.org/fake/a golang.org/fake/b golang.org/fake/a]"
+	if testPkg.Errors[0].Msg != expected {
+		t.Fatalf("Expected error %q, got %q", expected, testPkg.Errors[0].Msg)
+	}
+}
+
 func TestForTestField(t *testing.T) {
 	testAllOrModulesParallel(t, testForTestField)
 }

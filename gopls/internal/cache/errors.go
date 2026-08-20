@@ -430,7 +430,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 		return nil, nil
 	}
 	msg := matches[1]
-	importList := strings.Split(matches[2], " ")
+	importList := strings.Fields(matches[2])
 	// Since the error is relative to the current package. The import that is causing
 	// the import cycle error is the second one in the list.
 	if len(importList) < 2 {
