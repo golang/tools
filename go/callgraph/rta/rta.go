@@ -432,9 +432,17 @@ func (r *rta) addRuntimeType(T types.Type) {
 
 			// Exported methods are always potentially callable via reflection.
 			for sel := range methodSetOf(T).Methods() {
-				if sel.Obj().Exported() {
-					r.addReachable(r.prog.MethodValue(sel), true)
+				obj := sel.Obj()
+				if !obj.Exported() {
+					continue
 				}
+				if obj.Type().(*types.Signature).TypeParams() != nil {
+					// Skip generic methods: they have no single ssa.Function,
+					// so MethodValue returns nil, and reflection cannot call
+					// them without instantiating them first.
+					continue
+				}
+				r.addReachable(r.prog.MethodValue(sel), true)
 			}
 
 			// Add callgraph edge for each existing dynamic

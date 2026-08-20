@@ -7,14 +7,23 @@ package main
 
 type C struct{}
 
-func (C) Foo[T any]() { f() }
+func (C) Foo[T any](x T) T { f(); return x }
+
+func (C) Bar() { g() }
 
 func f() {}
 
+func g() {}
+
+// Sink makes C a runtime type, so that its exported methods become
+// potentially callable through reflection.
+var Sink any
+
 func main() {
 	var c C
-	c.Foo[int]()
-	c.Foo[string]()
+	c.Foo(1)
+	c.Foo("")
+	Sink = c
 }
 
 // WANT:
@@ -26,6 +35,11 @@ func main() {
 //
 // reachable (C).Foo[int]
 // reachable (C).Foo[string]
+// reachable (C).Bar
 // reachable f
+// reachable g
 // reachable init
 // reachable main
+//
+// rtype C
+// rtype *C
