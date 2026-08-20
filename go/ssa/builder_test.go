@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -1080,6 +1081,58 @@ func TestFixedBugs(t *testing.T) {
 				t.Error(err)
 			}
 		})
+	}
+}
+
+func TestSyntheticValueTypes(t *testing.T) {
+	const source = `package p
+
+func rangeMap(m map[string]int) {
+	for range m {
+	}
+}
+
+func rangeFunc(seq func(func() bool)) {
+	for range seq {
+		defer func() {}()
+	}
+}
+`
+
+	pkg, _ := buildPackage(t, source, ssa.SanityCheckFunctions)
+	var rangeType, deferStackType types.Type
+	for fn := range ssautil.AllFunctions(pkg.Prog) {
+		for _, block := range fn.Blocks {
+			for _, instr := range block.Instrs {
+				switch instr := instr.(type) {
+				case *ssa.Range:
+					rangeType = instr.Type()
+				case *ssa.Defer:
+					if instr.DeferStack != nil {
+						deferStackType = instr.DeferStack.Type()
+					}
+				}
+			}
+		}
+	}
+
+	if tuple, ok := rangeType.(*types.Tuple); !ok || tuple.Len() != 0 {
+		t.Fatalf("Range type = %v (%T), want ()", rangeType, rangeType)
+	}
+	ptr, ok := deferStackType.(*types.Pointer)
+	if !ok {
+		t.Fatalf("DeferStack type = %v (%T), want *struct{}", deferStackType, deferStackType)
+	}
+	if strct, ok := ptr.Elem().Underlying().(*types.Struct); !ok || strct.NumFields() != 0 {
+		t.Errorf("DeferStack type = %v, want *struct{}", deferStackType)
+	}
+
+	// Synthetic types should work with utilities that accept go/types types.
+	var typeMap typeutil.Map
+	typeMap.Set(rangeType, true)
+	typeMap.Set(deferStackType, true)
+	if typeMap.Len() != 2 {
+		t.Errorf("type map contains %d entries, want 2", typeMap.Len())
 	}
 }
 

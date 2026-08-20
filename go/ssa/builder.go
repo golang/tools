@@ -89,11 +89,6 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-type opaqueType struct{ name string }
-
-func (t *opaqueType) String() string         { return t.name }
-func (t *opaqueType) Underlying() types.Type { return t }
-
 var (
 	varOk    = newVar("ok", tBool)
 	varIndex = newVar("index", tInt)
@@ -107,8 +102,10 @@ var (
 	tString     = types.Typ[types.String]
 	tUntypedNil = types.Typ[types.UntypedNil]
 
-	tRangeIter  = &opaqueType{"iter"}                         // the type of all "range" iterators
-	tDeferStack = types.NewPointer(&opaqueType{"deferStack"}) // the type of a "deferStack" from ssa:deferstack()
+	// These synthetic values have inaccurate but valid Go types so that
+	// clients can safely use them with APIs that accept types.Type.
+	tRangeIter  = types.NewTuple()                            // the type of all "range" iterators
+	tDeferStack = types.NewPointer(types.NewStruct(nil, nil)) // the type of a "deferStack" from ssa:deferstack()
 	tEface      = types.NewInterfaceType(nil, nil).Complete()
 
 	// SSA Value constants.
