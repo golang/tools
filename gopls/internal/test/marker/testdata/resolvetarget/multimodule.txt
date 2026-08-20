@@ -19,8 +19,7 @@ go 1.25
 require y.mod.test/resolvetarget v0.0.1
 require z.mod.test/resolvetarget v0.0.1
 
--- x/query.go --
-package main
+-- x/ --
 
 //@resolvetarget("y.mod.test/resolvetarget/a.T", "", y_T)
 //@resolvetarget("T", "y.mod.test/resolvetarget/a", y_T)

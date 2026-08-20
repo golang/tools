@@ -8,9 +8,7 @@ module mod.test/resolvetarget
 
 go 1.25
 
--- query.go --
-package main
-
+-- a/ --
 // Resolves full package path and target name
 //@resolvetarget("mod.test/resolvetarget/a.GopherA", "", GopherA)
 //@resolvetarget("GopherA", "mod.test/resolvetarget/a", GopherA)

@@ -100,6 +100,13 @@ treatment by the test runner:
     file. If present, these files are written to a separate temporary
     directory and GOPROXY is set to file://<proxy directory>.
 
+  - directory "files": any file that ends with "/" is treated as a CWD for the
+    user. These files are only parsed for their comments, so that marker
+    actions can be run from them. What is special about these dir files is that
+    the DocumentURI for any contained marker actions will be a directory
+    instead of a file (ending with "/"). This is especially helpful for testing
+    behaviour when called from the gopls cli. Value markers aren't allowed here.
+
 # Marker types
 
 Markers are of two kinds: "value markers" and "action markers". Value markers

@@ -1,0 +1,21 @@
+Testing directories with dots in their name. To make sure that resolve_target
+run from them considers them directories, not files. Also tests how that
+interacts with sub-target queries which also use dots.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- a/b.v2/b.go --
+
+package b
+
+var B = "B" //@target(B_v2, "mod.test/resolvetarget/a/b.v2", "B", "B")
+
+-- a/b.v2/ --
+
+//@resolvetarget("B", "mod.test/resolvetarget/a/b.v2", B_v2)
