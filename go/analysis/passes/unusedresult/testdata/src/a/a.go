@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	. "fmt"
+	"testing"
 )
 
 func _() {
@@ -28,4 +29,20 @@ func _() {
 
 	Sprint("")  // want "result of fmt.Sprint call not used"
 	Sprintf("") // want "result of fmt.Sprintf call not used"
+}
+
+func _(b *testing.B) {
+	var buf bytes.Buffer
+	buf.String() // want `result of \(\*bytes.Buffer\).String call not used`
+
+	for b.Loop() {
+		// b.Loop keeps the results of these calls alive; not a mistake.
+		buf.String()
+		fmt.Sprint("")
+	}
+
+	// Only b.Loop is special; an ordinary loop still reports.
+	for i := 0; i < 2; i++ {
+		buf.String() // want `result of \(\*bytes.Buffer\).String call not used`
+	}
 }
