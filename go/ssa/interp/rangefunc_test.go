@@ -97,6 +97,7 @@ func TestRangeFunc(t *testing.T) {
 		"TestReturns":               {"[-1 1 2 -10]", "[-1 1 2 -10]", RERR_DONE, "[-1 1 2 -10]", RERR_DONE},
 		"TestGotoA":                 {"testGotoA1[-1 1 2 -2 1 2 -3 1 2 -4 -30 -20 -10]", "testGotoA2[-1 1 2 -2 1 2 -3 1 2 -4 -30 -20 -10]", RERR_DONE, "testGotoA3[-1 1 2 -10]", RERR_DONE},
 		"TestGotoB":                 {"testGotoB1[-1 1 2 999 -10]", "testGotoB2[-1 1 2 -10]", RERR_DONE, "testGotoB3[-1 1 2 -10]", RERR_DONE},
+		"TestGotoRestart":           {"[1 1 1 2 3 4]"},
 		"TestPanicReturns": {
 			"Got expected 'f return'",
 			"Got expected 'g return'",
