@@ -1007,9 +1007,12 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 			return bytes.NewBufferString(output), nil
 		}
 
-		// Workaround for #29280: go list -e has incorrect behavior when an ad-hoc package doesn't exist.
+		// Workaround for #29280 and #31344: go list -e has incorrect behavior when an ad-hoc package doesn't exist.
 		// Note that the error message we look for in this case is different that the one looked for above.
-		if len(stderr.String()) > 0 && strings.Contains(stderr.String(), "no such file or directory") {
+		// "no such file or directory" is emitted on Unix,
+		if len(stderr.String()) > 0 && (strings.Contains(stderr.String(), "no such file or directory") || // Unix
+			strings.Contains(stderr.String(), "The system cannot find the file specified") || // Windows ERROR_FILE_NOT_FOUND
+			strings.Contains(stderr.String(), "The system cannot find the path specified")) { // Windows ERROR_PATH_NOT_FOUND
 			output := fmt.Sprintf(`{"ImportPath": "command-line-arguments","Incomplete": true,"Error": {"Pos": "","Err": %q}}`,
 				strings.Trim(stderr.String(), "\n"))
 			return bytes.NewBufferString(output), nil

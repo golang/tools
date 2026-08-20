@@ -1844,9 +1844,6 @@ func testErrorMissingFile(t *testing.T, exporter packagestest.Exporter) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pkgs) == 0 && runtime.GOOS == "windows" {
-		t.Skip("Issue #31344: the ad-hoc command-line-arguments package isn't created on windows")
-	}
 	if len(pkgs) != 1 || (pkgs[0].PkgPath != "command-line-arguments" && pkgs[0].PkgPath != "missing.go") {
 		t.Fatalf("packages.Load: want [command-line-arguments] or [missing.go], got %v", pkgs)
 	}
