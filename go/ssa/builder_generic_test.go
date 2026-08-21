@@ -565,14 +565,10 @@ func TestGenericBodies(t *testing.T) {
 func callsTo(fns map[*ssa.Function]bool, fname string) map[*ssa.CallCommon]*ssa.Function {
 	callsites := make(map[*ssa.CallCommon]*ssa.Function)
 	for fn := range fns {
-		for _, bb := range fn.Blocks {
-			for _, i := range bb.Instrs {
-				if i, ok := i.(ssa.CallInstruction); ok {
-					call := i.Common()
-					if call.Value.Name() == fname {
-						callsites[call] = fn
-					}
-				}
+		for i := range findInstructions[ssa.CallInstruction](fn) {
+			call := i.Common()
+			if call.Value.Name() == fname {
+				callsites[call] = fn
 			}
 		}
 	}

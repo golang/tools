@@ -148,21 +148,15 @@ func main() {
 		"N/A",
 	}
 	callNum := 0
-	for _, b := range mainPkg.Func("main").Blocks {
-		for _, instr := range b.Instrs {
-			switch instr := instr.(type) {
-			case ssa.CallInstruction:
-				call := instr.Common()
-				if want := expectedCallee[callNum]; want != "N/A" {
-					got := call.StaticCallee().String()
-					if want != got {
-						t.Errorf("call #%d from main.main: got callee %s, want %s",
-							callNum, got, want)
-					}
-				}
-				callNum++
+	for call := range findInstructions[ssa.CallInstruction](mainPkg.Func("main")) {
+		if want := expectedCallee[callNum]; want != "N/A" {
+			got := call.Common().StaticCallee().String()
+			if want != got {
+				t.Errorf("call #%d from main.main: got callee %s, want %s",
+					callNum, got, want)
 			}
 		}
+		callNum++
 	}
 	if callNum != 4 {
 		t.Errorf("in main.main: got %d calls, want %d", callNum, 4)
@@ -190,12 +184,10 @@ func TestNoIndirectCreatePackage(t *testing.T) {
 
 	// Find the function in the sole call in the sole block of function a.A.
 	var got string
-	for _, instr := range aSSA.Members["A"].(*ssa.Function).Blocks[0].Instrs {
-		if call, ok := instr.(*ssa.Call); ok {
-			f := call.Call.Value.(*ssa.Function)
-			got = fmt.Sprintf("%v # %s", f, f.Synthetic)
-			break
-		}
+	for call := range findInstructions[*ssa.Call](aSSA.Members["A"].(*ssa.Function)) {
+		f := call.Call.Value.(*ssa.Function)
+		got = fmt.Sprintf("%v # %s", f, f.Synthetic)
+		break
 	}
 	want := "(testdata/c.C).F # from type information (on demand)"
 	if got != want {
@@ -519,12 +511,8 @@ func h(error)
 	g := p.Func("g")
 
 	phis := 0
-	for _, b := range g.Blocks {
-		for _, instr := range b.Instrs {
-			if _, ok := instr.(*ssa.Phi); ok {
-				phis++
-			}
-		}
+	for range findInstructions[*ssa.Phi](g) {
+		phis++
 	}
 	if phis != 1 {
 		g.WriteTo(os.Stderr)
@@ -639,15 +627,13 @@ var indirect = R[int].M
 
 				// Find the wrapper for v. This is stored exactly once in init.
 				var wrapper *ssa.Function
-				for _, bb := range p.Func("init").Blocks {
-					for _, i := range bb.Instrs {
-						if store, ok := i.(*ssa.Store); ok && v == store.Addr {
-							switch val := store.Val.(type) {
-							case *ssa.Function:
-								wrapper = val
-							case *ssa.MakeClosure:
-								wrapper = val.Fn.(*ssa.Function)
-							}
+				for store := range findInstructions[*ssa.Store](p.Func("init")) {
+					if v == store.Addr {
+						switch val := store.Val.(type) {
+						case *ssa.Function:
+							wrapper = val
+						case *ssa.MakeClosure:
+							wrapper = val.Fn.(*ssa.Function)
 						}
 					}
 				}
@@ -660,12 +646,9 @@ var indirect = R[int].M
 
 				// Find the callee within the wrapper. There should be exactly one call.
 				var callee *ssa.Function
-				for _, bb := range wrapper.Blocks {
-					for _, i := range bb.Instrs {
-						if call, ok := i.(*ssa.Call); ok {
-							callee = call.Call.StaticCallee()
-						}
-					}
+				for call := range findInstructions[*ssa.Call](wrapper) {
+					callee = call.Call.StaticCallee()
+					break
 				}
 				if callee == nil {
 					t.Fatalf("failed to find callee within wrapper %s", wrapper)
@@ -782,12 +765,8 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 			t.Parallel()
 
 			var calls []string
-			for _, b := range fn.Blocks {
-				for _, instr := range b.Instrs {
-					if call, ok := instr.(ssa.CallInstruction); ok {
-						calls = append(calls, call.String())
-					}
-				}
+			for call := range findInstructions[ssa.CallInstruction](fn) {
+				calls = append(calls, call.String())
 			}
 			if got := fmt.Sprint(calls); got != want {
 				fn.WriteTo(os.Stderr)
@@ -824,15 +803,11 @@ func TestGenericFunctionSelector(t *testing.T) {
 		p.Build()
 
 		var callees []string // callees of the CallInstruction.String() in main().
-		for _, b := range p.Func("main").Blocks {
-			for _, i := range b.Instrs {
-				if call, ok := i.(ssa.CallInstruction); ok {
-					if callee := call.Common().StaticCallee(); call != nil {
-						callees = append(callees, callee.String())
-					} else {
-						t.Errorf("CallInstruction without StaticCallee() %q", call)
-					}
-				}
+		for call := range findInstructions[ssa.CallInstruction](p.Func("main")) {
+			if callee := call.Common().StaticCallee(); call != nil {
+				callees = append(callees, callee.String())
+			} else {
+				t.Errorf("CallInstruction without StaticCallee() %q", call)
 			}
 		}
 		sort.Strings(callees) // ignore the order in the code.
@@ -1095,12 +1070,8 @@ func TestIssue67079(t *testing.T) {
 	// Access bodies of all functions.
 	g.Go(func() error {
 		for fn := range ssautil.AllFunctions(prog) {
-			for _, b := range fn.Blocks {
-				for _, instr := range b.Instrs {
-					if call, ok := instr.(*ssa.Call); ok {
-						call.Common().StaticCallee() // access call.Value
-					}
-				}
+			for call := range findInstructions[*ssa.Call](fn) {
+				call.Common().StaticCallee() // access call.Value
 			}
 		}
 		return nil
@@ -1296,11 +1267,9 @@ func TestMultipleGoversions(t *testing.T) {
 	} {
 		// Find the function the test.name global is initialized to.
 		var fn *ssa.Function
-		for _, b := range p.Func("init").Blocks {
-			for _, instr := range b.Instrs {
-				if s, ok := instr.(*ssa.Store); ok && s.Addr == test.global {
-					fn, _ = s.Val.(*ssa.Function)
-				}
+		for s := range findInstructions[*ssa.Store](p.Func("init")) {
+			if s.Addr == test.global {
+				fn, _ = s.Val.(*ssa.Function)
 			}
 		}
 		if fn == nil {
