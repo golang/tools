@@ -329,7 +329,17 @@ stmtloop:
 		lastElt := compLit.Elts[len(compLit.Elts)-1]
 		lastEltOffset := tokFile.Offset(lastElt.End())
 		rbraceOffset := tokFile.Offset(compLit.Rbrace)
-		hasTrailingComma = bytes.Contains(src[lastEltOffset:rbraceOffset], []byte(","))
+		span := bytes.Clone(src[lastEltOffset:rbraceOffset])
+		// Zero out any comments in the span, so that a comma within
+		// one is not mistaken for the literal's trailing comma.
+		for co := range astutil.Comments(file, lastElt.End(), compLit.Rbrace) {
+			start := max(tokFile.Offset(co.Pos())-lastEltOffset, 0)
+			end := min(tokFile.Offset(co.End())-lastEltOffset, len(span))
+			if start < end {
+				clear(span[start:end])
+			}
+		}
+		hasTrailingComma = bytes.Contains(span, []byte(","))
 	}
 	var edits []analysis.TextEdit
 	// Emit edits to move the field assignment into the struct lit while
