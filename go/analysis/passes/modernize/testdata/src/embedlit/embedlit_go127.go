@@ -238,6 +238,12 @@ func _() {
 	t19 := U{} // want "embedded field assignment can be moved to struct literal"
 	t19.y = 2
 	t19.x = 1
+
+	t20 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
+	t20.b = 2
+
+	t21 := A{a: 1, /* a, b */} // want "embedded field assignment can be moved to struct literal"
+	t21.b = 2
 }
 
 func foo() int {
