@@ -70,6 +70,14 @@ type V struct {
 	x, y int
 }
 
+type W struct {
+	V
+}
+
+type X struct {
+	*V
+}
+
 var (
 	_ = A{B: B{b: 1}}                         // want "embedded field type can be removed from struct literal"
 	_ = A{a: 1, B: B{b: 1, C: C{c: 1}}}       // want "embedded field type can be removed from struct literal"
@@ -143,7 +151,12 @@ var (
 
 	_ = E{ // want "embedded field type can be removed from struct literal"
 		e: 2,
-		F: F{f: 1,
+		F: F{f: 1},
+	}
+
+	_ = W{ // want "embedded field type can be removed from struct literal"
+		V: V{x: 1,
+			y: 1,
 		},
 	}
 )
@@ -242,10 +255,47 @@ func _() {
 	t20 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
 	t20.b = 2
 
-	t21 := A{a: 1, /* a, b */} // want "embedded field assignment can be moved to struct literal"
+	t21 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
 	t21.b = 2
+
+	t22 := W{ // want "embedded field type can be removed from struct literal"
+		V: V{y: 2},
+	}
+	_ = t22
+
+	t23 := W{} // want "embedded field assignment can be moved to struct literal"
+	t23.V = newV()
+	t23.x = 1 // cannot be combined with V
+
+	t24 := W{
+		V: newV(),
+	}
+	t24.x = 1 // nope: cannot specify promoted field x and enclosing embedded field V
+
+	t25 := V{
+		x: 1,
+	}
+	t25.x = 2 // nope: duplicate field
+
+	t26 := W{} // want "embedded field assignment can be moved to struct literal"
+	t26.x = 1
+	t26.y = 2
+
+	t27 := A{a: 1}
+	t27.a = 2 // nope: duplicate field name b in struct literal
+
+	t28 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t28.b = 5
+	t28.a = 9 // nope: duplicate field name a in struct literal
+
+	t29 := X{V: &V{}}
+	t29.x = 1 // nope: invalid implicit pointer indirection to reach promoted field in struct literal
 }
 
 func foo() int {
 	return 0
+}
+
+func newV() V {
+	return V{y: 42}
 }
