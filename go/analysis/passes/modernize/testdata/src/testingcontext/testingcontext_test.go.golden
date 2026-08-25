@@ -7,7 +7,7 @@ import (
 )
 
 func Test(t *testing.T) {
-	ctx := t.Context()
+	ctx := t.Context() // want "context.WithCancel can be modernized using t.Context"
 	_ = ctx
 
 	func() {
@@ -15,21 +15,25 @@ func Test(t *testing.T) {
 		defer cancel()
 		_ = ctx
 	}()
+}
 
+func TestScope(t *testing.T) {
 	{
-		ctx := t.Context()
+		ctx := t.Context() // want "context.WithCancel can be modernized using t.Context"
 		_ = ctx
 		var t int // not in scope of the call to WithCancel
 		_ = t
 	}
+}
 
-	{
-		ctx := context.Background()
-		ctx, cancel := context.WithCancel(context.Background()) // Nope. ctx is redeclared.
-		defer cancel()
-		_ = ctx
-	}
+func TestRedeclared(t *testing.T) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. ctx is redeclared.
+	defer cancel()
+	_ = ctx
+}
 
+func TestShadowed(t *testing.T) {
 	{
 		var t int
 		ctx, cancel := context.WithCancel(context.Background()) // Nope. t is shadowed.
@@ -39,13 +43,13 @@ func Test(t *testing.T) {
 	}
 
 	t.Run("subtest", func(t2 *testing.T) {
-		ctx := t2.Context()
+		ctx := t2.Context() // want "context.WithCancel can be modernized using t2.Context"
 		_ = ctx
 	})
 }
 
 func TestAlt(t2 *testing.T) {
-	ctx := t2.Context()
+	ctx := t2.Context() // want "context.WithCancel can be modernized using t2.Context"
 	_ = ctx
 }
 
@@ -56,16 +60,59 @@ func Testnot(t *testing.T) {
 }
 
 func Benchmark(b *testing.B) {
-	ctx := b.Context()
+	ctx := b.Context() // want "context.WithCancel can be modernized using b.Context"
 	_ = ctx
 
 	b.Run("subtest", func(b2 *testing.B) {
-		ctx := b2.Context()
+		ctx := b2.Context() // want "context.WithCancel can be modernized using b2.Context"
 		_ = ctx
 	})
 }
 
 func Fuzz(f *testing.F) {
-	ctx := f.Context()
+	ctx := f.Context() // want "context.WithCancel can be modernized using f.Context"
+	_ = ctx
+}
+
+func TestDeferredFuncsBefore(t *testing.T) {
+	x := 1
+	defer func() {
+		x++
+	}()
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. Deferred call before context.WithCancel
+	defer cancel()
+	_ = ctx
+}
+
+func TestDeferredFuncsNested(t *testing.T) {
+	x := 1
+	if x == 1 {
+		defer func() {
+			x++
+		}()
+	}
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. Deferred call before context.WithCancel
+	defer cancel()
+	_ = ctx
+}
+
+func TestDeferredFuncsAfter(t *testing.T) {
+	ctx := t.Context() // want "context.WithCancel can be modernized using t.Context"
+	_ = ctx
+	x := 1
+	defer func() {
+		x++
+	}()
+}
+
+func TestDeferredFuncsInClosure(t *testing.T) {
+	x := 1
+	f := func() {
+		defer func() { // defer before context.WithCancel, but within func lit, is fine
+			x++
+		}()
+	}
+	f()
+	ctx := t.Context() // want "context.WithCancel can be modernized using t.Context"
 	_ = ctx
 }

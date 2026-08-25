@@ -16,7 +16,9 @@ func Test(t *testing.T) {
 		defer cancel()
 		_ = ctx
 	}()
+}
 
+func TestScope(t *testing.T) {
 	{
 		ctx, cancel := context.WithCancel(context.TODO()) // want "context.WithCancel can be modernized using t.Context"
 		defer cancel()
@@ -24,14 +26,16 @@ func Test(t *testing.T) {
 		var t int // not in scope of the call to WithCancel
 		_ = t
 	}
+}
 
-	{
-		ctx := context.Background()
-		ctx, cancel := context.WithCancel(context.Background()) // Nope. ctx is redeclared.
-		defer cancel()
-		_ = ctx
-	}
+func TestRedeclared(t *testing.T) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. ctx is redeclared.
+	defer cancel()
+	_ = ctx
+}
 
+func TestShadowed(t *testing.T) {
 	{
 		var t int
 		ctx, cancel := context.WithCancel(context.Background()) // Nope. t is shadowed.
@@ -73,6 +77,51 @@ func Benchmark(b *testing.B) {
 
 func Fuzz(f *testing.F) {
 	ctx, cancel := context.WithCancel(context.Background()) // want "context.WithCancel can be modernized using f.Context"
+	defer cancel()
+	_ = ctx
+}
+
+func TestDeferredFuncsBefore(t *testing.T) {
+	x := 1
+	defer func() {
+		x++
+	}()
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. Deferred call before context.WithCancel
+	defer cancel()
+	_ = ctx
+}
+
+func TestDeferredFuncsNested(t *testing.T) {
+	x := 1
+	if x == 1 {
+		defer func() {
+			x++
+		}()
+	}
+	ctx, cancel := context.WithCancel(context.Background()) // Nope. Deferred call before context.WithCancel
+	defer cancel()
+	_ = ctx
+}
+
+func TestDeferredFuncsAfter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background()) // want "context.WithCancel can be modernized using t.Context"
+	defer cancel()
+	_ = ctx
+	x := 1
+	defer func() {
+		x++
+	}()
+}
+
+func TestDeferredFuncsInClosure(t *testing.T) {
+	x := 1
+	f := func() {
+		defer func() { // defer before context.WithCancel, but within func lit, is fine
+			x++
+		}()
+	}
+	f()
+	ctx, cancel := context.WithCancel(context.Background()) // want "context.WithCancel can be modernized using t.Context"
 	defer cancel()
 	_ = ctx
 }
