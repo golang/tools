@@ -86,9 +86,8 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		return nil, nil, fmt.Errorf("can't find callee")
 	}
 
-	// The inliner assumes that input is well-typed,
-	// but that is frequently not the case within gopls.
-	// Until we are able to harden the inliner,
+	// The inliner assumes that input is well-typed, but that is frequently
+	// not the case within gopls. Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
 	bad := func(p *cache.Package) bool { return len(p.ParseErrors())+len(p.TypeErrors()) > 0 }
 	if bad(calleePkg) || bad(callerPkg) {
@@ -118,7 +117,11 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		CountUses: nil, // (use inefficient default implementation)
 	}
 
-	res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
+	res, err := inline.Inline(caller, callee, &inline.Options{
+		Logf: logf,
+		// inlineAllCalls needs per-call recovery in its loops without aborting the whole process.
+		Recover: bad(calleePkg) || bad(callerPkg),
+	})
 	if err != nil {
 		return nil, nil, err
 	}

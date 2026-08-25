@@ -103,12 +103,14 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		}
 	}
 
+	// Be defensive about panics if the inputs are ill-typed.
 	if badPkg {
-		defer func() {
-			if x := recover(); x != nil {
-				inlineErr = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
-			}
-		}()
+		if opts == nil {
+			opts = new(inline.Options)
+		} else {
+			opts = new(*opts)
+		}
+		opts.Recover = true
 	}
 
 	// Organize calls by top file declaration. Calls within a single file may
