@@ -10,9 +10,9 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -65,29 +65,25 @@ func checkFile(toolsDir, filename string) (bool, error) {
 	if strings.HasSuffix(normalized, "cmd/goyacc/yacc.go") {
 		return false, nil
 	}
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return false, err
-	}
+
+	// Parse the file header only, with comments.
+	//
+	// Parsing only the header avoids spurious parse errors
+	// due to version skew when the gopls module relies on
+	// a newer version of Go than x/tools.
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filename, content, parser.ParseComments)
+	f, err := parser.ParseFile(fset, filename, nil, parser.PackageClauseOnly|parser.ParseComments)
 	if err != nil {
 		return false, err
 	}
+
 	// Don't require headers on generated files.
-	if ast.IsGenerated(parsed) {
+	if ast.IsGenerated(f) {
 		return false, nil
 	}
-	shouldAddCopyright := true
-	for _, c := range parsed.Comments {
-		// The copyright should appear before the package declaration.
-		if c.Pos() > parsed.Package {
-			break
-		}
-		if copyrightRe.MatchString(c.Text()) {
-			shouldAddCopyright = false
-			break
-		}
-	}
-	return shouldAddCopyright, nil
+
+	// The copyright must appear before the package declaration.
+	return !slices.ContainsFunc(f.Comments, func(c *ast.CommentGroup) bool {
+		return copyrightRe.MatchString(c.Text())
+	}), nil
 }
