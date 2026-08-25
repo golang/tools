@@ -712,7 +712,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 		w.typ(obj.Type(), obj.Pkg())
 
 	case *types.Func:
-		sig, _ := obj.Type().(*types.Signature)
+		sig := obj.Type().(*types.Signature)
 		if sig.Recv() != nil {
 			// We shouldn't see methods in the package scope,
 			// but the type checker may repair "func () F() {}"
@@ -822,7 +822,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 			m := named.Method(i)
 			w.pos(m.Pos())
 			w.string(m.Name())
-			sig, _ := m.Type().(*types.Signature)
+			sig := m.Type().(*types.Signature)
 			if w.p.version >= iexportVersionGenericMethods && w.bool(sig.TypeParams().Len() > 0) {
 				w.tparamList(obj.Name()+"."+m.Name(), sig.TypeParams(), obj.Pkg())
 			}
@@ -1150,7 +1150,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 			}
 			w.pos(m.Pos())
 			w.string(m.Name())
-			sig, _ := m.Type().(*types.Signature)
+			sig := m.Type().(*types.Signature)
 			w.signature(sig)
 		}
 

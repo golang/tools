@@ -1998,14 +1998,15 @@ func enclosingFunction(path []ast.Node, info *types.Info) *funcInfo {
 			}
 		case *ast.FuncLit:
 			if typ, ok := info.Types[t]; ok {
-				if sig, _ := typ.Type.(*types.Signature); sig == nil {
+				sig, ok := typ.Type.(*types.Signature)
+				if !ok {
 					// golang/go#49397: it should not be possible, but we somehow arrived
 					// here with a non-signature type, most likely due to AST mangling
 					// such that node.Type is not a FuncType.
 					return nil
 				}
 				return &funcInfo{
-					sig:  typ.Type.(*types.Signature),
+					sig:  sig,
 					body: t.Body,
 				}
 			}
@@ -2747,7 +2748,7 @@ func expectedConstraint(t types.Type, idx int) types.Type {
 	var tp *types.TypeParamList
 	if pnt, ok := t.(typesinternal.NamedOrAlias); ok {
 		tp = pnt.TypeParams()
-	} else if sig, _ := t.Underlying().(*types.Signature); sig != nil {
+	} else if sig, ok := t.Underlying().(*types.Signature); ok {
 		tp = sig.TypeParams()
 	}
 	if tp == nil || idx >= tp.Len() {
@@ -3571,8 +3572,8 @@ func rangeFuncParamCount(sig *types.Signature) int {
 		return -1
 	}
 
-	yieldSig, _ := sig.Params().At(0).Type().Underlying().(*types.Signature)
-	if yieldSig == nil {
+	yieldSig, ok := sig.Params().At(0).Type().Underlying().(*types.Signature)
+	if !ok {
 		return -1
 	}
 

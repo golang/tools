@@ -727,8 +727,8 @@ func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAss
 				if typ == nil {
 					return true, true, false
 				}
-				sig, _ := typeparams.CoreType(typ).(*types.Signature)
-				if sig != nil {
+				sig, ok := typeparams.CoreType(typ).(*types.Signature)
+				if ok {
 					// Find the relevant parameter type, accounting for variadics.
 					paramType := paramTypeAtIndex(sig, call, i)
 					ifaceAssign := paramType == nil || types.IsInterface(paramType)
