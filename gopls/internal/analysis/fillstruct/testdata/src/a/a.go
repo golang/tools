@@ -132,3 +132,37 @@ type untagged struct {
 
 // no diagnostic expected (contains untagged elements)
 var _ = untagged{"a"}
+
+// Tests for issue 71815: recursive pointer types and non-composite pointer fields.
+type P *P
+
+type recursivePtrStruct struct {
+	p  P
+	pp *P
+}
+
+var _ = recursivePtrStruct{} // want `recursivePtrStruct literal has missing fields`
+
+type doublePtrStruct struct {
+	x **int
+	c *chan int
+}
+
+var _ = doublePtrStruct{} // want `doublePtrStruct literal has missing fields`
+
+// Tests for issue 71815: pointer to array, slice, map (composite literal types).
+type ptrCompositeStruct struct {
+	arr *[3]int
+	slc *[]int
+	mp  *map[string]int
+}
+
+var _ = ptrCompositeStruct{} // want `ptrCompositeStruct literal has missing fields`
+
+// Tests for issue 71815: pointer to interface.
+type ptrInterfaceStruct struct {
+	iface *interface{ m() }
+	a     *any
+}
+
+var _ = ptrInterfaceStruct{} // want `ptrInterfaceStruct literal has missing fields`

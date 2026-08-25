@@ -618,17 +618,45 @@ type invalidStruct struct {
   Undefined
 }
 
+type invalidPtrStruct struct {
+  F int
+  P *Undefined
+}
+
+type Constraint interface {
+  ~int
+}
+
+type invalidConstraintPtrStruct struct {
+  F int
+  P *Constraint
+}
+
 func _() {
   // Note: fillstruct now skips invalid/unresolvable fields (like Undefined)
   // rather than aborting completely, it successfully fills the valid field F.
-  invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
+  invalidStruct{}              //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
+  invalidPtrStruct{}           //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_ptr)
+  invalidConstraintPtrStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_constraint)
 }
 -- @issue63921/issue63921.go --
-@@ -12 +12,3 @@
--  invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
+@@ -26 +26,3 @@
+-  invalidStruct{}              //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
 +  invalidStruct{
 +  	F: 0,
-+  } //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
++  }              //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
+-- @issue63921_ptr/issue63921.go --
+@@ -27 +27,3 @@
+-  invalidPtrStruct{}           //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_ptr)
++  invalidPtrStruct{
++  	F: 0,
++  }           //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_ptr)
+-- @issue63921_constraint/issue63921.go --
+@@ -28 +28,3 @@
+-  invalidConstraintPtrStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_constraint)
++  invalidConstraintPtrStruct{
++  	F: 0,
++  } //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921_constraint)
 -- named/named.go --
 package named
 
@@ -800,3 +828,64 @@ func _() {
 +	_ = &InterfaceAnonStruct{
 +		bar: []interface{ fizz(OtherStruct) }{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue80033_2)
+-- issue71815.go --
+package fillstruct
+
+type P *P
+
+type RecursivePtrStruct struct {
+	p  P
+	pp *P
+}
+
+type DoublePtrStruct struct {
+	x **int
+	c *chan int
+}
+
+type PtrCompositeStruct struct {
+	arr *[3]int
+	slc *[]int
+	mp  *map[string]int
+}
+
+type PtrInterfaceStruct struct {
+	r *interface{ read() }
+	a *any
+}
+
+func _() {
+	_ = RecursivePtrStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_1)
+	_ = DoublePtrStruct{}    //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_2)
+	_ = PtrCompositeStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_3)
+	_ = PtrInterfaceStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_4)
+}
+-- @issue71815_1/issue71815.go --
+@@ -27 +27,4 @@
+-	_ = RecursivePtrStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_1)
++	_ = RecursivePtrStruct{
++		p:  nil,
++		pp: new(P),
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_1)
+-- @issue71815_2/issue71815.go --
+@@ -28 +28,4 @@
+-	_ = DoublePtrStruct{}    //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_2)
++	_ = DoublePtrStruct{
++		x: new(*int),
++		c: new(chan int),
++	}    //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_2)
+-- @issue71815_3/issue71815.go --
+@@ -29 +29,5 @@
+-	_ = PtrCompositeStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_3)
++	_ = PtrCompositeStruct{
++		arr: &[3]int{},
++		slc: &[]int{},
++		mp:  &map[string]int{},
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_3)
+-- @issue71815_4/issue71815.go --
+@@ -30 +30,4 @@
+-	_ = PtrInterfaceStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_4)
++	_ = PtrInterfaceStruct{
++		r: nil,
++		a: nil,
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue71815_4)

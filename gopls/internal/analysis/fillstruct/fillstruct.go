@@ -580,39 +580,37 @@ func populateValue(typ types.Type, qual types.Qualifier) (_ ast.Expr, isValid bo
 		}, true
 
 	case *types.Pointer:
-		switch tt := types.Unalias(t.Elem()).(type) {
-		case *types.Basic:
-			return &ast.CallExpr{
-				Fun: &ast.Ident{
-					Name: "new",
-				},
-				Args: []ast.Expr{
-					&ast.Ident{
-						Name: t.Elem().String(),
-					},
-				},
-			}, true
-		// Pointer to type parameter should return new(T) instead of &*new(T).
-		case *types.TypeParam:
-			return &ast.CallExpr{
-				Fun: &ast.Ident{
-					Name: "new",
-				},
-				Args: []ast.Expr{
-					&ast.Ident{
-						Name: tt.Obj().Name(),
-					},
-				},
-			}, true
-		default:
-			// TODO(hxjiang): & prefix only works if populateValue returns a
-			// composite literal T{} or the expression new(T).
+		elem := types.Unalias(t.Elem())
+		switch elem.Underlying().(type) {
+		// Only composite literal types (struct, array, slice, map) can use
+		// the address-of syntax &T{...}.
+		case *types.Struct, *types.Array, *types.Slice, *types.Map:
 			expr, isValid := populateValue(t.Elem(), qual)
+			if !isValid {
+				return nil, false
+			}
 			return &ast.UnaryExpr{
 				Op: token.AND,
 				X:  expr,
-			}, isValid
+			}, true
+		case *types.Interface:
+			// Pointers to interface types should be nil (or invalid if
+			// the interface is a type constraint).
+			if _, ok := elem.(*types.TypeParam); !ok {
+				return typesinternal.ZeroExpr(t.Elem(), qual)
+			}
 		}
+		// For all other element types, generate
+		// new(T) instead of &*new(T), &make(...), or &new(...).
+		//
+		// But don't attempt to construct new(T) if the element type is invalid.
+		if _, isValid := typesinternal.ZeroExpr(t.Elem(), qual); !isValid {
+			return nil, false
+		}
+		return &ast.CallExpr{
+			Fun:  ast.NewIdent("new"),
+			Args: []ast.Expr{typesinternal.TypeExpr(t.Elem(), qual)},
+		}, true
 	}
 	return nil, false
 }
