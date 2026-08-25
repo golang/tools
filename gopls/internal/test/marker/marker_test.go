@@ -559,7 +559,7 @@ func convertArgs(mark marker, ftype reflect.Type, args []any) ([]reflect.Value, 
 }
 
 // namedArg returns the named argument for name, or the default value.
-func namedArg[T any](mark marker, name string, dflt T) T {
+func (mark marker) namedArg[T any](name string, dflt T) T {
 	if v, ok := mark.note.NamedArgs[name]; ok {
 		if e, ok := v.(T); ok {
 			return e
@@ -575,7 +575,7 @@ func namedArg[T any](mark marker, name string, dflt T) T {
 	return dflt
 }
 
-func namedArgFunc[T any](mark marker, name string, f func(marker, any) (T, error), dflt T) T {
+func (mark marker) namedArgFunc[T any](name string, f func(marker, any) (T, error), dflt T) T {
 	if v, ok := mark.note.NamedArgs[name]; ok {
 		if v2, err := f(mark, v); err == nil {
 			return v2
@@ -1753,7 +1753,7 @@ func defMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
 
 // typedefMarker implements the @typedef marker.
 func typedefMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
-	wantErr := namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
 
 	env := mark.run.env
 	got, err := env.Editor.TypeDefinitions(env.Ctx, loc)
@@ -1936,7 +1936,7 @@ func defLocMarker(mark marker, loc protocol.Location) protocol.Location {
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
 func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
-	exact := namedArg(mark, "exact", false)
+	exact := mark.namedArg("exact", false)
 	if _, ok := removeDiagnostic(mark, loc, exact, re); !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 	}
@@ -2361,7 +2361,7 @@ func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 
 // implementationMarker implements the @implementation marker.
 func implementationMarker(mark marker, src protocol.Location, want ...protocol.Location) {
-	wantErr := namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
 
 	got, err := mark.server().Implementation(mark.ctx(), &protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
@@ -2413,7 +2413,7 @@ func mcpToolMarker(mark marker, tool string, rawArgs string) {
 		args[k] = substitutePaths(v)
 	}
 
-	if loc := namedArg(mark, "location", protocol.Location{}); loc != (protocol.Location{}) {
+	if loc := mark.namedArg("location", protocol.Location{}); loc != (protocol.Location{}) {
 		args["location"] = loc
 	}
 
@@ -2447,7 +2447,7 @@ func mcpToolMarker(mark marker, tool string, rawArgs string) {
 	// include absolute file paths in generated diffs.
 	got = strings.ReplaceAll(got, filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()), "$WORKDIR")
 
-	output := namedArg(mark, "output", expect.Identifier(""))
+	output := mark.namedArg("output", expect.Identifier(""))
 	golden := mark.getGolden(output)
 	want, _ := golden.Get(mark.T(), "", []byte(got))
 	if diff := compare.Text(string(want), got); diff != "" {
@@ -2561,7 +2561,7 @@ func prepareRenameMarker(mark marker, src protocol.Location, placeholder string)
 	want := &protocol.PrepareRenameResult{
 		Placeholder: placeholder,
 	}
-	if span := namedArg(mark, "span", protocol.Location{}); span != (protocol.Location{}) {
+	if span := mark.namedArg("span", protocol.Location{}); span != (protocol.Location{}) {
 		want.Range = span.Range
 	} else {
 		got.Range = protocol.Range{} // ignore Range

@@ -208,12 +208,10 @@ func (req *codeActionsRequest) resolveEdits() bool {
 
 // lazyInit[*T](ctx, req) returns a pointer to an instance of T,
 // calling new(T).init(ctx.req) on the first request.
-//
-// It is conceptually a (generic) method of req.
-func lazyInit[P interface {
+func (req *codeActionsRequest) lazyInit[P interface {
 	init(ctx context.Context, req *codeActionsRequest)
 	*T
-}, T any](ctx context.Context, req *codeActionsRequest) P {
+}, T any](ctx context.Context) P {
 	t := reflect.TypeFor[T]()
 	v, ok := req.lazy[t].(P)
 	if !ok {
@@ -280,7 +278,7 @@ var codeActionProducers = [...]codeActionProducer{
 
 // sourceOrganizeImports produces "Organize Imports" code actions.
 func sourceOrganizeImports(ctx context.Context, req *codeActionsRequest) error {
-	res := lazyInit[*allImportsFixesResult](ctx, req)
+	res := req.lazyInit[*allImportsFixesResult](ctx)
 
 	// Send all of the import edits as one code action
 	// if the file is being organized.
@@ -301,7 +299,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	}
 
 	// Process any missing imports and pair them with the diagnostics they fix.
-	res := lazyInit[*allImportsFixesResult](ctx, req)
+	res := req.lazyInit[*allImportsFixesResult](ctx)
 	if res.err != nil {
 		return nil
 	}

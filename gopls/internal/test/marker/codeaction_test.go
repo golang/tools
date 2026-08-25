@@ -24,7 +24,7 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 		return
 	}
 
-	if end := namedArgFunc(mark, "end", convertNamedArgLocation, protocol.Location{}); end.URI != "" {
+	if end := mark.namedArgFunc("end", convertNamedArgLocation, protocol.Location{}); end.URI != "" {
 		if end.URI != loc.URI {
 			mark.errorf("end marker is in a different file (%s)", filepath.Base(loc.URI.Path()))
 			return
@@ -33,15 +33,15 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 	}
 
 	var (
-		edit       = namedArg(mark, "edit", expect.Identifier(""))
-		result     = namedArg(mark, "result", expect.Identifier(""))
-		wantAction = namedArg(mark, "action", expect.Identifier(""))
-		wantErr    = namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
-		wantTitle  = namedArgFunc(mark, "title", convertStringMatcher, stringMatcher{})
+		edit       = mark.namedArg("edit", expect.Identifier(""))
+		result     = mark.namedArg("result", expect.Identifier(""))
+		wantAction = mark.namedArg("action", expect.Identifier(""))
+		wantErr    = mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
+		wantTitle  = mark.namedArgFunc("title", convertStringMatcher, stringMatcher{})
 	)
 
 	var diag *protocol.Diagnostic
-	if re := namedArg(mark, "diag", (*regexp.Regexp)(nil)); re != nil {
+	if re := mark.namedArg("diag", (*regexp.Regexp)(nil)); re != nil {
 		d, ok := removeDiagnostic(mark, loc, false, re)
 		if !ok {
 			mark.errorf("no diagnostic at %v matches %q", loc, re)
