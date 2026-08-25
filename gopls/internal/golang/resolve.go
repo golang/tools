@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // Ths file contains the code to mediate user dialogs in the client
@@ -281,7 +280,7 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 		if ifaceStr == "error" {
 			return nil
 		}
-		pkgPath, ifaceName, ok := morestrings.CutLast(ifaceStr, ".")
+		pkgPath, ifaceName, ok := strings.CutLast(ifaceStr, ".")
 		if !ok {
 			return fmt.Errorf(`invalid interface type name: want string of form "example.com/pkg.Type", got %q`, ifaceStr)
 		}

@@ -12,6 +12,7 @@ import (
 	"go/ast"
 	"go/types"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // NewIndex constructs an index of outbound cross-references for the
@@ -135,7 +135,7 @@ func NewIndex(enc *objectpath.Encoder, pkg *types.Package, info *types.Info, fil
 			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
-			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
+			pkgpath, name, ok := strings.CutLast(id.Name, ".")
 			if !ok {
 				continue
 			}

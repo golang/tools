@@ -35,7 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
-	"golang.org/x/tools/gopls/internal/util/morestrings"
+
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 
 	"golang.org/x/tools/internal/event"
@@ -627,7 +627,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
-			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
+			pkgpath, name, ok := strings.CutLast(id.Name, ".")
 			if !ok {
 				continue
 			}

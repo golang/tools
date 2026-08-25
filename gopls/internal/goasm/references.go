@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"slices"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -20,7 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/asm"
-	"golang.org/x/tools/gopls/internal/util/morestrings"
+
 	"golang.org/x/tools/internal/event"
 )
 
@@ -69,7 +70,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	var locations []protocol.Location
 
-	pkgpath, name, ok := morestrings.CutLast(found.Name, ".")
+	pkgpath, name, ok := strings.CutLast(found.Name, ".")
 	if !ok {
 		return nil, fmt.Errorf("not found")
 	}

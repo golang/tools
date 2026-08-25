@@ -7,13 +7,13 @@ package goasm
 import (
 	"context"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/asm"
-	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // A resolution is the result of resolving an assembly identifier to its
@@ -86,7 +86,7 @@ func resolve(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng 
 		if sym != "" && sym[0] == '.' {
 			sym = string(mp.PkgPath) + sym
 		}
-		if pkgpath, name, ok := morestrings.CutLast(sym, "."); ok {
+		if pkgpath, name, ok := strings.CutLast(sym, "."); ok {
 			// Find declaring package among dependencies.
 			//
 			// TODO(adonovan): assembly may legally reference
