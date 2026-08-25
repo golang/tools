@@ -584,8 +584,8 @@ func (b *bitset) cmp(other *bitset) int {
 	if d := cmp.Compare(len(b.limbs), len(other.limbs)); d != 0 {
 		return d
 	}
-	for i := len(b.limbs) - 1; i >= 0; i-- {
-		if d := cmp.Compare(b.limbs[i], other.limbs[i]); d != 0 {
+	for i, v := range slices.Backward(b.limbs) {
+		if d := cmp.Compare(v, other.limbs[i]); d != 0 {
 			return d
 		}
 	}

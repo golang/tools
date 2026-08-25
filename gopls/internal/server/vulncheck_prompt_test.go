@@ -282,13 +282,7 @@ func TestCheckDependencyChanges(t *testing.T) {
 				session:  cache.NewSession(ctx, cache.New(nil)),
 				progress: progress.NewTracker(client),
 				options: &settings.Options{
-					UserOptions: settings.UserOptions{
-						UIOptions: settings.UIOptions{
-							DiagnosticOptions: settings.DiagnosticOptions{
-								Vulncheck: tt.vulncheckMode,
-							},
-						},
-					},
+					Vulncheck: tt.vulncheckMode,
 				},
 			}
 			dir := t.TempDir()

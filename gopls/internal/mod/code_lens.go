@@ -35,7 +35,7 @@ func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 	uri := fh.URI()
-	reset := command.NewResetGoModDiagnosticsCommand("Reset go.mod diagnostics", command.ResetGoModDiagnosticsArgs{URIArg: command.URIArg{URI: uri}})
+	reset := command.NewResetGoModDiagnosticsCommand("Reset go.mod diagnostics", command.ResetGoModDiagnosticsArgs{URI: uri})
 	// Put the `Reset go.mod diagnostics` codelens on the module statement.
 	modrng, err := moduleStmtRange(fh, pm)
 	if err != nil {

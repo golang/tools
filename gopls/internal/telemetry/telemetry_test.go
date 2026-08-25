@@ -264,7 +264,7 @@ func _() {
 		env.OpenFile("a.go")
 		before := totalLatencySamples(t, "completion", false)
 		loc := env.RegexpSearch("a.go", "()x")
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			env.Completion(loc)
 		}
 		after := totalLatencySamples(t, "completion", false)

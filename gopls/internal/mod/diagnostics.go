@@ -434,7 +434,7 @@ func sortedKeys(m map[string]bool) []string {
 func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (cache.SuggestedFix, error) {
 	if fromGovulncheck {
 		resetVulncheck := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
-			URIArg:           command.URIArg{URI: uri},
+			URI:              uri,
 			DiagnosticSource: string(cache.Govulncheck),
 		})
 		return cache.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil

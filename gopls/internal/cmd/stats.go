@@ -171,8 +171,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	{
 		v := reflect.ValueOf(stats)
 		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
+		for f := range t.Fields() {
 			if !token.IsExported(f.Name) {
 				continue
 			}

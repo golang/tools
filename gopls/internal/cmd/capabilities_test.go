@@ -120,19 +120,17 @@ func TestCapabilities(t *testing.T) {
 
 	// Send a completion request to validate expected types.
 	list, err := server.Completion(ctx, &protocol.CompletionParams{
-		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-			TextDocument: protocol.TextDocumentIdentifier{
-				URI: uri,
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: uri,
+		},
+		Range: protocol.Range{
+			Start: protocol.Position{
+				Line:      0,
+				Character: 28,
 			},
-			Range: protocol.Range{
-				Start: protocol.Position{
-					Line:      0,
-					Character: 28,
-				},
-				End: protocol.Position{
-					Line:      0,
-					Character: 28,
-				},
+			End: protocol.Position{
+				Line:      0,
+				Character: 28,
 			},
 		},
 	})

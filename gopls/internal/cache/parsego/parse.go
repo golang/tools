@@ -1117,9 +1117,7 @@ func replaceNode(parent, oldChild, newChild ast.Node) bool {
 	}
 
 	// Loop over parent's struct fields.
-	for i := 0; i < parentVal.NumField(); i++ {
-		f := parentVal.Field(i)
-
+	for _, f := range parentVal.Fields() {
 		switch f.Kind() {
 		// Check interface and pointer fields.
 		case reflect.Interface, reflect.Pointer:

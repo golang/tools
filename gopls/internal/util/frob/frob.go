@@ -106,8 +106,8 @@ func frobFor(t reflect.Type) *frob {
 			fr.addElem(fr.t.Elem())
 
 		case reflect.Struct:
-			for i := 0; i < fr.t.NumField(); i++ {
-				field := fr.t.Field(i)
+			for field := range fr.t.Fields() {
+				field := field
 				if field.PkgPath != "" {
 					continue // skip unexported field
 				}

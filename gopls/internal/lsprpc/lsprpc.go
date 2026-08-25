@@ -33,7 +33,7 @@ import (
 )
 
 // Unique identifiers for client/server.
-var serverIndex int64
+var serverIndex atomic.Int64
 
 // The streamServer type is a jsonrpc2.streamServer that handles incoming
 // streams as a new LSP session, using a shared cache.
@@ -267,7 +267,7 @@ func (f *forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) e
 	// processing any client messages.
 
 	// Do a handshake with the server instance to exchange debug information.
-	index := atomic.AddInt64(&serverIndex, 1)
+	index := serverIndex.Add(1)
 	f.mu.Lock()
 	f.serverConn = serverConn
 	f.serverID = strconv.FormatInt(index, 10)

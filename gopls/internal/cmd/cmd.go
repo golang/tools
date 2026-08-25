@@ -124,9 +124,7 @@ func (app *application) verbose() bool {
 // newApplication returns a new application ready to run.
 func newApplication() *application {
 	app := &application{
-		RemoteFlags: RemoteFlags{
-			RemoteListenTimeout: 1 * time.Minute,
-		},
+		RemoteListenTimeout: 1 * time.Minute,
 	}
 	app.serve.app = app
 	return app

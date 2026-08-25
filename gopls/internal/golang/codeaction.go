@@ -427,8 +427,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 		// "X imported but not used" is an unused import.
 		// "X imported but not used as Y" is an unused import.
 		case strings.Contains(msg, " imported but not used"):
-			idx := strings.Index(msg, " imported but not used")
-			importPath := msg[:idx]
+			importPath, _, _ := strings.Cut(msg, " imported but not used")
 			if importPath == fmt.Sprintf("%q", fix.StmtInfo.ImportPath) {
 				results = append(results, diagnostic)
 			}

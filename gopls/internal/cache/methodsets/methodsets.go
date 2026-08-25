@@ -393,8 +393,8 @@ func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) *go
 	// Preallocate capacity, but grow by append so that skipped
 	// (generic) methods leave no nil holes in the slice.
 	methods := make([]*gobMethod, 0, mset.Len())
-	for i := 0; i < mset.Len(); i++ {
-		m := mset.At(i).Obj().(*types.Func)
+	for method := range mset.Methods() {
+		m := method.Obj().(*types.Func)
 		// Generic methods do not participate in interface satisfaction.
 		if m.Signature().TypeParams().Len() > 0 {
 			continue

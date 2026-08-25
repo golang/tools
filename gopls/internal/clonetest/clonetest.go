@@ -141,8 +141,8 @@ func zeroOutValue(v reflect.Value) {
 		}
 
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			zeroOutValue(v.Field(i))
+		for _, field := range v.Fields() {
+			zeroOutValue(field)
 		}
 
 	default:

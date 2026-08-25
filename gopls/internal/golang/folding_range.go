@@ -216,13 +216,10 @@ func foldingRange(kind protocol.FoldingRangeKind, rng protocol.Range) protocol.F
 	return protocol.FoldingRange{
 		// (I guess LSP doesn't use a protocol.Range here
 		// because missing means something different from zero.)
-		StartLine:      varOf(rng.Start.Line),
-		StartCharacter: varOf(rng.Start.Character),
-		EndLine:        varOf(rng.End.Line),
-		EndCharacter:   varOf(rng.End.Character),
+		StartLine:      new(rng.Start.Line),
+		StartCharacter: new(rng.Start.Character),
+		EndLine:        new(rng.End.Line),
+		EndCharacter:   new(rng.End.Character),
 		Kind:           string(kind),
 	}
 }
-
-// varOf returns a new variable whose value is x.
-func varOf[T any](x T) *T { return &x }

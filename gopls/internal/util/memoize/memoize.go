@@ -287,9 +287,9 @@ func (store *Store) Promise(key any, function Function) (*Promise, func()) {
 	p.refcount++
 	store.promisesMu.Unlock()
 
-	var released int32
+	var released atomic.Int32
 	release := func() {
-		if !atomic.CompareAndSwapInt32(&released, 0, 1) {
+		if !released.CompareAndSwap(0, 1) {
 			panic("release called more than once")
 		}
 		store.promisesMu.Lock()
