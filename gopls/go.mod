@@ -1,6 +1,6 @@
 module golang.org/x/tools/gopls
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
