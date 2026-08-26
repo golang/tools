@@ -105,6 +105,43 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	}
 }
 
+func TestNestedFunctionsInMethodWithInstantiatedReceiver(t *testing.T) {
+	for _, test := range []struct {
+		name, input string
+	}{
+		{"func-literal", `
+package p
+
+type T[P any] struct{}
+
+func (T[P]) f() {
+	func() {
+		func() { var _ P }()
+	}()
+}
+
+var _ = T[int].f
+`},
+		{"range-over-func", `
+package p
+
+type T[P any] struct{}
+
+func (T[P]) f(seq func(func() bool)) {
+	for range seq {
+		func() { var _ P }()
+	}
+}
+
+var _ = T[int].f
+`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			buildPackage(t, test.input, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+		})
+	}
+}
+
 // TestCallsToInstances checks that calles of calls to generic functions,
 // without monomorphization, are wrappers around the origin generic function.
 func TestCallsToInstances(t *testing.T) {
