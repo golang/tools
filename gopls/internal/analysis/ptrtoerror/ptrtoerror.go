@@ -182,8 +182,10 @@ func run(pass *analysis.Pass) (any, error) {
 
 		// Suggest a fix to insert 'var _ error = ...' after
 		// the enclosing type decl to declare the intent.
+		// No fix is offered for a generic type, as its type parameters
+		// are not in scope in a package-level declaration.
 		var fixes []analysis.SuggestedFix
-		if curIdent, ok := inspect.Root().FindByPos(tname.Pos(), tname.Pos()); ok {
+		if curIdent, ok := inspect.Root().FindByPos(tname.Pos(), tname.Pos()); ok && tspec.TypeParams == nil {
 			for curDecl := range curIdent.Enclosing((*ast.GenDecl)(nil)) {
 				pos := curDecl.Node().End()
 				fixes = []analysis.SuggestedFix{
