@@ -89,27 +89,25 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-type opaqueType struct{ name string }
-
-func (t *opaqueType) String() string         { return t.name }
-func (t *opaqueType) Underlying() types.Type { return t }
-
 var (
 	varOk    = newVar("ok", tBool)
 	varIndex = newVar("index", tInt)
 
 	// Type constants.
-	tBool       = types.Typ[types.Bool]
-	tByte       = types.Typ[types.Byte]
-	tRune       = types.Universe.Lookup("rune").Type() // prints as "rune" (Typ[Rune] is same as Int32)
-	tInt        = types.Typ[types.Int]
-	tInvalid    = types.Typ[types.Invalid]
-	tString     = types.Typ[types.String]
-	tUntypedNil = types.Typ[types.UntypedNil]
+	tBool          = types.Typ[types.Bool]
+	tByte          = types.Typ[types.Byte]
+	tRune          = types.Universe.Lookup("rune").Type() // prints as "rune" (Typ[Rune] is same as Int32)
+	tInt           = types.Typ[types.Int]
+	tInvalid       = types.Typ[types.Invalid]
+	tString        = types.Typ[types.String]
+	tUntypedNil    = types.Typ[types.UntypedNil]
+	tUnsafePointer = types.Typ[types.UnsafePointer]
+	tRangeIter     = ssaNamedType("rangeIter", tUnsafePointer)  // the type of all "range" iterators
+	tDeferStack    = ssaNamedType("deferStack", tUnsafePointer) // the type of a "deferStack" from ssa:deferstack()
+	tEface         = types.NewInterfaceType(nil, nil).Complete()
 
-	tRangeIter  = &opaqueType{"iter"}                         // the type of all "range" iterators
-	tDeferStack = types.NewPointer(&opaqueType{"deferStack"}) // the type of a "deferStack" from ssa:deferstack()
-	tEface      = types.NewInterfaceType(nil, nil).Complete()
+	// Fake package for fake ssa types.
+	ssaFakeTypesPackage = types.NewPackage("$ssa", "ssa")
 
 	// SSA Value constants.
 	vZero     = intConst(0)
@@ -128,6 +126,11 @@ var (
 		sig:  types.NewSignatureType(nil, nil, nil, nil, typesinternal.TupleOf(tDeferStack), false),
 	}
 )
+
+func ssaNamedType(name string, underlying types.Type) *types.Named {
+	obj := types.NewTypeName(token.NoPos, ssaFakeTypesPackage, name, nil)
+	return types.NewNamed(obj, underlying, nil)
+}
 
 // builder holds state associated with the package currently being built.
 // Its methods contain all the logic for AST-to-SSA conversion.

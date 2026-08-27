@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -1384,6 +1385,58 @@ func TestRangeOverInt(t *testing.T) {
 			logFunction(t, probes[call])
 		}
 	}
+}
+
+func TestFakeRangeIterType(t *testing.T) {
+	testSSAType := func(typ types.Type, expectedTypeName string) {
+		t.Helper()
+		if typ == nil {
+			t.Error("No type found")
+			return
+		}
+		if typ.String() != expectedTypeName {
+			t.Fatalf("type = %v (%T), want %s", typ, typ, expectedTypeName)
+		}
+		if typ.Underlying() != types.Typ[types.UnsafePointer] {
+			t.Errorf("underlying type = %T, want types.UnsafePointer", typ.Underlying())
+		}
+
+		var typeMap typeutil.Map
+		typeMap.Set(typ, true)
+		if typeMap.Len() != 1 {
+			t.Errorf("type map didn't accept type %T", typ)
+		}
+	}
+
+	// Testing the two different kinds of fake types.
+	const source = `package p
+
+func rangeMap(m map[string]int) {
+	for range m {
+	}
+}
+
+func rangeFunc(seq func(func() bool)) {
+	for range seq {
+		defer func() {}()
+	}
+}
+`
+	pkg, _ := buildPackage(t, source, ssa.SanityCheckFunctions)
+	var rangeType types.Type
+	for rangeInst := range findInstructions[*ssa.Range](pkg.Func("rangeMap")) {
+		rangeType = rangeInst.Type()
+	}
+	testSSAType(rangeType, "$ssa.rangeIter")
+
+	var deferStackType types.Type
+	// the defer statement is in the only anonymous function inside of "rangeFunc"
+	for deferInst := range findInstructions[*ssa.Defer](pkg.Func("rangeFunc").AnonFuncs[0]) {
+		if deferInst.DeferStack != nil {
+			deferStackType = deferInst.DeferStack.Type()
+		}
+	}
+	testSSAType(deferStackType, "$ssa.deferStack")
 }
 
 func TestBuildPackageGo120(t *testing.T) {
