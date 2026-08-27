@@ -321,6 +321,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	// (import paths were handled above)
 	case *ast.ReturnStmt:
 		return hoverReturnStatement(pgf, cur)
+	case *ast.CaseClause:
+		if _, ok := cur.Parent().Parent().Node().(*ast.TypeSwitchStmt); ok {
+			return hoverTypeCase(pkg, pgf, cur)
+		}
 	case *ast.Ident:
 		// fall through to rest of function
 	case ast.Expr:
@@ -1187,6 +1191,235 @@ func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protoc
 	return rng, &hoverResult{
 		Signature: buf.String(),
 	}, nil
+}
+
+// hoverTypeCase computes hover information for "case" or "default"
+// in a type switch.
+//
+// For each case we report the set of types that match it and are not
+// eclipsed by a prior case.
+//
+// Candidates are drawn from the same package as the named interface
+// type of the switch operand. They are displayed without package
+// qualification. Nil is also a candidate. Large sets are abbreviated.
+//
+// Unless the type is "sealed" (has unexported methods), we must admit
+// possible matches from types in other packages. (Technically even
+// "sealing" is imperfect due to embedding.)
+//
+// Literal cases (concrete types or nil) only get a hover if they are
+// unreachable.
+func hoverTypeCase(pkg *cache.Package, pgf *parsego.File, curCase inspector.Cursor) (protocol.Range, *hoverResult, error) {
+	clause := curCase.Node().(*ast.CaseClause)
+
+	switchType, handled := typeSwitchCaseTypes(pkg.TypesInfo(), curCase, pkg.Types())
+	if switchType == nil {
+		return protocol.Range{}, nil, nil
+	}
+
+	// Concrete cases (case T or nil) get no hover,
+	// unless eclipsed by prior cases.
+	//
+	// TODO(adonovan): for "case T, U:" this returns if T, U are
+	// both unreachable, but we should refine it to report
+	// something if either is unreachable.
+	hasInterfaceType := func(expr ast.Expr) bool {
+		t := pkg.TypesInfo().TypeOf(expr)
+		return t != nil && types.IsInterface(t)
+	}
+	if len(clause.List) > 0 &&
+		len(handled) > 0 &&
+		!slices.ContainsFunc(clause.List, hasInterfaceType) {
+		return protocol.Range{}, nil, nil // only concrete types
+	}
+
+	// A "sealed" interface type has unexported methods.
+	// It can't have implementations in other packages.
+	// (That's not strictly true due to embedding.)
+	sealed := false
+	for m := range types.NewMethodSet(switchType).Methods() {
+		if !m.Obj().Exported() {
+			sealed = true
+			break
+		}
+	}
+
+	formatType := func(t types.Type) string {
+		if b, ok := t.(*types.Basic); ok && b.Kind() == types.UntypedNil {
+			return "nil" // sans "untyped"
+		}
+		return types.TypeString(t, func(*types.Package) string { return "" }) // no package qualifier
+	}
+
+	// Format signature and doc.
+	var sigbuf, docbuf strings.Builder
+	path := switchType.Obj().Pkg().Path()
+	if len(handled) == 0 {
+		if sealed {
+			fmt.Fprintf(&sigbuf, "matches no types")
+			fmt.Fprintf(&docbuf, "Matches no types.")
+		} else {
+			fmt.Fprintf(&sigbuf, "matches no types from %s", path)
+			fmt.Fprintf(&docbuf, "Matches no types from package %s.", path)
+		}
+	} else {
+		atleast := cond(sealed, "", "at least ")
+		fmt.Fprintf(&sigbuf, "matches %s", atleast)
+		fmt.Fprintf(&docbuf, "Matches %sthese %d types from package %s:\n\n", atleast, len(handled), path)
+	}
+	for i, t := range handled {
+		if i > 0 {
+			if i == 3 {
+				fmt.Fprintf(&sigbuf, " + %d more", len(handled)-3)
+				break
+			}
+			sigbuf.WriteString(", ")
+		}
+		sigbuf.WriteString(formatType(t))
+	}
+	for _, t := range handled {
+		fmt.Fprintf(&docbuf, "\t- %s\n", formatType(t))
+	}
+	sig := sigbuf.String()
+	doc := docbuf.String()
+
+	rng, err := pgf.PosRange(clause.Pos(), clause.Colon+1)
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+
+	return rng, &hoverResult{
+		Signature:         sig,
+		SingleLine:        sig,
+		Synopsis:          sig,
+		FullDocumentation: doc,
+	}, nil
+}
+
+// typeSwitchCaseTypes returns the set of types handled by the
+// specified type switch case. Candidate types are gathered from the
+// declaring package of the type switch operand's interface type.
+// It also returns the operand type.
+// It returns zero on error.
+func typeSwitchCaseTypes(info *types.Info, curCase inspector.Cursor, currentPkg *types.Package) (named typesinternal.NamedOrAlias, _ []types.Type) {
+	swtch := curCase.Parent().Parent().Node().(*ast.TypeSwitchStmt)
+
+	// Extract switch operand's named interface type.
+	{
+		if swtch.Assign == nil {
+			return nil, nil
+		}
+		var assert *ast.TypeAssertExpr
+		switch stmt := swtch.Assign.(type) {
+		case *ast.AssignStmt:
+			// switch x := x.(type) { ... }
+			if len(stmt.Rhs) == 1 {
+				assert, _ = stmt.Rhs[0].(*ast.TypeAssertExpr)
+			}
+		case *ast.ExprStmt:
+			// switch x.(type) { ... }
+			assert = stmt.X.(*ast.TypeAssertExpr)
+		default:
+		}
+		if assert == nil {
+			return nil, nil
+		}
+		tx := info.TypeOf(assert.X)
+		if tx == nil || !types.IsInterface(tx) {
+			return nil, nil
+		}
+		var ok bool
+		named, ok = tx.(typesinternal.NamedOrAlias)
+		if !ok || named.Obj().Pkg() == nil {
+			return nil, nil // unnamed, built-in type
+		}
+	}
+
+	// Gather accessible package-level defined concrete types
+	// from the interface's package that implement the interface.
+	// Plus nil.
+	var (
+		nilType    = types.Typ[types.UntypedNil]
+		candidates = []types.Type{nilType}
+	)
+	scope := named.Obj().Pkg().Scope()
+	for _, name := range scope.Names() {
+		obj, ok := scope.Lookup(name).(*types.TypeName)
+		if !ok || obj.IsAlias() || types.IsInterface(obj.Type()) {
+			continue
+		}
+		if obj.Pkg() != currentPkg && !obj.Exported() {
+			continue // inaccessible from current package
+		}
+		if types.AssignableTo(obj.Type(), named) {
+			candidates = append(candidates, obj.Type())
+		} else if ptr := types.NewPointer(obj.Type()); types.AssignableTo(ptr, named) {
+			candidates = append(candidates, ptr)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// Partition candidates across switch clauses in source order.
+	// A candidate is consumed by the first clause that matches it.
+	// Stop when we reach the target clause of interest.
+	target := curCase.Node().(*ast.CaseClause)
+	for _, clause := range swtch.Body.List {
+		clause := clause.(*ast.CaseClause)
+		if len(clause.List) == 0 {
+			// default case handles all remaining candidates.
+			if target == clause {
+				return named, candidates
+			}
+			candidates = nil
+		} else {
+			// case T, ...
+			var handled, remain []types.Type
+			for _, cand := range candidates {
+				matched := false
+				for _, expr := range clause.List {
+					caseType := info.TypeOf(expr)
+
+					// "case nil:" matches only nil and vice versa.
+					if cand == nilType {
+						if types.Identical(caseType, nilType) {
+							matched = true
+							break
+						}
+						continue // only case nil matches nil
+					} else if types.Identical(caseType, nilType) {
+						continue
+					}
+
+					if types.IsInterface(caseType) {
+						// An interface case matches candidates that implement it.
+						if types.AssignableTo(cand, caseType) {
+							matched = true
+							break
+						}
+					} else {
+						// A concrete case matches identical types.
+						if types.Identical(cand, caseType) {
+							matched = true
+							break
+						}
+					}
+				}
+				if matched {
+					handled = append(handled, cand)
+				} else {
+					remain = append(remain, cand)
+				}
+			}
+			if clause == target {
+				return named, handled
+			}
+			candidates = remain
+		}
+	}
+
+	return nil, nil // unreachable?
 }
 
 // hoverEmbed computes hover information for a filepath.Match pattern.

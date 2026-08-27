@@ -76,6 +76,14 @@ Hovering over the directive shows information about the other symbol.
 
 <img src='../assets/hover-linkname.png'>
 
+**Type switch cases**: hovering over the `case` or `default` keyword
+in a type switch reveals any types handled by that case that are
+declared in the same package as the switch operand's interface type.
+Hovering over the `default` case may thus reveal unhandled types
+in a switch intended to be exhaustive.
+Information is displayed for a non-interface type case
+only if it is unreachable due to preceding clauses.
+
 The hover information for symbols from the standard library added
 after Go 1.0 states the Go release that added the symbol.
 
