@@ -8,6 +8,8 @@ import (
 	"context"
 	"go/ast"
 	"go/types"
+
+	"golang.org/x/tools/internal/versions"
 )
 
 // builtinArgKind determines the expected object kind for a builtin
@@ -128,7 +130,9 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 			inf.objType = t2
 		}
 	case "new":
-		inf.typeName.wantTypeName = true
+		if !versions.AtLeast(c.goversion, versions.Go1_26) {
+			inf.typeName.wantTypeName = true
+		}
 		if parentInf.objType != nil {
 			// Expected type for "new" is the de-pointered parent type.
 			if ptr, ok := parentInf.objType.Underlying().(*types.Pointer); ok {
