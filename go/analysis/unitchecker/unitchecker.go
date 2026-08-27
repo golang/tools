@@ -36,6 +36,7 @@ import (
 	"go/build"
 	"go/importer"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"go/types"
 	"io"
@@ -149,6 +150,13 @@ func Run(configFile string, analyzers []*analysis.Analyzer) {
 	fset := token.NewFileSet()
 	results, err := run(fset, cfg, analyzers)
 	if err != nil {
+		// Print known diagnostic error types without the log prefix.
+		// (See go.dev/issue/34142.)
+		switch err := err.(type) {
+		case types.Error, *scanner.Error, scanner.ErrorList:
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		log.Fatal(err)
 	}
 

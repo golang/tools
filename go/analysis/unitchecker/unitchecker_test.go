@@ -112,6 +112,13 @@ package d
 import "fmt"
 
 var _ = fmt.Sprintf(msg)
+
+-- e/e.go --
+package e
+
+func _() {
+	undefined()
+}
 `
 	// Expand archive into tmp tree.
 	fs, err := txtar.FS(txtar.Parse([]byte(src)))
@@ -265,5 +272,12 @@ var _ = fmt.Sprintf(msg)
 			substring(t, "stderr", stderr, "skipped 1 fix that would edit generated files")
 			substring(t, "stderr", stderr, "applied 1 of 2 fixes; 1 files updated")
 		}
+	})
+	t.Run("e", func(t *testing.T) {
+		code, _, stderr := vet(t, "golang.org/fake/e")
+		exitcode(t, code, 1)
+		// There should be no log.Prefix (e.g. "vet: " or "unitchecker.test:")
+		// after the newline; see go.dev/issue/34142.
+		substring(t, "stderr", stderr, "\ne/e.go:4:2: undefined: undefined")
 	})
 }
