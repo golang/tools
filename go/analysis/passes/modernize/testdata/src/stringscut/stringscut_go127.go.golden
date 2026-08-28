@@ -1,0 +1,116 @@
+//go:build go1.27
+
+package stringscut
+
+import (
+	"bytes"
+	"strings"
+)
+
+func lastindex_basic(s string) bool {
+	before, _, ok := strings.CutLast(s, "=") // want "strings.LastIndex can be simplified using strings.CutLast"
+	if ok {
+		print(before)
+	}
+	return ok
+}
+
+func lastindex_before_after(s, substr string) bool {
+	before, after, ok := strings.CutLast(s, substr) // want "strings.LastIndex can be simplified using strings.CutLast"
+	if ok {
+		print(before, after)
+	}
+	return ok
+}
+
+func lastindex_after_only(s, substr string) bool {
+	_, after, ok := strings.CutLast(s, substr) // want "strings.LastIndex can be simplified using strings.CutLast"
+	if ok {
+		print(after)
+	}
+	return ok
+}
+
+func lastindex_byte(s string) bool {
+	before, _, ok := strings.CutLast(s, "/") // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
+		print(before)
+	}
+	return ok
+}
+
+func lastindex_byte_int(s string) bool {
+	before, _, ok := strings.CutLast(s, "7") // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
+		print(before)
+	}
+	return ok
+}
+
+func lastindex_byte_var(s string) bool {
+	b := byte('b')
+	before, _, ok := strings.CutLast(s, string(b)) // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
+		print(before)
+	}
+	return ok
+}
+
+func lastindex_bytes(b []byte) []byte {
+	before, _, ok := bytes.CutLast(b, []byte("str")) // want "bytes.LastIndex can be simplified using bytes.CutLast"
+	if ok {
+		return before
+	}
+	return nil
+}
+
+func lastindex_bytes_byte(b []byte) string {
+	before, _, ok := bytes.CutLast(b, []byte{'s'}) // want "bytes.LastIndexByte can be simplified using bytes.CutLast"
+	if ok {
+		return string(before)
+	}
+	return ""
+}
+
+// Should NOT fire: b[i+1:] in else is not guarded.
+func lastindex_bytes_byte_unguarded(b []byte) string {
+	i := bytes.LastIndexByte(b, 's')
+	if i >= 0 {
+		return string(b[:i])
+	} else {
+		return string(b[i+1:])
+	}
+}
+
+func lastindex_const_for_len(s string) bool {
+	_, after, ok := strings.CutLast(s, "=") // want "strings.LastIndex can be simplified using strings.CutLast"
+	if ok {
+		r := after
+		return len(r) > 0
+	}
+	return false
+}
+
+func lastindex_early_return(s string) (string, string) {
+	before, after, ok := strings.CutLast(s, ":") // want "strings.LastIndex can be simplified using strings.CutLast"
+	if !ok {
+		return "", s
+	}
+	return before, after
+}
+
+func lastindex_neg_else(s string) (string, string) {
+	before, after, ok := strings.CutLast(s, ":") // want "strings.LastIndex can be simplified using strings.CutLast"
+	if !ok {
+		return "", s
+	} else {
+		return before, after
+	}
+}
+
+func lastindex_if_init(s string) string {
+	if before, _, ok := strings.CutLast(s, "."); ok { // want "strings.LastIndex can be simplified using strings.CutLast"
+		return before
+	}
+	return s
+}

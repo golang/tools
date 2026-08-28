@@ -4314,7 +4314,7 @@ Package documentation: [stringsbuilder](https://pkg.go.dev/golang.org/x/tools/go
 <a id='stringscut'></a>
 ## `stringscut`: replace strings.Index etc. with strings.Cut
 
-This analyzer replaces certain patterns of use of [strings.Index](/strings#Index) and string slicing by [strings.Cut](/strings#Cut), added in go1.18.
+This analyzer replaces certain patterns of use of [strings.Index](/strings#Index) and string slicing by [strings.Cut](/strings#Cut), added in go1.18. It also replaces analogous uses of [strings.LastIndex](/strings#LastIndex) by [strings.CutLast](/strings#CutLast), added in go1.27.
 
 For example:
 
@@ -4326,6 +4326,20 @@ For example:
 is replaced by:
 
 	before, _, ok := strings.Cut(s, substr)
+	if ok {
+	    return before
+	}
+
+And:
+
+	idx := strings.LastIndex(s, substr)
+	if idx >= 0 {
+	    return s[:idx]
+	}
+
+is replaced by:
+
+	before, _, ok := strings.CutLast(s, substr)
 	if ok {
 	    return before
 	}
@@ -4344,9 +4358,11 @@ is replaced by:
 	    return
 	}
 
-It also handles variants using [strings.IndexByte](/strings#IndexByte) instead of Index, or the bytes package instead of strings.
+(LastIndex used only as a presence check is also rewritten to Contains.)
 
-Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
+It also handles variants using [strings.IndexByte](/strings#IndexByte) or [strings.LastIndexByte](/strings#LastIndexByte) instead of Index/LastIndex, or the bytes package instead of strings.
+
+Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use. CutLast fixes are offered only when the file's Go version is at least 1.27.
 
 It also replaces [strings.SplitN](/strings#SplitN)(s, sep, 2)\[0] and [strings.Split](/strings#Split)(s, sep)\[0] with the "before" result of strings.Cut, when sep is a non-empty string constant:
 

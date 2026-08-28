@@ -116,6 +116,27 @@ func basic_contains_bytes_byte(s []byte) bool {
 	return !found
 }
 
+func lastindex_contains() bool {
+	s := "value"
+	found := strings.Contains(s, "=") // want "strings.LastIndex can be simplified using strings.Contains"
+	return found
+}
+
+func lastindex_contains_byte(s string) bool {
+	found := strings.Contains(s, "=") // want "strings.LastIndexByte can be simplified using strings.Contains"
+	return !found
+}
+
+func lastindex_contains_bytes(b []byte) bool {
+	found := bytes.Contains(b, []byte("=")) // want "bytes.LastIndex can be simplified using bytes.Contains"
+	return found
+}
+
+func lastindex_contains_bytes_byte(b []byte) bool {
+	found := bytes.Contains(b, []byte{22}) // want "bytes.LastIndexByte can be simplified using bytes.Contains"
+	return !found
+}
+
 func skip_var_decl(s string) bool {
 	var i int
 	i = strings.Index(s, "=") // don't modernize - i might be reassigned
