@@ -10,8 +10,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"go/token"
-	"go/types"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,7 +21,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/unitchecker"
-	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
@@ -134,7 +131,7 @@ func MyPrintf(format string, args ...any) {
 		}
 
 		// Choose a unique prefix for temporary files
-		// (.cfg .types .facts) produced by this package.
+		// (.cfg .vetx) produced by this package.
 		// We stow it in an otherwise unused field of
 		// Package so it can be accessed by our importers.
 		prefix := fmt.Sprintf("%s/%d", tmpdir, nextID.Add(1))
@@ -143,14 +140,12 @@ func MyPrintf(format string, args ...any) {
 		// Construct the request to the worker.
 		var (
 			importMap   = make(map[string]string)
-			packageFile = make(map[string]string)
 			packageVetx = make(map[string]string)
 		)
 		for importPath, dep := range pkg.Imports {
 			importMap[importPath] = dep.PkgPath
 			if depPrefix := dep.ExportFile; depPrefix != "" { // skip "unsafe"
-				packageFile[dep.PkgPath] = depPrefix + ".types"
-				packageVetx[dep.PkgPath] = depPrefix + ".facts"
+				packageVetx[dep.PkgPath] = depPrefix + ".vetx"
 			}
 		}
 		cfg := unitchecker.Config{
@@ -160,10 +155,9 @@ func MyPrintf(format string, args ...any) {
 			NonGoFiles:   pkg.OtherFiles,
 			IgnoredFiles: pkg.IgnoredFiles,
 			ImportMap:    importMap,
-			PackageFile:  packageFile,
 			PackageVetx:  packageVetx,
 			VetxOnly:     !roots[pkg],
-			VetxOutput:   prefix + ".facts",
+			VetxOutput:   prefix + ".vetx",
 		}
 		if pkg.Module != nil {
 			if v := pkg.Module.GoVersion; v != "" {
@@ -236,62 +230,7 @@ func MyPrintf(format string, args ...any) {
 // worker is the main entry point for a unitchecker-based driver
 // with only a single analyzer, for illustration.
 func worker() {
-	// Currently the unitchecker API doesn't allow clients to
-	// control exactly how and where fact and type information
-	// is produced and consumed.
-	//
-	// So, for example, it assumes that type information has
-	// already been produced by the compiler, which is true when
-	// running under "go vet", but isn't necessary. It may be more
-	// convenient and efficient for a distributed analysis system
-	// if the worker generates both of them, which is the approach
-	// taken in this example; they could even be saved as two
-	// sections of a single file.
-	//
-	// Consequently, this test currently needs special access to
-	// private hooks in unitchecker to control how and where facts
-	// and types are produced and consumed. In due course this
-	// will become a respectable public API. In the meantime, it
-	// should at least serve as a demonstration of how one could
-	// fork unitchecker to achieve separate analysis without go vet.
-	unitchecker.SetTypeImportExport(makeTypesImporter, exportTypes)
-
 	unitchecker.Main(printf.Analyzer)
-}
-
-func makeTypesImporter(cfg *unitchecker.Config, fset *token.FileSet) types.Importer {
-	imports := make(map[string]*types.Package)
-	return importerFunc(func(importPath string) (*types.Package, error) {
-		// Resolve import path to package path (vendoring, etc)
-		path, ok := cfg.ImportMap[importPath]
-		if !ok {
-			return nil, fmt.Errorf("can't resolve import %q", path)
-		}
-		if path == "unsafe" {
-			return types.Unsafe, nil
-		}
-
-		// Find, read, and decode file containing type information.
-		file, ok := cfg.PackageFile[path]
-		if !ok {
-			return nil, fmt.Errorf("no package file for %q", path)
-		}
-		f, err := os.Open(file)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close() // ignore error
-		return gcexportdata.Read(f, fset, imports, path)
-	})
-}
-
-func exportTypes(cfg *unitchecker.Config, fset *token.FileSet, pkg *types.Package) error {
-	var out bytes.Buffer
-	if err := gcexportdata.Write(&out, fset, pkg); err != nil {
-		return err
-	}
-	typesFile := strings.TrimSuffix(cfg.VetxOutput, ".facts") + ".types"
-	return os.WriteFile(typesFile, out.Bytes(), 0666)
 }
 
 // -- helpers --
@@ -317,7 +256,3 @@ func analysisModuleFromPackagesModule(mod *packages.Module) *analysis.Module {
 		Error:     modErr,
 	}
 }
-
-type importerFunc func(path string) (*types.Package, error)
-
-func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
