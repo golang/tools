@@ -1236,8 +1236,8 @@ func (b *builder) assignLHS(fn *Function, lhss []ast.Expr, isDef bool) ([]lvalue
 }
 
 // assignSelectRecvStmt emits a receive assignment from a single-case select.
-// Unlike an ordinary assignment, its right-hand side is evaluated and the
-// receive is performed before its left-hand side is evaluated.
+// Unlike an ordinary assignment, its (single expression) right-hand side is
+// evaluated and the receive is performed before its left-hand side is evaluated.
 func (b *builder) assignSelectRecvStmt(fn *Function, assign *ast.AssignStmt) {
 	var values []Value
 	if len(assign.Lhs) == 1 {

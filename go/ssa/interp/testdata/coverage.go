@@ -160,6 +160,7 @@ func main() {
 	// evaluated after the receive, even when the select has one case.
 	order := [2]int{}
 	next := 0
+	recvval := 0
 	recvch := make(chan int, 1)
 	recvch <- 1
 	channel := func() chan int {
@@ -170,13 +171,13 @@ func main() {
 	address := func() *int {
 		order[next] = 2
 		next++
-		return &anint
+		return &recvval
 	}
 	select {
 	case *address() = <-channel():
 	}
-	if order != [2]int{1, 2} {
-		panic(order)
+	if order != [2]int{1, 2} || recvval != 1 {
+		panic("single-result receive assignment")
 	}
 	order = [2]int{}
 	next = 0
@@ -185,8 +186,20 @@ func main() {
 	select {
 	case *address(), ok = <-channel():
 	}
-	if order != [2]int{1, 2} || anint != 2 || !ok {
+	if order != [2]int{1, 2} || recvval != 2 || !ok {
 		panic("two-result receive assignment")
+	}
+	order = [2]int{}
+	next = 0
+	recvch <- 3
+	select {
+	case recvval, recvOK := <-channel():
+		if recvval != 3 || !recvOK {
+			panic("receive short variable declaration")
+		}
+	}
+	if order != [2]int{1, 0} {
+		panic("receive short variable declaration order")
 	}
 
 	// Anon structs with methods.
