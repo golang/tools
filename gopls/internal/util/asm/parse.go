@@ -90,15 +90,14 @@ func (f *File) IsLabel(id Ident) bool {
 	if id.Kind == Label {
 		return true
 	}
-	if id.Kind != Ref || !id.Bare {
-		return false
-	}
-	lo, hi := f.FunctionRange(id.Offset)
-	for _, label := range f.Idents {
-		if label.Kind == Label &&
-			label.Name == id.Name &&
-			lo <= label.Offset && label.Offset < hi {
-			return true
+	if id.Kind == Ref && id.Bare {
+		lo, hi := f.FunctionRange(id.Offset)
+		for _, label := range f.Idents {
+			if label.Kind == Label &&
+				label.Name == id.Name &&
+				lo <= label.Offset && label.Offset < hi {
+				return true
+			}
 		}
 	}
 	return false

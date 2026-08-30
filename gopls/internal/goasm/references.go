@@ -66,8 +66,8 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		for _, id := range asmFile.Idents {
 			if id.Name != found.Name ||
 				!(lo <= id.Offset && id.Offset < hi) ||
-				(id.Kind != asm.Label && (id.Kind != asm.Ref || !id.Bare)) ||
-				(!includeDeclaration && id.Kind == asm.Label) {
+				id.Kind != asm.Label && (id.Kind != asm.Ref || !id.Bare) ||
+				!includeDeclaration && id.Kind == asm.Label {
 				continue
 			}
 			loc, err := asmFile.IdentLocation(id)
@@ -76,8 +76,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			}
 			locations = append(locations, loc)
 		}
-		slices.SortFunc(locations, protocol.CompareLocation)
-		return slices.Compact(locations), nil
+		return locations, nil
 	}
 
 	pkgpath, name, ok := strings.CutLast(found.Name, ".")
@@ -185,8 +184,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			// references, so the reference is dangling.
 			return nil, fmt.Errorf("symbol %q not found in package %q", name, pkgpath)
 		}
-		slices.SortFunc(locations, protocol.CompareLocation)
-		return slices.Compact(locations), nil
+		return locations, nil
 	}
 
 	// Scan Go files in the declaring package for references to the symbol.
