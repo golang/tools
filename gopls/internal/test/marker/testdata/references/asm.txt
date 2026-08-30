@@ -1,22 +1,77 @@
 Test of asm references.
 
+-- go.mod --
+module example.com
+go 1.24
+
+-- example/example.go --
+package example
+
 -- example/label_example.s --
 TEXT ·JumpDemo(SB), $0-0
-label1: //@loc(defLabel, "label1")
-    JMP label1 //@loc(refLabel, "label1")
+label1: //@loc(defLabel, "label1"), refs("label1", defLabel, refLabel)
+    JMP label1 //@loc(refLabel, "label1"), refs("label1", defLabel, refLabel)
+
+TEXT ·OtherJumpDemo(SB), $0-0
+label1: //@loc(otherDefLabel, "label1"), refs("label1", otherDefLabel, otherRefLabel)
+    JMP label1 //@loc(otherRefLabel, "label1"), refs("label1", otherDefLabel, otherRefLabel)
+
+TEXT ·LabelAndSymbol(SB), $0-0
+collisionSymbol: //@loc(defCollisionLabel, "collisionSymbol"), refs("collisionSymbol", defCollisionLabel, refCollisionLabel)
+    JMP collisionSymbol //@loc(refCollisionLabel, "collisionSymbol"), refs("collisionSymbol", defCollisionLabel, refCollisionLabel)
+    CALL collisionSymbol(SB) //@loc(callCollisionSymbol, "collisionSymbol"), refs("collisionSymbol", defCollisionSymbol, callCollisionSymbol)
 
 -- example/in_package_ref.s --
-TEXT ·Foo(SB), $0-8 //@loc(defFooAsm, "·Foo")
+TEXT ·Foo(SB), $0-8 //@loc(defFooAsm, "·Foo"), refs("·Foo", defFooAsm, callFooAsm)
     RET
 
+TEXT bareText(SB), $0-0 //@loc(defBareText, "bareText"), refs("bareText", defBareText, callBareText)
+    RET
+
+TEXT collisionSymbol(SB), $0-0 //@loc(defCollisionSymbol, "collisionSymbol"), refs("collisionSymbol", defCollisionSymbol, callCollisionSymbol)
+    RET
+
+TEXT doneSymbol(SB), $0-0 //@loc(defDoneSymbol, "doneSymbol"), refs("doneSymbol", defDoneSymbol, jmpDoneBare)
+    RET
+
+-- example/in_package_use.s --
 TEXT ·Bar(SB), $0-8
-    CALL ·Foo(SB) //@loc(callFooAsm, "·Foo")
+    CALL ·Foo(SB) //@loc(callFooAsm, "·Foo"), refs("·Foo", defFooAsm, callFooAsm)
+    CALL bareText(SB) //@loc(callBareText, "bareText"), refs("bareText", defBareText, callBareText)
+    RET
+
+TEXT ·UseDone(SB), $0-0
+    JMP doneSymbol //@loc(jmpDoneBare, "doneSymbol"), refs("doneSymbol", defDoneSymbol, jmpDoneBare)
     RET
 
 -- example/example_data.s --
-DATA ·myGlobal+0(SB)/8, $42
-GLOBL ·myGlobal(SB), NOPTR, 8
+DATA ·myGlobal+0(SB)/8, $42 //@loc(dataMyGlobal, "·myGlobal"), refs("·myGlobal", defMyGlobal, dataMyGlobal, refMyGlobal)
+GLOBL ·myGlobal(SB), NOPTR, 8 //@loc(defMyGlobal, "·myGlobal"), refs("·myGlobal", defMyGlobal, dataMyGlobal, refMyGlobal)
 
 TEXT ·UseGlobal(SB), $0-0
-    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal"), refs("·myGlobal", defMyGlobal, dataMyGlobal, refMyGlobal)
+    RET
+
+-- example/static_one.s --
+DATA table<>+0(SB)/8, $1 //@loc(dataStaticOne, "table"), refs("table", defStaticOne, dataStaticOne, refStaticOne)
+GLOBL table<>(SB), RODATA, 8 //@loc(defStaticOne, "table"), refs("table", defStaticOne, dataStaticOne, refStaticOne)
+
+TEXT ·UseStaticOne(SB), $0-0
+    MOVQ table<>(SB), AX //@loc(refStaticOne, "table"), refs("table", defStaticOne, dataStaticOne, refStaticOne)
+    RET
+
+-- example/static_two.s --
+DATA table<>+0(SB)/8, $2 //@loc(dataStaticTwo, "table"), refs("table", defStaticTwo, dataStaticTwo, refStaticTwo)
+GLOBL table<>(SB), RODATA, 8 //@loc(defStaticTwo, "table"), refs("table", defStaticTwo, dataStaticTwo, refStaticTwo)
+
+TEXT ·UseStaticTwo(SB), $0-0
+    MOVQ table<>(SB), AX //@loc(refStaticTwo, "table"), refs("table", defStaticTwo, dataStaticTwo, refStaticTwo)
+    RET
+
+-- example/dotted_local.s --
+DATA foo·bar<>+0(SB)/8, $3 //@loc(dataDottedLocal, "foo·bar"), refs("foo·bar", defDottedLocal, dataDottedLocal, refDottedLocal)
+GLOBL foo·bar<>(SB), RODATA, 8 //@loc(defDottedLocal, "foo·bar"), refs("foo·bar", defDottedLocal, dataDottedLocal, refDottedLocal)
+
+TEXT ·UseDotted(SB), $0-0
+    MOVQ foo·bar<>(SB), AX //@loc(refDottedLocal, "foo·bar"), refs("foo·bar", defDottedLocal, dataDottedLocal, refDottedLocal)
     RET

@@ -31,8 +31,10 @@ The following requests are currently supported:
   ```
 
 - References (`textDocument/references`): finds all references to the
-  symbol under the cursor, in both Go and assembly files within the
-  same package.
+  symbol under the cursor. It supports symbols declared in Go, symbols
+  declared only in assembly, and control labels. Assembly-only symbols
+  are searched within the package, file-local `<>` symbols within their
+  source file, and labels within the enclosing TEXT function.
 
 - Hover (`textDocument/hover`): reports the signature and doc comment
   of the symbol's Go declaration.
