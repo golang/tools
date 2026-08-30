@@ -1198,21 +1198,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 // Note the similarity with localValueSpec.
 func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 	// Side effects of all LHSs and RHSs must occur in left-to-right order.
-	lvals := make([]lvalue, len(lhss))
-	isZero := make([]bool, len(lhss))
-	for i, lhs := range lhss {
-		var lval lvalue = blank{}
-		if !isBlankIdent(lhs) {
-			if isDef {
-				if obj, ok := fn.info.Defs[lhs.(*ast.Ident)].(*types.Var); ok {
-					emitLocalVar(fn, obj)
-					isZero[i] = true
-				}
-			}
-			lval = b.addr(fn, lhs, false) // non-escaping
-		}
-		lvals[i] = lval
-	}
+	lvals, isZero := b.assignLHS(fn, lhss, isDef)
 	if len(lhss) == len(rhss) {
 		// Simple assignment:   x     = f()        (!isDef)
 		// Parallel assignment: x, y  = f(), g()   (!isDef)
@@ -1232,6 +1218,46 @@ func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 		for i, lval := range lvals {
 			lval.store(fn, emitExtract(fn, tuple, i))
 		}
+	}
+}
+
+func (b *builder) assignLHS(fn *Function, lhss []ast.Expr, isDef bool) ([]lvalue, []bool) {
+	lvals := make([]lvalue, len(lhss))
+	isZero := make([]bool, len(lhss))
+	for i, lhs := range lhss {
+		var lval lvalue = blank{}
+		if !isBlankIdent(lhs) {
+			if isDef {
+				if obj, ok := fn.info.Defs[lhs.(*ast.Ident)].(*types.Var); ok {
+					emitLocalVar(fn, obj)
+					isZero[i] = true
+				}
+			}
+			lval = b.addr(fn, lhs, false) // non-escaping
+		}
+		lvals[i] = lval
+	}
+	return lvals, isZero
+}
+
+// assignSelectRecvStmt emits a receive assignment from a single-case select.
+// Unlike an ordinary assignment, its (single expression) right-hand side is
+// evaluated and the receive is performed before its left-hand side is evaluated.
+func (b *builder) assignSelectRecvStmt(fn *Function, assign *ast.AssignStmt) {
+	var values []Value
+	if len(assign.Lhs) == 1 {
+		values = append(values, b.expr(fn, assign.Rhs[0]))
+	} else {
+		tuple := b.exprN(fn, assign.Rhs[0])
+		emitDebugRef(fn, assign.Rhs[0], tuple, false)
+		for i := range assign.Lhs {
+			values = append(values, emitExtract(fn, tuple, i))
+		}
+	}
+
+	lvals, _ := b.assignLHS(fn, assign.Lhs, assign.Tok == token.DEFINE)
+	for i, lval := range lvals {
+		lval.store(fn, values[i])
 	}
 }
 
@@ -1636,7 +1662,11 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 	if len(s.Body.List) == 1 {
 		clause := s.Body.List[0].(*ast.CommClause)
 		if clause.Comm != nil {
-			b.stmt(fn, clause.Comm)
+			if recvAssign, ok := clause.Comm.(*ast.AssignStmt); ok {
+				b.assignSelectRecvStmt(fn, recvAssign)
+			} else {
+				b.stmt(fn, clause.Comm)
+			}
 			done := fn.newBasicBlock("select.done")
 			if label != nil {
 				label._break = done
