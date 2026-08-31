@@ -11,7 +11,6 @@ import (
 	"go/token"
 	"go/types"
 	"slices"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -68,10 +67,8 @@ func runEmbedLit(pass *analysis.Pass) (any, error) {
 // literal.
 // T{U: U{f: v, ...}} => T{f: v, ...}
 // It returns true if it reported a diagnostic with edits.
-func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Cursor) bool {
+func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Cursor) (reported bool) {
 	var (
-		edits       []analysis.TextEdit
-		names       []string // names of the embedded field types that can be removed
 		lit         = curLit.Node().(*ast.CompositeLit)
 		compLitType = info.TypeOf(lit)
 	)
@@ -144,7 +141,7 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 						}
 					}
 
-					edits = append(edits, []analysis.TextEdit{
+					edits := []analysis.TextEdit{
 						// T{U: U{f: v, ...}}
 						//   -----         -
 						{
@@ -159,29 +156,26 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 							Pos: closingPos,
 							End: innerLit.Rbrace + 1,
 						},
-					}...)
-					names = append(names, kv.Key.(*ast.Ident).Name)
+					}
+					pass.Report(analysis.Diagnostic{
+						Pos:     kv.Pos(),
+						End:     innerLit.Lbrace + 1,
+						Message: "embedded field type can be removed from struct literal",
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message:   fmt.Sprintf("Remove embedded field type %s", kv.Key.(*ast.Ident).Name),
+								TextEdits: edits,
+							},
+						},
+					})
+					reported = true
 					checkLit(innerLit)
 				}
 			}
 		}
 	}
 	checkLit(lit)
-	if len(edits) > 0 {
-		pass.Report(analysis.Diagnostic{
-			Pos:     curLit.Node().Pos(),
-			End:     curLit.Node().End(),
-			Message: "embedded field type can be removed from struct literal",
-			SuggestedFixes: []analysis.SuggestedFix{
-				{
-					Message:   fmt.Sprintf("Remove embedded field type%s %s", cond(len(names) == 1, "", "s"), strings.Join(names, ", ")),
-					TextEdits: edits,
-				},
-			},
-		})
-		return true
-	}
-	return false
+	return reported
 }
 
 // Pattern B: moving embedded field assignments inside the struct literal

@@ -80,7 +80,7 @@ type X struct {
 
 var (
 	_ = A{B: B{b: 1}}                         // want "embedded field type can be removed from struct literal"
-	_ = A{a: 1, B: B{b: 1, C: C{c: 1}}}       // want "embedded field type can be removed from struct literal"
+	_ = A{a: 1, B: B{b: 1, C: C{c: 1}}}       // want "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
 	_ = E{F: F{1}}                            // nope: cannot promote unkeyed fields
 	_ = D{E: E{F: F{1}}, d: 1}                // want "embedded field type can be removed from struct literal"
 	_ = D{E: E{e: 2, F: F{1}}}                // want "embedded field type can be removed from struct literal"
@@ -88,7 +88,7 @@ var (
 	_ = H{F: F{f: 1}}                         // nope: cannot promote ambiguous fields
 	_ = J{I: I{i: 1}, F: F{f: 1}, G: G{f: 1}} // want "embedded field type can be removed from struct literal"
 	// multi-line with commas
-	_ = A{ // want "embedded field type can be removed from struct literal"
+	_ = A{ // want +1 "embedded field type can be removed from struct literal"
 		B: B{
 			b: 1,
 		},
@@ -119,7 +119,8 @@ var (
 	_ = K{L: L{zero: 0}}                  // nope: cannot promote slice elements
 	_ = K{L: L{0: 100}}                   // nope: cannot promote slice elements
 
-	_ = A{ // want "embedded field type can be removed from struct literal"
+	_ = A{ // want +2 "embedded field type can be removed from struct literal"
+		// want +2 "embedded field type can be removed from struct literal"
 		B: B{
 			C: C{
 				c: 1,
@@ -129,19 +130,21 @@ var (
 		a: 3,
 	}
 
-	_ = A{B: B{C: C{c: 1}}} // want "embedded field type can be removed from struct literal"
+	_ = A{B: B{C: C{c: 1}}} // want "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
 
 	_ = A{B: B{ // want "embedded field type can be removed from struct literal"
+		// want +1 "embedded field type can be removed from struct literal"
 		C: C{
 			c: 1,
 		},
 	}}
 
-	_ = A{ // want "embedded field type can be removed from struct literal"
+	_ = A{ // want +1 "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
 		B: B{C: C{c: 1}},
 	}
 
-	_ = A{ // want "embedded field type can be removed from struct literal"
+	_ = A{ // want +2 "embedded field type can be removed from struct literal"
+		// want +2 "embedded field type can be removed from struct literal"
 		B: B{ // comment here
 			C: C{
 				c: 1,
@@ -149,12 +152,12 @@ var (
 		},
 	}
 
-	_ = E{ // want "embedded field type can be removed from struct literal"
+	_ = E{ // want +2 "embedded field type can be removed from struct literal"
 		e: 2,
 		F: F{f: 1},
 	}
 
-	_ = W{ // want "embedded field type can be removed from struct literal"
+	_ = W{ // want +1 "embedded field type can be removed from struct literal"
 		V: V{x: 1,
 			y: 1,
 		},
@@ -186,7 +189,7 @@ func _() {
 	t7.b = foo()
 
 	// Only apply edits from pattern A first even though both patterns apply.
-	t8 := A{ // want "embedded field type can be removed from struct literal"
+	t8 := A{ // want +1 "embedded field type can be removed from struct literal"
 		B: B{b: 1},
 	}
 	t8.a = 2
@@ -258,7 +261,7 @@ func _() {
 	t21 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
 	t21.b = 2
 
-	t22 := W{ // want "embedded field type can be removed from struct literal"
+	t22 := W{ // want +1 "embedded field type can be removed from struct literal"
 		V: V{y: 2},
 	}
 	_ = t22
