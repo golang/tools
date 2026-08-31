@@ -273,7 +273,7 @@ func chooseValueName(assign *ast.AssignStmt, sliceStr string) string {
 	// Heuristic: remove plural s suffix from slice var
 	// if present, otherwise use first letter.
 	if token.IsIdentifier(sliceStr) && len(sliceStr) > 1 {
-		if single, ok := strings.CutSuffix(sliceStr, "s"); ok {
+		if single, ok := strings.CutSuffix(sliceStr, "s"); ok && !token.IsKeyword(single) {
 			return single
 		}
 		return sliceStr[:1] // first letter (assuming ASCII)

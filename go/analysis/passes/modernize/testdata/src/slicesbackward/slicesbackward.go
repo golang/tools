@@ -56,6 +56,14 @@ func indexUseSelector(s struct{ items []int }) {
 	}
 }
 
+// Slice name singular form is a Go keyword ("var").
+// Should fallback to first letter ("v").
+func keywordSingular(vars []int) {
+	for i := len(vars) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(vars[i])
+	}
+}
+
 // Index used for something other than s[i] — keep both i and v.
 func indexUsedElsewhere(s []int) {
 	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
