@@ -16,6 +16,9 @@ func TestRoundTrip(t *testing.T) {
 		pkgbits.V0,
 		pkgbits.V1,
 		pkgbits.V2,
+		pkgbits.V3,
+		pkgbits.V4,
+		pkgbits.V5,
 	} {
 		pw := pkgbits.NewPkgEncoder(version, -1)
 		w := pw.NewEncoder(pkgbits.RelocMeta, pkgbits.SyncPublic)
@@ -37,6 +40,10 @@ func TestRoundTrip(t *testing.T) {
 // Type checker to enforce that know V* have the constant values they must have.
 var _ [0]bool = [pkgbits.V0]bool{}
 var _ [1]bool = [pkgbits.V1]bool{}
+var _ [2]bool = [pkgbits.V2]bool{}
+var _ [3]bool = [pkgbits.V3]bool{}
+var _ [4]bool = [pkgbits.V4]bool{}
+var _ [5]bool = [pkgbits.V5]bool{}
 
 func TestVersions(t *testing.T) {
 	type vfpair struct {
@@ -55,6 +62,9 @@ func TestVersions(t *testing.T) {
 		{pkgbits.V0, pkgbits.DerivedInfoNeeded},
 		{pkgbits.V1, pkgbits.DerivedInfoNeeded},
 		{pkgbits.V2, pkgbits.AliasTypeParamNames},
+		{pkgbits.V3, pkgbits.CompactCompLiterals},
+		{pkgbits.V4, pkgbits.GenericMethods},
+		{pkgbits.V5, pkgbits.PreserveMethodOrder},
 	} {
 		if !c.v.Has(c.f) {
 			t.Errorf("Expected version %v to have field %v", c.v, c.f)
@@ -69,6 +79,18 @@ func TestVersions(t *testing.T) {
 		{pkgbits.V2, pkgbits.DerivedInfoNeeded},
 		{pkgbits.V0, pkgbits.AliasTypeParamNames},
 		{pkgbits.V1, pkgbits.AliasTypeParamNames},
+		{pkgbits.V0, pkgbits.CompactCompLiterals},
+		{pkgbits.V1, pkgbits.CompactCompLiterals},
+		{pkgbits.V2, pkgbits.CompactCompLiterals},
+		{pkgbits.V0, pkgbits.GenericMethods},
+		{pkgbits.V1, pkgbits.GenericMethods},
+		{pkgbits.V2, pkgbits.GenericMethods},
+		{pkgbits.V3, pkgbits.GenericMethods},
+		{pkgbits.V0, pkgbits.PreserveMethodOrder},
+		{pkgbits.V1, pkgbits.PreserveMethodOrder},
+		{pkgbits.V2, pkgbits.PreserveMethodOrder},
+		{pkgbits.V3, pkgbits.PreserveMethodOrder},
+		{pkgbits.V4, pkgbits.PreserveMethodOrder},
 	} {
 		if c.v.Has(c.f) {
 			t.Errorf("Expected version %v to not have field %v", c.v, c.f)

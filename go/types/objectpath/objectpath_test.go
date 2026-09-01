@@ -390,13 +390,88 @@ func objectString(obj types.Object) string {
 	return s
 }
 
-// TestOrdering verifies that the compiler and go/types emit methods in the same order.
+// TestOrdering verifies that the compiler and go/types emit methods in the same order,
+// including when generic methods are present.
 //
-// See golang/go#78495.
+// See golang/go#78495 and golang/go#81188.
 func TestOrdering(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
-	const src = `-- go.mod --
+	run := func(t *testing.T, src string) {
+		fs, err := txtar.FS(txtar.Parse([]byte(src)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := testfiles.CopyToTmp(t, fs)
+
+		loadPackageWithMode := func(mode packages.LoadMode) *packages.Package {
+			cfg := &packages.Config{
+				Mode: mode,
+				Dir:  dir,
+				Env: append(os.Environ(),
+					"GO111MODULES=on",
+					"GOPATH=",
+					"GOWORK=off",
+					"GOPROXY=off"),
+			}
+			pkgs, err := packages.Load(cfg, "x.io/p")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if num := packages.PrintErrors(pkgs); num > 0 {
+				t.Fatalf("packages contained %d errors", num)
+			}
+			if len(pkgs) != 1 {
+				t.Fatalf("packages.Load returned %d packages, want 1", len(pkgs))
+			}
+			return pkgs[0]
+		}
+
+		// Load the package from compiler export data.
+		binpkg := loadPackageWithMode(packages.NeedExportFile | packages.NeedTypes)
+		// Load the package from typed syntax tree.
+		srcpkg := loadPackageWithMode(packages.LoadSyntax)
+
+		// objectpath encodes concrete methods by their go/types method index.
+		// Verify that paths produced from source-loaded types resolve to the same
+		// methods in compiler export data.
+		srcNamed := srcpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+		for srcMethod := range srcNamed.Methods() {
+			path, err := objectpath.For(srcMethod)
+			if err != nil {
+				t.Fatalf("For(%s): %v", srcMethod.Name(), err)
+			}
+
+			binObj, err := objectpath.Object(binpkg.Types, path)
+			if err != nil {
+				t.Fatalf("Object(%q): %v", path, err)
+			}
+
+			if binObj.Name() != srcMethod.Name() {
+				t.Errorf("Object(%q) = %s, want %s", path, binObj.Name(), srcMethod.Name())
+			}
+		}
+
+		binNamed := binpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+		for binMethod := range binNamed.Methods() {
+			path, err := objectpath.For(binMethod)
+			if err != nil {
+				t.Fatalf("For(%s): %v", binMethod.Name(), err)
+			}
+
+			srcObj, err := objectpath.Object(srcpkg.Types, path)
+			if err != nil {
+				t.Fatalf("Object(%q): %v", path, err)
+			}
+
+			if srcObj.Name() != binMethod.Name() {
+				t.Errorf("Object(%q) = %s, want %s", path, srcObj.Name(), binMethod.Name())
+			}
+		}
+	}
+
+	t.Run("nongeneric", func(t *testing.T) {
+		run(t, `-- go.mod --
 module x.io
 
 -- p/p.go --
@@ -408,78 +483,30 @@ func (T) X() { }
 func (T) Y() { }
 func (T) M() { }
 func (T) N() { }
-`
-	fs, err := txtar.FS(txtar.Parse([]byte(src)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := testfiles.CopyToTmp(t, fs)
+`)
+	})
 
-	loadPackageWithMode := func(mode packages.LoadMode) *packages.Package {
-		cfg := &packages.Config{
-			Mode: mode,
-			Dir:  dir,
-			Env: append(os.Environ(),
-				"GO111MODULES=on",
-				"GOPATH=",
-				"GOWORK=off",
-				"GOPROXY=off"),
-		}
-		pkgs, err := packages.Load(cfg, "x.io/p")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if num := packages.PrintErrors(pkgs); num > 0 {
-			t.Fatalf("packages contained %d errors", num)
-		}
-		if len(pkgs) != 1 {
-			t.Fatalf("packages.Load returned %d packages, want 1", len(pkgs))
-		}
-		return pkgs[0]
-	}
+	t.Run("generic", func(t *testing.T) {
+		t.Skip("requires go1.27.x cmd/compile that emits V5")
+		testenv.NeedsGoCommand1Point(t, 27)
+		run(t, `-- go.mod --
+module x.io
+go 1.27
 
-	// Load the package from compiler export data.
-	binpkg := loadPackageWithMode(packages.NeedExportFile | packages.NeedTypes)
-	// load the pacakge from typed syntax tree.
-	srcpkg := loadPackageWithMode(packages.LoadSyntax)
+-- p/p.go --
+package p
 
-	// objectpath encodes concrete methods by their go/types method index.
-	// Verify that paths produced from source-loaded types resolve to the same
-	// methods in compiler export data.
-	srcNamed := srcpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+type T struct{ A int }
 
-	for srcMethod := range srcNamed.Methods() {
-		path, err := objectpath.For(srcMethod)
-		if err != nil {
-			t.Fatalf("For(%s): %v", srcMethod.Name(), err)
-		}
-
-		binObj, err := objectpath.Object(binpkg.Types, path)
-		if err != nil {
-			t.Fatalf("Object(%q): %v", path, err)
-		}
-
-		if binObj.Name() != srcMethod.Name() {
-			t.Errorf("Object(%q) = %s, want %s", path, binObj.Name(), srcMethod.Name())
-		}
-	}
-
-	binNamed := binpkg.Types.Scope().Lookup("T").Type().(*types.Named)
-	for binMethod := range binNamed.Methods() {
-		path, err := objectpath.For(binMethod)
-		if err != nil {
-			t.Fatalf("For(%s): %v", binMethod.Name(), err)
-		}
-
-		srcObj, err := objectpath.Object(srcpkg.Types, path)
-		if err != nil {
-			t.Fatalf("Object(%q): %v", path, err)
-		}
-
-		if srcObj.Name() != binMethod.Name() {
-			t.Errorf("Object(%q) = %s, want %s", path, srcObj.Name(), binMethod.Name())
-		}
-	}
+func (T) G1[X any](x X) X { return x }
+func (T) X() { }
+func (T) G2[Y any](y Y) Y { return y }
+func (T) Y() { }
+func (T) M() { }
+func (T) G3[Z any](z Z) Z { return z }
+func (T) N() { }
+`)
+	})
 }
 
 func TestIssue70418(t *testing.T) {
