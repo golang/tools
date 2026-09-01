@@ -839,6 +839,9 @@ func recordClientInfo(clientName string) {
 		// https://lists.gnu.org/archive/html/bug-gnu-emacs/2023-03/msg00954.html
 		{"Eglot", "gopls/client:eglot"},
 
+		// https://github.com/emacs-lsp/lsp-mode/blob/master/lsp-mode.el#L8320
+		{"emacs", "gopls/client:lsp-mode"},
+
 		// https://github.com/govim/govim/pull/1189
 		{"govim", "gopls/client:govim"},
 
