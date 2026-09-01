@@ -1337,10 +1337,7 @@ func main() {
 	fmt.Println(x)
 }
 `
-
-	WithOptions(
-		Settings{"staticcheck": true},
-	).Run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
