@@ -463,6 +463,15 @@ func sortFixes(fixes []*ImportFix) {
 	})
 }
 
+func hasDeleteFix(fixes []*ImportFix) bool {
+	for _, fix := range fixes {
+		if fix.FixType == DeleteImport {
+			return true
+		}
+	}
+	return false
+}
+
 // importSpecName gets the import name of imp in the import spec.
 //
 // When the import identifier matches the assumed import name, the import name does
@@ -621,7 +630,7 @@ func getFixesWithSource(ctx context.Context, fset *token.FileSet, f *ast.File, f
 	// Now we can try adding imports from the stdlib.
 	p.assumeSiblingImportsValid()
 	addStdlibCandidates(p, p.missingRefs)
-	if fixes, done := p.fix(); done {
+	if fixes, done := p.fix(); done && !hasDeleteFix(fixes) {
 		return fixes, nil
 	}
 

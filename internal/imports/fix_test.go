@@ -1940,6 +1940,39 @@ var _ = []interface{}{bar.X, v1.Y, a.A, v2.V2, other.V3, thing.Thing, gow.Wrong}
 	}.processTest(t, "foo.com", "test/t.go", nil, nil, want)
 }
 
+// Tests that an existing import with mismatched path/name that happens to match
+// a standard library package name (such as "rpc") is not overshadowed by adding
+// the stdlib import. See #46574.
+func TestExistingImportShadowsStdlib(t *testing.T) {
+	const input = `package main
+
+import (
+	"foo.com/go-libp2p-gorpc"
+)
+
+var _ = rpc.NewServer
+`
+
+	const want = `package main
+
+import (
+	rpc "foo.com/go-libp2p-gorpc"
+)
+
+var _ = rpc.NewServer
+`
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "foo.com",
+			Files: fm{
+				"go-libp2p-gorpc/x.go": "package rpc\nfunc NewServer() {}",
+				"test/t.go":            input,
+			},
+		},
+	}.processTest(t, "foo.com", "test/t.go", nil, nil, want)
+}
+
 // Tests that the LocalPrefix option causes imports
 // to be added into a later group (num=3).
 func TestLocalPrefix(t *testing.T) {
