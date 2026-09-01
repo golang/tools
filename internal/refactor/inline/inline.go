@@ -1098,10 +1098,6 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	//
 	// The body may use defer, arbitrary control flow, and
 	// multiple returns.
-	//
-	// TODO(adonovan): add a strategy for a 'void tail
-	// call', i.e. a call statement prior to an (explicit
-	// or implicit) return.
 	curParent := internalastutil.UnparenEnclosingCursor(caller.Call).Parent()
 	if ret, ok := curParent.Node().(*ast.ReturnStmt); ok &&
 		len(ret.Results) == 1 &&
@@ -1119,6 +1115,45 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		}
 		res.old = curParent
 		res.new = body
+		return res, nil
+	}
+
+	// Special case: void tail-call.
+	//
+	// Inlining:
+	//         f(args); return [pure]
+	//         f(args)  // last statement (implicit return)
+	// where:
+	//         func f(params) { stmts }  // may use defer
+	// reduces to replacing the call statement by the callee
+	// body (optionally with a binding decl). The following
+	// return, if any, is left unchanged.
+	//
+	// This is sound even if the callee uses defer, because the
+	// call is in tail position: deferred functions still run
+	// when the caller returns. If the return has operands, they
+	// must be pure so that evaluating them after the deferred
+	// calls are registered (rather than after they have run) is
+	// unobservable.
+	//
+	// Tail position includes a call whose next executed statement
+	// is a return, even when that return is not a sibling of the
+	// call (for example last-in-if, last-in-switch-case, or
+	// nested blocks). Last-in-loop is not tail position.
+	if curStmt := voidTailPosition(caller, assign1); curStmt.Valid() &&
+		(!needBindingDecl || bindingDecl != nil) &&
+		!hasLabelConflict(caller.Call, callee.Labels) &&
+		len(callee.Returns) == 0 {
+		logf("strategy: reduce void tail-call")
+		body := calleeDecl.Body
+		var repl ast.Stmt = body
+		clearPositions(repl)
+		if needBindingDecl {
+			res.bindingDecl = true
+			body.List = prepend(bindingDecl.stmt, body.List...)
+		}
+		res.old = curStmt
+		res.new = repl
 		return res, nil
 	}
 
@@ -2890,6 +2925,93 @@ func callerFunc(curCall inspector.Cursor) inspector.Cursor {
 		return cur
 	}
 	return inspector.Cursor{}
+}
+
+// voidTailPosition reports whether the call appears as an unrestricted
+// ExprStmt whose next executed statement is a return from the
+// enclosing function: either an explicit return whose results are all
+// pure, or an implicit return at the end of the function.
+//
+// It returns the cursor for the call's ExprStmt if so, or the zero
+// Cursor if the call is not in void tail position.
+//
+// The return need not be a sibling of the call. Nested blocks, if
+// branches, switch/type-switch/select cases, and stacked labels are
+// traversed so long as no intervening statement runs. Last-in-loop is
+// not tail position: the body may repeat.
+func voidTailPosition(caller *Caller, assign1 func(*types.Var) bool) inspector.Cursor {
+	curStmt := callStmt(caller.Call, true)
+	if !curStmt.Valid() {
+		return inspector.Cursor{}
+	}
+
+	// Walk up from the ExprStmt along parent edges.
+	//
+	// At each level, we ensure the current node is the last statement
+	// executed by its parent (or is immediately followed by a pure return):
+	// - Sequential lists (BlockStmt.List, CaseClause.Body, CommClause.Body)
+	//   check NextSibling for a pure return, otherwise continue upward.
+	// - Switch/select bodies hold Case/Comm clauses that do not execute
+	//   in sequence, so their BlockStmt_List edges skip the sibling check.
+	// - Single-child wrappers (IfStmt, SwitchStmt, LabeledStmt, …) continue up.
+	// - Reaching Func{Decl,Lit}_Body means an implicit return at function end.
+	// - Loops and any other construct are rejected.
+	for cur := curStmt; ; cur = cur.Parent() {
+		switch cur.ParentEdgeKind() {
+		case edge.BlockStmt_List, edge.CaseClause_Body, edge.CommClause_Body:
+			// switch x { // BlockStmt (SwitchStmt_Body)
+			// case 1:     // CaseClause (BlockStmt_List) — not sequential
+			//     f()     // ExprStmt (CaseClause_Body)
+			// }
+			// return
+			if cur.ParentEdgeKind() == edge.BlockStmt_List {
+				switch cur.Parent().ParentEdgeKind() {
+				case edge.SwitchStmt_Body, edge.TypeSwitchStmt_Body, edge.SelectStmt_Body:
+					continue // clauses don't execute sequentially
+				}
+			}
+			if next, ok := cur.NextSibling(); ok {
+				ret, ok := unlabel(next.Node().(ast.Stmt)).(*ast.ReturnStmt)
+				if !ok {
+					return inspector.Cursor{}
+				}
+				for _, res := range ret.Results {
+					if !pure(caller.Info, assign1, res) {
+						return inspector.Cursor{}
+					}
+				}
+				return curStmt
+			}
+			// Last in list: continue up to parent.
+
+		case edge.IfStmt_Body, edge.IfStmt_Else,
+			edge.SwitchStmt_Body, edge.TypeSwitchStmt_Body, edge.SelectStmt_Body,
+			edge.LabeledStmt_Stmt:
+			// Single-child wrappers: continue up.
+
+		case edge.FuncDecl_Body, edge.FuncLit_Body:
+			// Reached enclosing function: implicit return at function end.
+			return curStmt
+
+		default:
+			// Loops, files, or any other construct: not tail position.
+			return inspector.Cursor{}
+		}
+	}
+}
+
+// unlabel returns the inner statement for the possibly labeled statement stmt,
+// stripping any (possibly nested) *ast.LabeledStmt wrapper.
+//
+// TODO(hxjiang): find a good place for this func.
+func unlabel(stmt ast.Stmt) ast.Stmt {
+	for {
+		labelStmt, ok := stmt.(*ast.LabeledStmt)
+		if !ok {
+			return stmt
+		}
+		stmt = labelStmt.Stmt
+	}
 }
 
 // callStmt reports whether the function call (specified

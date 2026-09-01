@@ -846,10 +846,13 @@ func TestTailCallStrategy(t *testing.T) {
 			`func _() { println() }`,
 		},
 		{
-			"void with defer", // => literalized
+			"void with defer (last stmt is void tail-call)",
 			`func f() { defer f(); println() }`,
 			`func _() { f() }`,
-			`func _() { func() { defer f(); println() }() }`,
+			`func _() {
+	defer f()
+	println()
+}`,
 		},
 		// Tests for issue #63336:
 		{
@@ -869,6 +872,126 @@ func TestTailCallStrategy(t *testing.T) {
 			`func f() error { return E{} }; type E struct{error}`,
 			`func _() any { return f() }`,
 			`func _() any { return error(E{}) }`,
+		},
+	})
+}
+
+func TestVoidTailCallStrategy(t *testing.T) {
+	// Void tail-call allows defer in the callee when the call is
+	// immediately before an (explicit or implicit) return whose
+	// results are pure. See golang/go#63352 and golang/go#80984.
+	runTests(t, []testcase{
+		{
+			"f(); return with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); return }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+	return
+}`,
+		},
+		{
+			"explicit bare return: func f() { defer ...; return }",
+			`func f() { defer println("cleanup") }`,
+			`func _() { f(); return }`,
+			`func _() { defer println("cleanup"); return }`,
+		},
+		{
+			"f() as last statement with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f() }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+}`,
+		},
+		{
+			"f(); return 0 with pure return and defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() int { f(); return 0 }`,
+			`func _() int {
+	defer println("cleanup")
+	println("work")
+	return 0
+}`,
+		},
+		{
+			"f(); return g() with impure return and defer => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { f(); return g() }`,
+			`func _() int { func() { defer println("cleanup"); println("work") }(); return g() }`,
+		},
+		{
+			"statement between call and return => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); println("between"); return }`,
+			`func _() { func() { defer println("cleanup"); println("work") }(); println("between"); return }`,
+		},
+		{
+			"labeled void tail-call with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() {
+	goto label
+label:
+	f()
+	return
+}`,
+			`func _() {
+	goto label
+label:
+	{
+		defer println("cleanup")
+		println("work")
+	}
+	return
+}`,
+		},
+		{
+			"last stmt in loop body is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { for { f() } }`,
+			`func _() {
+	for {
+		func() { defer println("cleanup"); println("work") }()
+	}
+}`,
+		},
+		{
+			"last stmt in if branch with code after is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f() }; println("after") }`,
+			`func _() {
+	if true {
+		func() { defer println("cleanup"); println("work") }()
+	}
+	println("after")
+}`,
+		},
+		{
+			"f(); return inside if with defer is still void tail",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f(); return }; println("after") }`,
+			`func _() {
+	if true {
+		defer println("cleanup")
+		println("work")
+		return
+	}
+	println("after")
+}`,
+		},
+		{
+			"impure return after switch is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { switch { case true: f() }; return g() }`,
+			`func _() int {
+	switch {
+	case true:
+		func() { defer println("cleanup"); println("work") }()
+	}
+	return g()
+}`,
 		},
 	})
 }
@@ -1082,13 +1205,20 @@ func TestVariadic(t *testing.T) {
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { args := slice; defer f(&args); println(args) }() }`,
+			`func _(slice []any) {
+	args := slice
+	defer f(&args)
+	println(args)
+}`,
 		},
 		{
-			"Variadic cancellation (literalization with parameter elimination).",
+			"Variadic cancellation (void tail-call with parameter elimination).",
 			`func f(args ...any) { defer f(); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { defer f(); println(slice) }() }`,
+			`func _(slice []any) {
+	defer f()
+	println(slice)
+}`,
 		},
 		{
 			"Variadic cancellation (reduction).",
@@ -1103,10 +1233,10 @@ func TestVariadic(t *testing.T) {
 			`func _(a, b int) { _ = append([]int{1}, a, b) }`,
 		},
 		{
-			"Variadic elimination (literalization).",
-			`func f(x any, rest ...any) { defer println(x, rest) }`, // defer => literalization
+			"Variadic elimination (void tail-call).",
+			`func f(x any, rest ...any) { defer println(x, rest) }`,
 			`func _() { f(1, 2, 3) }`,
-			`func _() { func() { defer println(1, []any{2, 3}) }() }`,
+			`func _() { defer println(1, []any{2, 3}) }`,
 		},
 		{
 			"Variadic elimination (reduction).",
@@ -1179,14 +1309,12 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() {
-	func() {
-		var (
-			int, y any = g(1), g(2)
-			z          = g(3)
-		)
-		defer g(0)
-		println(int, y, z)
-	}()
+	var (
+		int, y any = g(1), g(2)
+		z          = g(3)
+	)
+	defer g(0)
+	println(int, y, z)
 }`,
 		},
 		{
@@ -1220,7 +1348,11 @@ func TestParameterBindingDecl(t *testing.T) {
 			"Binding decl keeps type for interface conversion.",
 			`func f(x any) { defer println(); println(x, x) }; func g() int`,
 			`func _() { f(g()) }`,
-			`func _() { func() { var x any = g(); defer println(); println(x, x) }() }`,
+			`func _() {
+	var x any = g()
+	defer println()
+	println(x, x)
+}`,
 		},
 		{
 			"Literalization can't yet use of a binding decl if named results.",
@@ -1485,7 +1617,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			"Defer f() evaluates f() before unknown effects",
 			`func f(int, y any, z int) { defer println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func() { defer println(g(1), g(2), g(3)) }() }`,
+			`func _() { defer println(g(1), g(2), g(3)) }`,
 		},
 		{
 			"Effects are ignored when IgnoreEffects",
