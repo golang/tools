@@ -2865,6 +2865,8 @@ The appendclipped analyzer suggests replacing chains of append calls with a sing
 
 In the simple case of appending to a newly allocated slice, such as append(\[]T(nil), s...), the analyzer suggests the more concise slices.Clone(s). For byte slices, it will prefer bytes.Clone if the "bytes" package is already imported.
 
+Since the replacement (slices.Concat, or slices.Clone) allocates a new slice, any slices.Clone or bytes.Clone wrapping one of the operands is redundant and is removed, e.g. append(append(\[]T{}, slices.Clone(s)...), t...) becomes slices.Concat(s, t). The clone of os.Environ in append(\[]string(nil), os.Environ()...) is likewise elided.
+
 This fix is only applied when the base of the append tower is a "clipped" slice, meaning its length and capacity are equal (e.g. x\[:0:0] or \[]T{}). This is to avoid changing program behavior by eliminating intended side effects on the base slice's underlying array.
 
 This analyzer is currently disabled by default as the transformation does not preserve the nilness of the base slice in all cases; see [https://go.dev/issue/73557](https://go.dev/issue/73557).

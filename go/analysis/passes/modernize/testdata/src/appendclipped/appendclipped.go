@@ -1,6 +1,7 @@
 package appendclipped
 
 import (
+	"bytes"
 	"os"
 	"slices"
 )
@@ -11,12 +12,19 @@ type (
 )
 
 func _(s, other []string) {
-	print(append([]string{}, s...))              // want "Replace append with slices.Clone"
-	print(append([]string(nil), s...))           // want "Replace append with slices.Clone"
-	print(append(Bytes(nil), Bytes{1, 2, 3}...)) // want "Replace append with slices.Clone"
-	print(append(other[:0:0], s...))             // want "Replace append with slices.Clone"
-	print(append(other[:0:0], os.Environ()...))  // want "Redundant clone of os.Environ()"
-	print(append(other[:0], s...))               // nope: intent may be to mutate other
+	print(append([]string{}, s...))               // want "Replace append with slices.Clone"
+	print(append([]string(nil), s...))            // want "Replace append with slices.Clone"
+	print(append(Bytes(nil), Bytes{1, 2, 3}...))  // want "Replace append with slices.Clone"
+	print(append(other[:0:0], s...))              // want "Replace append with slices.Clone"
+	print(append(other[:0:0], os.Environ()...))   // want "Redundant clone of os.Environ()"
+	print(append(other[:0:0], (os.Environ())...)) // want "Redundant clone of os.Environ()"
+	print(append(other[:0], s...))                // nope: intent may be to mutate other
+
+	// A slices.Clone of an operand is redundant since the replacement clones anyway.
+	print(append([]string{}, slices.Clone(s)...))                     // want "Replace append with slices.Clone"
+	print(append(append([]string{}, slices.Clone(s)...), other...))   // want "Replace append with slices.Concat"
+	print(append(append(other[:0:0], s...), slices.Clone(other)...))  // want "Replace append with slices.Concat"
+	print(append(append([]string{}, (slices.Clone(s))...), other...)) // want "Replace append with slices.Concat"
 
 	print(append(append(append([]string{}, s...), other...), other...))             // want "Replace append with slices.Concat"
 	print(append(append(append([]string(nil), s...), other...), other...))          // want "Replace append with slices.Concat"
@@ -26,6 +34,15 @@ func _(s, other []string) {
 	print(append(append(other[:len(other):len(other)], s...), other...))            // want "Replace append with slices.Concat"
 	print(append(append(slices.Clip(other), s...), other...))                       // want "Replace append with slices.Concat"
 	print(append(append(append(other[:0], s...), other...), other...))              // nope: intent may be to mutate other
+}
+
+func _(b []byte, mb Bytes) {
+	print(append([]byte{}, bytes.Clone(b)...))               // want "Replace append with (?:bytes|slices).Clone"
+	print(append(append([]byte{}, bytes.Clone(b)...), b...)) // want "Replace append with slices.Concat"
+
+	// bytes.Clone(mb) has type []byte, not Bytes, so unwrapping it would
+	// change the result type from []byte to Bytes: the clone is preserved.
+	print(append(append([]byte{}, bytes.Clone(mb)...), b...)) // want "Replace append with slices.Concat"
 }
 
 var (
