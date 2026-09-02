@@ -3021,9 +3021,9 @@ func (b *builder) buildYieldFunc(fn *Function) {
 		fn.lblocks[label] = &lblock{
 			label:     label,
 			resolved:  true,
-			_goto:     ycont,
 			_continue: ycont,
-			// `break label` statement targets fn.parent.targets._break
+			// `goto label` searches the parent lblock, and
+			// `break label` targets fn.parent.targets._break.
 		}
 	}
 	fn.targets = &targets{
