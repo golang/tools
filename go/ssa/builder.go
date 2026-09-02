@@ -3011,11 +3011,9 @@ func (b *builder) buildYieldFunc(fn *Function) {
 	ycont := fn.newBasicBlock("yield-continue")
 	// lblocks is either {} or is {label: nil} where label is the label of syntax.
 	for label := range fn.lblocks {
-		parentGoto := fn.parent.lblockOf(label)._goto
 		fn.lblocks[label] = &lblock{
 			label:     label,
 			resolved:  true,
-			_goto:     parentGoto,
 			_continue: ycont,
 			// `break label` statement targets fn.parent.targets._break
 		}
