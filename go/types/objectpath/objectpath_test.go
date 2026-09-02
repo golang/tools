@@ -16,9 +16,9 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
@@ -328,12 +328,12 @@ func (unreachable) F() {} // not reachable in export data
 
 	// Export binary export data then reload it as a new package, "bin".
 	var buf bytes.Buffer
-	if err := gcexportdata.Write(&buf, fset, srcpkg); err != nil {
+	if err := gcimporter.IExportData(&buf, fset, srcpkg); err != nil {
 		t.Fatal(err)
 	}
 
 	imports := make(map[string]*types.Package)
-	binpkg, err := gcexportdata.Read(&buf, fset, imports, "bin/p")
+	binpkg, err := gcimporter.IImportData(fset, imports, buf.Bytes(), "bin/p")
 	if err != nil {
 		t.Fatal(err)
 	}

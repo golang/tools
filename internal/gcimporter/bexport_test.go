@@ -318,7 +318,7 @@ func TestVeryLongFile(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		t.Fatalf("BImportData(%s): %v", pkg.Path(), err)
 	}

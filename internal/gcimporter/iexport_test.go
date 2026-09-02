@@ -23,7 +23,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
@@ -160,7 +159,7 @@ type UnknownType undefined
 func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		t.Errorf("IImportData(%s): %v", pkg.Path(), err)
 	}
@@ -226,7 +225,7 @@ func TestIExportData_long(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		t.Fatalf("IImportData(%s): %v", pkg.Path(), err)
 	}
@@ -269,7 +268,7 @@ func TestIExportData_typealiases(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
 	if err != nil {
 		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
 	}
@@ -405,7 +404,7 @@ func TestUnexportedStructFields(t *testing.T) {
 				if !ok {
 					return nil, fmt.Errorf("missing export data for %s", path)
 				}
-				return gcexportdata.Read(bytes.NewReader(data), fset, packages, path)
+				return gcimporter.IImportData(fset, packages, data, path)
 			}),
 		}
 		pkg := types.NewPackage(path, syntax.Name.Name)
@@ -414,7 +413,7 @@ func TestUnexportedStructFields(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		if err := gcexportdata.Write(&out, fset, pkg); err != nil {
+		if err := gcimporter.IExportData(&out, fset, pkg); err != nil {
 			t.Fatal(err)
 		}
 		export[path] = out.Bytes()
@@ -479,7 +478,7 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
 	if err != nil {
 		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
 	}
@@ -542,7 +541,7 @@ const C3 Generic[struct{}] = 3
 
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	if _, _, err := gcimporter.IImportData(fset2, imports, data, pkg.Path()); err != nil {
+	if _, err := gcimporter.IImportData(fset2, imports, data, pkg.Path()); err != nil {
 		t.Fatalf("IImportData: %v", err)
 	}
 }

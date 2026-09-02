@@ -245,7 +245,7 @@ func (t *testImporter) Import(path string) (*types.Package, error) {
 	}
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		return nil, err
 	}

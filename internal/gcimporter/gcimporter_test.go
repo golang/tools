@@ -1029,7 +1029,7 @@ type T int
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	_, lib2, err := gcimporter.IImportData(fset, imports, out.Bytes(), "lib")
+	lib2, err := gcimporter.IImportData(fset, imports, out.Bytes(), "lib")
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of export+import is a bug.
 	}

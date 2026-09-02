@@ -316,8 +316,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 		if !ok {
 			return nil, fmt.Errorf("no package vetx file for %q", path)
 		}
-		_, pkg, err := gcimporter.IImportData(fset, imports, entry.types, path)
-		return pkg, err
+		return gcimporter.IImportData(fset, imports, entry.types, path)
 	})
 
 	tc := &types.Config{

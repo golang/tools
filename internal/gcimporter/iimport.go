@@ -93,12 +93,12 @@ const (
 // and returns 0 and a reference to the package.
 // If the export data version is not recognized or the format is otherwise
 // compromised, an error is returned.
-func IImportData(fset *token.FileSet, imports map[string]*types.Package, data []byte, path string) (int, *types.Package, error) {
+func IImportData(fset *token.FileSet, imports map[string]*types.Package, data []byte, path string) (*types.Package, error) {
 	pkgs, err := iimportCommon(fset, GetPackagesFromMap(imports), data, false, path, false, nil)
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
-	return 0, pkgs[0], nil
+	return pkgs[0], nil
 }
 
 // IImportBundle imports a set of packages from the serialized package bundle.
