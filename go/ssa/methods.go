@@ -32,7 +32,10 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	if prog.isParameterized(T, sel.Type()) {
+	// Selection.Type allocates a new Signature on each call, and
+	// isParameterized memoizes by type identity, so an uncanonicalized
+	// argument would add one permanently retained entry per call (#81308).
+	if prog.isParameterized(T, prog.canon.Type(sel.Type())) {
 		return nil // method on generic type or generic method
 	}
 
