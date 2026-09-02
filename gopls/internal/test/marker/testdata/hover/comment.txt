@@ -11,7 +11,7 @@ package p
 import (
 	"unsafe"
 
-	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, strconv)
+	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, utilPkgRef)
 )
 
 // [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase),hover(re"()NumberBase", "NumberBase", NumberBase),hover(re"NumberBase()", "NumberBase", NumberBase)
@@ -19,7 +19,7 @@ const NumberBase = 10
 
 // [Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
 func Conv(s string) int {
-	// [util.ParseInt] parses s and returns the integer corresponding to it. //@hover("util", "util", util),hover("ParseInt", "ParseInt", strconvParseInt)
+	// [util.ParseInt] parses s and returns the integer corresponding to it. //@hover("util", "util", utilPkgRef),hover("ParseInt", "ParseInt", strconvParseInt)
 	// [NumberBase] is the base to use for number parsing.
 	i, _ := util.ParseInt(s, NumberBase, 64)
 	return int(i)
@@ -33,16 +33,32 @@ func UnsafeConv(s string) []byte {
 }
 
 -- util/conv.go --
-// Package util provides utility functions.
-package util
+// Package util provides utility functions. Use [a.A] for xyz.
+//
+// Also can reference local functions [ParseInt].
+package util //@hover("util", "util", utilPkgName)
 
-import "strconv"
+import (
+	"strconv"
+
+	"mod.com/util/a"
+)
 
 // ParseInt interprets a string s in the given base (0, 2 to 36) and
 // bit size (0 to 64) and returns the corresponding value i.
 func ParseInt(s string, base int, bitSize int) (int64, error) {
+	a.A()
 	return strconv.ParseInt(s, base, bitSize)
 }
+
+-- util/other.go --
+// Hover over package when this file doesn't import the doc link still works.
+package util //@hover("util", "util", utilPkgName)
+
+-- util/a/a.go --
+package a
+
+func A() {}
 
 -- @Conv --
 ```go
@@ -70,14 +86,6 @@ const NumberBase untyped int = 10
 ---
 
 [`p.NumberBase` on pkg.go.dev](https://pkg.go.dev/mod.com#NumberBase)
--- @strconv --
-```go
-package util
-```
-
----
-
-Package util provides utility functions.
 -- @strconvParseInt --
 ```go
 func ParseInt(s string, base int, bitSize int) (int64, error)
@@ -91,11 +99,30 @@ ParseInt interprets a string s in the given base (0, 2 to 36) and bit size (0 to
 ---
 
 [`util.ParseInt` on pkg.go.dev](https://pkg.go.dev/mod.com/util#ParseInt)
--- @util --
+-- @utilPkgRef --
 ```go
 package util
 ```
 
 ---
 
-Package util provides utility functions.
+Package util provides utility functions. Use [a.A](file://$WORKDIR/util/a/a.go#3,6) for xyz.
+
+Also can reference local functions [ParseInt](file://$WORKDIR/util/conv.go#14,6).
+-- @utilPkgName --
+```go
+package util
+```
+
+---
+
+Package util provides utility functions. Use [a.A](file://$WORKDIR/util/a/a.go#3,6) for xyz.
+
+Also can reference local functions [ParseInt](file://$WORKDIR/util/conv.go#14,6).
+
+
+---
+
+ - Package path: mod.com/util
+ - Module: mod.com
+ - Language version: go1.20

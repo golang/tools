@@ -228,7 +228,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	// object.
 	// As with import paths, we allow hovering just after the package name.
 	if pgf.File.Name != nil && astutil.NodeContains(pgf.File.Name, posRange) {
-		return hoverPackageName(pkg, pgf)
+		return hoverPackageName(ctx, snapshot, pkg, pgf)
 	}
 
 	// Handle hovering over embed directive argument.
@@ -408,50 +408,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	}
 
 	decl, spec, field, assign := findDeclInfo(declPGF, declPos) // may be nil^4
-
-	var docText string
-	if docComment := chooseDocComment(declPGF, decl, spec, field, assign); docComment != nil {
-		docBuf := new(strings.Builder)
-		docBuf.WriteString(docComment.Text())
-
-		// docLinks maps the literal text of a doc link to its definition URI.
-		// Since the link parser yields progressively for each part of a symbol
-		// path (e.g., "fmt", then "fmt.Scanner"), we intentionally overwrite the
-		// map entry to ensure the final value is the URI for the complete symbol.
-		docLinks := make(map[string]string)
-		for docLink := range commentDocLinks(docComment) {
-			obj := lookupDocLinkSymbol(declPkg, declPGF, docLink.nameText)
-			if obj == nil {
-				continue
-			}
-
-			// The URI is set to the location of the right-most element in a doc link
-			// (e.g., 'Scan' in [fmt.Scanner.Scan]). The sequential yielding of path
-			// segments intentionally overwrites the location for previous segments,
-			// ensuring only the most specific definition's location is retained.
-			loc, err := ObjectLocation(ctx, declPkg.FileSet(), snapshot, obj)
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-
-			// The #line,col URL fragment is a non-standard format for file
-			// URIs that is supported by VS Code for navigating from hover
-			// text. The line and column are 1-based, and the column is a
-			// UTF-16 code unit offset, matching the LSP's definition of
-			// character position.
-			docLinks[docLink.bracketText] = fmt.Sprintf("%s#%d,%d", loc.URI, loc.Range.Start.Line+1, loc.Range.Start.Character+1)
-		}
-
-		// Attaching doc links to the bottom of the comment. The non-deterministic
-		// order is acceptable as these will be removed later by the [formatHover].
-		if len(docLinks) > 0 {
-			docBuf.WriteString("\n")
-			for doc, link := range docLinks {
-				fmt.Fprintf(docBuf, "%s: %s\n", doc, link)
-			}
-		}
-
-		docText = docBuf.String()
+	docText, err := formatDocComment(ctx, snapshot, declPkg, declPGF, chooseDocComment(declPGF, decl, spec, field, assign))
+	if err != nil {
+		return protocol.Range{}, nil, err
 	}
 
 	// By default, types.ObjectString provides a reasonable signature.
@@ -815,6 +774,54 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	}, nil
 }
 
+// formatDocComment extracts the comment text and resolves&embeds any doc links
+// within the scope of the given file and package.
+func formatDocComment(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, comment *ast.CommentGroup) (string, error) {
+	if comment == nil {
+		return "", nil
+	}
+	docBuf := new(strings.Builder)
+	docBuf.WriteString(comment.Text())
+
+	// docLinks maps the literal text of a doc link to its definition URI.
+	// Since the link parser yields progressively for each part of a symbol
+	// path (e.g., "fmt", then "fmt.Scanner"), we intentionally overwrite the
+	// map entry to ensure the final value is the URI for the complete symbol.
+	docLinks := make(map[string]string)
+	for docLink := range commentDocLinks(comment) {
+		obj := lookupDocLinkSymbol(pkg, pgf, docLink.nameText)
+		if obj == nil {
+			continue
+		}
+
+		// The URI is set to the location of the right-most element in a doc link
+		// (e.g., 'Scan' in [fmt.Scanner.Scan]). The sequential yielding of path
+		// segments intentionally overwrites the location for previous segments,
+		// ensuring only the most specific definition's location is retained.
+		loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
+		if err != nil {
+			return "", err
+		}
+
+		// The #line,col URL fragment is a non-standard format for file
+		// URIs that is supported by VS Code for navigating from hover
+		// text. The line and column are 1-based, and the column is a
+		// UTF-16 code unit offset, matching the LSP's definition of
+		// character position.
+		docLinks[docLink.bracketText] = fmt.Sprintf("%s#%d,%d", loc.URI, loc.Range.Start.Line+1, loc.Range.Start.Character+1)
+	}
+
+	// Attaching doc links to the bottom of the comment. The non-deterministic
+	// order is acceptable as these will be removed later by the [formatHover].
+	if len(docLinks) > 0 {
+		docBuf.WriteString("\n")
+		for doc, link := range docLinks {
+			fmt.Fprintf(docBuf, "%s: %s\n", doc, link)
+		}
+	}
+	return docBuf.String(), nil
+}
+
 // typeDeclContent returns a well formatted type definition.
 func typeDeclContent(declPGF *parsego.File, declPos token.Pos, name string) (string, *ast.TypeSpec, error) {
 	_, spec, _, _ := findDeclInfo(declPGF, declPos) // may be nil^4
@@ -922,7 +929,7 @@ func hoverPackageRef(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	// Find the first file with a package doc comment.
-	var comment *ast.CommentGroup
+	var docText string
 	for _, f := range impMetadata.CompiledGoFiles {
 		fh, err := snapshot.ReadFile(ctx, f)
 		if err != nil {
@@ -939,12 +946,21 @@ func hoverPackageRef(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 			continue
 		}
 		if pgf.File.Doc != nil {
-			comment = pgf.File.Doc
+			// Format the first doc comment found. If there is an error, we
+			// don't want to continue to other files (since there is a doc
+			// here), just return the error.
+			declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, f)
+			if err != nil {
+				return nil, err
+			}
+			docText, err = formatDocComment(ctx, snapshot, declPkg, declPGF, pgf.File.Doc)
+			if err != nil {
+				return nil, err
+			}
 			break
 		}
 	}
 
-	docText := comment.Text()
 	return &hoverResult{
 		Signature:         "package " + string(impMetadata.Name),
 		Synopsis:          doc.Synopsis(docText),
@@ -954,11 +970,15 @@ func hoverPackageRef(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 
 // hoverPackageName computes hover information for the package name of the file
 // pgf in pkg.
-func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *hoverResult, error) {
-	var comment *ast.CommentGroup
+func hoverPackageName(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File) (protocol.Range, *hoverResult, error) {
+	var docText string
 	for _, pgf := range pkg.CompiledGoFiles() {
 		if pgf.File.Doc != nil {
-			comment = pgf.File.Doc
+			var err error
+			docText, err = formatDocComment(ctx, snapshot, pkg, pgf, pgf.File.Doc)
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
 			break
 		}
 	}
@@ -966,7 +986,6 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
-	docText := comment.Text()
 
 	// List some package attributes at the bottom of the documentation, if
 	// applicable.
