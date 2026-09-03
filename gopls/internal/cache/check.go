@@ -1115,9 +1115,11 @@ func (b *packageHandleBuilder) getTransitiveRefs(pkgID PackageID) map[string]*ty
 				if _, ok := trefs.refs[name]; !ok {
 					pkgs := b.s.view.pkgIndex.NewSet()
 					for _, sym := range node.ph.refs[name] {
-						pkgs.Add(sym.Package)
-						otherSet := b.getOneTransitiveRefLocked(sym)
-						pkgs.Union(otherSet)
+						if b.nodes[sym.Package] != nil {
+							pkgs.Add(sym.Package)
+							otherSet := b.getOneTransitiveRefLocked(sym)
+							pkgs.Union(otherSet)
+						}
 					}
 					trefs.refs[name] = pkgs
 				}
@@ -1157,15 +1159,9 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 	if !ok && !trefs.complete {
 		n := b.nodes[sym.Package]
 		if n == nil {
-			// We should always have IndexID in our node set, because symbol references
-			// should only be recorded for packages that actually exist in the import graph.
-			//
-			// However, it is not easy to prove this (typerefs are serialized and
-			// deserialized), so make this code temporarily defensive while we are on a
-			// point release.
-			//
-			// TODO(rfindley): in the future, we should turn this into an assertion.
-			bug.Reportf("missing reference to package %s", b.s.view.pkgIndex.PackageID(sym.Package))
+			// A referenced package may not be present in b.nodes if it was
+			// excluded from the dependency graph (e.g. by breakImportCycles)
+			// or if its metadata was missing (golang/go#71354).
 			return nil
 		}
 
@@ -1179,9 +1175,11 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 
 		pkgs := b.s.view.pkgIndex.NewSet()
 		for _, sym2 := range n.ph.refs[sym.Name] {
-			pkgs.Add(sym2.Package)
-			otherSet := b.getOneTransitiveRefLocked(sym2)
-			pkgs.Union(otherSet)
+			if b.nodes[sym2.Package] != nil {
+				pkgs.Add(sym2.Package)
+				otherSet := b.getOneTransitiveRefLocked(sym2)
+				pkgs.Union(otherSet)
+			}
 		}
 		trefs.refs[sym.Name] = pkgs
 	}
@@ -1331,14 +1329,11 @@ func (b *packageHandleBuilder) evaluatePackageHandle(ctx context.Context, n *han
 
 		// Collect reachable nodes.
 		var reachableNodes []*handleNode
-		// In the presence of context cancellation, any package may be missing.
-		// We need all dependencies to produce a key.
+		// Reachable packages may not be present in b.nodes if they were
+		// excluded from the dependency graph (e.g. by breakImportCycles)
+		// or if their metadata was missing (golang/go#71352).
 		reachable.Elems(func(id typerefs.IndexID) {
-			dh := b.nodes[id]
-			if dh == nil {
-				// Previous code reported an error (not a bug) here.
-				bug.Reportf("missing reachable node for %v", id)
-			} else {
+			if dh := b.nodes[id]; dh != nil {
 				reachableNodes = append(reachableNodes, dh)
 			}
 		})
