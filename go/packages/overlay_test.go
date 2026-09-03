@@ -26,6 +26,64 @@ const (
 		packages.NeedTypesSizes
 )
 
+// TestOverlayModulePath checks that overlay package paths respect module
+// directory boundaries and prefer the innermost containing module.
+func TestOverlayModulePath(t *testing.T) {
+	t.Parallel()
+	testenv.NeedsTool(t, "go")
+
+	workspace := t.TempDir()
+	moduleRoot := filepath.Join(workspace, "mod")
+	nestedRoot := filepath.Join(moduleRoot, "nested")
+	if err := os.MkdirAll(nestedRoot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleRoot, "go.mod"), []byte("module example.com/mod\n\nrequire example.com/nested v0.0.0\n\nreplace example.com/nested => ./nested\n\ngo 1.26\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedRoot, "go.mod"), []byte("module example.com/nested\n\ngo 1.26\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{
+			name: "outside_module_with_root_prefix",
+			dir:  filepath.Join(workspace, "mod2", "pkg"),
+			want: filepath.Join(workspace, "mod2", "pkg"),
+		},
+		{
+			name: "nested_module",
+			dir:  filepath.Join(nestedRoot, "pkg"),
+			want: "example.com/nested/pkg",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := &packages.Config{
+				Dir:  moduleRoot,
+				Env:  append(os.Environ(), "GOPACKAGESDRIVER=off"),
+				Mode: packages.NeedName | packages.NeedFiles,
+				Overlay: map[string][]byte{
+					filepath.Join(test.dir, "pkg.go"): []byte("package pkg\n"),
+				},
+			}
+			pkgs, err := packages.Load(config, test.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pkgs) != 1 {
+				t.Fatalf("packages.Load returned %d packages, want 1: %v", len(pkgs), pkgs)
+			}
+			if got := pkgs[0].PkgPath; got != test.want {
+				t.Fatalf("PkgPath = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestOverlayChangesPackageName(t *testing.T) {
 	testAllOrModulesParallel(t, testOverlayChangesPackageName)
 }

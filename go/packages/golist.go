@@ -752,29 +752,27 @@ func (state *golistState) getPkgPath(dir string) (string, bool, error) {
 		return "", false, err
 	}
 
+	// A directory can be contained in multiple roots, for example when a
+	// replaced module is nested inside the main module. Choose the most
+	// specific root, breaking ties lexically for deterministic behavior.
+	var bestRoot, bestPath, bestRel string
 	for rdir, rpath := range roots {
-		// Make sure that the directory is in the module,
-		// to avoid creating a path relative to another module.
-		if !strings.HasPrefix(dir, rdir) {
-			continue
-		}
 		// TODO(matloob): This doesn't properly handle symlinks.
 		r, err := filepath.Rel(rdir, dir)
-		if err != nil {
+		if err != nil || !filepath.IsLocal(r) {
 			continue
 		}
-		if rpath != "" {
-			// We choose only one root even though the directory even it can belong in multiple modules
-			// or GOPATH entries. This is okay because we only need to work with absolute dirs when a
-			// file is missing from disk, for instance when gopls calls go/packages in an overlay.
-			// Once the file is saved, gopls, or the next invocation of the tool will get the correct
-			// result straight from golist.
-			// TODO(matloob): Implement module tiebreaking?
-			return path.Join(rpath, filepath.ToSlash(r)), true, nil
+		if bestRoot == "" || len(rdir) > len(bestRoot) || len(rdir) == len(bestRoot) && rdir < bestRoot {
+			bestRoot, bestPath, bestRel = rdir, rpath, r
 		}
-		return filepath.ToSlash(r), true, nil
 	}
-	return "", false, nil
+	if bestRoot == "" {
+		return "", false, nil
+	}
+	if bestPath != "" {
+		return path.Join(bestPath, filepath.ToSlash(bestRel)), true, nil
+	}
+	return filepath.ToSlash(bestRel), true, nil
 }
 
 // absJoin absolutizes and flattens the lists of files.
