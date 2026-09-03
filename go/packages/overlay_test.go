@@ -1162,3 +1162,52 @@ replace (
 		t.Fatalf(`expected import "fmt", got none`)
 	}
 }
+
+func TestOverlayInSecondGoWorkModule(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+	t.Parallel()
+
+	workspace := t.TempDir()
+	moduleA := filepath.Join(workspace, "a")
+	moduleB := filepath.Join(workspace, "b")
+	for _, module := range []struct {
+		dir  string
+		path string
+	}{
+		{dir: moduleA, path: "example.com/a"},
+		{dir: moduleB, path: "example.com/b"},
+	} {
+		if err := os.MkdirAll(module.dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(module.dir, "go.mod"), []byte(fmt.Sprintf("module %s\n\ngo 1.21\n", module.path)), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "go.work"), []byte("go 1.21\n\nuse (\n\t./a\n\t./b\n)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	overlayFile := filepath.Join(moduleB, "newpkg", "new.go")
+	config := &packages.Config{
+		Dir:  workspace,
+		Env:  append(os.Environ(), "GOPACKAGESDRIVER=off"),
+		Mode: packages.LoadAllSyntax,
+		Overlay: map[string][]byte{
+			overlayFile: []byte("package newpkg\n"),
+		},
+	}
+	pkgs, err := packages.Load(config, "file="+overlayFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("got %d packages, want 1: %v", len(pkgs), pkgs)
+	}
+	if got := pkgs[0].PkgPath; got != "example.com/b/newpkg" {
+		t.Fatalf("package path = %q, want %q", got, "example.com/b/newpkg")
+	}
+	if len(pkgs[0].Errors) != 0 {
+		t.Fatalf("package errors = %v, want none", pkgs[0].Errors)
+	}
+}
