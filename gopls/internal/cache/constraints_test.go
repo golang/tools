@@ -58,6 +58,36 @@ func TestIsStandaloneFile(t *testing.T) {
 			true,
 		},
 		{
+			"multiple legacy constraints",
+			"// +build ignore\n// +build linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"combined syntax",
+			"//go:build ignore && linux\n// +build ignore\n// +build linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"standalone tag with additional constraint",
+			"//go:build ignore && linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"standalone tag in disjunction",
+			"//go:build ignore || darwin\n\npackage main\n",
+			[]string{"ignore"},
+			false,
+		},
+		{
+			"contradictory standalone tag",
+			"//go:build ignore && !ignore\n\npackage main\n",
+			[]string{"ignore"},
+			false,
+		},
+		{
 			"after comments",
 			"// A non-directive comment\n//go:build ignore\n\npackage main\n",
 			[]string{"ignore"},

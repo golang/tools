@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"os"
@@ -45,6 +44,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/moremaps"
 )
 
@@ -1407,11 +1407,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fi
 			if ignoredFiles[fh.URI()] {
 				// TODO(rfindley): use the constraint package to check if the file
 				// _actually_ satisfies the current build context.
-				hasConstraint := false
-				walkConstraints(pgf.File, func(constraint.Expr) bool {
-					hasConstraint = true
-					return false
-				})
+				hasConstraint := !moreiters.Empty(buildConstraints(pgf.File))
 				var fix string
 				if hasConstraint {
 					fix = `This file may be excluded due to its build tags; try adding "-tags=<build tag>" to your gopls "buildFlags" configuration
