@@ -57,10 +57,10 @@
   <!-- start of slide {{$s.Number}} -->
       <article {{$s.HTMLAttributes}}>
       {{if $s.Elem}}
-        <h3>{{$s.Title}}</h3>
+        <h{{$s.Level}}>{{$s.Title}}</h{{$s.Level}}>
         {{range $s.Elem}}{{elem $.Template .}}{{end}}
       {{else}}
-        <h2>{{$s.Title}}</h2>
+        <h{{$s.Level}}>{{$s.Title}}</h{{$s.Level}}>
       {{end}}
       <span class="pagenumber">{{pagenum $s 1}}</span>
       </article>
