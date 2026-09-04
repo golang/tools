@@ -52,7 +52,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes .
 	eventName := fmt.Sprintf("go/packages.Load #%d", id) // unique name for logging
 
 	var query []string
-	var standalone bool // whether this is a load of a standalone file
+	var standalone bool // whether this is a load of a standalone Go file
 
 	// Keep track of module query -> module path so that we can later correlate query
 	// errors with errors.
@@ -76,15 +76,18 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes .
 				panic(fmt.Sprintf("internal error: load called with multiple scopes when a file scope is present (file: %s)", uri))
 			}
 			fh, err := s.ReadFile(ctx, uri)
-			if err != nil || fh == nil || s.FileKind(fh) != file.Go {
-				// Don't try to load a file that doesn't exist, or isn't a go file.
+			if err != nil {
+				continue // e.g. canceled
+			}
+			kind := s.FileKind(fh)
+			if !zeroConfigSupported(kind) {
 				continue
 			}
 			contents, err := fh.Content()
 			if err != nil {
-				continue
+				continue // file does not exist
 			}
-			if isStandaloneFile(contents, s.Options().StandaloneTags) {
+			if kind == file.Go && isStandaloneFile(contents, s.Options().StandaloneTags) {
 				standalone = true
 				query = append(query, uri.Path())
 			} else {

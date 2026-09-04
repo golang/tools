@@ -112,13 +112,32 @@ package a
 -- a_darwin.go --
 package a
 
+func darwin() {}
+
 -- a_windows.go --
 package a
+
+-- a_s390x.go --
+package a
+
+func s390x() {}
+
+-- a_darwin.s --
+TEXT ·entry(SB), $0-0
+	CALL ·darwin(SB)
+
+-- tag.s --
+//go:build windows
+
+-- a_s390x.s --
+TEXT ·entryS390x(SB), $0-0
+	CALL ·s390x(SB)
 `
 
 	WithOptions(
 		EnvVars{
-			"GOOS": "linux", // assume that linux is the default GOOS
+			"GOOS":   "linux", // assume that linux/amd64 is the default port
+			"GOARCH": "amd64",
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		summary := func(envOverlay ...string) command.View {
@@ -143,23 +162,86 @@ package a
 			summary(),
 			summary("GOARCH=amd64", "GOOS=darwin"),
 		)
+		env.OpenFile("a_s390x.go")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("GOARCH=s390x", "GOOS=linux"),
+		)
 		env.OpenFile("a_windows.go")
 		checkViews(
 			summary(),
 			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("GOARCH=s390x", "GOOS=linux"),
 			summary("GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_darwin.go")
 		checkViews(
 			summary(),
+			summary("GOARCH=s390x", "GOOS=linux"),
 			summary("GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_linux.go")
 		checkViews(
 			summary(),
+			summary("GOARCH=s390x", "GOOS=linux"),
 			summary("GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_windows.go")
+		checkViews(
+			summary(),
+			summary("GOARCH=s390x", "GOOS=linux"),
+		)
+		env.CloseBuffer("a_s390x.go")
+		checkViews(summary())
+
+		// Repeat with assembly files (both suffix-based and build tag-based).
+		env.OpenFile("a_darwin.s")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+		)
+		// Definition on ·darwin jumps to darwin in a_darwin.go
+		loc := env.RegexpSearch("a_darwin.s", "darwin")
+		def := env.FirstDefinition(loc)
+		wantDef := env.RegexpSearch("a_darwin.go", "darwin")
+		if def != wantDef {
+			t.Errorf("FirstDefinition = %v, want %v", def, wantDef)
+		}
+
+		env.OpenFile("a_s390x.s")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("GOARCH=s390x", "GOOS=linux"),
+		)
+		// Definition on ·s390x jumps to s390x in a_s390x.go
+		loc = env.RegexpSearch("a_s390x.s", "s390x")
+		def = env.FirstDefinition(loc)
+		wantDef = env.RegexpSearch("a_s390x.go", "s390x")
+		if def != wantDef {
+			t.Errorf("FirstDefinition = %v, want %v", def, wantDef)
+		}
+
+		env.OpenFile("tag.s")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("GOARCH=s390x", "GOOS=linux"),
+			summary("GOARCH=amd64", "GOOS=windows"),
+		)
+		env.CloseBuffer("tag.s")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("GOARCH=s390x", "GOOS=linux"),
+		)
+		env.CloseBuffer("a_s390x.s")
+		checkViews(
+			summary(),
+			summary("GOARCH=amd64", "GOOS=darwin"),
+		)
+		env.CloseBuffer("a_darwin.s")
 		checkViews(summary())
 	})
 }

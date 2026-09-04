@@ -47,7 +47,7 @@ func (k Kind) String() string {
 	case Asm:
 		return "Go assembly"
 	default:
-		return fmt.Sprintf("internal error: unknown file kind %d", k)
+		return fmt.Sprintf("unknown FileKind(%d)", k)
 	}
 }
 

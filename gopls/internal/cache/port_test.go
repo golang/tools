@@ -6,6 +6,7 @@ package cache
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -45,24 +46,34 @@ func TestMatchingPortsStdlib(t *testing.T) {
 
 	var g errgroup.Group
 	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
-		for _, f := range pkg.CompiledGoFiles {
+		checkFile := func(filename string) {
 			g.Go(func() error {
-				content, err := os.ReadFile(f)
+				content, err := os.ReadFile(filename)
 				// We report errors via t.Error, not by returning,
 				// so that a single test can report multiple test failures.
 				if err != nil {
-					t.Errorf("failed to read %s: %v", f, err)
+					t.Errorf("failed to read %s: %v", filename, err)
 					return nil
 				}
-				fh := makeFakeFileHandle(protocol.URIFromPath(f), content)
+				fh := makeFakeFileHandle(protocol.URIFromPath(filename), content)
 				fastPorts := matchingPreferredPorts(t, fh, true)
 				slowPorts := matchingPreferredPorts(t, fh, false)
 				if diff := cmp.Diff(fastPorts, slowPorts); diff != "" {
-					t.Errorf("%s: ports do not match (-trimmed +untrimmed):\n%s", f, diff)
+					t.Errorf("%s: ports do not match (-trimmed +untrimmed):\n%s", filename, diff)
 					return nil
 				}
 				return nil
 			})
+		}
+		for _, f := range pkg.CompiledGoFiles {
+			if strings.HasSuffix(f, ".go") { // exclude generated cgo/testmain files
+				checkFile(f)
+			}
+		}
+		for _, f := range pkg.OtherFiles {
+			if strings.HasSuffix(f, ".s") {
+				checkFile(f)
+			}
 		}
 	})
 	_ = g.Wait() // can't fail
@@ -74,7 +85,7 @@ func matchingPreferredPorts(tb testing.TB, fh file.Handle, trimContent bool) map
 		tb.Fatal(err)
 	}
 	if trimContent {
-		content = trimContentForPortMatch(content)
+		content = buildConstraintFile(fileKind(fh), content)
 	}
 	path := fh.URI().Path()
 	matching := make(map[port]unit)

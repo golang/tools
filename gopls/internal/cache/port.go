@@ -6,14 +6,13 @@ package cache
 
 import (
 	"bytes"
+	"errors"
 	"go/build"
 	"go/build/constraint"
-	"go/parser"
-	"go/token"
 	"io"
 	"path/filepath"
-	"strings"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
@@ -163,43 +162,122 @@ func (p port) matches(path string, content []byte) bool {
 	return err == nil && ok
 }
 
-// trimContentForPortMatch trims the given Go file content to a minimal file
-// containing the same build constraints, if any.
+// buildConstraintFile returns a minimal version of the given file (whose
+// kind must be Go or assembly) containing only the same build
+// constraints, if any, plus dummy syntax (e.g. package declaration).
 //
 // This is an unfortunate but necessary optimization, as matching build
 // constraints using go/build has significant overhead, and involves parsing
 // more than just the build constraint.
 //
+// It simulates the build constraint extraction performed by
+// [go/build.Context.MatchFile] (see parseFileHeader in GOROOT/src/go/build/build.go).
+//
 // TestMatchingPortsConsistency enforces consistency by comparing results
 // without trimming content.
-func trimContentForPortMatch(content []byte) []byte {
-	buildComment := buildComment(content)
-	// The package name does not matter, but +build lines
-	// require a blank line before the package declaration.
-	return []byte(buildComment + "\n\npackage p")
-}
-
-// buildComment returns the first matching //go:build comment in the given
-// content, or "" if none exists.
-func buildComment(content []byte) string {
-	var lines []string
-
-	f, err := parser.ParseFile(token.NewFileSet(), "", content, parser.PackageClauseOnly|parser.ParseComments)
+func buildConstraintFile(kind file.Kind, content []byte) []byte {
+	trimmed, goBuild, err := parseFileHeader(content)
 	if err != nil {
-		return ""
+		return nil
 	}
-
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			if constraint.IsGoBuild(c.Text) {
-				// A file must have only one //go:build line.
-				return c.Text
-			}
-			if constraint.IsPlusBuild(c.Text) {
-				// A file may have several // +build lines.
-				lines = append(lines, c.Text)
+	var buf bytes.Buffer
+	if goBuild != nil {
+		buf.Write(goBuild)
+		buf.WriteByte('\n')
+	} else {
+		for line := range bytes.Lines(trimmed) {
+			line = bytes.TrimSpace(line)
+			if constraint.IsPlusBuild(string(line)) {
+				buf.Write(line)
+				buf.WriteByte('\n')
 			}
 		}
 	}
-	return strings.Join(lines, "\n")
+	switch kind {
+	case file.Go:
+		// The package name does not matter, but go/build requires a
+		// package declaration, and +build lines require a blank line
+		// before the package declaration.
+		buf.WriteString("\npackage p")
+	case file.Asm:
+		if buf.Len() > 0 && goBuild == nil {
+			buf.WriteByte('\n') // legacy build tags require a trailing blank line
+		}
+	default:
+		panic("unsupported file kind: " + kind.String())
+	}
+	return buf.Bytes()
+}
+
+var (
+	slashSlash = []byte("//")
+	starSlash  = []byte("*/")
+	slashStar  = []byte("/*")
+
+	errMultipleGoBuild = errors.New("multiple //go:build comments")
+)
+
+// parseFileHeader is copied almost verbatim from GOROOT/src/go/build/build.go.
+func parseFileHeader(content []byte) (trimmed, goBuild []byte, err error) {
+	end := 0
+	p := content
+	ended := false       // found non-blank, non-// line, so stopped accepting //go:build lines
+	inSlashStar := false // in /* */ comment
+
+Lines:
+	for len(p) > 0 {
+		line := p
+		if i := bytes.IndexByte(line, '\n'); i >= 0 {
+			line, p = line[:i], p[i+1:]
+		} else {
+			p = p[len(p):]
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 && !ended { // Blank line
+			// Remember position of most recent blank line.
+			// When we find the first non-blank, non-// line,
+			// this "end" position marks the latest file position
+			// where a //go:build line can appear.
+			// (It must appear _before_ a blank line before the non-blank, non-// line.
+			// Yes, that's confusing, which is part of why we moved to //go:build lines.)
+			// Note that ended==false here means that inSlashStar==false,
+			// since seeing a /* would have set ended==true.
+			end = len(content) - len(p)
+			continue Lines
+		}
+		if !bytes.HasPrefix(line, slashSlash) { // Not comment line
+			ended = true
+		}
+
+		if !inSlashStar && constraint.IsGoBuild(string(line)) {
+			if goBuild != nil {
+				return nil, nil, errMultipleGoBuild
+			}
+			goBuild = line
+		}
+
+	Comments:
+		for len(line) > 0 {
+			if inSlashStar {
+				if i := bytes.Index(line, starSlash); i >= 0 {
+					inSlashStar = false
+					line = bytes.TrimSpace(line[i+len(starSlash):])
+					continue Comments
+				}
+				continue Lines
+			}
+			if bytes.HasPrefix(line, slashSlash) {
+				continue Lines
+			}
+			if bytes.HasPrefix(line, slashStar) {
+				inSlashStar = true
+				line = bytes.TrimSpace(line[len(slashStar):])
+				continue Comments
+			}
+			// Found non-comment text.
+			break Lines
+		}
+	}
+
+	return content[:end], goBuild, nil
 }

@@ -5,6 +5,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -693,6 +694,12 @@ func RelevantViews[V viewDefiner](ctx context.Context, fs file.Source, uri proto
 	return relevantViews, nil
 }
 
+// zeroConfigSupported reports whether the specified file kind
+// is supported by gopls' "zero config" view-selection mechanism.
+func zeroConfigSupported(kind file.Kind) bool {
+	return kind == file.Go || kind == file.Asm
+}
+
 // matchingView returns the View or viewDefinition out of relevantViews that
 // matches the given file's build constraints, or nil if no match is found.
 //
@@ -710,17 +717,19 @@ func matchingView[V viewDefiner](fh file.Handle, relevantViews []V) V {
 
 	content, err := fh.Content()
 
-	// Port matching doesn't apply to non-go files, or files that no longer exist.
+	// Port matching applies only to existing Go and assembly files.
 	// Note that the behavior here on non-existent files shouldn't matter much,
 	// since there will be a subsequent failure.
-	if fileKind(fh) != file.Go || err != nil {
+	kind := fileKind(fh)
+	if err != nil || // file does not exist
+		!zeroConfigSupported(kind) {
 		return relevantViews[0]
 	}
 
 	// Find the first view that matches constraints.
 	// Content trimming is nontrivial, so do this outside of the loop below.
 	path := fh.URI().Path()
-	content = trimContentForPortMatch(content)
+	content = buildConstraintFile(kind, content)
 	for _, v := range relevantViews {
 		def := v.definition()
 		viewPort := port{def.GOOS(), def.GOARCH()}
@@ -846,10 +855,11 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 		// However, extracting the build comment is nontrivial, so we don't want to
 		// pay this cost when e.g. processing a bunch of on-disk changes due to a
 		// branch change. Be careful to only do this if both files are open Go
-		// files.
-		if old, ok := replaced[c.URI]; ok && !checkViews && fileKind(fh) == file.Go {
+		// or assembly files.
+		kind := fileKind(fh)
+		if old, ok := replaced[c.URI]; ok && !checkViews && zeroConfigSupported(kind) {
 			if new, ok := fh.(*overlay); ok {
-				if buildComment(old.content) != buildComment(new.content) {
+				if !bytes.Equal(buildConstraintFile(kind, old.content), buildConstraintFile(kind, new.content)) {
 					checkViews = true
 				}
 			}
