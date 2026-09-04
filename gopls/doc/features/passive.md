@@ -181,6 +181,8 @@ Examples:
   variables k and v (`rangeVariableTypes`).
 - For a constant expression (perhaps using `iota`), a hint provides
   its computed value (`constantValues`).
+- At the closing brace of a function or method declaration, a hint provides
+  its name (`functionEndNames`).
 
 See [Inlay hints](../inlayHints.md) for a complete list with examples.
 
