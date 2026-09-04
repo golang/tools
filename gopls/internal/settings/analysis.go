@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
 	"golang.org/x/tools/go/analysis/passes/deepequalerrors"
 	"golang.org/x/tools/go/analysis/passes/fieldalignment"
+	"golang.org/x/tools/go/analysis/passes/gofmt"
 	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/modernize"
 	"golang.org/x/tools/go/analysis/passes/nilness"
@@ -173,6 +174,9 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: errorsastypeshadow.Analyzer}, // under evaluation
 		{analyzer: writestring.Analyzer},        // under evaluation
 		{analyzer: ptrtoerror.Analyzer},         // under evaluation
+
+		// disabled by default
+		{analyzer: gofmt.Analyzer, severity: protocol.SeverityInformation, nonDefault: true},
 
 		// disabled due to high false positives
 		{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true},         // very noisy
