@@ -254,7 +254,7 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 		for imp := range imps {
 			if req, ok := missing[imp]; ok {
 				missingImports[imp] = req
-				break
+				continue
 			}
 			// If the import is a package of the dependency, then add the
 			// package to the map, this will eliminate the need to do this

@@ -237,6 +237,50 @@ require random.org v1.2.3
 	})
 }
 
+func TestMultipleExactMissingDependencies(t *testing.T) {
+	const files = `
+-- a/go.mod --
+module mod.com
+
+go 1.12
+
+replace example.com/a => ../deps/a
+
+replace example.com/b => ../deps/b
+-- a/main.go --
+package main
+
+import "example.com/a"
+import "example.com/b"
+
+var _, _ = a.Name, b.Name
+-- deps/a/go.mod --
+module example.com/a
+
+go 1.12
+-- deps/a/a.go --
+package a
+
+const Name = "A"
+-- deps/b/go.mod --
+module example.com/b
+
+go 1.12
+-- deps/b/b.go --
+package b
+
+const Name = "B"
+`
+
+	WithOptions(WorkspaceFolders("a")).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/main.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/main.go", `"example.com/a"`), WithMessage("is not in your go.mod file")),
+			Diagnostics(env.AtRegexp("a/main.go", `"example.com/b"`), WithMessage("is not in your go.mod file")),
+		)
+	})
+}
+
 // Tests that multiple missing dependencies gives good single fixes.
 func TestMissingDependencyFixesWithGoWork(t *testing.T) {
 	const mod = `

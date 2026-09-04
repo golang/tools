@@ -79,11 +79,11 @@ func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn fu
 			if err != nil {
 				return err
 			}
+			mu.Lock()
 			for _, d := range diagnostics {
-				mu.Lock()
-				reports[d.URI] = append(reports[fh.URI()], d)
-				mu.Unlock()
+				reports[d.URI] = append(reports[d.URI], d)
 			}
+			mu.Unlock()
 			return nil
 		})
 	}
