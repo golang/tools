@@ -233,9 +233,15 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 					}
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
-				case protocol.Variable, protocol.Struct:
+				case protocol.Variable:
 					kind = protocol.VariableCompletion
 					detail = fmt.Sprintf("var (from %q)", pkg.PkgPath)
+				case protocol.Interface:
+					kind = protocol.InterfaceCompletion
+					detail = fmt.Sprintf("type (from %q)", pkg.PkgPath)
+				case protocol.Struct, protocol.Class:
+					kind = protocol.ClassCompletion
+					detail = fmt.Sprintf("type (from %q)", pkg.PkgPath)
 				case protocol.Constant:
 					kind = protocol.ConstantCompletion
 					detail = fmt.Sprintf("const (from %q)", pkg.PkgPath)
@@ -284,7 +290,7 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 					kind = protocol.VariableCompletion
 					detail = fmt.Sprintf("var (from %q)", candpkg)
 				case stdlib.Type:
-					kind = protocol.VariableCompletion
+					kind = protocol.ClassCompletion
 					detail = fmt.Sprintf("type (from %q)", candpkg)
 				default:
 					continue
@@ -331,7 +337,7 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 			kind = protocol.ConstantCompletion
 			detail = fmt.Sprintf("const (from %s)", cand.ImportPath)
 		case modindex.Type: // might be a type alias
-			kind = protocol.VariableCompletion
+			kind = protocol.ClassCompletion
 			detail = fmt.Sprintf("type (from %s)", cand.ImportPath)
 		default:
 			continue

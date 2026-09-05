@@ -21,6 +21,13 @@ func Foo() {}
 package foo
 
 type StructFoo struct{ F int }
+type ArrayFoo [16]byte
+type InterfaceFoo interface{}
+type FuncFoo func(int)
+
+const ConstFoo = 1
+
+var VarFoo = 2
 
 -- baz/baz.go --
 package baz
@@ -41,6 +48,10 @@ func _() {
 	signature.Foo //@complete(re"()Foo", signaturefoo)
 
 	context.Bac //@complete(re"() \\/\\/", contextBackground)
+
+	// Every kind of exported declaration of a workspace package that is not
+	// imported yet.
+	foo. //@complete(re"foo.() \\/\\/", fooArray, fooConst, fooFunc, fooInterface, fooStruct, fooVar)
 }
 
 // Create markers for unimported std lib packages. Only for use by this test.
@@ -49,7 +60,14 @@ func _() {
 /* httptrace */ //@item(httptrace, "httptrace", "\"net/http/httptrace\"", "package")
 /* httputil */ //@item(httputil, "httputil", "\"net/http/httputil\"", "package")
 
-/* ring.Ring */ //@item(ringring, "Ring", "type (from \"container/ring\")", "var")
+/* ring.Ring */ //@item(ringring, "Ring", "type (from \"container/ring\")", "type")
+
+/* foo.ArrayFoo */ //@item(fooArray, "ArrayFoo", "type (from \"unimported.test/foo\")", "type")
+/* foo.ConstFoo */ //@item(fooConst, "ConstFoo", "const (from \"unimported.test/foo\")", "const")
+/* foo.FuncFoo */ //@item(fooFunc, "FuncFoo", "func (from \"unimported.test/foo\")", "func")
+/* foo.InterfaceFoo */ //@item(fooInterface, "InterfaceFoo", "type (from \"unimported.test/foo\")", "interface")
+/* foo.StructFoo */ //@item(fooStruct, "StructFoo", "type (from \"unimported.test/foo\")", "type")
+/* foo.VarFoo */ //@item(fooVar, "VarFoo", "var (from \"unimported.test/foo\")", "var")
 
 /* signature.Foo */ //@item(signaturefoo, "Foo", "func (from \"unimported.test/signature\")", "func")
 
