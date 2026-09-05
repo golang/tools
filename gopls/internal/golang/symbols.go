@@ -249,10 +249,6 @@ func typeDetails(m *protocol.Mapper, tf *token.File, typExpr ast.Expr) (kind pro
 			detail = "interface{}"
 		}
 
-	case *ast.FuncType:
-		kind = protocol.Function
-		detail = types.ExprString(typExpr)
-
 	default:
 		kind = protocol.Class // catch-all, for cases where we don't know the kind syntactically
 		detail = types.ExprString(typExpr)
