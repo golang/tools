@@ -44,12 +44,23 @@ func (r recv) Method() {}
 		{"Variadic", "(format string, a ...any) string"},
 		{"Unnamed", "(int, string) bool"},
 		{"NoParams", "()"},
-		{"Method", ""},  // has a receiver, so it is not an import candidate
-		{"Missing", ""}, // no such function
 	}
 	for _, test := range tests {
-		if got := funcSignature(f, test.fname); got != test.want {
+		fd := findFunc(f, test.fname)
+		if fd == nil {
+			t.Errorf("findFunc(%q) = nil, want the declaration", test.fname)
+			continue
+		}
+		if got := funcSignature(fd); got != test.want {
 			t.Errorf("funcSignature(%q) = %q, want %q", test.fname, got, test.want)
+		}
+	}
+
+	// A method has a receiver, so it is not a candidate for an import, and
+	// there is no function named Missing at all.
+	for _, fname := range []string{"Method", "Missing"} {
+		if fd := findFunc(f, fname); fd != nil {
+			t.Errorf("findFunc(%q) = %v, want nil", fname, fd.Name)
 		}
 	}
 }

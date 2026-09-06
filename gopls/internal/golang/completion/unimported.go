@@ -229,8 +229,10 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 					fh, _ := c.snapshot.ReadFile(ctx, foundURI)
 					pgf, err := c.snapshot.ParseGo(ctx, fh, 0)
 					if err == nil {
-						params = funcParams(pgf.File, sym.Name)
-						labelDetail = funcSignature(pgf.File, sym.Name)
+						if fd := findFunc(pgf.File, sym.Name); fd != nil {
+							params = funcParams(fd)
+							labelDetail = funcSignature(fd)
+						}
 					}
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
@@ -442,58 +444,51 @@ func usefulCompletion(name, pattern string) bool {
 	return true
 }
 
-// funcSignature returns the parameters and results of the function fname
-// declared in f, for example "(a int, b string) (bool, error)". It returns the
-// empty string if there is no such function.
+// findFunc returns the declaration of the function fname in f, or nil if there
+// is none. A method cannot be completed as a package member, so a declaration
+// with a receiver does not match.
+func findFunc(f *ast.File, fname string) *ast.FuncDecl {
+	for _, n := range f.Decls {
+		if fd, ok := n.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == fname {
+			return fd
+		}
+	}
+	return nil
+}
+
+// funcSignature returns the parameters and results of fd, for example
+// "(a int, b string) (bool, error)".
 //
 // Unlike funcParams, which builds snippet placeholders, this is display text:
 // an unnamed parameter keeps its type alone rather than becoming "_".
-func funcSignature(f *ast.File, fname string) string {
-	for _, n := range f.Decls {
-		fd, ok := n.(*ast.FuncDecl)
-		if !ok || fd.Recv != nil || fd.Name.Name != fname {
-			continue
-		}
-		var cfg printer.Config // slight overkill, as in funcParams
-		var buf strings.Builder
-		cfg.Fprint(&buf, token.NewFileSet(), fd.Type) // ignore error
-		return strings.TrimPrefix(buf.String(), "func")
-	}
-	return ""
+func funcSignature(fd *ast.FuncDecl) string {
+	var cfg printer.Config // slight overkill, as in funcParams
+	var buf strings.Builder
+	cfg.Fprint(&buf, token.NewFileSet(), fd.Type) // ignore error
+	return strings.TrimPrefix(buf.String(), "func")
 }
 
 // return a printed version of the function arguments for snippets
-func funcParams(f *ast.File, fname string) []string {
-	var params []string
-	setParams := func(list *ast.FieldList) {
-		if list == nil {
-			return
-		}
-		var cfg printer.Config // slight overkill
-		param := func(name string, typ ast.Expr) {
-			var buf strings.Builder
-			buf.WriteString(name)
-			buf.WriteByte(' ')
-			cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
-			params = append(params, buf.String())
-		}
-
-		for _, field := range list.List {
-			if field.Names != nil {
-				for _, name := range field.Names {
-					param(name.Name, field.Type)
-				}
-			} else {
-				param("_", field.Type)
-			}
-		}
+func funcParams(fd *ast.FuncDecl) []string {
+	if fd.Type.Params == nil {
+		return nil
 	}
-	for _, n := range f.Decls {
-		switch x := n.(type) {
-		case *ast.FuncDecl:
-			if x.Recv == nil && x.Name.Name == fname {
-				setParams(x.Type.Params)
+	var params []string
+	var cfg printer.Config // slight overkill
+	param := func(name string, typ ast.Expr) {
+		var buf strings.Builder
+		buf.WriteString(name)
+		buf.WriteByte(' ')
+		cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
+		params = append(params, buf.String())
+	}
+	for _, field := range fd.Type.Params.List {
+		if field.Names != nil {
+			for _, name := range field.Names {
+				param(name.Name, field.Type)
 			}
+		} else {
+			param("_", field.Type)
 		}
 	}
 	return params
