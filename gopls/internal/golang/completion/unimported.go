@@ -242,11 +242,14 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 				default:
 					continue
 				}
-				got = c.appendNewItem(got, sym.Name,
-					detail,
-					pkg.PkgPath,
-					kind,
-					pkgname, params)
+				got = c.appendNewItem(got, symbolInfo{
+					name:   sym.Name,
+					kind:   kind,
+					detail: detail,
+					path:   pkg.PkgPath,
+					pkg:    pkgname,
+					params: params,
+				})
 			}
 		}
 	}
@@ -289,11 +292,14 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 				default:
 					continue
 				}
-				got = c.appendNewItem(got, sym.Name,
-					detail,
-					candpkg,
-					kind,
-					pkg, params)
+				got = c.appendNewItem(got, symbolInfo{
+					name:   sym.Name,
+					kind:   kind,
+					detail: detail,
+					path:   candpkg,
+					pkg:    pkg,
+					params: params,
+				})
 			}
 		}
 	}
@@ -336,33 +342,51 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 		default:
 			continue
 		}
-		got = c.appendNewItem(got, cand.Name,
-			detail,
-			metadata.PackagePath(cand.ImportPath),
-			kind,
-			pkg, params)
+		got = c.appendNewItem(got, symbolInfo{
+			name:   cand.Name,
+			kind:   kind,
+			detail: detail,
+			path:   metadata.PackagePath(cand.ImportPath),
+			pkg:    pkg,
+			params: params,
+		})
 	}
 	return got, nil
 }
 
-func (c *completer) appendNewItem(got []CompletionItem, name, detail string, path metadata.PackagePath, kind protocol.CompletionItemKind, pkg metadata.PackageName, params []string) []CompletionItem {
+// symbolInfo describes a symbol of an unimported package, found by one of the
+// three searches above.
+type symbolInfo struct {
+	name   string
+	kind   protocol.CompletionItemKind
+	detail string
+	path   metadata.PackagePath
+	pkg    metadata.PackageName
+
+	// params holds the parameters of a function, for the call snippet, and is
+	// nil for any other symbol.
+	params []string
+}
+
+// appendNewItem appends a completion item for an unimported symbol.
+func (c *completer) appendNewItem(got []CompletionItem, sym symbolInfo) []CompletionItem {
 	item := CompletionItem{
-		Label:      name,
-		Detail:     detail,
-		InsertText: name,
-		Kind:       kind,
+		Label:      sym.name,
+		Detail:     sym.detail,
+		InsertText: sym.name,
+		Kind:       sym.kind,
 	}
 	imp := importInfo{
-		importPath: string(path),
-		name:       string(pkg),
+		importPath: string(sym.path),
+		name:       string(sym.pkg),
 	}
-	if imports.ImportPathToAssumedName(string(path)) == string(pkg) {
+	if imports.ImportPathToAssumedName(string(sym.path)) == string(sym.pkg) {
 		imp.name = ""
 	}
 	item.AdditionalTextEdits, _ = c.importEdits(&imp)
-	if params != nil {
+	if sym.params != nil {
 		var sn snippet.Builder
-		c.functionCallSnippet(name, nil, params, &sn)
+		c.functionCallSnippet(sym.name, nil, sym.params, &sn)
 		item.snippet = &sn
 	}
 	got = append(got, item)
