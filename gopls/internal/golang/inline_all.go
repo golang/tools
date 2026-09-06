@@ -137,7 +137,6 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 			return nil, err // e.g. invalid range
 		}
 
-		// Look for the surrounding call expression.
 		var (
 			name *ast.Ident
 			call *ast.CallExpr
@@ -145,11 +144,38 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 		name, _ = path[0].(*ast.Ident)
 
-		// TODO(rfindley): handle method expressions correctly.
-		if _, ok := path[1].(*ast.SelectorExpr); ok {
-			call, _ = path[2].(*ast.CallExpr)
-		} else {
-			call, _ = path[1].(*ast.CallExpr)
+		// Walk up enclosing expressions to find a call where name is the callee
+		// (c.Fun), rather than an argument (e.g. use(f) or s.M(f)).
+		// See https://golang.org/issue/80834.
+		child := ast.Node(name)
+		for _, parent := range path[1:] {
+			switch p := parent.(type) {
+			case *ast.SelectorExpr: // pkg.F(1), x.M(1), or T.M(t, 1)
+				if p.Sel == child {
+					child = p
+					continue
+				}
+			case *ast.ParenExpr: // ((F))(1)
+				if p.X == child {
+					child = p
+					continue
+				}
+			case *ast.IndexExpr: // F[T](1)
+				if p.X == child {
+					child = p
+					continue
+				}
+			case *ast.IndexListExpr: // F[T1, T2](1)
+				if p.X == child {
+					child = p
+					continue
+				}
+			case *ast.CallExpr: // F(1)
+				if p.Fun == child {
+					call = p
+				}
+			}
+			break
 		}
 		if name == nil || call == nil {
 			// TODO(rfindley): handle this case with eta-abstraction:

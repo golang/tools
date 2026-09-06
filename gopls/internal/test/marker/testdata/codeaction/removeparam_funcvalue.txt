@@ -17,3 +17,21 @@ func A(x, unused int) int { //@codeaction("unused", "refactor.rewrite.removeUnus
 func _() {
 	_ = A
 }
+
+-- b/b.go --
+package b
+
+// golang/go#80834: B passed as an argument to a method call should not be
+// mistaken for a call to B.
+func B(x, unused int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", err=re"non-call function reference")
+	return x
+}
+
+type S struct{}
+
+func (S) M(any) {}
+
+func _() {
+	var s S
+	s.M(B)
+}

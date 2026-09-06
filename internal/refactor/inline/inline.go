@@ -687,6 +687,11 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	{
 		sig := calleeSymbol.Type().(*types.Signature)
 		if sig.Recv() != nil {
+			// Defensively guard against mismatched caller and callee where a
+			// method call was passed with a function declaration (see https://golang.org/issue/80834).
+			if calleeDecl.Recv == nil || len(calleeDecl.Recv.List) == 0 {
+				return nil, fmt.Errorf("cannot inline method call: callee declaration has no receiver")
+			}
 			params = append(params, &parameter{
 				obj:       sig.Recv(),
 				fieldType: calleeDecl.Recv.List[0].Type,
@@ -1878,7 +1883,7 @@ next:
 					logf("param %q (offset %d): adding explicit %s -> %s conversion around argument",
 						param.info.Name, ref.Offset, arg.typ, param.obj.Type())
 				}
-				replace(ref.Offset, internalastutil.CloneNode(argExpr).(ast.Expr), arg.variadic)
+				replace(ref.Offset, internalastutil.CloneNode(argExpr), arg.variadic)
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
