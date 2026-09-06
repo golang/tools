@@ -1784,3 +1784,51 @@ func main() {
 		})
 	}
 }
+
+func TestCompletionLabelDetailsUnimported(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- main.go --
+package main
+
+func main() {
+	math.Sqr
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", "Sqr()")
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "Sqrt" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled Sqrt")
+		}
+
+		if want := `func (from "math")`; item.Detail != want {
+			t.Errorf("Detail = %q, want %q", item.Detail, want)
+		}
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the signature and the import path")
+		}
+		if want := "(x float64) float64"; item.LabelDetails.Detail != want {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, want)
+		}
+		if want := "math"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
+		}
+	})
+}

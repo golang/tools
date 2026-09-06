@@ -222,7 +222,7 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 				}
 				var params []string
 				var kind protocol.CompletionItemKind
-				var detail string
+				var detail, labelDetail string
 				switch sym.Kind {
 				case protocol.Function:
 					foundURI := pkgsyms.Files[np]
@@ -230,6 +230,7 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 					pgf, err := c.snapshot.ParseGo(ctx, fh, 0)
 					if err == nil {
 						params = funcParams(pgf.File, sym.Name)
+						labelDetail = funcSignature(pgf.File, sym.Name)
 					}
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
@@ -243,12 +244,13 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 					continue
 				}
 				got = c.appendNewItem(got, symbolInfo{
-					name:   sym.Name,
-					kind:   kind,
-					detail: detail,
-					path:   pkg.PkgPath,
-					pkg:    pkgname,
-					params: params,
+					name:        sym.Name,
+					kind:        kind,
+					detail:      detail,
+					labelDetail: labelDetail,
+					path:        pkg.PkgPath,
+					pkg:         pkgname,
+					params:      params,
 				})
 			}
 		}
@@ -273,11 +275,12 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 					continue
 				}
 				var kind protocol.CompletionItemKind
-				var detail string
+				var detail, labelDetail string
 				var params []string
 				switch sym.Kind {
 				case stdlib.Func:
 					params = parseSignature(sym.Signature)
+					labelDetail = strings.TrimPrefix(sym.Signature, "func")
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", candpkg)
 				case stdlib.Const:
@@ -293,12 +296,13 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 					continue
 				}
 				got = c.appendNewItem(got, symbolInfo{
-					name:   sym.Name,
-					kind:   kind,
-					detail: detail,
-					path:   candpkg,
-					pkg:    pkg,
-					params: params,
+					name:        sym.Name,
+					kind:        kind,
+					detail:      detail,
+					labelDetail: labelDetail,
+					path:        candpkg,
+					pkg:         pkg,
+					params:      params,
 				})
 			}
 		}
@@ -322,12 +326,14 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 		}
 		var params []string
 		var kind protocol.CompletionItemKind
-		var detail string
+		var detail, labelDetail string
 		switch cand.Type {
 		case modindex.Func:
 			for _, f := range cand.Sig {
 				params = append(params, fmt.Sprintf("%s %s", f.Arg, f.Type))
 			}
+			// The index records the number of results but not their types.
+			labelDetail = "(" + strings.Join(params, ", ") + ")"
 			kind = protocol.FunctionCompletion
 			detail = fmt.Sprintf("func (from %s)", cand.ImportPath)
 		case modindex.Var:
@@ -343,12 +349,13 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 			continue
 		}
 		got = c.appendNewItem(got, symbolInfo{
-			name:   cand.Name,
-			kind:   kind,
-			detail: detail,
-			path:   metadata.PackagePath(cand.ImportPath),
-			pkg:    pkg,
-			params: params,
+			name:        cand.Name,
+			kind:        kind,
+			detail:      detail,
+			labelDetail: labelDetail,
+			path:        metadata.PackagePath(cand.ImportPath),
+			pkg:         pkg,
+			params:      params,
 		})
 	}
 	return got, nil
@@ -357,11 +364,17 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 // symbolInfo describes a symbol of an unimported package, found by one of the
 // three searches above.
 type symbolInfo struct {
-	name   string
-	kind   protocol.CompletionItemKind
-	detail string
-	path   metadata.PackagePath
-	pkg    metadata.PackageName
+	name string
+	kind protocol.CompletionItemKind
+
+	// detail is the text for clients that read CompletionItem.Detail, and
+	// labelDetail the signature for those that read CompletionItem.LabelDetails
+	// instead.
+	detail      string
+	labelDetail string
+
+	path metadata.PackagePath
+	pkg  metadata.PackageName
 
 	// params holds the parameters of a function, for the call snippet, and is
 	// nil for any other symbol.
@@ -375,6 +388,10 @@ func (c *completer) appendNewItem(got []CompletionItem, sym symbolInfo) []Comple
 		Detail:     sym.detail,
 		InsertText: sym.name,
 		Kind:       sym.kind,
+		LabelDetails: &protocol.CompletionItemLabelDetails{
+			Detail:      sym.labelDetail,
+			Description: string(sym.path),
+		},
 	}
 	imp := importInfo{
 		importPath: string(sym.path),
@@ -423,6 +440,26 @@ func usefulCompletion(name, pattern string) bool {
 		cand = cand[ix+1:]
 	}
 	return true
+}
+
+// funcSignature returns the parameters and results of the function fname
+// declared in f, for example "(a int, b string) (bool, error)". It returns the
+// empty string if there is no such function.
+//
+// Unlike funcParams, which builds snippet placeholders, this is display text:
+// an unnamed parameter keeps its type alone rather than becoming "_".
+func funcSignature(f *ast.File, fname string) string {
+	for _, n := range f.Decls {
+		fd, ok := n.(*ast.FuncDecl)
+		if !ok || fd.Recv != nil || fd.Name.Name != fname {
+			continue
+		}
+		var cfg printer.Config // slight overkill, as in funcParams
+		var buf strings.Builder
+		cfg.Fprint(&buf, token.NewFileSet(), fd.Type) // ignore error
+		return strings.TrimPrefix(buf.String(), "func")
+	}
+	return ""
 }
 
 // return a printed version of the function arguments for snippets
