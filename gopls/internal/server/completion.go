@@ -206,6 +206,9 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, surroundi
 			Tags:          protocol.NonNilSlice(candidate.Tags),
 			Deprecated:    candidate.Deprecated,
 		}
+		if options.LabelDetailsSupported {
+			item.LabelDetails = candidate.LabelDetails
+		}
 		items = append(items, item)
 	}
 	return items, nil

@@ -58,6 +58,11 @@ type CompletionItem struct {
 	// This often contains the type or return type of the completion item.
 	Detail string
 
+	// LabelDetails is the same information split into the two fields that
+	// LSP 3.17 gives defined positions. It is sent only to clients that
+	// advertise labelDetailsSupport, and is nil when there is nothing to say.
+	LabelDetails *protocol.CompletionItemLabelDetails
+
 	// InsertText is the text to insert if this item is selected.
 	// Any of the prefix that has already been typed is not trimmed.
 	// The insert text does not contain snippets.
