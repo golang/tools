@@ -26,8 +26,8 @@ import (
 
 // canSplitLines checks whether we can split lists of elements inside
 // an enclosing curly bracket/parens into separate lines.
-func canSplitLines(curFile inspector.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
+func canSplitLines(curFile inspector.Cursor, fset *token.FileSet, src []byte, start, end token.Pos) (string, bool, error) {
+	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, src, start, end)
 	if itemType == "" {
 		return "", false, nil
 	}
@@ -49,8 +49,8 @@ func canSplitLines(curFile inspector.Cursor, fset *token.FileSet, start, end tok
 
 // canJoinLines checks whether we can join lists of elements inside an
 // enclosing curly bracket/parens into a single line.
-func canJoinLines(curFile inspector.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
+func canJoinLines(curFile inspector.Cursor, fset *token.FileSet, src []byte, start, end token.Pos) (string, bool, error) {
+	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, src, start, end)
 	if itemType == "" {
 		return "", false, nil
 	}
@@ -89,7 +89,9 @@ func canSplitJoinLines(items []ast.Node, comments []*ast.CommentGroup) bool {
 func splitLines(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	fset := pkg.FileSet()
 	itemType, items, comments, indent, braceOpen, braceClose := findSplitJoinTarget(fset, pgf.Cursor(), pgf.Src, start, end)
-	if itemType == "" {
+	// Check canSplitJoinLines here as well as in canSplitLines in case the file was modified
+	// between offering the code action and applying the fix (#68818).
+	if itemType == "" || !canSplitJoinLines(items, comments) {
 		return nil, nil, nil // no fix available
 	}
 
@@ -100,7 +102,9 @@ func splitLines(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*t
 func joinLines(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	fset := pkg.FileSet()
 	itemType, items, comments, _, braceOpen, braceClose := findSplitJoinTarget(fset, pgf.Cursor(), pgf.Src, start, end)
-	if itemType == "" {
+	// Check canSplitJoinLines here as well as in canJoinLines in case the file was modified
+	// between offering the code action and applying the fix (#68818).
+	if itemType == "" || !canSplitJoinLines(items, comments) {
 		return nil, nil, nil // no fix available
 	}
 
@@ -183,18 +187,32 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 			// - splitting Params and Results lists is not usually good style.
 			case edge.FuncType_Params:
 				p := cur.Node().(*ast.FieldList)
+				// Both Opening and Closing must be valid (guards against malformed signatures).
+				if !p.Opening.IsValid() || !p.Closing.IsValid() {
+					return "", nil, 0, 0
+				}
 				return "parameters", p, p.Opening, p.Closing
 			case edge.FuncType_Results:
 				r := cur.Node().(*ast.FieldList)
-				if !r.Opening.IsValid() {
-					continue
+				// Both Opening and Closing must be valid (guards against unparenthesized single returns or malformed result lists).
+				if !r.Opening.IsValid() || !r.Closing.IsValid() {
+					return "", nil, 0, 0
 				}
 				return "results", r, r.Opening, r.Closing
 			case edge.CallExpr_Args: // f(a, b, c)
 				node := cur.Parent().Node().(*ast.CallExpr)
+				// Incomplete call expressions (e.g. unclosed paren during editing)
+				// can have invalid Lparen or Rparen positions (#68818).
+				if !node.Lparen.IsValid() || !node.Rparen.IsValid() {
+					return "", nil, 0, 0
+				}
 				return "arguments", node, node.Lparen, node.Rparen
 			case edge.CompositeLit_Elts: // T{a, b, c}
 				node := cur.Parent().Node().(*ast.CompositeLit)
+				// Incomplete composite literals (e.g. missing brace) can have invalid positions (#68818).
+				if !node.Lbrace.IsValid() || !node.Rbrace.IsValid() {
+					return "", nil, 0, 0
+				}
 				return "elements", node, node.Lbrace, node.Rbrace
 			}
 		}
@@ -202,7 +220,8 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 	}
 
 	targetType, targetNode, open, close := findTarget()
-	if targetType == "" {
+	// Both open and close must be valid, well-ordered delimiters (#68818).
+	if targetType == "" || !open.IsValid() || !close.IsValid() || open >= close {
 		return "", nil, nil, "", 0, 0
 	}
 
@@ -220,7 +239,7 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 		// argument in an Ellipsis node
 		// with the same Pos/End as the argument.
 		// See corresponding logic in processLines.
-		if node.Ellipsis.IsValid() {
+		if node.Ellipsis.IsValid() && len(items) > 0 {
 			last := &items[len(items)-1]
 			*last = &ast.Ellipsis{
 				Ellipsis: (*last).Pos(),      // determines Ellipsis.Pos()
@@ -233,10 +252,47 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 		}
 	}
 
+	// Verify that all items have valid start and end positions enclosed by
+	// (open, close]. An incomplete or broken AST (e.g. BadExpr or unparsed fields
+	// from syntax error recovery) can have token.NoPos, which would result in
+	// TextEdits with invalid positions and cause #68818.
+	for _, item := range items {
+		if is[*ast.BadExpr](item) {
+			return "", nil, nil, "", 0, 0
+		}
+		if !item.Pos().IsValid() || !item.End().IsValid() || item.Pos() <= open || item.End() > close {
+			return "", nil, nil, "", 0, 0
+		}
+	}
+
+	// When source is available, verify that open and close offsets point to the expected
+	// delimiter characters. Incomplete calls or literals (e.g. unclosed paren at EOF or
+	// missing brace from syntax error recovery) can have synthetic delimiters that do
+	// not actually exist in the source code (#68818).
+	if len(src) > 0 {
+		openOffset := safetoken.StartPosition(fset, open).Offset
+		closeOffset := safetoken.StartPosition(fset, close).Offset
+		if openOffset < 0 || openOffset >= len(src) || closeOffset < 0 || closeOffset >= len(src) {
+			return "", nil, nil, "", 0, 0
+		}
+		var wantOpen, wantClose byte
+		switch targetType {
+		case "elements":
+			wantOpen, wantClose = '{', '}'
+		case "parameters", "results", "arguments":
+			wantOpen, wantClose = '(', ')'
+		default:
+			return "", nil, nil, "", 0, 0
+		}
+		if src[openOffset] != wantOpen || src[closeOffset] != wantClose {
+			return "", nil, nil, "", 0, 0
+		}
+	}
+
 	// preserve comments separately as it's not part of the targetNode AST.
 	file := curFile.Node().(*ast.File)
 	for _, cg := range file.Comments {
-		if open <= cg.Pos() && cg.Pos() < close {
+		if open <= cg.Pos() && cg.End() <= close {
 			comments = append(comments, cg)
 		}
 	}
@@ -259,9 +315,14 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 
 		split := bytes.Split(src, []byte("\n"))
 		targetLineNumber := safetoken.StartPosition(fset, pos).Line
+		if targetLineNumber <= 0 || targetLineNumber > len(split) {
+			return "", nil, nil, "", 0, 0
+		}
 		firstLine := string(split[targetLineNumber-1])
 		trimmed := strings.TrimSpace(string(firstLine))
-		indent = firstLine[:strings.Index(firstLine, trimmed)]
+		if idx := strings.Index(firstLine, trimmed); idx >= 0 {
+			indent = firstLine[:idx]
+		}
 	}
 
 	return targetType, items, comments, indent, open, close

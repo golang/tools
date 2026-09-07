@@ -699,7 +699,7 @@ func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error
 // See [splitLines] for command implementation.
 func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canSplitLines(req.pgf.Cursor(), req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canSplitLines(req.pgf.Cursor(), req.pkg.FileSet(), req.pgf.Src, req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
 	return nil
@@ -805,7 +805,7 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 // See [joinLines] for command implementation.
 func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canJoinLines(req.pgf.Cursor(), req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canJoinLines(req.pgf.Cursor(), req.pkg.FileSet(), req.pgf.Src, req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixJoinLines, req.loc)
 	}
 	return nil
