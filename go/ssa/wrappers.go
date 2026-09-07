@@ -44,9 +44,21 @@ import (
 //   - optional method type arguments
 //   - meth.Obj() may denote a concrete or an interface method
 //   - the result may be a thunk or a wrapper.
+//
+// TODO(golang/go#81708): reduce the one-off fixes for receivers, method type args, etc.
 func createWrapper(prog *Program, sel *selection, targs []types.Type) *Function {
 	obj := sel.obj.(*types.Func) // the declared function
-	name, sig := maybeInstance(prog, obj.Name(), sel.typ.(*types.Signature), targs)
+	// Specialize method type parameters before adapting the receiver. A
+	// selection reconstructed inside a generic function has already adapted
+	// its signature, and changeRecv/recvAsFirstArg discard type parameters.
+	methodSig := obj.Type().(*types.Signature)
+	name, sig := maybeInstance(prog, obj.Name(), methodSig, targs)
+	// Canonical signatures compare equal regardless of their receiver.
+	// Restore the selected receiver from the method, not the canonical type.
+	sig = changeRecv(sig, newVar(methodSig.Recv().Name(), sel.recv))
+	if sel.kind == types.MethodExpr {
+		sig = recvAsFirstArg(sig)
+	}
 
 	var recv *types.Var // wrapper's receiver or thunk's params[0]
 	var description string
@@ -90,7 +102,10 @@ func maybeInstance(prog *Program, name string, sig *types.Signature, targs []typ
 			// validate was false, we should never get an error
 			panic(err)
 		}
-		sig = prog.canon.Type(instSig).(*types.Signature)
+		// Both callers instantiate methods. Signature identity ignores the
+		// receiver, so canonicalizing here could return a function signature
+		// without one (or a signature with a different receiver).
+		sig = instSig.(*types.Signature)
 	}
 	return name, sig
 }
