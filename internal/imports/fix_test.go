@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
+	"go/parser"
+	"go/token"
 	"log"
 	"os"
 	"path"
@@ -1672,6 +1674,174 @@ var _ = rc4.NewCipher
 			t.Errorf("Got:\n%s\nWant:\n%s", got, input)
 		}
 	})
+}
+
+// A file with a //go:embed directive must import "embed"; goimports adds a
+// blank import when the embedded variable's type does not reference the
+// package. See golang/go#50414.
+func TestEmbedDirective(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string // if empty, the input is expected to be unchanged
+	}{
+		{
+			name: "blank import added when unreferenced",
+			input: `package p
+
+//go:embed data.txt
+var s string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			// The directive may be separated from its patterns by a tab.
+			name:  "tab-separated directive",
+			input: "package p\n\n//go:embed\tdata.txt\nvar s string\n",
+			want:  "package p\n\nimport _ \"embed\"\n\n//go:embed\tdata.txt\nvar s string\n",
+		},
+		{
+			// A comment that merely mentions the directive text, or one
+			// without the required trailing whitespace, is not a directive.
+			name: "non-directive comment is ignored",
+			input: `package p
+
+// we don't need //go:embed here
+var s string
+`,
+		},
+		{
+			// An embed.FS variable references the package, so it is imported
+			// through the normal mechanism; no duplicate blank import is added.
+			name: "embed.FS imported normally",
+			input: `package p
+
+//go:embed data.txt
+var f embed.FS
+`,
+			want: `package p
+
+import "embed"
+
+//go:embed data.txt
+var f embed.FS
+`,
+		},
+		{
+			// An existing import of "embed" under any name already satisfies
+			// the compiler.
+			name: "existing named import unchanged",
+			input: `package p
+
+import embed2 "embed"
+
+//go:embed data.txt
+var f embed2.FS
+`,
+		},
+		{
+			name: "existing blank import unchanged",
+			input: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			// A plain unused import would otherwise be deleted, leaving the
+			// directive without its import; it is made blank instead.
+			name: "unused import converted to blank",
+			input: `package p
+
+import "embed"
+
+//go:embed data.txt
+var s string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			name: "multiple directives add a single import",
+			input: `package p
+
+//go:embed data.txt
+var s string
+
+//go:embed other.txt
+var u string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+
+//go:embed other.txt
+var u string
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want == "" {
+				want = tt.input
+			}
+			testConfig{
+				module: packagestest.Module{
+					Name:  "golang.org/fake",
+					Files: fm{"x.go": tt.input, "data.txt": "hello", "other.txt": "world"},
+				},
+			}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
+		})
+	}
+}
+
+// TestEnsureEmbedImport checks that when a file already imports "embed" but the
+// import is unused (and would be deleted), ensureEmbedImport replaces the
+// delete with a single fix that makes the import blank, rather than deleting
+// and re-adding it.
+func TestEnsureEmbedImport(t *testing.T) {
+	const src = `package p
+
+import "embed"
+
+//go:embed data.txt
+var s string
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fix goimports computes on its own for the unused import.
+	deleteEmbed := &ImportFix{
+		StmtInfo:  ImportInfo{ImportPath: "embed"},
+		IdentName: "embed",
+		FixType:   DeleteImport,
+	}
+	got := ensureEmbedImport(f, []*ImportFix{deleteEmbed})
+	if len(got) != 1 {
+		t.Fatalf("ensureEmbedImport returned %d fixes, want 1: %+v", len(got), got)
+	}
+	if fix := got[0]; fix.FixType != SetImportName || fix.StmtInfo.ImportPath != "embed" || fix.StmtInfo.Name != "_" {
+		t.Errorf("got fix %+v; want a SetImportName of \"embed\" to \"_\"", fix)
+	}
 }
 
 type testConfig struct {
