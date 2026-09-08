@@ -382,7 +382,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	// There's not much useful information to provide.
 	if _, selectedType := typeSwitchVars(pkg.TypesInfo(), cur); selectedType != nil {
 		v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
-		typesinternal.SetVarKind(v, typesinternal.LocalVar)
+		v.SetKind(types.LocalVar)
 		signature := types.ObjectString(v, qual)
 		return *hoverRange, &hoverResult{
 			Signature:  signature,

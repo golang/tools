@@ -9,7 +9,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 )
 
 // subster defines a type substitution operation of a set of type parameters
@@ -369,14 +368,15 @@ func (subst *subster) alias(t *types.Alias) types.Type {
 		rhs := subst.typ(t.Rhs())
 
 		// Create the fresh alias.
-		obj := aliases.New(tname.Pos(), tname.Pkg(), tname.Name(), rhs, newTParams)
+		tname := types.NewTypeName(tname.Pos(), tname.Pkg(), tname.Name(), nil)
+		types.NewAlias(tname, rhs).SetTypeParams(newTParams)
 
 		// Substitute into all of the constraints after they are created.
 		for i, ntp := range newTParams {
 			bound := tparams.At(i).Constraint()
 			ntp.SetConstraint(subst.typ(bound))
 		}
-		return obj.Type()
+		return tname.Type()
 	}
 
 	// t is declared within the function origin and has type arguments.

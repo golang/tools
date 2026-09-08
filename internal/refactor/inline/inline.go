@@ -1966,7 +1966,7 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 			nconst++
 		} else {
 			v := types.NewVar(token.NoPos, pkg, name, arg.typ)
-			typesinternal.SetVarKind(v, typesinternal.PackageVar)
+			v.SetKind(types.PackageVar)
 			pkg.Scope().Insert(v)
 			logf("falcon env: var %s %s", name, arg.typ)
 		}
