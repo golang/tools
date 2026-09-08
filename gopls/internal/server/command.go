@@ -1996,8 +1996,24 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// TODO(mkalil): implement with interactive params
-		changes, _, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, "") // dummy for now
+		var destURI protocol.DocumentURI
+		if params != nil && len(params.FormAnswers) > 0 {
+			file, err := params.RequiredAnswer[string]("file")
+			if err != nil {
+				return err
+			}
+			destURI, err = protocol.ParseDocumentURI(file)
+			if err != nil {
+				destURI = protocol.URIFromPath(file)
+			}
+		}
+		if destURI == "" {
+			return fmt.Errorf("destination file is required")
+		}
+		if filepath.Ext(destURI.Path()) != ".go" {
+			return fmt.Errorf("destination file must have a .go extension")
+		}
+		changes, _, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)
 		if err != nil {
 			return err
 		}

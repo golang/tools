@@ -6,6 +6,7 @@ package golang
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -19,56 +20,88 @@ import (
 )
 
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
-func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, destURI protocol.DocumentURI) ([]protocol.DocumentChange, protocol.Location, error) {
-	srcPkg, _, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
+func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {
+	srcPkg, srcPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
-	_ = buildSymbolRefGraph(srcPkg)
-	// TODO(mkalil): next - examine graph edges to determine moving set
+	// TODO(mkalil): Handle moving to a new file. NarrowestPackage will throw an
+	// error for a file that doesn't exist, so we need a different way to resolve
+	// what package it is.
+	destPkg, _, err := NarrowestPackageForFile(ctx, snapshot, destURI)
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
+	start, end, err := srcPGF.RangePos(loc.Range)
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
+
+	cur, ok := srcPGF.Cursor().FindByPos(start, end)
+	if !ok {
+		return nil, protocol.Location{}, fmt.Errorf("no AST selection found at cursor")
+	}
+	_, _, targetObj := moveDeclTarget(srcPkg.TypesInfo(), cur)
+	if targetObj == nil {
+		return nil, protocol.Location{}, fmt.Errorf("could not resolve target declaration")
+	}
+	graph := buildSymbolRefGraph(srcPkg)
+	_ = computeMovingSet(srcPkg, destPkg, targetObj, graph)
 	return nil, protocol.Location{}, nil
 }
 
 // moveDeclTarget returns the cursor of the declaration to be moved, based on
 // curSel. The moving declaration is the innermost TypeSpec, ValueSpec, or
-// FuncDecl enclosing curSel, if any. If the cursor is within a multi-value
-// ValueSpec, we return the first enclosing identifier, if any.
-func moveDeclTarget(curSel inspector.Cursor) (inspector.Cursor, string) {
+// FuncDecl enclosing curSel, if any. It must be a package-level decl. If the
+// cursor is within a multi-value ValueSpec, we return the first enclosing
+// identifier, if any. It also returns the corresponding name and types.Object.
+func moveDeclTarget(info *types.Info, curSel inspector.Cursor) (inspector.Cursor, string, types.Object) {
 	if cur, ok := moreiters.First(curSel.Enclosing(
 		(*ast.FuncDecl)(nil), (*ast.TypeSpec)(nil), (*ast.ValueSpec)(nil))); ok {
 		switch n := cur.Node().(type) {
 		case *ast.FuncDecl:
-			return cur, n.Name.Name
+			if obj := info.Defs[n.Name]; obj != nil {
+				return cur, n.Name.Name, obj
+			}
 		case *ast.TypeSpec:
 			// Only support moving package-level decls.
 			if cur.Parent().ParentEdgeKind() == edge.File_Decls {
-				return cur, n.Name.Name
+				if obj := info.Defs[n.Name]; obj != nil {
+					return cur, n.Name.Name, obj
+				}
 			}
 		case *ast.ValueSpec:
 			// Only support moving package-level decls.
 			if cur.Parent().ParentEdgeKind() == edge.File_Decls {
-				if len(n.Names) == 1 {
-					return cur, n.Names[0].Name
-				}
-				if len(n.Values) == 1 { // len(n.Names) > 1
+				if len(n.Values) > 0 && len(n.Values) != len(n.Names) {
 					// Don't allow moving an ident in a multi-assignment with one value,
 					// e.g. x, y := f(). The RHS may have side effects, and when moving
 					// the variable it will change the number of calls.
 					// (This pattern can also occur with indexing a map, type assertions,
 					// and channels. We should also not support these types of moves)
-					return inspector.Cursor{}, ""
+					return inspector.Cursor{}, "", nil
 				}
-				// For a multi-value ValueSpec, only match if the cursor is directly
-				// on one of the declared names (not in the type or value expressions).
-				// var a, b = foo, bar <- cursor in foo/bar is ambiguous
-				// var a, b MyType <- cursor in MyType is ambiguous
-				if curSel.ParentEdgeKind() == edge.ValueSpec_Names {
-					return cur, curSel.Node().(*ast.Ident).Name
+				if len(n.Names) == 1 {
+					id := n.Names[0]
+					if obj := info.Defs[id]; obj != nil {
+						return cur, n.Names[0].Name, obj
+					}
+				} else {
+					// For a multi-value ValueSpec, only match if the cursor is directly
+					// on one of the declared names (not in the type or value expressions).
+					// var a, b = foo, bar <- cursor in foo/bar is ambiguous
+					// var a, b MyType <- cursor in MyType is ambiguous
+					if curSel.ParentEdgeKind() == edge.ValueSpec_Names {
+						id := curSel.Node().(*ast.Ident)
+						if obj := info.Defs[id]; obj != nil {
+							return cur, id.Name, obj
+						}
+					}
 				}
 			}
 		}
 	}
-	return inspector.Cursor{}, ""
+	return inspector.Cursor{}, "", nil
 }
 
 // declGraph is a directed graph where an edge (u, v) means top-level
@@ -217,4 +250,123 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 		}
 	}
 	return gb.graph
+}
+
+// implicitDependencies returns all package-level symbols that must move
+// together with obj due to language coupling rules. These are ths symbols
+// that the given obj has an implicit dependency on.
+// Rules:
+// - Type: all methods in its method set.
+// - Method: receiver type declaration and all other methods on that receiver.
+// - Const group using iota: all constants in the entire const (...) block.
+// Also returns true if the dependency added is from an iota const group,
+// as we should avoid doing duplicate work on these objects.
+func implicitDependencies(pkg *cache.Package, obj types.Object) (coupled []types.Object, isIota bool) {
+	switch obj := obj.(type) {
+	case *types.TypeName:
+		if named, ok := obj.Type().(*types.Named); ok {
+			// We only move methods declared in the source package, not methods inherited
+			// from embedded types in other packages (so we can't use types.NewMethodSet).
+			// TODO(mkalil): Should we move functions whose signature represents a constructor for this type?
+			for m := range named.Methods() {
+				coupled = append(coupled, m)
+			}
+		}
+	case *types.Const:
+		// If the declaration is inside a const group using iota, add all constants in the entire block.
+		if pgf, err := pkg.FileEnclosing(obj.Pos()); err == nil {
+			if cur, ok := pgf.Cursor().FindByPos(obj.Pos(), obj.Pos()); ok {
+				if declCur, ok := moreiters.First(cur.Enclosing((*ast.GenDecl)(nil))); ok {
+					genDecl := declCur.Node().(*ast.GenDecl)
+					if objs, ok := usesIota(pkg.TypesInfo(), genDecl); ok {
+						isIota = true
+						coupled = append(coupled, objs...)
+					}
+				}
+			}
+		}
+	}
+	return coupled, isIota
+}
+
+// usesIota reports whether the GenDecl contains a use of iota. It returns
+// a list of the objects corresponding to specs in the decl block.
+func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
+	var (
+		objs    []types.Object
+		hasIota = false
+	)
+	for _, spec := range decl.Specs {
+		if vspec, ok := spec.(*ast.ValueSpec); ok {
+			for _, name := range vspec.Names {
+				if obj := info.Defs[name]; obj != nil {
+					objs = append(objs, obj)
+				}
+			}
+			for _, val := range vspec.Values {
+				// Need to inspect the entire expression because iota may be used like:
+				// const (
+				//		a = 1 << iota
+				//		b
+				// 		...
+				// )
+				ast.Inspect(val, func(n ast.Node) bool {
+					if id, ok := n.(*ast.Ident); ok {
+						if info.Uses[id] == builtinIota {
+							hasIota = true
+							return false // stop descending
+						}
+					}
+					return true
+				})
+			}
+		}
+	}
+	return objs, hasIota
+}
+
+// computeMovingSet determines the set of objects that must move with the
+// targetObj in order to produce valid code.
+// For a declaration A, the initial moving set includes A and all coupled symbols of A.
+// For each of these symbols, we also include their coupled symbols, recursively.
+// For each symbol's dependencies (as specified by edges in the declGraph), we add
+// the symbol to the moving set.
+func computeMovingSet(srcPkg, destPkg *cache.Package, targetObj types.Object, graph declGraph) map[types.Object]bool {
+	moving := make(map[types.Object]bool)
+	if srcPkg == destPkg {
+		// If the move is within the same package, we only need to move the
+		// declaration itself.
+		moving[targetObj] = true
+		return moving
+	}
+
+	var queue []types.Object
+	addToMoving := func(obj types.Object) {
+		if obj == nil || moving[obj] {
+			return
+		}
+		moving[obj] = true
+		queue = append(queue, obj)
+		deps, isIota := implicitDependencies(srcPkg, obj)
+		for _, c := range deps {
+			if !moving[c] {
+				moving[c] = true
+				// We will have already added all necessary dependencies of the const group
+				// to the moving set, so we don't need to explore them again.
+				if !isIota {
+					queue = append(queue, c)
+				}
+			}
+		}
+	}
+	addToMoving(targetObj)
+
+	for len(queue) > 0 {
+		u := queue[0]
+		queue = queue[1:]
+		for v := range graph[u] {
+			addToMoving(v)
+		}
+	}
+	return moving
 }

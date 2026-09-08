@@ -376,3 +376,5 @@ func buildConstraintComment(file *ast.File) *ast.Comment {
 
 	return nil
 }
+
+var builtinIota = types.Universe.Lookup("iota")
