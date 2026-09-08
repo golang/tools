@@ -10,6 +10,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
@@ -25,13 +26,23 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
-	// TODO(mkalil): Handle moving to a new file. NarrowestPackage will throw an
-	// error for a file that doesn't exist, so we need a different way to resolve
-	// what package it is.
-	destPkg, _, err := NarrowestPackageForFile(ctx, snapshot, destURI)
-	if err != nil {
-		return nil, protocol.Location{}, err
+	var destPkg *cache.Package
+	if fh.URI().DirPath() == destURI.DirPath() {
+		// Moving within the same package.
+		destPkg = srcPkg
+	} else {
+		destPkg, _, _ = NarrowestPackageForFile(ctx, snapshot, destURI)
+		if destPkg == nil {
+			// Destination file is new. Find an existing package in the same directory
+			// as the destination file.
+			destPkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath())
+		}
 	}
+	if destPkg == nil {
+		// TODO: support destination file in a new package (destPkg == nil).
+		return nil, protocol.Location{}, fmt.Errorf("could not resolve destination package")
+	}
+
 	start, end, err := srcPGF.RangePos(loc.Range)
 	if err != nil {
 		return nil, protocol.Location{}, err
@@ -48,6 +59,31 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	graph := buildSymbolRefGraph(srcPkg)
 	_ = computeMovingSet(srcPkg, destPkg, targetObj, graph)
 	return nil, protocol.Location{}, nil
+}
+
+// narrowestPackageForDir finds the package corresponding to dir, assuming that the file
+// at dir does not yet exist.
+func narrowestPackageForDir(ctx context.Context, snapshot *cache.Snapshot, dir string) *cache.Package {
+	metas, err := snapshot.WorkspaceMetadata(ctx)
+	if err != nil {
+		return nil
+	}
+	dir = filepath.Clean(dir)
+	for _, mp := range metas {
+		if mp.ForTest != "" {
+			continue // skip test variants and test packages
+		}
+		for _, f := range mp.CompiledGoFiles {
+			if filepath.Clean(f.DirPath()) == dir {
+				pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
+				if err == nil && len(pkgs) > 0 {
+					return pkgs[0]
+				}
+				return nil
+			}
+		}
+	}
+	return nil
 }
 
 // moveDeclTarget returns the cursor of the declaration to be moved, based on
