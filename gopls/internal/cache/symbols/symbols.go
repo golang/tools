@@ -93,8 +93,6 @@ func symbolizeFile(pgf *parsego.File) []Symbol {
 						kind = protocol.Interface
 					case *ast.StructType:
 						kind = protocol.Struct
-					case *ast.FuncType:
-						kind = protocol.Function
 					}
 					w.declare(spec.Name.Name, kind, spec.Name)
 					w.walkType(spec.Type, spec.Name)

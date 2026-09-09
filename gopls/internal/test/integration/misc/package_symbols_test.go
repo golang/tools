@@ -26,6 +26,7 @@ package a
 
 var A = "var"
 type S struct{}
+type FuncType func(int) int
 
 func (s *S) M1() {}
 -- b.go --
@@ -67,6 +68,7 @@ var Unloaded int
 			Symbols: []command.PackageSymbol{
 				{Name: "A", Kind: protocol.Variable, File: 0},
 				{Name: "F", Kind: protocol.Function, File: 1},
+				{Name: "FuncType", Kind: protocol.Class, File: 0},
 				{Name: "S", Kind: protocol.Struct, File: 0, Children: []command.PackageSymbol{
 					{Name: "M1", Kind: protocol.Method, File: 0},
 					{Name: "M2", Kind: protocol.Method, File: 1},
