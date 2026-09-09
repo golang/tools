@@ -1832,3 +1832,61 @@ func main() {
 		}
 	})
 }
+
+func TestCompletionLabelDetailsLiteral(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- point/point.go --
+package point
+
+type Point struct{}
+
+-- decl.go --
+package main
+
+import "mod.com/point"
+
+func f(p point.Point) {}
+
+-- main.go --
+package main
+
+func main() {
+	f(Poi)
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `f\(Poi()\)`)
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "point.Point{}" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled point.Point{}")
+		}
+
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the import path")
+		}
+		// The label of a literal is already its type, so nothing goes beside it.
+		if item.LabelDetails.Detail != "" {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, "")
+		}
+		if want := "mod.com/point"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
+		}
+	})
+}
