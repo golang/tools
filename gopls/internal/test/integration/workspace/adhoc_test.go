@@ -37,3 +37,25 @@ const Y = X
 		}
 	})
 }
+
+// Test for golang/go#54815: opening or editing an arbitrary non-Go file
+// without a .go extension should not be treated as a Go package.
+func TestAdhoc_NonGoFile(t *testing.T) {
+	const files = `
+-- a.go --
+package foo
+
+const X = 1
+
+-- foof --
+This is not Go code.
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foof")
+		env.AfterChange(NoDiagnostics())
+
+		env.RegexpReplace("foof", `This is not Go code.`, `Still not Go code.`)
+		env.AfterChange(NoDiagnostics())
+	})
+}

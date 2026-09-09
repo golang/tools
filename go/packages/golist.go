@@ -317,10 +317,17 @@ func (state *golistState) adhocPackage(pattern, query string) (*DriverResponse, 
 	if err != nil {
 		return nil, err
 	}
-	// If we get nothing back from `go list`,
-	// try to make this file into its own ad-hoc package.
-	// TODO(rstambler): Should this check against the original response?
-	if len(response.Packages) == 0 {
+	// Only .go files can form ad-hoc packages (command-line-arguments);
+	// non-Go files cannot be compiled as Go packages (golang.org/issue/54815).
+	if filepath.Ext(query) != ".go" {
+		return response, nil
+	}
+
+	switch len(response.Packages) {
+	case 0:
+		// If we get nothing back from `go list`,
+		// try to make this file into its own ad-hoc package.
+		// TODO(rstambler): Should this check against the original response?
 		response.Packages = append(response.Packages, &Package{
 			ID:              "command-line-arguments",
 			PkgPath:         query,
@@ -329,22 +336,23 @@ func (state *golistState) adhocPackage(pattern, query string) (*DriverResponse, 
 			Imports:         make(map[string]*Package),
 		})
 		response.Roots = append(response.Roots, "command-line-arguments")
-	}
-	// Handle special cases.
-	if len(response.Packages) == 1 {
+
+	case 1:
+		// Handle special cases.
 		// golang/go#33482: If this is a file= query for ad-hoc packages where
 		// the file only exists on an overlay, and exists outside of a module,
 		// add the file to the package and remove the errors.
-		if response.Packages[0].ID == "command-line-arguments" ||
-			filepath.ToSlash(response.Packages[0].PkgPath) == filepath.ToSlash(query) {
-			if len(response.Packages[0].GoFiles) == 0 {
+		pkg := response.Packages[0]
+		if pkg.ID == "command-line-arguments" ||
+			filepath.ToSlash(pkg.PkgPath) == filepath.ToSlash(query) {
+			if len(pkg.GoFiles) == 0 {
 				filename := filepath.Join(pattern, filepath.Base(query)) // avoid recomputing abspath
 				// TODO(matloob): check if the file is outside of a root dir?
 				for path := range state.cfg.Overlay {
 					if path == filename {
-						response.Packages[0].Errors = nil
-						response.Packages[0].GoFiles = []string{path}
-						response.Packages[0].CompiledGoFiles = []string{path}
+						pkg.Errors = nil
+						pkg.GoFiles = []string{path}
+						pkg.CompiledGoFiles = []string{path}
 					}
 				}
 			}

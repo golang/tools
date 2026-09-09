@@ -2010,6 +2010,54 @@ func testAdHocContains(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+// golang.org/issue/54815: a non-.go file in a file= query should not be made into an ad-hoc Go package.
+func TestAdHocContainsNonGoFile(t *testing.T) {
+	testAllOrModulesParallel(t, testAdHocContainsNonGoFile)
+}
+func testAdHocContainsNonGoFile(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"a/a.go": `package a;`,
+		}}})
+	defer exported.Cleanup()
+
+	filename := filepath.Join(t.TempDir(), "adhoc")
+	if err := os.WriteFile(filename, []byte("This is not Go code."), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	exported.Config.Mode = packages.NeedImports | packages.NeedFiles
+	pkgs, err := packages.Load(exported.Config, "file="+filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.GoFiles {
+			if f == filename {
+				t.Fatalf("non-Go file %s unexpectedly included in GoFiles of package %s", filename, pkg.ID)
+			}
+		}
+	}
+
+	// Also test when the non-Go file is in an overlay (golang/go#33482, #54815).
+	cfg := *exported.Config
+	cfg.Overlay = map[string][]byte{
+		filename: []byte("This is not Go code."),
+	}
+	pkgs, err = packages.Load(&cfg, "file="+filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.GoFiles {
+			if f == filename {
+				t.Fatalf("non-Go overlay file %s unexpectedly included in GoFiles of package %s", filename, pkg.ID)
+			}
+		}
+	}
+}
+
 func TestCgoNoCcompiler(t *testing.T) { testAllOrModulesParallel(t, testCgoNoCcompiler) }
 func testCgoNoCcompiler(t *testing.T, exporter packagestest.Exporter) {
 	testenv.NeedsTool(t, "cgo")

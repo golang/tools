@@ -297,12 +297,10 @@ func (s *Snapshot) FileKind(fh file.Handle) file.Kind {
 		}
 	}
 
-	// and now what? This should never happen, but it does for cgo before go1.15
-	//
-	// TODO(rfindley): this doesn't look right. We should default to UnknownKind.
-	// Also, I don't understand the comment above, though I'd guess before go1.15
-	// we encountered cgo files without the .go extension.
-	return file.Go
+	// Unrecognized file extension and not explicitly marked as Go by an overlay.
+	// We default to UnknownKind so that arbitrary non-Go files (e.g. /tmp/foof,
+	// README, Makefile) are not treated as Go packages (golang.org/issue/54815).
+	return file.UnknownKind
 }
 
 // fileKind returns the default file kind for a file, before considering
