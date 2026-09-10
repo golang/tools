@@ -12,11 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/label"
+	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -173,16 +175,109 @@ func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.Did
 	ctx, done := event.Start(ctx, "server.DidChangeWatchedFiles")
 	defer done()
 
-	modifications := make([]file.Modification, len(params.Changes))
-	for i, change := range params.Changes {
-		action := changeTypeToFileAction(change.Type)
-		modifications[i] = file.Modification{
-			URI:    change.URI,
-			Action: action,
-			OnDisk: true,
-		}
+	mods := file.EventsToModifications(params.Changes)
+	delay := s.Options().WatchedFileDelay
+
+	// Start work-done progress immediately so that clients and tests awaiting
+	// progress for each DidChangeWatchedFiles notification can observe it, even
+	// if the notification is debounced.
+	var work *progress.WorkDone
+	if s.Options().VerboseWorkDoneProgress {
+		work = s.progress.Start(ctx, DiagnosticWorkTitle(FromDidChangeWatchedFiles), "Calculating file diagnostics...", nil, nil)
 	}
-	return s.didModifyFiles(ctx, FromDidChangeWatchedFiles, modifications...)
+
+	s.watchedFiles.add(mods, work, delay)
+	return nil
+}
+
+func (s *server) flushWatchedFiles() {
+	// In this timer goroutine, context.Background lacks the client binding
+	// required for event.Log to deliver logs (e.g. window/logMessage) to the
+	// client. Attach s.client so reload and diagnostic events reach the client.
+	ctx := protocol.WithClient(context.Background(), s.client)
+	ctx, done := event.Start(ctx, "server.flushWatchedFiles")
+	defer done()
+
+	if err := s.didModifyFiles(ctx, FromDidChangeWatchedFiles); err != nil && !errors.Is(err, cache.ErrSessionShutdown) {
+		event.Error(ctx, "failed to process file changes", err)
+	}
+}
+
+// watchedFileDebouncer coalesces bursts of workspace/didChangeWatchedFiles
+// notifications within a debounce window into a single didModifyFiles pass.
+type watchedFileDebouncer struct {
+	mu       sync.Mutex
+	timer    *time.Timer
+	deadline time.Time
+	mods     []file.Modification
+	works    []*progress.WorkDone
+
+	// flush is called when the debounce timer expires. It triggers change
+	// processing on the server (typically s.flushWatchedFiles), allowing the
+	// debouncer to initiate a flush without holding a direct reference to the
+	// server or its client context.
+	flush func()
+}
+
+func newWatchedFileDebouncer(flush func()) *watchedFileDebouncer {
+	return &watchedFileDebouncer{
+		flush: flush,
+	}
+}
+
+// add enqueues modifications and an optional work-done progress token,
+// starting or resetting the debounce timer. Resets are capped so that
+// the flush is delayed by at most max(10*delay, 500ms) from the first event in the burst.
+func (d *watchedFileDebouncer) add(mods []file.Modification, work *progress.WorkDone, delay time.Duration) {
+	if len(mods) == 0 && work == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.mods = append(d.mods, mods...)
+	if work != nil {
+		d.works = append(d.works, work)
+	}
+	now := time.Now()
+	maxDelay := max(10*delay, 500*time.Millisecond)
+	if d.timer == nil {
+		d.deadline = now.Add(maxDelay)
+		d.timer = time.AfterFunc(delay, d.onTimer)
+	} else if remaining := time.Until(d.deadline); remaining > 0 {
+		d.timer.Reset(min(delay, remaining))
+	}
+}
+
+func (d *watchedFileDebouncer) onTimer() {
+	d.mu.Lock()
+	if d.timer == nil {
+		d.mu.Unlock()
+		return
+	}
+	d.mu.Unlock()
+
+	if d.flush != nil {
+		d.flush()
+	}
+}
+
+// drain cancels any active debounce timer and returns all pending
+// modifications and progress tokens, clearing the queue.
+func (d *watchedFileDebouncer) drain() ([]file.Modification, []*progress.WorkDone) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.timer != nil {
+		d.timer.Stop()
+		d.timer = nil
+	}
+	d.deadline = time.Time{}
+	mods := d.mods
+	d.mods = nil
+	works := d.works
+	d.works = nil
+	return mods, works
 }
 
 func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
@@ -220,24 +315,41 @@ func (s *server) didModifyFiles(ctx context.Context, cause ModificationSource, m
 	}
 	s.fileWatcherMu.Unlock()
 
-	// wg guards two conditions:
-	//  1. didModifyFiles is complete
-	//  2. the goroutine diagnosing changes on behalf of didModifyFiles is
-	//     complete, if it was started
-	//
-	// Both conditions must be satisfied for the purpose of testing: we don't
-	// want to observe the completion of change processing until we have received
-	// all diagnostics as well as all server->client notifications done on behalf
-	// of this function.
+	// We don't want to observe the completion of change processing until
+	// didModifyFiles has returned (ensured by deferring the goroutine below) and
+	// the goroutine diagnosing changes on behalf of didModifyFiles has completed
+	// (ensured by wg.Wait).
 	var wg sync.WaitGroup
-	wg.Add(1)
-	defer wg.Done()
 
-	if s.Options().VerboseWorkDoneProgress {
-		work := s.progress.Start(ctx, DiagnosticWorkTitle(cause), "Calculating file diagnostics...", nil, nil)
-		go func() {
-			wg.Wait()
-			work.End(ctx, "Done.")
+	// Drain any pending watched-file modifications from the debouncer.
+	// When called by flushWatchedFiles, modifications is empty and pendingMods
+	// provides the coalesced events. When called by an editor operation (DidOpen,
+	// DidChange, DidSave, DidClose), prepending pendingMods flushes queued
+	// on-disk changes before applying the editor overlay modification,
+	// preserving causal ordering.
+	pendingMods, works := s.watchedFiles.drain()
+	if len(pendingMods) > 0 {
+		modifications = append(pendingMods, modifications...)
+	}
+	if cause == FromDidChangeWatchedFiles && len(modifications) == 0 && len(works) == 0 {
+		return nil
+	}
+	if s.Options().VerboseWorkDoneProgress && (cause != FromDidChangeWatchedFiles || len(works) == 0) {
+		// For FromDidChangeWatchedFiles via the debounce queue, ProgressTokens were
+		// already started upon receipt in DidChangeWatchedFiles. For other causes,
+		// or when called directly without prior debouncing (e.g. from the server's
+		// internal filewatcher in general.go), start a ProgressToken now.
+		works = append(works, s.progress.Start(ctx, DiagnosticWorkTitle(cause), "Calculating file diagnostics...", nil, nil))
+	}
+
+	if len(works) > 0 {
+		defer func() {
+			go func() {
+				wg.Wait()
+				for _, w := range works {
+					w.End(ctx, "Done.")
+				}
+			}()
 		}()
 	}
 
@@ -247,7 +359,7 @@ func (s *server) didModifyFiles(ctx context.Context, cause ModificationSource, m
 		// produce a better error message. The actual race to the cache should be
 		// guarded by Session.viewMu.
 		s.stateMu.Unlock()
-		return errors.New("server is shut down")
+		return cache.ErrSessionShutdown
 	}
 	s.stateMu.Unlock()
 
@@ -447,16 +559,4 @@ func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change p
 		}
 	}
 	complUnused.Inc()
-}
-
-func changeTypeToFileAction(ct protocol.FileChangeType) file.Action {
-	switch ct {
-	case protocol.Changed:
-		return file.Change
-	case protocol.Created:
-		return file.Create
-	case protocol.Deleted:
-		return file.Delete
-	}
-	return file.UnknownAction
 }

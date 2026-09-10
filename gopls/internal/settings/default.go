@@ -96,6 +96,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			Vulncheck:                      ModeVulncheckPrompt,
 			DiagnosticsDelay:               1 * time.Second,
 			DiagnosticsTrigger:             DiagnosticsOnEdit,
+			WatchedFileDelay:               50 * time.Millisecond,
 			AnalysisProgressReporting:      true,
 			Hints:                          map[InlayHint]bool{},
 			HoverKind:                      FullDocumentation,

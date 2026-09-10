@@ -813,6 +813,12 @@ type InternalOptions struct {
 	// This option applies only during initialization.
 	ShowBugReports bool
 
+	// WatchedFileDelay controls the amount of time that gopls waits to debounce
+	// bursts of workspace/didChangeWatchedFiles notifications.
+	//
+	// A value of 0 disables debouncing, processing changes immediately.
+	WatchedFileDelay time.Duration
+
 	// SubdirWatchPatterns configures the file watching glob patterns registered
 	// by gopls.
 	//
@@ -1514,6 +1520,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "experimentalTemplateSupport":
 		return nil, deprecatedError("")
+
+	case "watchedFileDelay":
+		return nil, setDuration(&o.WatchedFileDelay, value)
 
 	case "experimentalWatchedFileDelay":
 		return nil, deprecatedError("")

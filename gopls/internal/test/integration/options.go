@@ -35,6 +35,9 @@ func defaultConfig() runConfig {
 				// Shorten the diagnostic delay to speed up test execution (else we'd add
 				// the default delay to each assertion about diagnostics)
 				"diagnosticsDelay": "10ms",
+				// Disable watched file debouncing in standard tests to speed up execution
+				// and avoid race conditions with rapid file modifications.
+				"watchedFileDelay": "0s",
 			},
 		},
 	}

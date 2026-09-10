@@ -547,15 +547,8 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 		// TODO(hxjiang): ensure gopls don't process events after shutdown.
 		watcherCtx := context.WithoutCancel(ctx)
 		onChange := func(events []protocol.FileEvent) {
-			modifications := make([]file.Modification, len(events))
-			for i, e := range events {
-				modifications[i] = file.Modification{
-					URI:    e.URI,
-					Action: changeTypeToFileAction(e.Type),
-					OnDisk: true,
-				}
-			}
-			if err := s.didModifyFiles(watcherCtx, FromDidChangeWatchedFiles, modifications...); err != nil {
+			modifications := file.EventsToModifications(events)
+			if err := s.didModifyFiles(watcherCtx, FromDidChangeWatchedFiles, modifications...); err != nil && !errors.Is(err, cache.ErrSessionShutdown) {
 				event.Error(watcherCtx, "failed to process file changes", err)
 			}
 		}
@@ -795,6 +788,8 @@ func (s *server) Shutdown(ctx context.Context) error {
 		if s.web != nil {
 			s.web.server.Shutdown(ctx) // ignore error
 		}
+
+		s.watchedFiles.drain()
 
 		s.modificationMu.Lock()
 		if s.cancelPrevDiagnostics != nil {

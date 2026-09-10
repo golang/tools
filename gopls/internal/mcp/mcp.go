@@ -372,8 +372,8 @@ func (h *handler) snapshot() (*cache.Snapshot, func(), error) {
 //
 // This helps avoid stale packages, but is not a substitute for real file
 // watching, as it misses things like files being added to a package.
-func (h *handler) fileOf(ctx context.Context, file string) (file.Handle, *cache.Snapshot, func(), error) {
-	uri := protocol.URIFromPath(file)
+func (h *handler) fileOf(ctx context.Context, filePath string) (file.Handle, *cache.Snapshot, func(), error) {
+	uri := protocol.URIFromPath(filePath)
 	fh, snapshot, release, err := h.session.FileOf(ctx, uri)
 	if err != nil {
 		return nil, nil, nil, err
@@ -394,9 +394,8 @@ func (h *handler) fileOf(ctx context.Context, file string) (file.Handle, *cache.
 	release() // snapshot is not latest
 
 	// We detect changed files: process them before getting the snapshot.
-	if err := h.lspServer.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
-		Changes: fileEvents,
-	}); err != nil {
+	mods := file.EventsToModifications(fileEvents)
+	if _, err := h.session.DidModifyFiles(ctx, mods); err != nil {
 		return nil, nil, nil, err
 	}
 	return h.session.FileOf(ctx, uri)
