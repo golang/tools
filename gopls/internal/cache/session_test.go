@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -520,5 +521,80 @@ func TestOrphanedFileDiagnostics_Shutdown(t *testing.T) {
 		if err := check.f(); !errors.Is(err, ErrSessionShutdown) {
 			t.Errorf("%s after Shutdown returned %v, want %v", check.name, err, ErrSessionShutdown)
 		}
+	}
+}
+
+// TestReloadWorkspaceSerialization checks that concurrent calls to
+// awaitLoaded on a snapshot with invalidated packages serialize via
+// View.reloadSema and execute only a single package load (golang/go#81408).
+func TestReloadWorkspaceSerialization(t *testing.T) {
+	testenv.NeedsExec(t)
+	t.Setenv("GOPACKAGESDRIVER", "off")
+
+	files := map[string]string{
+		"go.mod": "module example.com/a\ngo 1.18\n",
+		"a.go":   "package a\n",
+	}
+	dir := writeFiles(t, files)
+	toURI := func(name string) protocol.DocumentURI {
+		return protocol.URIFromPath(filepath.Join(dir, name))
+	}
+
+	ctx := t.Context()
+	session := NewSession(ctx, New(nil))
+	defer session.Shutdown(ctx)
+
+	opts := settings.DefaultOptions()
+	env, err := FetchGoEnv(ctx, toURI(""), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := &Folder{Dir: toURI(""), Name: "a", Options: opts, Env: *env}
+	view, snapshot, release, err := session.NewView(ctx, folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.awaitLoaded(ctx); err != nil {
+		release()
+		t.Fatal(err)
+	}
+	release()
+
+	// Modify a.go's imports so that its package metadata is invalidated and
+	// queued in snapshot.shouldLoad.
+	if _, err := session.DidModifyFiles(ctx, []file.Modification{{
+		URI:        toURI("a.go"),
+		Action:     file.Open,
+		Version:    1,
+		Text:       []byte("package a\nimport _ \"fmt\"\n"),
+		LanguageID: "go",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, release, err = view.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	before := atomic.LoadUint64(&loadID)
+
+	const goroutines = 10
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			if err := snapshot.awaitLoaded(ctx); err != nil {
+				t.Errorf("awaitLoaded failed: %v", err)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if loads := atomic.LoadUint64(&loadID) - before; loads != 1 {
+		t.Errorf("concurrent awaitLoaded executed %d package loads, want 1", loads)
 	}
 }

@@ -147,6 +147,14 @@ type View struct {
 	// accordingly.
 	initializationSema chan struct{}
 
+	// reloadSema is used to limit concurrent package reloading of snapshots in
+	// the view. We use a channel instead of a mutex to avoid blocking when a
+	// context is canceled.
+	//
+	// This field (along with snapshot.shouldLoad) guards against duplicate
+	// reloading of packages.
+	reloadSema chan struct{}
+
 	// Document filters are constructed once, in View.filterFunc.
 	filterFuncOnce sync.Once
 	_filterFunc    func(protocol.DocumentURI) bool // only accessed by View.filterFunc
