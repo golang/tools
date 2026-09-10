@@ -1718,3 +1718,175 @@ func f[T ~[]int](x T) {
 		env.Completion(loc)
 	})
 }
+
+func TestCompletionLabelDetails(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- main.go --
+package main
+
+import "math"
+
+func main() {
+	math.Sqr
+}
+`
+	for _, supported := range []bool{true, false} {
+		t.Run(fmt.Sprintf("labelDetailsSupport=%v", supported), func(t *testing.T) {
+			capabilities := fmt.Sprintf(
+				`{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":%t}}}}`,
+				supported)
+			WithOptions(
+				CapabilitiesJSON([]byte(capabilities)),
+			).Run(t, src, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				env.Await(env.DoneWithOpen())
+				loc := env.RegexpSearch("main.go", "Sqr()")
+
+				var item *protocol.CompletionItem
+				for _, got := range env.Completion(loc).Items {
+					if got.Label == "Sqrt" {
+						item = &got
+						break
+					}
+				}
+				if item == nil {
+					t.Fatal("no completion item labelled Sqrt")
+				}
+
+				// Detail is unchanged, whether or not the client asked for
+				// label details.
+				if want := "func(x float64) float64"; item.Detail != want {
+					t.Errorf("Detail = %q, want %q", item.Detail, want)
+				}
+
+				if !supported {
+					if item.LabelDetails != nil {
+						t.Errorf("LabelDetails = %+v, want nil", *item.LabelDetails)
+					}
+					return
+				}
+				if item.LabelDetails == nil {
+					t.Fatal("LabelDetails = nil, want the signature")
+				}
+				if want := "(x float64) float64"; item.LabelDetails.Detail != want {
+					t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, want)
+				}
+				// math is already imported, so accepting the item adds nothing.
+				if item.LabelDetails.Description != "" {
+					t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, "")
+				}
+			})
+		})
+	}
+}
+
+func TestCompletionLabelDetailsUnimported(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- main.go --
+package main
+
+func main() {
+	math.Sqr
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", "Sqr()")
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "Sqrt" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled Sqrt")
+		}
+
+		if want := `func (from "math")`; item.Detail != want {
+			t.Errorf("Detail = %q, want %q", item.Detail, want)
+		}
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the signature and the import path")
+		}
+		if want := "(x float64) float64"; item.LabelDetails.Detail != want {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, want)
+		}
+		if want := "math"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
+		}
+	})
+}
+
+func TestCompletionLabelDetailsLiteral(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- point/point.go --
+package point
+
+type Point struct{}
+
+-- decl.go --
+package main
+
+import "mod.com/point"
+
+func f(p point.Point) {}
+
+-- main.go --
+package main
+
+func main() {
+	f(Poi)
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `f\(Poi()\)`)
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "point.Point{}" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled point.Point{}")
+		}
+
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the import path")
+		}
+		// The label of a literal is already its type, so nothing goes beside it.
+		if item.LabelDetails.Detail != "" {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, "")
+		}
+		if want := "mod.com/point"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
+		}
+	})
+}

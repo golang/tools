@@ -90,6 +90,7 @@ type ClientOptions struct {
 	ClientInfo                                 protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
 	InsertReplaceSupported                     bool
+	LabelDetailsSupported                      bool
 	ConfigurationSupported                     bool
 	DynamicConfigurationSupported              bool
 	DynamicRegistrationSemanticTokensSupported bool
@@ -1083,6 +1084,7 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
 	o.InsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
+	o.LabelDetailsSupported = caps.TextDocument.Completion.CompletionItem.LabelDetailsSupport
 	if caps.Window.ShowDocument != nil {
 		o.ShowDocumentSupported = caps.Window.ShowDocument.Support
 	}

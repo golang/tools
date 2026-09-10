@@ -222,14 +222,17 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 				}
 				var params []string
 				var kind protocol.CompletionItemKind
-				var detail string
+				var detail, labelDetail string
 				switch sym.Kind {
 				case protocol.Function:
 					foundURI := pkgsyms.Files[np]
 					fh, _ := c.snapshot.ReadFile(ctx, foundURI)
 					pgf, err := c.snapshot.ParseGo(ctx, fh, 0)
 					if err == nil {
-						params = funcParams(pgf.File, sym.Name)
+						if fd := findFunc(pgf.File, sym.Name); fd != nil {
+							params = funcParams(fd)
+							labelDetail = funcSignature(fd)
+						}
 					}
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
@@ -248,11 +251,15 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 				default:
 					continue
 				}
-				got = c.appendNewItem(got, sym.Name,
-					detail,
-					pkg.PkgPath,
-					kind,
-					pkgname, params)
+				got = c.appendNewItem(got, symbolInfo{
+					name:        sym.Name,
+					kind:        kind,
+					detail:      detail,
+					labelDetail: labelDetail,
+					path:        pkg.PkgPath,
+					pkg:         pkgname,
+					params:      params,
+				})
 			}
 		}
 	}
@@ -276,11 +283,12 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 					continue
 				}
 				var kind protocol.CompletionItemKind
-				var detail string
+				var detail, labelDetail string
 				var params []string
 				switch sym.Kind {
 				case stdlib.Func:
 					params = parseSignature(sym.Signature)
+					labelDetail = strings.TrimPrefix(sym.Signature, "func")
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", candpkg)
 				case stdlib.Const:
@@ -295,11 +303,15 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 				default:
 					continue
 				}
-				got = c.appendNewItem(got, sym.Name,
-					detail,
-					candpkg,
-					kind,
-					pkg, params)
+				got = c.appendNewItem(got, symbolInfo{
+					name:        sym.Name,
+					kind:        kind,
+					detail:      detail,
+					labelDetail: labelDetail,
+					path:        candpkg,
+					pkg:         pkg,
+					params:      params,
+				})
 			}
 		}
 	}
@@ -322,12 +334,14 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 		}
 		var params []string
 		var kind protocol.CompletionItemKind
-		var detail string
+		var detail, labelDetail string
 		switch cand.Type {
 		case modindex.Func:
 			for _, f := range cand.Sig {
 				params = append(params, fmt.Sprintf("%s %s", f.Arg, f.Type))
 			}
+			// The index records the number of results but not their types.
+			labelDetail = "(" + strings.Join(params, ", ") + ")"
 			kind = protocol.FunctionCompletion
 			detail = fmt.Sprintf("func (from %s)", cand.ImportPath)
 		case modindex.Var:
@@ -342,33 +356,62 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 		default:
 			continue
 		}
-		got = c.appendNewItem(got, cand.Name,
-			detail,
-			metadata.PackagePath(cand.ImportPath),
-			kind,
-			pkg, params)
+		got = c.appendNewItem(got, symbolInfo{
+			name:        cand.Name,
+			kind:        kind,
+			detail:      detail,
+			labelDetail: labelDetail,
+			path:        metadata.PackagePath(cand.ImportPath),
+			pkg:         pkg,
+			params:      params,
+		})
 	}
 	return got, nil
 }
 
-func (c *completer) appendNewItem(got []CompletionItem, name, detail string, path metadata.PackagePath, kind protocol.CompletionItemKind, pkg metadata.PackageName, params []string) []CompletionItem {
+// symbolInfo describes a symbol of an unimported package, found by one of the
+// three searches above.
+type symbolInfo struct {
+	name string
+	kind protocol.CompletionItemKind
+
+	// detail is the text for clients that read CompletionItem.Detail, and
+	// labelDetail the signature for those that read CompletionItem.LabelDetails
+	// instead.
+	detail      string
+	labelDetail string
+
+	path metadata.PackagePath
+	pkg  metadata.PackageName
+
+	// params holds the parameters of a function, for the call snippet, and is
+	// nil for any other symbol.
+	params []string
+}
+
+// appendNewItem appends a completion item for an unimported symbol.
+func (c *completer) appendNewItem(got []CompletionItem, sym symbolInfo) []CompletionItem {
 	item := CompletionItem{
-		Label:      name,
-		Detail:     detail,
-		InsertText: name,
-		Kind:       kind,
+		Label:      sym.name,
+		Detail:     sym.detail,
+		InsertText: sym.name,
+		Kind:       sym.kind,
+		LabelDetails: &protocol.CompletionItemLabelDetails{
+			Detail:      sym.labelDetail,
+			Description: string(sym.path),
+		},
 	}
 	imp := importInfo{
-		importPath: string(path),
-		name:       string(pkg),
+		importPath: string(sym.path),
+		name:       string(sym.pkg),
 	}
-	if imports.ImportPathToAssumedName(string(path)) == string(pkg) {
+	if imports.ImportPathToAssumedName(string(sym.path)) == string(sym.pkg) {
 		imp.name = ""
 	}
 	item.AdditionalTextEdits, _ = c.importEdits(&imp)
-	if params != nil {
+	if sym.params != nil {
 		var sn snippet.Builder
-		c.functionCallSnippet(name, nil, params, &sn)
+		c.functionCallSnippet(sym.name, nil, sym.params, &sn)
 		item.snippet = &sn
 	}
 	got = append(got, item)
@@ -407,38 +450,51 @@ func usefulCompletion(name, pattern string) bool {
 	return true
 }
 
-// return a printed version of the function arguments for snippets
-func funcParams(f *ast.File, fname string) []string {
-	var params []string
-	setParams := func(list *ast.FieldList) {
-		if list == nil {
-			return
-		}
-		var cfg printer.Config // slight overkill
-		param := func(name string, typ ast.Expr) {
-			var buf strings.Builder
-			buf.WriteString(name)
-			buf.WriteByte(' ')
-			cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
-			params = append(params, buf.String())
-		}
-
-		for _, field := range list.List {
-			if field.Names != nil {
-				for _, name := range field.Names {
-					param(name.Name, field.Type)
-				}
-			} else {
-				param("_", field.Type)
-			}
+// findFunc returns the declaration of the function fname in f, or nil if there
+// is none. A method cannot be completed as a package member, so a declaration
+// with a receiver does not match.
+func findFunc(f *ast.File, fname string) *ast.FuncDecl {
+	for _, n := range f.Decls {
+		if fd, ok := n.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == fname {
+			return fd
 		}
 	}
-	for _, n := range f.Decls {
-		switch x := n.(type) {
-		case *ast.FuncDecl:
-			if x.Recv == nil && x.Name.Name == fname {
-				setParams(x.Type.Params)
+	return nil
+}
+
+// funcSignature returns the parameters and results of fd, for example
+// "(a int, b string) (bool, error)".
+//
+// Unlike funcParams, which builds snippet placeholders, this is display text:
+// an unnamed parameter keeps its type alone rather than becoming "_".
+func funcSignature(fd *ast.FuncDecl) string {
+	var cfg printer.Config // slight overkill, as in funcParams
+	var buf strings.Builder
+	cfg.Fprint(&buf, token.NewFileSet(), fd.Type) // ignore error
+	return strings.TrimPrefix(buf.String(), "func")
+}
+
+// return a printed version of the function arguments for snippets
+func funcParams(fd *ast.FuncDecl) []string {
+	if fd.Type.Params == nil {
+		return nil
+	}
+	var params []string
+	var cfg printer.Config // slight overkill
+	param := func(name string, typ ast.Expr) {
+		var buf strings.Builder
+		buf.WriteString(name)
+		buf.WriteByte(' ')
+		cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
+		params = append(params, buf.String())
+	}
+	for _, field := range fd.Type.Params.List {
+		if field.Names != nil {
+			for _, name := range field.Names {
+				param(name.Name, field.Type)
 			}
+		} else {
+			param("_", field.Type)
 		}
 	}
 	return params

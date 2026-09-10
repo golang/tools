@@ -77,6 +77,7 @@ type postfixTmplArgs struct {
 	snip           snippet.Builder
 	importIfNeeded func(pkgPath string, scope *types.Scope) (name string, edits []protocol.TextEdit, err error)
 	edits          []protocol.TextEdit
+	paths          []string // import paths the edits add
 	qual           types.Qualifier
 	varNames       map[string]bool
 	placeholders   bool
@@ -398,6 +399,9 @@ func (a *postfixTmplArgs) Import(path string) (string, error) {
 		return "", fmt.Errorf("couldn't import %q: %w", path, err)
 	}
 	a.edits = append(a.edits, edits...)
+	if len(edits) > 0 {
+		a.paths = append(a.paths, path)
+	}
 
 	return name, nil
 }
@@ -634,6 +638,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			Kind:                protocol.SnippetCompletion,
 			snippet:             &tmplArgs.snip,
 			AdditionalTextEdits: append(edits, tmplArgs.edits...),
+			LabelDetails:        labelDetails(protocol.SnippetCompletion, "", strings.Join(tmplArgs.paths, ", ")),
 		})
 	}
 }
