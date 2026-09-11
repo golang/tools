@@ -55,6 +55,13 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 
+	// Add code lenses for subtests (including table-driven subtests)
+	subtestLenses, err := subtestCodeLenses(ctx, snapshot, pkg, puri)
+	if err != nil {
+		return nil, err
+	}
+	codeLens = append(codeLens, subtestLenses...)
+
 	for _, fn := range benchFuncs {
 		cmd := command.NewRunTestsCommand("run benchmark", command.RunTestsArgs{
 			URI:        puri,
@@ -152,6 +159,46 @@ func matchTestFunc(fn *ast.FuncDecl, info *types.Info, nameRe *regexp.Regexp, pa
 		return false
 	}
 	return namedObj.Id() == paramID
+}
+
+// subtestCodeLenses returns code lenses for subtests, including table-driven subtests.
+func subtestCodeLenses(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, uri protocol.DocumentURI) ([]protocol.CodeLens, error) {
+	// Get test index which includes subtests
+	indexes, err := snapshot.Tests(ctx, pkg.Metadata().ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(indexes) == 0 {
+		return nil, nil
+	}
+
+	var codeLens []protocol.CodeLens
+	for _, idx := range indexes {
+		if idx == nil {
+			continue
+		}
+		for _, result := range idx.All() {
+			// Only show code lenses for subtests in the current file
+			if result.Location.URI != uri {
+				continue
+			}
+
+			// Skip top-level tests (they already have code lenses)
+			if !strings.Contains(result.Name, "/") {
+				continue
+			}
+
+			// Create a code lens for this subtest
+			cmd := command.NewRunTestsCommand("run subtest", command.RunTestsArgs{
+				URI:   uri,
+				Tests: []string{result.Name},
+			})
+			rng := protocol.Range{Start: result.Location.Range.Start, End: result.Location.Range.Start}
+			codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
+		}
+	}
+
+	return codeLens, nil
 }
 
 func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
