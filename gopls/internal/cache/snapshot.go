@@ -157,6 +157,9 @@ type Snapshot struct {
 	shouldLoad *persistent.Map[PackageID, []PackagePath]
 
 	// unloadableFiles keeps track of files that we've failed to load.
+	//
+	// A file leaves this set when it changes in a way that affects metadata, or
+	// when the workspace is reinitialized: both can make the file loadable.
 	unloadableFiles *persistent.Set[protocol.DocumentURI]
 
 	// TODO(rfindley): rename the handles below to "promises". A promise is
@@ -1646,6 +1649,12 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	if reinit {
 		result.initialized = false
 		needsDiagnosis = true
+		// A change to a workspace file can make an unloadable file loadable, so
+		// forget which files failed to load. Without this, MetadataForFile
+		// skips the inline load for such a file and fails until the reload
+		// that follows this change completes. Files that are still unloadable
+		// are marked again by the next load that includes them.
+		result.unloadableFiles.Clear()
 	}
 
 	// directIDs keeps track of package IDs that have directly changed.

@@ -105,6 +105,26 @@ func TestSet_AddAll(t *testing.T) {
 	}
 }
 
+func TestSet_Clear(t *testing.T) {
+	s1 := new(persistent.Set[int])
+	s1.Add(1)
+	s1.Add(2)
+	s2 := s1.Clone()
+
+	s1.Clear()
+	if d := diff(s1, nil); d != "" {
+		t.Errorf("s1: unexpected diff:\n%s", d)
+	}
+	// The clone is unaffected, and the cleared set is still usable.
+	if d := diff(s2, []int{1, 2}); d != "" {
+		t.Errorf("s2: unexpected diff:\n%s", d)
+	}
+	s1.Add(3)
+	if d := diff(s1, []int{3}); d != "" {
+		t.Errorf("s1: unexpected diff:\n%s", d)
+	}
+}
+
 func diff[K constraints.Ordered](got *persistent.Set[K], want []K) string {
 	wantSet := make(map[K]struct{})
 	for _, w := range want {

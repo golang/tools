@@ -1519,3 +1519,74 @@ func TestChangeNonFileWorkspaceFolders(t *testing.T) {
 		})
 	}
 }
+
+// TestRecoverFromLoadError_Issue81400 tests that a file that was marked
+// unloadable during a workspace load error is loaded again, inline, as soon as
+// a request needs it.
+func TestRecoverFromLoadError_Issue81400(t *testing.T) {
+	const (
+		goodMod   = "module mod.com\n\ngo 1.21\n"
+		brokenMod = goodMod + "\nrequire (\n" // unterminated require block
+	)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- main.go --
+package main
+
+func main() {}
+-- tool/tool.go --
+//go:build ignore
+
+package main
+
+func Target() {}
+
+func main() { Target() }
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		// tool.go is a standalone file: the build constraint keeps it out of ./...,
+		// so the workspace load never gives it metadata and the inline load in
+		// Snapshot.MetadataForFile is the only thing that can. Without the fix the
+		// unloadable mark therefore survives the repair of go.mod for good, and the
+		// assertion at the end of this test describes a steady state rather than
+		// the state between snapshot invalidation and the end of the background reload.
+		// A test of that window would have to answer the request within a millisecond
+		// or so of the notification, and would pass vacuously as soon as anything else
+		// delayed it (e.g. debouncing go list, etc)
+		env.OpenFile("tool/tool.go")
+		env.AfterChange()
+		loc := env.RegexpSearch("tool/tool.go", "Target")
+
+		refs, err := env.Editor.References(env.Ctx, loc)
+		if err != nil {
+			t.Fatalf("References failed before the load error: %v", err)
+		}
+		if len(refs) != 2 {
+			t.Fatalf("got %d references before the load error, want 2 (%v)", len(refs), refs)
+		}
+
+		// Break go.mod: the load fails, and tool.go is marked unloadable.
+		env.WriteWorkspaceFile("go.mod", brokenMod)
+		env.AfterChange()
+		if _, err := env.Editor.References(env.Ctx, loc); err == nil {
+			t.Fatal("References unexpectedly succeeded while go.mod was broken")
+		}
+
+		// Repair go.mod, and let every change settle. The reload that follows
+		// loads ./..., which does not cover tool.go, so the mark must be
+		// cleared for the file to load again.
+		env.WriteWorkspaceFile("go.mod", goodMod)
+		env.AfterChange()
+
+		refs, err = env.Editor.References(env.Ctx, loc)
+		if err != nil {
+			t.Fatalf("References failed after go.mod was repaired: %v", err)
+		}
+		if len(refs) != 2 {
+			t.Errorf("got %d references after the repair, want 2 (%v)", len(refs), refs)
+		}
+	})
+}

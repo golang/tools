@@ -82,3 +82,10 @@ func (s *Set[K]) Remove(key K) {
 		s.impl.Delete(key)
 	}
 }
+
+// Clear removes all elements from the set.
+func (s *Set[K]) Clear() {
+	if s.impl != nil {
+		s.impl.Clear()
+	}
+}
