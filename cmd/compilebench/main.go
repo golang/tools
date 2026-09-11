@@ -217,6 +217,11 @@ func main() {
 		runRE = nil
 	}
 
+	os.Exit(runBenchmarks())
+}
+
+func runBenchmarks() int {
+	exitCode := 0
 	for i := 0; i < *flagCount; i++ {
 		for _, tt := range tests {
 			if tt.r.long() && *flagShort {
@@ -225,10 +230,12 @@ func main() {
 			if runRE == nil || runRE.MatchString(tt.name) {
 				if err := tt.r.run(tt.name, i); err != nil {
 					log.Printf("%s: %v", tt.name, err)
+					exitCode = 1
 				}
 			}
 		}
 	}
+	return exitCode
 }
 
 func toolPath(names ...string) (found, path string) {
