@@ -86,6 +86,12 @@ type rta struct {
 
 	prog *ssa.Program
 
+	// methodMemo caches LookupMethod results per (interface method, concrete
+	// type). addInvokeEdge runs for every (site, type) pair in the invoke
+	// matrix, and many sites share the same pair; the lookup rebuilds method
+	// Id strings and searches the method set each time.
+	methodMemo map[methodMemoKey]*ssa.Function
+
 	reflectValueCall *ssa.Function // (*reflect.Value).Call, iff part of prog
 
 	worklist []*ssa.Function // list of functions to visit
@@ -230,11 +236,21 @@ func (r *rta) visitDynCall(site ssa.CallInstruction) {
 
 // ---------- concrete types × invoke sites ----------
 
+type methodMemoKey struct {
+	imethod *types.Func
+	C       types.Type
+}
+
 // addInvokeEdge is called for each new pair (site, C) in the matrix.
 func (r *rta) addInvokeEdge(site ssa.CallInstruction, C types.Type) {
 	// Ascertain the concrete method of C to be called.
 	imethod := site.Common().Method
-	cmethod := r.prog.LookupMethod(C, imethod.Pkg(), imethod.Name())
+	key := methodMemoKey{imethod, C}
+	cmethod, ok := r.methodMemo[key]
+	if !ok {
+		cmethod = r.prog.LookupMethod(C, imethod.Pkg(), imethod.Name())
+		r.methodMemo[key] = cmethod
+	}
 	r.addEdge(site.Parent(), site, cmethod, true)
 }
 
@@ -314,8 +330,9 @@ func Analyze(roots []*ssa.Function, buildCallGraph bool) *Result {
 	}
 
 	r := &rta{
-		result: &Result{Reachable: make(map[*ssa.Function]struct{ AddrTaken bool })},
-		prog:   roots[0].Prog,
+		result:     &Result{Reachable: make(map[*ssa.Function]struct{ AddrTaken bool })},
+		prog:       roots[0].Prog,
+		methodMemo: make(map[methodMemoKey]*ssa.Function),
 	}
 
 	if buildCallGraph {
