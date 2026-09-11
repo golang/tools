@@ -298,11 +298,18 @@ func main() {
 	SumIntsOrFloats(ints)
 	SumIntsOrFloats(floats)
 
+	SumIntsOrFloats[string](ints)
+
 	SumNumbers(ints)
 	SumNumbers(floats)
 
+	Three[int, string](1, "s", true)
+
 	other.Bar(ints)
 	other.Bar(other.Foo{})
+
+	other.Three[int](1, "s", true)
+	other.Three[int, string](1, "s", true)
 }
 
 type Number interface {
@@ -324,6 +331,8 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 	}
 	return s
 }
+
+func Three[A, B, C any](a A, b B, c C) {}
 
 -- @typeparams --
 package inlayHint //@inlayhints(typeparams)
@@ -347,11 +356,18 @@ func main() {
 	SumIntsOrFloats<[string, int64]>(<m: >ints)
 	SumIntsOrFloats<[string, float64]>(<m: >floats)
 
+	SumIntsOrFloats[string<, int64>](<m: >ints)
+
 	SumNumbers<[string, int64]>(<m: >ints)
 	SumNumbers<[string, float64]>(<m: >floats)
 
+	Three[int, string<, bool>](<a: >1, <b: >"s", <c: >true)
+
 	other.Bar<[map[string]int64]>(<x: >ints)
 	other.Bar<[other.Foo]>(<x: >other.Foo{})
+
+	other.Three[int<, string, bool>](<a: >1, <b: >"s", <c: >true)
+	other.Three[int, string<, bool>](<a: >1, <b: >"s", <c: >true)
 }
 
 type Number interface {
@@ -373,6 +389,8 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 	}
 	return s
 }
+
+func Three[A, B, C any](a A, b B, c C) {}
 
 -- variable_types.go --
 package inlayHint //@inlayhints(vartypes)
@@ -428,3 +446,5 @@ package other
 type Foo struct{}
 
 func Bar[T any](x T) {}
+
+func Three[A, B, C any](a A, b B, c C) {}

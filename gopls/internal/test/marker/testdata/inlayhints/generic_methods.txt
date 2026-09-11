@@ -1,0 +1,55 @@
+Regression test for generic-methods.
+
+-- flags --
+-ignore_extra_diags
+-min_go=go1.27
+
+-- settings.json --
+{
+	"hints": {
+		"functionTypeParameters": true,
+		"parameterNames": true
+	}
+}
+
+-- go.mod --
+module example.com
+
+go 1.27
+
+-- generic_methods.go --
+package genericmethods //@inlayhints(typeparams)
+
+type S struct{}
+
+func (S) Two[A, B any](a A, b B) {}
+
+func (S) Three[A, B, C any](a A, b B, c C) {}
+
+func main() {
+    var s S
+    s.Two(1, "s")
+    s.Two[int](1, "s")
+    s.Two[int, string](1, "s")
+    s.Three[int](1, "s", true)
+    s.Three[int, string](1, "s", true)
+}
+
+-- @typeparams --
+package genericmethods //@inlayhints(typeparams)
+
+type S struct{}
+
+func (S) Two[A, B any](a A, b B) {}
+
+func (S) Three[A, B, C any](a A, b B, c C) {}
+
+func main() {
+    var s S
+    s.Two<[int, string]>(<a: >1, <b: >"s")
+    s.Two[int<, string>](<a: >1, <b: >"s")
+    s.Two[int, string](<a: >1, <b: >"s")
+    s.Three[int<, string, bool>](<a: >1, <b: >"s", <c: >true)
+    s.Three[int, string<, bool>](<a: >1, <b: >"s", <c: >true)
+}
+
