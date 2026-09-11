@@ -30,7 +30,7 @@ when making significant changes to existing features or when adding new ones.
   - [Hover](passive.md#hover): information about the symbol under the cursor
   - [Signature Help](passive.md#signature-help): type information about the enclosing function call
   - [Document Highlight](passive.md#document-highlight): highlight identifiers referring to the same symbol
-  - [Inlay Hint](passive.md#inlay-hint): show implicit names of struct fields and parameter names
+  - [Inlay Hint](passive.md#inlay-hint): show implicit names, types, values, and function ends
   - [Semantic Tokens](passive.md#semantic-tokens): report syntax information used by editors to color the text
   - [Folding Range](passive.md#folding-range): report text regions that can be "folded" (expanded/collapsed) in an editor
   - [Document Link](passive.md#document-link): extracts URLs from doc comments, strings in current file so client can linkify

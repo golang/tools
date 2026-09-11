@@ -60,6 +60,17 @@ from `gopls`.
 
 **Disabled by default. Enable it by setting `"hints": {"constantValues": true}`.**
 
+## **functionEndNames**
+
+`"functionEndNames"` controls inlay hints for function and method names at their closing braces:
+```go
+	func foo() {
+	}« // foo»
+```
+
+
+**Disabled by default. Enable it by setting `"hints": {"functionEndNames": true}`.**
+
 ## **functionTypeParameters**
 
 `"functionTypeParameters"` inlay hints for implicit type parameters on generic functions:

@@ -2088,6 +2088,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"functionEndNames\"",
+							"Doc": "`\"functionEndNames\"` controls inlay hints for function and method names at their closing braces:\n```go\n\tfunc foo() {\n\t}« // foo»\n```\n",
+							"Default": "false",
+							"Status": ""
+						},
+						{
 							"Name": "\"functionTypeParameters\"",
 							"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo«[int, string]»(1, \"hello\")\n```\n",
 							"Default": "false",
@@ -3988,6 +3994,12 @@
 		{
 			"Name": "constantValues",
 			"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota« = 0»\n\t\tKindPrint«  = 1»\n\t\tKindPrintf« = 2»\n\t\tKindErrorf« = 3»\n\t)\n```\n",
+			"Default": false,
+			"Status": ""
+		},
+		{
+			"Name": "functionEndNames",
+			"Doc": "`\"functionEndNames\"` controls inlay hints for function and method names at their closing braces:\n```go\n\tfunc foo() {\n\t}« // foo»\n```\n",
 			"Default": false,
 			"Status": ""
 		},
