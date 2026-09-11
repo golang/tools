@@ -340,6 +340,24 @@ func TestGenericMethods(t *testing.T) {
 		// instantiate same signature with value / pointer receivers
 		fmt.Sprintf(g, "_ = g.M[bool]; _ = g.N[bool]"),
 		fmt.Sprintf(n, "_ = n.M[bool]; _ = n.N[bool]"),
+		// Method expressions inside a generic function specialize both the
+		// receiver and the method's independent type parameters.
+		`package p
+type G[P any] struct { x P }
+func (g G[P]) M[Q any](q Q) (P, Q) { return g.x, q }
+func (g *G[P]) N[Q any](q Q) (P, Q) { return g.x, q }
+type Outer[P any] struct { G[P] }
+func value[P, Q any]() func(G[P], Q) (P, Q) { return G[P].M[Q] }
+func pointer[P, Q any]() func(*G[P], Q) (P, Q) { return (*G[P]).N[Q] }
+func promoted[P, Q any]() func(Outer[P], Q) (P, Q) { return Outer[P].M[Q] }
+func same[P, Q any](q Q) (P, Q) { var p P; return p, q }
+func f() {
+    _, _ = same[int, string]("canonical function signature without a receiver")
+    g := G[int]{42}
+    value[int, string]()(g, "value")
+    pointer[int, string]()(&g, "pointer")
+    promoted[int, string]()(Outer[int]{g}, "promoted")
+}`,
 	}
 
 	for _, prog := range testBuilds {

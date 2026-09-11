@@ -46,7 +46,17 @@ import (
 //   - the result may be a thunk or a wrapper.
 func createWrapper(prog *Program, sel *selection, targs []types.Type) *Function {
 	obj := sel.obj.(*types.Func) // the declared function
-	name, sig := maybeInstance(prog, obj.Name(), sel.typ.(*types.Signature), targs)
+	// Specialize method type parameters before adapting the receiver. A
+	// selection reconstructed inside a generic function has already adapted
+	// its signature, and changeRecv/recvAsFirstArg discard type parameters.
+	methodSig := obj.Type().(*types.Signature)
+	name, sig := maybeInstance(prog, obj.Name(), methodSig, targs)
+	// Canonical signatures compare equal regardless of their receiver.
+	// Restore the selected receiver from the method, not the canonical type.
+	sig = changeRecv(sig, newVar(methodSig.Recv().Name(), sel.recv))
+	if sel.kind == types.MethodExpr {
+		sig = recvAsFirstArg(sig)
+	}
 
 	var recv *types.Var // wrapper's receiver or thunk's params[0]
 	var description string
