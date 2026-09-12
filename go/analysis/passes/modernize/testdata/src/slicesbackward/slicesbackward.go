@@ -292,3 +292,71 @@ func indexExprUsedAsIndex(s []int) {
 		s[s[i]] = 5
 	}
 }
+
+// The declaration whose name is adopted for the value variable must be a
+// statement of the loop body itself. This one is executed once per inner
+// iteration, whereas the range variable is assigned once per outer
+// iteration, so deleting it would make "v *= 2" accumulate.
+func declInNestedLoop(items []int, n int) {
+	for i := len(items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		for j := 0; j < n; j++ {
+			v := items[i]
+			v *= 2
+			println(v)
+		}
+	}
+}
+
+// Similarly for a declaration within a function literal, which may be
+// called any number of times per iteration.
+func declInFuncLit(items []int) {
+	for i := len(items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		f := func() {
+			v := items[i]
+			v *= 2
+			println(v)
+		}
+		f()
+		f()
+	}
+}
+
+// A declaration in a nested block is not adopted either: it is executed at
+// most once per iteration, and never when the branch is not taken.
+func declInBlock(items []int, cond bool) {
+	for i := len(items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		if cond {
+			v := items[i]
+			println(v)
+		}
+	}
+}
+
+// A backward goto may re-execute a declaration that is not the first
+// statement of the body, so it is not adopted either.
+func declAfterLabel(items []int, cond bool) {
+	for i := len(items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		println("x")
+		v := items[i]
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
+	}
+}
+
+// Nor is a labeled declaration, which is not a statement of the body but
+// the body of a LabeledStmt.
+func labeledDecl(items []int, cond bool) {
+	for i := len(items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		v := items[i]
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
+	}
+}

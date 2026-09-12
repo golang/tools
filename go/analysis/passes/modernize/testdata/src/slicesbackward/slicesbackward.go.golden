@@ -23,7 +23,7 @@ func onlyIndexUse(s []int) {
 // Should use "name" for the value variable, and should remove the declaration.
 func firstUseName(s []int) {
 	for _, name := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
-		
+
 		println(name)
 		name2 := name
 		println(name2)
@@ -31,9 +31,9 @@ func firstUseName(s []int) {
 }
 
 func useName(s []int) {
-	for i, name := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+	for i, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
 		println(i)
-		
+		name := v
 		println(name)
 	}
 }
@@ -290,5 +290,73 @@ func indexExprSliceOfArrays(s [][3]int) {
 func indexExprUsedAsIndex(s []int) {
 	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
 		s[v] = 5
+	}
+}
+
+// The declaration whose name is adopted for the value variable must be a
+// statement of the loop body itself. This one is executed once per inner
+// iteration, whereas the range variable is assigned once per outer
+// iteration, so deleting it would make "v *= 2" accumulate.
+func declInNestedLoop(items []int, n int) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		for j := 0; j < n; j++ {
+			v := item
+			v *= 2
+			println(v)
+		}
+	}
+}
+
+// Similarly for a declaration within a function literal, which may be
+// called any number of times per iteration.
+func declInFuncLit(items []int) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		f := func() {
+			v := item
+			v *= 2
+			println(v)
+		}
+		f()
+		f()
+	}
+}
+
+// A declaration in a nested block is not adopted either: it is executed at
+// most once per iteration, and never when the branch is not taken.
+func declInBlock(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		if cond {
+			v := item
+			println(v)
+		}
+	}
+}
+
+// A backward goto may re-execute a declaration that is not the first
+// statement of the body, so it is not adopted either.
+func declAfterLabel(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		println("x")
+		v := item
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
+	}
+}
+
+// Nor is a labeled declaration, which is not a statement of the body but
+// the body of a LabeledStmt.
+func labeledDecl(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		v := item
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
 	}
 }
