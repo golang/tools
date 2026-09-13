@@ -179,12 +179,18 @@ type Source interface {
 
 // TODO(rfindley): move the utility functions below to a util.go file.
 
-// IsCommandLineArguments reports whether a given value denotes
-// "command-line-arguments" package, which is a package with an unknown ID
-// created by the go command. It can have a test variant, which is why callers
-// should not check that a value equals "command-line-arguments" directly.
+// IsCommandLineArguments reports whether a given value denotes a
+// "command-line-arguments" package, which is a synthetic package with an
+// unknown ID created by the go command. It can have a test variant (e.g.
+// "command-line-arguments.test", "command-line-arguments [...]", or
+// "command-line-arguments_test [...]"), which is why callers should not check
+// that a value equals "command-line-arguments" directly.
+//
+// Notably, intermediate test variants of real packages built for a
+// command-line-arguments test (such as "pkg/path [command-line-arguments.test]")
+// do not denote a command-line-arguments package (golang/go#64557).
 func IsCommandLineArguments(id PackageID) bool {
-	return strings.Contains(string(id), "command-line-arguments")
+	return strings.HasPrefix(string(id), "command-line-arguments")
 }
 
 // SortPostOrder sorts the IDs so that if x depends on y, then y appears before x.

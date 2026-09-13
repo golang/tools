@@ -1899,7 +1899,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		// requiring reloading in the shouldLoad map.
 		if invalidateMetadata && !metadata.IsCommandLineArguments(mp.ID) {
 			needsReload := []PackagePath{mp.PkgPath}
-			if mp.ForTest != "" && mp.ForTest != mp.PkgPath {
+			if mp.ForTest != "" && mp.ForTest != mp.PkgPath &&
+				!metadata.IsCommandLineArguments(PackageID(mp.ForTest)) {
 				// When reloading test variants, always reload their ForTest package as
 				// well. Otherwise, we may miss test variants in the resulting load.
 				//
