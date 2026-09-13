@@ -42,6 +42,12 @@ import (
 //  2. Methods must return either error or (T, error), where T is a
 //     JSON serializable type.
 //
+//     T may instead be [Action], in which case the method reports no result
+//     to the client: the Action is performed by the dispatcher and is not
+//     marshaled. A command whose T is an Action must not mutate the user's
+//     workspace itself -- it must not apply edits or reveal documents -- but
+//     return an Action that does so. See [Action].
+//
 //  3. The first line of the doc string is special.
 //     Everything after the colon is considered the command 'Title'.
 //     For example:
@@ -339,16 +345,16 @@ type Interface interface {
 	PackageSymbols(context.Context, PackageSymbolsArgs) (PackageSymbolsResult, error)
 
 	// ModifyTags: Add or remove struct tags on a given node.
-	ModifyTags(context.Context, ModifyTagsArgs, *protocol.InteractiveParams) error
+	ModifyTags(context.Context, ModifyTagsArgs, *protocol.InteractiveParams) (Action, error)
 
 	// MoveType: Move a type declaration to a different package.
 	MoveType(context.Context, MoveTypeArgs) error
 
 	// ImplementInterface: Add methods to a type to implement an interface.
-	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) error
+	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) (Action, error)
 
 	// MoveDeclaration: Move a declaration to a different file.
-	MoveDeclaration(context.Context, MoveDeclarationArgs, *protocol.InteractiveParams) error
+	MoveDeclaration(context.Context, MoveDeclarationArgs, *protocol.InteractiveParams) (Action, error)
 }
 
 type RunTestsArgs struct {

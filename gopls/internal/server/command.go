@@ -87,7 +87,19 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		s:      s,
 		params: params,
 	}
-	return command.Dispatch(ctx, params, handler)
+	result, err := command.Dispatch(ctx, params, handler)
+	if err != nil {
+		return nil, err
+	}
+
+	// A command that mutates the user's workspace returns a [command.Action]
+	// rather than performing the effect itself; perform it now, after the
+	// command has completed successfully. An Action is of no use to the
+	// client, so it is never reported as the command's result.
+	if action, ok := result.(command.Action); ok {
+		return nil, action.Perform(ctx)
+	}
+	return result, nil
 }
 
 type commandHandler struct {
@@ -984,6 +996,7 @@ func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 	return protocol.DocumentChangeEdit(fh, textedits), nil
 }
 
+// TODO(hxjiang): hide from command bodies; effects belong in an Action.
 func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.DocumentChange) error {
 	if len(changes) == 0 {
 		return nil
@@ -998,6 +1011,19 @@ func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.D
 		return fmt.Errorf("edits not applied because of %s", response.FailureReason)
 	}
 	return nil
+}
+
+// applyEdits is the deferred form of [applyChanges]: a command returns one to
+// have the edits applied once it has completed successfully.
+type applyEdits struct {
+	cli     protocol.Client
+	changes []protocol.DocumentChange
+}
+
+var _ command.Action = applyEdits{}
+
+func (a applyEdits) Perform(ctx context.Context) error {
+	return applyChanges(ctx, a.cli, a.changes)
 }
 
 func runGoGetModule(invoke func(...string) (*bytes.Buffer, error), addRequire bool, args []string) error {
@@ -1559,6 +1585,8 @@ func (c *commandHandler) invokeGoWork(ctx context.Context, viewDir, gowork strin
 //
 // It reports whether it succeeded. If it fails, it writes an error to
 // the server log, so most callers can safely ignore the result.
+//
+// TODO(hxjiang): hide from command bodies; effects belong in an Action.
 func showMessage(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string) bool {
 	err := cli.ShowMessage(ctx, &protocol.ShowMessageParams{
 		Type:    typ,
@@ -1576,6 +1604,8 @@ func showMessage(ctx context.Context, cli protocol.Client, typ protocol.MessageT
 //
 // If the client does not support window/showDocument, a window/showMessage
 // request is instead used, with the format "$title: open your browser to $url".
+//
+// TODO(hxjiang): hide from command bodies; effects belong in an Action.
 func openClientBrowser(ctx context.Context, cli protocol.Client, title string, url protocol.URI, opts *settings.Options) {
 	if opts.ShowDocumentSupported {
 		showDocumentImpl(ctx, cli, url, nil, opts)
@@ -1595,6 +1625,8 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, title string, u
 //
 // Note that VS Code 1.87.2 doesn't currently raise the window; this is
 // https://github.com/microsoft/vscode/issues/207634
+//
+// TODO(hxjiang): hide from command bodies; effects belong in an Action.
 func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location, opts *settings.Options) {
 	if !opts.ShowDocumentSupported {
 		return // no op
@@ -1602,6 +1634,7 @@ func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Loc
 	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range, opts)
 }
 
+// TODO(hxjiang): hide from command bodies; effects belong in an Action.
 func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI, rangeOpt *protocol.Range, opts *settings.Options) {
 	if !opts.ShowDocumentSupported {
 		return // no op
@@ -1814,8 +1847,8 @@ func optionsStringToMap(options string) (map[string][]string, error) {
 	return optionsMap, nil
 }
 
-func (c *commandHandler) ImplementInterface(ctx context.Context, args command.ImplementInterfaceArgs, params *protocol.InteractiveParams) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) ImplementInterface(ctx context.Context, args command.ImplementInterfaceArgs, params *protocol.InteractiveParams) (action command.Action, err error) {
+	err = c.run(ctx, commandConfig{
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -1828,12 +1861,14 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		if err != nil {
 			return err
 		}
-		return applyChanges(ctx, c.s.client, edits)
+		action = applyEdits{c.s.client, edits}
+		return nil
 	})
+	return action, err
 }
 
-func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs, params *protocol.InteractiveParams) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs, params *protocol.InteractiveParams) (action command.Action, err error) {
+	err = c.run(ctx, commandConfig{
 		progress: "Modifying tags",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -1912,8 +1947,10 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		if err != nil {
 			return err
 		}
-		return applyChanges(ctx, c.s.client, changes)
+		action = applyEdits{c.s.client, changes}
+		return nil
 	})
+	return action, err
 }
 
 func parseTransform(input string) (modifytags.Transform, error) {
@@ -1955,8 +1992,8 @@ func (c *commandHandler) MoveType(ctx context.Context, args command.MoveTypeArgs
 	return err
 }
 
-func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveDeclarationArgs, params *protocol.InteractiveParams) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveDeclarationArgs, params *protocol.InteractiveParams) (action command.Action, err error) {
+	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		// TODO(mkalil): implement with interactive params
@@ -1964,8 +2001,10 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 		if err != nil {
 			return err
 		}
-		return applyChanges(ctx, c.s.client, changes)
+		action = applyEdits{c.s.client, changes}
+		return nil
 	})
+	return action, err
 }
 
 func (c *commandHandler) ResolveTarget(ctx context.Context, args command.ResolveTargetParams) (command.ResolveTargetResult, error) {

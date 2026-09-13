@@ -245,7 +245,7 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.ImplementInterface(ctx, a0, &params.InteractiveParams)
+		return s.ImplementInterface(ctx, a0, &params.InteractiveParams)
 	case ListImports:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -273,7 +273,7 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.ModifyTags(ctx, a0, &params.InteractiveParams)
+		return s.ModifyTags(ctx, a0, &params.InteractiveParams)
 	case Modules:
 		var a0 ModulesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -285,7 +285,7 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.MoveDeclaration(ctx, a0, &params.InteractiveParams)
+		return s.MoveDeclaration(ctx, a0, &params.InteractiveParams)
 	case MoveType:
 		var a0 MoveTypeArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
