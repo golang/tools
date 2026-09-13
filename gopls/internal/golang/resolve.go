@@ -139,10 +139,11 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		v0, err := FormAnswer[string](&param.InteractiveParams, "tags")
+		v0, err := param.RequiredAnswer[string]("tags")
 		if err != nil {
 			return err
 		}
+
 		if _, err = SanitizeTags(v0); err != nil {
 			form := slices.Clone(addTagsForm)
 			form[0].Error = err.Error()
@@ -150,8 +151,7 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		_, err = FormAnswer[string](&param.InteractiveParams, "transform")
-		if err != nil {
+		if _, err = param.RequiredAnswer[string]("transform"); err != nil {
 			return err
 		}
 		// PJW: what happens when the user enters a bad value? (i think the client handles it)
@@ -170,7 +170,7 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 			return nil
 		}
 
-		v, err := FormAnswer[string](&param.InteractiveParams, "tags")
+		v, err := param.RequiredAnswer[string]("tags")
 		if err != nil {
 			return err
 		}
@@ -269,7 +269,7 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 		return nil
 	}
 
-	v, err := FormAnswer[string](&param.InteractiveParams, "interface")
+	v, err := param.RequiredAnswer[string]("interface")
 	if err != nil {
 		return err
 	}
@@ -332,7 +332,7 @@ func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.Exec
 		return nil
 	}
 
-	file, err := FormAnswer[string](&param.InteractiveParams, "file")
+	file, err := param.RequiredAnswer[string]("file")
 	if err != nil {
 		return err
 	}
@@ -341,29 +341,6 @@ func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.Exec
 	}
 	param.FormFields = nil
 	return nil
-}
-
-// FormAnswer finds, validates, and returns the unique answer for id.
-//
-// It uses a linear scan since the number of answers is small (usually < 5).
-func FormAnswer[T any](params *protocol.InteractiveParams, id string) (v T, err error) {
-	matches := 0
-	for _, ans := range params.FormAnswers {
-		if ans.ID == id {
-			matches++
-			val, ok := ans.Value.(T)
-			if !ok {
-				return v, fmt.Errorf("form answer %q has unexpected type %T, want %T", id, ans.Value, v)
-			}
-			v = val
-		}
-	}
-	if matches == 0 {
-		return v, fmt.Errorf("form lacks answer %q", id)
-	} else if matches > 1 {
-		return v, fmt.Errorf("form contains duplicate answer %q", id)
-	}
-	return v, nil
 }
 
 // SanitizeTags cleans up comma-separated tags and ensures they are valid.

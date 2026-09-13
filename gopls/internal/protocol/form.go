@@ -8,7 +8,10 @@
 
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // InteractiveResolveOptions represents the server capabilities for interactive
 // resolve.
@@ -223,6 +226,53 @@ type FormAnswer struct {
 
 	// The user's answer value.
 	Value any `json:"value"`
+}
+
+// Answer returns the answer with the given ID, converted to T.
+//
+// An absent answer is not an error: exist reports whether the form has one,
+// and its absence is for the caller to interpret, since the question may be
+// unanswered or simply optional.
+//
+// An error means the answer is unusable, because the client sent a value that
+// is not a T, or answered the same question more than once. Answer reports
+// these rather than panicking, as the answers come from the client and may not
+// be trusted.
+func (p *InteractiveParams) Answer[T any](id string) (v T, exists bool, err error) {
+	matches := 0
+	for _, ans := range p.FormAnswers {
+		if ans.ID == id {
+			matches++
+			val, ok := ans.Value.(T)
+			if !ok {
+				return v, true, fmt.Errorf("form answer %q has unexpected type %T, want %T", id, ans.Value, v)
+			}
+			v = val
+		}
+	}
+	if matches == 0 {
+		return v, false, nil
+	} else if matches > 1 {
+		return v, true, fmt.Errorf("form contains duplicate answer %q", id)
+	}
+	return v, true, nil
+}
+
+// RequiredAnswer returns the answer with the given ID, converted to T, and
+// reports an error if the form does not have one.
+//
+// It suits a question whose FormField is Required, where an absent answer
+// means the client executed the request without completing the interactive
+// handshake.
+func (p *InteractiveParams) RequiredAnswer[T any](id string) (T, error) {
+	v, exists, err := p.Answer[T](id)
+	if err != nil {
+		return v, err
+	}
+	if !exists {
+		return v, fmt.Errorf("form lacks answer %q", id)
+	}
+	return v, nil
 }
 
 // InteractiveParams facilitates a multi-step, interactive dialogue between the

@@ -141,11 +141,7 @@ func Generate() ([]byte, error) {
 				log.Println("Command.Args has fallible type", t)
 				return true
 			}
-			for i, arg := range args {
-				if i == len(args)-1 && typesinternal.IsPointerToNamed(arg.Type, "golang.org/x/tools/gopls/internal/protocol", "InteractiveParams") {
-					continue
-				}
-
+			for _, arg := range args {
 				if fallible(arg.Type) {
 					return true
 				}
