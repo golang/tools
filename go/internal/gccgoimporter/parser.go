@@ -3,8 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Except for this comment, this file is a verbatim copy of the file
-// with the same name in $GOROOT/src/go/internal/gccgoimporter, with
-// a small modification in parseInterface to support older Go versions.
+// with the same name in $GOROOT/src/go/internal/gccgoimporter.
 
 package gccgoimporter
 
@@ -861,7 +860,7 @@ func (p *parser) parseInterfaceType(pkg *types.Package, nlist []any) types.Type 
 	}
 	p.expect('}')
 
-	*t = *newInterface(methods, embeddeds)
+	*t = *types.NewInterfaceType(methods, embeddeds)
 	return t
 }
 

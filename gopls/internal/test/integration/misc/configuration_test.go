@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
-
-	"golang.org/x/tools/internal/testenv"
 )
 
 // Test that enabling and disabling produces the expected results of showing
@@ -192,34 +190,6 @@ var ErrFoo = errors.New("foo")
 		env.ChangeConfiguration(cfg)
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/a.go", "var (FooErr)")),
-		)
-	})
-}
-
-func TestStaticcheckWarning(t *testing.T) {
-	// Note: keep this in sync with TestChangeConfiguration.
-	testenv.SkipAfterGo1Point(t, 19)
-
-	const files = `
--- go.mod --
-module mod.com
-
-go 1.12
--- a/a.go --
-package a
-
-import "errors"
-
-// FooErr should be called ErrFoo (ST1012)
-var FooErr = errors.New("foo")
-`
-
-	WithOptions(
-		Settings{"staticcheck": true},
-	).Run(t, files, func(t *testing.T, env *Env) {
-		env.OnceMet(
-			InitialWorkspaceLoad,
-			ShownMessage("staticcheck is not supported"),
 		)
 	})
 }
