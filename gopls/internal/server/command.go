@@ -89,13 +89,19 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 	}
 	result, err := command.Dispatch(ctx, params, handler)
 	if err != nil {
+		if errors.Is(err, command.ErrPendingAnswer) {
+			// Pending error indicates the command needs additional information
+			// from the language client which should never happen as the answers
+			// should be collected before reaching here through "command/resolve".
+			return nil, fmt.Errorf("internal error, command requires additional information: %w", err)
+		}
 		return nil, err
 	}
 
-	// A command that mutates the user's workspace returns a [command.Action]
-	// rather than performing the effect itself; perform it now, after the
-	// command has completed successfully. An Action is of no use to the
-	// client, so it is never reported as the command's result.
+	// A command produces either a value, which is reported to the client as
+	// the command's result, or a [command.Action], the effect it computed but
+	// did not perform. Perform it now and report nothing, since an Action is
+	// of no use to the client.
 	if action, ok := result.(command.Action); ok {
 		return nil, action.Perform(ctx)
 	}
@@ -1852,6 +1858,8 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		// TODO(hxjiang): when the answer is missing or invalid, ask for it
+		// instead of failing, once the forms move out of golang/resolve.go.
 		iface, err := params.RequiredAnswer[string]("interface")
 		if err != nil {
 			return err
@@ -1872,6 +1880,8 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		progress: "Modifying tags",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		// TODO(hxjiang): when an answer is missing or invalid, ask for it
+		// instead of failing, once the forms move out of golang/resolve.go.
 		if len(params.FormAnswers) > 0 {
 			switch args.Modification {
 			case "add":
@@ -1996,6 +2006,8 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		// TODO(hxjiang): when the answer is missing or invalid, ask for it
+		// instead of failing, once the forms move out of golang/resolve.go.
 		var destURI protocol.DocumentURI
 		if params != nil && len(params.FormAnswers) > 0 {
 			file, err := params.RequiredAnswer[string]("file")

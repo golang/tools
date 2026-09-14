@@ -17,11 +17,21 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 )
+
+// ErrPendingAnswer reports that a command asked the user something and the
+// answer has not arrived. It is not a failure: the command has done nothing
+// yet, and runs again once the user has answered.
+//
+// The questions travel in the command's [*protocol.InteractiveParams]; see the
+// [Interface] contract below, and [protocol.Server.ResolveCommand] for the
+// handshake that collects the answers.
+var ErrPendingAnswer = errors.New("waiting for an answer")
 
 // Interface defines the interface gopls exposes for the
 // workspace/executeCommand request.
@@ -47,6 +57,11 @@ import (
 //     marshaled. A command whose T is an Action must not mutate the user's
 //     workspace itself -- it must not apply edits or reveal documents -- but
 //     return an Action that does so. See [Action].
+//
+//     A command that cannot proceed until the user has answered something
+//     asks through its [*protocol.InteractiveParams] and returns
+//     [ErrPendingAnswer]. Asking is not a failure: the command has done
+//     nothing yet, and runs again once the answers arrive.
 //
 //  3. The first line of the doc string is special.
 //     Everything after the colon is considered the command 'Title'.
