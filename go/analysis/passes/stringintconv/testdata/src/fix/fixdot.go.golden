@@ -1,18 +1,23 @@
 -- Format the number as a decimal --
+// This code relies on pre-1.28 string(integer) conversion rules.
+//go:build !go1.28
+
 package fix
 
 import . "fmt"
 
 func _(x uint64) {
-     Println(Sprint(x)) // want `conversion from uint64 to string yields...`
+	Println(Sprint(x)) // want `conversion from uint64 to string yields...`
 }
 
 -- Convert a single rune to a string --
+// This code relies on pre-1.28 string(integer) conversion rules.
+//go:build !go1.28
+
 package fix
 
 import . "fmt"
 
 func _(x uint64) {
-     Println(string(rune(x))) // want `conversion from uint64 to string yields...`
+	Println(string(rune(x))) // want `conversion from uint64 to string yields...`
 }
-

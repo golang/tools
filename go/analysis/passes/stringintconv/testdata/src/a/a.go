@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// This code relies on pre-1.28 string(integer) conversion rules.
+//go:build !go1.28
+
 // This file contains tests for the stringintconv checker.
 
 package a

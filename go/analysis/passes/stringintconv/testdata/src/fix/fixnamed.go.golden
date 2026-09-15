@@ -1,4 +1,7 @@
 -- Format the number as a decimal --
+// This code relies on pre-1.28 string(integer) conversion rules.
+//go:build !go1.28
+
 package fix
 
 import "fmt"
@@ -10,6 +13,9 @@ func _(x int16) mystring {
 }
 
 -- Convert a single rune to a string --
+// This code relies on pre-1.28 string(integer) conversion rules.
+//go:build !go1.28
+
 package fix
 
 type mystring string
