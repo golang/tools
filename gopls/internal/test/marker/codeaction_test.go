@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -323,6 +324,20 @@ func applyCodeAction(mark marker, action *protocol.CodeAction) ([]protocol.Docum
 					mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
 				}
 				for k, v := range args {
+					// Expand $WORKDIR before sending it in "answers". Otherwise marker
+					// tests for features that use file URIs (e.g. Move Declaration) will
+					// fail.
+					if s, ok := v.(string); ok {
+						// On Windows, paths begin with "C:/..." (no leading slash),
+						// so prepending "file://" would yield an invalid 2-slash URI
+						// ("file://C:/..."). Replace "file://$WORKDIR" with RootURI()
+						// to ensure the canonical 3-slash format ("file:///C:/...").
+						// Any remaining "$WORKDIR" references (e.g. plain file paths)
+						// are replaced using slash-separated paths.
+						s = strings.ReplaceAll(s, "file://$WORKDIR", string(mark.run.env.Sandbox.Workdir.RootURI()))
+						s = strings.ReplaceAll(s, "$WORKDIR", filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()))
+						v = s
+					}
 					cmd.FormAnswers = append(cmd.FormAnswers, protocol.FormAnswer{
 						ID:    k,
 						Value: v,

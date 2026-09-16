@@ -11,10 +11,13 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/moreiters"
@@ -57,7 +60,10 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		return nil, protocol.Location{}, fmt.Errorf("could not resolve target declaration")
 	}
 	graph := buildSymbolRefGraph(srcPkg)
-	_ = computeMovingSet(srcPkg, destPkg, targetObj, graph)
+	moving := computeMovingSet(srcPkg, destPkg, graph, targetObj)
+	if err := canMove(snapshot, srcPkg, destPkg, destURI, graph, moving, targetObj); err != nil {
+		return nil, protocol.Location{}, err
+	}
 	return nil, protocol.Location{}, nil
 }
 
@@ -292,9 +298,10 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 // together with obj due to language coupling rules. These are ths symbols
 // that the given obj has an implicit dependency on.
 // Rules:
-// - Type: all methods in its method set.
-// - Method: receiver type declaration and all other methods on that receiver.
-// - Const group using iota: all constants in the entire const (...) block.
+//   - Type: all methods in its method set.
+//   - Method: receiver type declaration and all other methods on that receiver.
+//   - Const group using iota: all constants in the entire const (...) block.
+//
 // Also returns true if the dependency added is from an iota const group,
 // as we should avoid doing duplicate work on these objects.
 func implicitDependencies(pkg *cache.Package, obj types.Object) (coupled []types.Object, isIota bool) {
@@ -367,7 +374,7 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // For each of these symbols, we also include their coupled symbols, recursively.
 // For each symbol's dependencies (as specified by edges in the declGraph), we add
 // the symbol to the moving set.
-func computeMovingSet(srcPkg, destPkg *cache.Package, targetObj types.Object, graph declGraph) map[types.Object]bool {
+func computeMovingSet(srcPkg, destPkg *cache.Package, graph declGraph, targetObj types.Object) map[types.Object]bool {
 	moving := make(map[types.Object]bool)
 	if srcPkg == destPkg {
 		// If the move is within the same package, we only need to move the
@@ -405,4 +412,122 @@ func computeMovingSet(srcPkg, destPkg *cache.Package, targetObj types.Object, gr
 		}
 	}
 	return moving
+}
+
+// pkgTransitivelyImports reports whether fromPkg imports targetPkg directly or transitively.
+func pkgTransitivelyImports(g *metadata.Graph, fromPkg, targetPkg *metadata.Package) bool {
+	targetPath := targetPkg.PkgPath
+	if _, ok := fromPkg.DepsByPkgPath[targetPath]; ok {
+		// Direct dependency
+		return true
+	}
+	for dep := range g.ForwardReflexiveTransitiveClosure(fromPkg.ID) {
+		if dep.PkgPath == targetPath {
+			return true
+		}
+	}
+	return false
+}
+
+// remainingReferencesMoving reports whether any decl in the graph that is not in the
+// moving set depends on any object in the moving set. It also reports a list of the names of unexported
+// objects in the moving set that are referenced by an object in the remaining set.
+func remainingReferencesMoving(graph declGraph, moving map[types.Object]bool) (names []string, refExisting bool) {
+	var unexported []types.Object
+	seen := make(map[types.Object]bool)
+	for obj, deps := range graph {
+		if !moving[obj] {
+			for n := range deps {
+				if moving[n] {
+					refExisting = true
+					if !n.Exported() && !seen[n] {
+						seen[n] = true
+						unexported = append(unexported, n)
+					}
+				}
+			}
+		}
+	}
+	// Sort the unexported symbols so we can report them to the user in a standard order.
+	slices.SortFunc(unexported, func(a, b types.Object) int {
+		if c := strings.Compare(a.Name(), b.Name()); c != 0 {
+			return c
+		}
+		return int(a.Pos() - b.Pos())
+	})
+	for _, obj := range unexported {
+		names = append(names, obj.Name())
+	}
+	return names, refExisting
+}
+
+// canMove reports whether the specified moving set and declGraph constitutes a legal move.
+// It checks for:
+//   - import cycles
+//   - illegal imports (i.e. internal imports)
+//   - shadowing and name conflicts in the destination package
+func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI protocol.DocumentURI, graph declGraph, moving map[types.Object]bool, moveTarget types.Object) error {
+	var (
+		srcMeta    = srcPkg.Metadata()
+		destMeta   = destPkg.Metadata()
+		srcPkgPath = srcMeta.PkgPath
+		srcName    = srcMeta.Name
+		destName   = destMeta.Name
+		isCrossPkg = srcMeta.ID != destMeta.ID
+	)
+	// We don't need to check for import cycles or package-level symbols conflicts
+	// if the move is in the same package.
+	if isCrossPkg {
+		if unexported, referencesMoving := remainingReferencesMoving(graph, moving); referencesMoving {
+			// Check for internal import rule violations.
+			if !metadata.IsValidImport(srcPkgPath, destMeta.PkgPath, true) {
+				return fmt.Errorf("illegal import: the move requires source package %s to import destination package %s, which violates internal import rules", srcName, destName)
+			}
+			if len(unexported) > 0 {
+				// TODO(mkalil): obj.Name() is not unique between symbols, so we may want to change this error message.
+				return fmt.Errorf("illegal reference: symbols moving to the destination package (%s) are unexported and referenced in source package %s", strings.Join(unexported, ", "), srcName)
+			}
+			// Src must import dest. To avoid an import cycle, we must check that
+			// dest does not already directly or transitively import src.
+			if pkgTransitivelyImports(snapshot.MetadataGraph(), destMeta, srcMeta) {
+				return fmt.Errorf("import cycle: the move requires source package %s to import destination package %s, which already imports %s", srcName, destName, srcName)
+			}
+		}
+		// Check destPkg's package block for conflicts, since the moving
+		// declarations become package-level declarations.
+		for obj := range moving {
+			if destPkg.Types().Scope().Lookup(obj.Name()) != nil {
+				return fmt.Errorf("cannot move %s: %s is already declared in package %s",
+					obj.Name(), obj.Name(), destName)
+			}
+		}
+		// For each file in destPkg, check its file scope for conflicts.
+		// Dot imports in any file can cause shadowing.
+		for _, file := range destPkg.Syntax() {
+			if fileScope := destPkg.TypesInfo().Scopes[file]; fileScope != nil {
+				for obj := range moving {
+					if fileScope.Lookup(obj.Name()) != nil {
+						return fmt.Errorf("cannot move %s: conflicts with symbol in the destination package",
+							obj.Name())
+					}
+				}
+
+			}
+		}
+
+	} else {
+		// Check the destination file block for conflicts, since package-level
+		// declarations cannot share a name with a file-level import in the same file.
+		if destPGF, err := destPkg.File(destURI); err == nil {
+			if fileScope := destPkg.TypesInfo().Scopes[destPGF.File]; fileScope != nil {
+				for obj := range moving {
+					if fileScope.Lookup(obj.Name()) != nil {
+						return fmt.Errorf("cannot move %s: conflicts with symbol in destination file",
+							obj.Name())
+					}
+				}
+			}
+		}
+	}
+	return nil
 }

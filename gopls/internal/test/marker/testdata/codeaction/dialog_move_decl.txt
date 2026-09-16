@@ -36,3 +36,88 @@ var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", title="
 var c, d int //@codeaction(re"va()r", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
 
 type A struct {} //@codeaction(re"A", "refactor.move.moveDeclaration", title="Move declaration A")
+
+-- move/illegal.go --
+package move
+
+// Package-level name conflict: dest/dest.go already declares type ExistingConflict.
+type ExistingConflict struct{} //@codeaction(re"ExistingConflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, err=re"already declared in package dest")
+
+// File-level import conflict: dest/dest.go imports "bytes", so bytes is in file scope.
+func bytes() {} //@codeaction(re"bytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, err=re"conflicts with symbol in the destination package")
+
+// Import cycle: package "move" must import package "cycledest", but "cycledest" already imports "move".
+func CycleTarget() {} //@codeaction(re"CycleTarget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/cycledest/cycledest.go"}`, err=re"import cycle")
+func useCycleTarget() {
+	CycleTarget()
+}
+
+// Package "move" must import package "secret", but this is an illegal internal import.
+func InternalTarget() {} //@codeaction(re"InternalTarget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/sub/internal/secret/secret.go"}`, err=re"illegal import")
+func useInternalTarget() {
+	InternalTarget()
+}
+
+// File-level import conflict: destination file move/samepackage.go imports "bytes" renamed as conflict.
+var conflict string //@codeaction(re"conflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/move/samepackage.go"}`, err=re"conflicts with symbol in destination file")
+
+// Dot-import conflict: dest/other.go dot-imports "strings", which brings strings.Reader into file scope in package dest.
+type Reader struct{} //@codeaction(re"Reader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, err=re"conflicts with symbol in the destination package")
+
+// Dot-import conflict: destination file move/samepackage.go dot-imports "math", which brings math.Pi into file scope.
+const Pi = 3.14 //@codeaction(re"Pi", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/move/samepackage.go"}`, err=re"conflicts with symbol in destination file")
+
+func unexported() {}
+
+func CallsUnexported1() { //@codeaction(re"CallsUnexported1", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(unexported\)`)
+	unexported()
+}
+
+func CallsUnexported2() {
+	unexported()
+}
+
+-- move/samepackage.go --
+package move
+
+import (
+	conflict "bytes"
+	. "math"
+)
+
+var b bytes.Buffer
+var _ = Pi
+
+-- dest/dest.go --
+package dest
+
+import "bytes"
+
+type ExistingConflict struct{}
+
+func _() {
+	_ = bytes.Buffer{}
+}
+
+-- dest/other.go --
+package dest
+
+import . "strings"
+
+func _() {
+	_ = Reader{}
+}
+
+-- cycledest/cycledest.go --
+package cycledest
+
+import "golang.org/lsptests/movedecl/move"
+
+func _() {
+	_ = move.Foo
+}
+
+-- sub/internal/secret/secret.go --
+package secret
+
+type Secret struct{}
