@@ -7,6 +7,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -53,7 +54,7 @@ package integration_test
 -- nopkg/testfile.go --
 package
 `
-	for _, tc := range []struct {
+	tests := []struct {
 		name    string
 		newfile string
 		want    string
@@ -123,15 +124,17 @@ package license1
 			newfile: "123f_r.u~its-123/newfile.go",
 			want:    "package fruits123\n",
 		},
-		{
-			name:    "package completion for dir name with invalid dir name",
-			newfile: "123f_r.u~its-123/newfile.go",
-			want:    "package fruits123\n",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			createFiles := fmt.Sprintf("%s\n-- %s --", existFiles, tc.newfile)
-			Run(t, createFiles, func(t *testing.T, env *Env) {
+	}
+	// Run all logically independent test cases in a single gopls session to
+	// avoid the overhead of creating a new sandbox and server for each case.
+	var txtarBuf strings.Builder
+	txtarBuf.WriteString(existFiles)
+	for _, tc := range tests {
+		fmt.Fprintf(&txtarBuf, "\n-- %s --", tc.newfile)
+	}
+	Run(t, txtarBuf.String(), func(t *testing.T, env *Env) {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
 				env.DidCreateFiles(env.Editor.DocumentURI(tc.newfile))
 				// save buffer to ensure the edits take effects in the file system.
 				if err := env.Editor.SaveBuffer(context.Background(), tc.newfile); err != nil {
@@ -141,8 +144,8 @@ package license1
 					t.Fatalf("want '%s' but got '%s'", tc.want, got)
 				}
 			})
-		})
-	}
+		}
+	})
 }
 
 // TestDidCreateFiles_BadURI is an integration test for go.dev/issue/74652,

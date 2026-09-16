@@ -26,8 +26,11 @@ func main() {
 	fmt.Println("Hello World.")
 }`
 
+	// Simultaneous editing requires a shared server (Forwarded or SeparateProcess).
+	// Include Forwarded unconditionally plus
+	// SeparateProcess if enabled by flags.
 	WithOptions(
-		Modes(DefaultModes()&(Forwarded|SeparateProcess)),
+		Modes(Forwarded|(DefaultModes()&SeparateProcess)),
 	).Run(t, sharedProgram, func(t *testing.T, env1 *Env) {
 		// Create a second test session connected to the same workspace and server
 		// as the first.
@@ -54,5 +57,32 @@ func main() {
 		env1.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
+	})
+}
+
+// TestForwardedSmoke exercises standard LSP operations in Forwarded mode.
+func TestForwardedSmoke(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+
+go 1.18
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+`
+	WithOptions(
+		Modes(Forwarded),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		loc := env.RegexpSearch("main.go", "Println")
+		if content, _ := env.Hover(loc); content == nil || content.Value == "" {
+			t.Errorf("hover failed in forwarded mode")
+		}
 	})
 }
