@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"strings"
+	"unicode"
 
 	"github.com/fatih/gomodifytags/modifytags"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -22,6 +24,88 @@ import (
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 )
+
+// addTagsForm asks which struct tags to add, and how to derive their values
+// from the field names.
+//
+// TODO(hxjiang): move form validation logic to here.
+var addTagsForm = []protocol.FormField{
+	{
+		ID:          "tags",
+		Description: `comma-separated list of tags to add; e.g.. "json,xml"`,
+		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
+		Required:    true,
+		Default:     "json",
+	},
+	{
+		ID:          "transform",
+		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
+		Type: protocol.FormFieldTypeEnum{
+			Kind: protocol.FormFieldKindEnum,
+			Entries: []protocol.FormEnumEntry{
+				{
+					Value:       "camelcase",
+					Description: "camelCase",
+				},
+				{
+					Value:       "lispcase",
+					Description: "lisp-case",
+				},
+				{
+					Value:       "pascalcase",
+					Description: "PascalCase",
+				},
+				{
+					Value:       "titlecase",
+					Description: "Title Case",
+				},
+				{
+					Value:       "snakecase",
+					Description: "snake_case",
+				},
+			},
+		},
+		Required: true,
+		Default:  "camelcase",
+	},
+}
+
+// removeTagsForm asks which struct tags to remove.
+var removeTagsForm = []protocol.FormField{
+	{
+		ID:          "tags",
+		Description: `comma-separated list of tags to remove; e.g., "json,xml"`,
+		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
+		Required:    true,
+		Default:     "json", // TODO(?): put the existing tags here?
+	},
+}
+
+// SanitizeTags cleans up comma-separated tags and ensures they are valid.
+func SanitizeTags(tags string) (string, error) {
+	parts := strings.Split(tags, ",")
+	var clean []string
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		// Use strings.ContainsFunc instead of a manual byte loop.
+		// It returns true if any rune in the string matches the condition.
+		if strings.ContainsFunc(p, func(r rune) bool {
+			// Space, colon, quote, or any non-printable character (like control chars)
+			return r == ' ' || r == ':' || r == '"' || !unicode.IsPrint(r)
+		}) {
+			return "", fmt.Errorf("illegal tag %q: cannot contain spaces, quotes, colons, or control characters", p)
+		}
+
+		clean = append(clean, p)
+	}
+
+	return strings.Join(clean, ","), nil
+}
 
 // ModifyTags applies the given struct tag modifications to the specified struct.
 func ModifyTags(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, args command.ModifyTagsArgs, m *modifytags.Modification) ([]protocol.DocumentChange, error) {

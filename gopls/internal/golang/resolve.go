@@ -6,14 +6,9 @@ package golang
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"go/token"
 	"slices"
-	"strings"
-	"unicode"
 
-	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -33,57 +28,6 @@ import (
 //    gopls responds, with 'workspace/applyEdit' saying what to do
 // 5. Client return ApplyWorkspaceEditResult with applied = true
 // 6. Client sends a textDocument/didChange notification, with the edits applied (optional)
-
-var addTagsForm = []protocol.FormField{
-	{
-		ID:          "tags",
-		Description: `comma-separated list of tags to add; e.g.. "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
-		Required:    true,
-		Default:     "json",
-	},
-	{
-		ID:          "transform",
-		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
-		Type: protocol.FormFieldTypeEnum{
-			Kind: protocol.FormFieldKindEnum,
-			Entries: []protocol.FormEnumEntry{
-				{
-					Value:       "camelcase",
-					Description: "camelCase",
-				},
-				{
-					Value:       "lispcase",
-					Description: "lisp-case",
-				},
-				{
-					Value:       "pascalcase",
-					Description: "PascalCase",
-				},
-				{
-					Value:       "titlecase",
-					Description: "Title Case",
-				},
-				{
-					Value:       "snakecase",
-					Description: "snake_case",
-				},
-			},
-		},
-		Required: true,
-		Default:  "camelcase",
-	},
-}
-
-var removeTagsForm = []protocol.FormField{
-	{
-		ID:          "tags",
-		Description: `comma-separated list of tags to remove; e.g., "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
-		Required:    true,
-		Default:     "json", // TODO(?): put the existing tags here?
-	},
-}
 
 // ResolveCommand implements the interactive resolution step for workspace commands.
 // It inspects the command name within the provided [protocol.ExecuteCommandParams]
@@ -177,64 +121,6 @@ func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCo
 	}
 }
 
-func mustMarshal(x any) json.RawMessage {
-	data, err := json.Marshal(x)
-	if err != nil {
-		panic(err)
-	}
-	return json.RawMessage(data)
-}
-
-var implementInterfaceFormLazyEnum = []protocol.FormField{
-	{
-		ID:          "interface",
-		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
-		Type: protocol.FormFieldTypeLazyEnum{
-			Kind:   protocol.FormFieldKindLazyEnum,
-			Source: "workspaceSymbol",
-			Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
-				Kinds: []protocol.SymbolKind{protocol.Interface},
-			}),
-		},
-		Required: true,
-		Default:  "error",
-	},
-}
-
-var implementInterfaceFormString = []protocol.FormField{
-	{
-		ID:          "interface",
-		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
-		Type: protocol.FormFieldTypeString{
-			Kind: protocol.FormFieldKindString,
-		},
-		Required: true,
-		Default:  "error",
-	},
-}
-
-var moveDeclarationFormString = []protocol.FormField{
-	{
-		ID:          "file",
-		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
-		Type: protocol.FormFieldTypeFile{
-			Kind: "string",
-		},
-		Required: true,
-	},
-}
-
-var moveDeclarationFormFile = []protocol.FormField{
-	{
-		ID:          "file",
-		Description: "destination file for the moved declaration",
-		Type: protocol.FormFieldTypeFile{
-			Kind: "file",
-		},
-		Required: true,
-	},
-}
-
 func resolveImplementInterface(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
 	var a0 command.ImplementInterfaceArgs
 	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
@@ -263,29 +149,7 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 		return err
 	}
 
-	// Gopls only validates the syntax of the string; it does not verify that
-	// the package or interface actually exists in the workspace.
-	validInterface := func(ifaceStr string) error {
-		if ifaceStr == "error" {
-			return nil
-		}
-		pkgPath, ifaceName, ok := strings.CutLast(ifaceStr, ".")
-		if !ok {
-			return fmt.Errorf(`invalid interface type name: want string of form "example.com/pkg.Type", got %q`, ifaceStr)
-		}
-
-		if err := module.CheckImportPath(pkgPath); err != nil {
-			return fmt.Errorf("invalid package path %w", err)
-		}
-
-		if !token.IsIdentifier(ifaceName) {
-			return fmt.Errorf("invalid type name: %q", ifaceName)
-		}
-
-		return nil
-	}
-
-	if err := validInterface(v); err != nil {
+	if err := validInterfaceName(v); err != nil {
 		// The client only sends back answers, not the original form fields.
 		// Clone the static form template so we can attach the validation
 		// error and send the complete form back for the client to re-render.
@@ -330,30 +194,4 @@ func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.Exec
 	}
 	param.FormFields = nil
 	return nil
-}
-
-// SanitizeTags cleans up comma-separated tags and ensures they are valid.
-func SanitizeTags(tags string) (string, error) {
-	parts := strings.Split(tags, ",")
-	var clean []string
-
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-
-		// Use strings.ContainsFunc instead of a manual byte loop.
-		// It returns true if any rune in the string matches the condition.
-		if strings.ContainsFunc(p, func(r rune) bool {
-			// Space, colon, quote, or any non-printable character (like control chars)
-			return r == ' ' || r == ':' || r == '"' || !unicode.IsPrint(r)
-		}) {
-			return "", fmt.Errorf("illegal tag %q: cannot contain spaces, quotes, colons, or control characters", p)
-		}
-
-		clean = append(clean, p)
-	}
-
-	return strings.Join(clean, ","), nil
 }

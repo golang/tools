@@ -23,6 +23,34 @@ import (
 	"golang.org/x/tools/internal/moreiters"
 )
 
+// moveDeclarationFormFile asks where to move a declaration, through the file
+// picker of the client.
+//
+// TODO(hxjiang): move form validation logic to here.
+var moveDeclarationFormFile = []protocol.FormField{
+	{
+		ID:          "file",
+		Description: "destination file for the moved declaration",
+		Type: protocol.FormFieldTypeFile{
+			Kind: "file",
+		},
+		Required: true,
+	},
+}
+
+// moveDeclarationFormString asks where to move a declaration, as plain text,
+// for clients that have no file picker.
+var moveDeclarationFormString = []protocol.FormField{
+	{
+		ID:          "file",
+		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
+		Type: protocol.FormFieldTypeFile{
+			Kind: "string",
+		},
+		Required: true,
+	},
+}
+
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
 func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {
 	srcPkg, srcPGF, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())

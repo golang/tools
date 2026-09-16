@@ -6,11 +6,14 @@ package golang
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strings"
 
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/golang/stubmethods"
@@ -20,6 +23,74 @@ import (
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typesinternal"
 )
+
+// implementInterfaceFormLazyEnum asks which interface to implement, offering
+// the interfaces of the workspace as the user types.
+//
+// TODO(hxjiang): move form validation logic to here.
+var implementInterfaceFormLazyEnum = []protocol.FormField{
+	{
+		ID:          "interface",
+		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
+		Type: protocol.FormFieldTypeLazyEnum{
+			Kind:   protocol.FormFieldKindLazyEnum,
+			Source: "workspaceSymbol",
+			Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
+				Kinds: []protocol.SymbolKind{protocol.Interface},
+			}),
+		},
+		Required: true,
+		Default:  "error",
+	},
+}
+
+// implementInterfaceFormString asks which interface to implement, as plain
+// text, for clients that cannot search the workspace symbols.
+var implementInterfaceFormString = []protocol.FormField{
+	{
+		ID:          "interface",
+		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
+		Type: protocol.FormFieldTypeString{
+			Kind: protocol.FormFieldKindString,
+		},
+		Required: true,
+		Default:  "error",
+	},
+}
+
+func mustMarshal(x any) json.RawMessage {
+	data, err := json.Marshal(x)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
+}
+
+// validInterfaceName returns an error unless name denotes an interface, as a
+// fully qualified identifier such as "example.com/pkg.Type", or as the
+// predeclared "error".
+//
+// Gopls only validates the syntax of the name; it does not verify that the
+// package or the interface actually exists in the workspace.
+func validInterfaceName(name string) error {
+	if name == "error" {
+		return nil
+	}
+	pkgPath, ifaceName, ok := strings.CutLast(name, ".")
+	if !ok {
+		return fmt.Errorf(`invalid interface type name: want string of form "example.com/pkg.Type", got %q`, name)
+	}
+
+	if err := module.CheckImportPath(pkgPath); err != nil {
+		return fmt.Errorf("invalid package path %w", err)
+	}
+
+	if !token.IsIdentifier(ifaceName) {
+		return fmt.Errorf("invalid type name: %q", ifaceName)
+	}
+
+	return nil
+}
 
 // ImplementInterface generates workspace edits to add method stubs, making the
 // package-level type at the given location implement the target interface.
