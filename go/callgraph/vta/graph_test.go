@@ -6,6 +6,9 @@ package vta
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"go/types"
 	"reflect"
 	"sort"
@@ -13,6 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
@@ -240,5 +244,110 @@ func TestVTAGraphConstruction(t *testing.T) {
 				t.Errorf("`%s`: want superset of %v;\n got %v\ndiff: %v", file, want, got, diff)
 			}
 		})
+	}
+}
+
+func BenchmarkCallFlows(b *testing.B) {
+	for _, targets := range []int{1, 32, 256} {
+		b.Run(fmt.Sprintf("targets=%d", targets), func(b *testing.B) {
+			var src strings.Builder
+			src.WriteString("package bench\n")
+			for i := range targets {
+				fmt.Fprintf(&src, "func F%d(x any, p *any) (any, any) { return x, *p }\n", i)
+			}
+			src.WriteString("var functions = []func(any, *any) (any, any){")
+			for i := range targets {
+				fmt.Fprintf(&src, "F%d,", i)
+			}
+			src.WriteString("}\nfunc Entry(f func(any, *any) (any, any), x any, p *any) any {\n")
+			for range 64 {
+				src.WriteString("x, *p = f(x, p)\n")
+			}
+			src.WriteString("return x\n}\n")
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "bench.go", src.String(), 0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			pkg, _, err := ssautil.BuildPackage(&types.Config{}, fset, types.NewPackage("bench", "bench"), []*ast.File{file}, ssa.InstantiateGenerics)
+			if err != nil {
+				b.Fatal(err)
+			}
+			funcs := ssautil.AllFunctions(pkg.Prog)
+			b.Run("graph", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					typePropGraph(funcs, makeCalleesFunc(funcs, nil))
+				}
+			})
+			b.Run("analysis", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					CallGraph(funcs, nil)
+				}
+			})
+		})
+	}
+}
+
+func TestCallFlowsOmitUnusedNodes(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "calls.go", `package calls
+func identity(x any, n int) any { return x }
+func concrete(x int) int { return x }
+func Calls(f func(any, int) any, x any) any {
+	_ = concrete(1)
+	x = identity(x, 1)
+	return f(x, 1)
+}`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, _, err := ssautil.BuildPackage(&types.Config{}, fset, types.NewPackage("calls", "calls"), []*ast.File{file}, ssa.InstantiateGenerics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	funcs := ssautil.AllFunctions(pkg.Prog)
+	g, _ := typePropGraph(funcs, makeCalleesFunc(funcs, nil))
+	for _, n := range g.node {
+		if n.Type() != nil && types.Identical(n.Type(), types.Typ[types.Int]) {
+			t.Errorf("unused concrete call node: %v", n)
+		}
+	}
+	used := make(map[idx]bool)
+	for i := range g.node {
+		for j := range g.successors(idx(i)) {
+			used[idx(i)], used[j] = true, true
+		}
+	}
+	if len(used) != g.numNodes() {
+		t.Errorf("%d nodes have no incident edges", g.numNodes()-len(used))
+	}
+}
+
+func BenchmarkConcreteCallFlows(b *testing.B) {
+	var src strings.Builder
+	src.WriteString("package bench\n")
+	for i := range 256 {
+		fmt.Fprintf(&src, "func F%d(x int) int { return x }\n", i)
+	}
+	src.WriteString("func Entry(x int) int {\n")
+	for i := range 256 {
+		fmt.Fprintf(&src, "x = F%d(x)\n", i)
+	}
+	src.WriteString("return x\n}\n")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "bench.go", src.String(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	pkg, _, err := ssautil.BuildPackage(&types.Config{}, fset, types.NewPackage("bench", "bench"), []*ast.File{file}, ssa.InstantiateGenerics)
+	if err != nil {
+		b.Fatal(err)
+	}
+	funcs := ssautil.AllFunctions(pkg.Prog)
+	b.ReportAllocs()
+	for b.Loop() {
+		CallGraph(funcs, nil)
 	}
 }

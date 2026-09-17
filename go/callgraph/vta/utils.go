@@ -48,8 +48,10 @@ func hasInFlow(n node) bool {
 		return true
 	}
 
-	t := n.Type()
+	return hasTypeFlow(n.Type())
+}
 
+func hasTypeFlow(t types.Type) bool {
 	if i := interfaceUnderPtr(t); i != nil {
 		return true
 	}

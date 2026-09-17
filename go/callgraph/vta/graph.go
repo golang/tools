@@ -281,23 +281,26 @@ func (g *vtaGraph) successors(x idx) iter.Seq[idx] {
 	}
 }
 
-// addEdge adds an edge x->y to the graph.
-func (g *vtaGraph) addEdge(x, y node) {
+func (g *vtaGraph) lookup(n node) idx {
 	if g.idx == nil {
 		g.idx = make(map[node]idx)
 	}
-	lookup := func(n node) idx {
-		i, ok := g.idx[n]
-		if !ok {
-			i = idx(len(g.idx))
-			g.m = append(g.m, nil)
-			g.idx[n] = i
-			g.node = append(g.node, n)
-		}
+	if i, ok := g.idx[n]; ok {
 		return i
 	}
-	a := lookup(x)
-	b := lookup(y)
+	i := idx(len(g.idx))
+	g.m = append(g.m, nil)
+	g.idx[n] = i
+	g.node = append(g.node, n)
+	return i
+}
+
+// addEdge adds an edge x->y to the graph.
+func (g *vtaGraph) addEdge(x, y node) {
+	g.addIndexedEdge(g.lookup(x), g.lookup(y))
+}
+
+func (g *vtaGraph) addIndexedEdge(a, b idx) {
 	succs := g.m[a]
 	if succs == nil {
 		succs = make(map[idx]empty)
@@ -310,15 +313,18 @@ func (g *vtaGraph) addEdge(x, y node) {
 // `callgraph` needed to establish interprocedural edges. Returns the
 // graph and a map for unique type representatives.
 func typePropGraph(funcs map[*ssa.Function]bool, callees calleesFunc) (*vtaGraph, *typeutil.Map) {
-	b := builder{callees: callees}
+	b := builder{callees: callees, flows: make(map[*ssa.Function]*functionFlow)}
 	b.visit(funcs)
-	b.callees = nil // ensure callees is not pinned by pointers to other fields of b.
+	// The returned fields keep b alive; release state used only during construction.
+	b.flows = nil
+	b.callees = nil
 	return &b.graph, &b.canon
 }
 
 // Data structure responsible for linearly traversing the
 // code and building a VTA graph.
 type builder struct {
+	flows   map[*ssa.Function]*functionFlow
 	graph   vtaGraph
 	callees calleesFunc // initial call graph for creating flows at unresolved call sites.
 
@@ -623,78 +629,123 @@ func (b *builder) panic(p *ssa.Panic) {
 	b.addInFlowEdge(b.nodeFromVal(p.X), panicArg{})
 }
 
+type flowNode struct {
+	n       node
+	inflow  bool
+	index   idx
+	indexed bool
+}
+
+type functionFlow struct {
+	params           []flowNode
+	results          []flowNode
+	functionReceiver bool
+}
+
+func prepareFlow(n node) flowNode { return flowNode{n: n, inflow: hasInFlow(n)} }
+
+// Intern nodes only when an edge uses them, so the cache does not add
+// isolated nodes to the graph.
+func (b *builder) flowIndex(n *flowNode) idx {
+	if !n.indexed {
+		n.index = b.graph.lookup(b.representative(n.n))
+		n.indexed = true
+	}
+	return n.index
+}
+
+func (b *builder) flowEdge(s, d *flowNode) {
+	if d.inflow {
+		b.graph.addIndexedEdge(b.flowIndex(s), b.flowIndex(d))
+	}
+}
+
+func (b *builder) functionFlow(f *ssa.Function) *functionFlow {
+	if flow := b.flows[f]; flow != nil {
+		return flow
+	}
+	flow := &functionFlow{params: make([]flowNode, len(f.Params)), results: make([]flowNode, f.Signature.Results().Len())}
+	for i, p := range f.Params {
+		flow.params[i] = prepareFlow(b.nodeFromVal(p))
+	}
+	for i := range flow.results {
+		flow.results[i] = prepareFlow(resultVar{f: f, index: i})
+	}
+	flow.functionReceiver = len(f.Params) > 0 && isFunction(f.Params[0].Type())
+	b.flows[f] = flow
+	return flow
+}
+
 // call adds flows between arguments/parameters and return values/registers
 // for both static and dynamic calls, as well as go and defer calls.
 func (b *builder) call(c ssa.CallInstruction) {
-	// When c is r := recover() call register instruction, we add Recover -> r.
-	if bf, ok := c.Common().Value.(*ssa.Builtin); ok && bf.Name() == "recover" {
+	cc := c.Common()
+	if bf, ok := cc.Value.(*ssa.Builtin); ok && bf.Name() == "recover" {
 		if v, ok := c.(ssa.Value); ok {
 			b.addInFlowEdge(recoverReturn{}, b.nodeFromVal(v))
 		}
 		return
 	}
-
-	for f := range siteCallees(c, b.callees) {
-		addArgumentFlows(b, c, f)
-
-		site, ok := c.(ssa.Value)
-		if !ok {
-			continue // go or defer
-		}
-
-		results := f.Signature.Results()
-		if results.Len() == 1 {
-			// When there is only one return value, the destination register does not
-			// have a tuple type.
-			b.addInFlowEdge(resultVar{f: f, index: 0}, b.nodeFromVal(site))
-		} else {
-			tup := site.Type().(*types.Tuple)
-			for i := 0; i < results.Len(); i++ {
-				local := indexedLocal{val: site, typ: tup.At(i).Type(), index: i}
-				b.addInFlowEdge(resultVar{f: f, index: i}, local)
+	if cc.Method == nil && !signatureHasFlow(cc.Signature()) {
+		return
+	}
+	args := make([]flowNode, len(cc.Args))
+	for i, v := range cc.Args {
+		args[i] = prepareFlow(b.nodeFromVal(v))
+	}
+	var receiver flowNode
+	offset := 0
+	if cc.Method != nil {
+		receiver = prepareFlow(b.nodeFromVal(cc.Value))
+		offset = 1
+	}
+	var results []flowNode
+	if site, ok := c.(ssa.Value); ok {
+		if tuple, ok := site.Type().(*types.Tuple); ok {
+			results = make([]flowNode, tuple.Len())
+			for i := range results {
+				results[i] = prepareFlow(indexedLocal{val: site, typ: tuple.At(i).Type(), index: i})
 			}
+		} else {
+			results = []flowNode{prepareFlow(b.nodeFromVal(site))}
+		}
+	}
+	for f := range siteCallees(c, b.callees) {
+		flow := b.functionFlow(f)
+		// An interface receiver only carries useful type flow to a named
+		// function receiver (golang/go#57756).
+		if cc.Method != nil && flow.functionReceiver {
+			b.flowEdge(&receiver, &flow.params[0])
+		}
+		for i := range args {
+			// Imported functions may lack parameter values (golang/go#50670).
+			if i+offset >= len(flow.params) {
+				break
+			}
+			l, r := &flow.params[i+offset], &args[i]
+			b.flowEdge(r, l)
+			if canAlias(l.n, r.n) {
+				b.flowEdge(l, r)
+			}
+		}
+		for i := range results {
+			b.flowEdge(&flow.results[i], &results[i])
 		}
 	}
 }
 
-func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
-	// When f has no parameters (including receiver), there is no type
-	// flow here. Also, f's body and parameters might be missing, such
-	// as when vta is used within the golang.org/x/tools/go/analysis
-	// framework (see github.com/golang/go/issues/50670).
-	if len(f.Params) == 0 {
-		return
+func signatureHasFlow(sig *types.Signature) bool {
+	if recv := sig.Recv(); recv != nil && hasTypeFlow(recv.Type()) {
+		return true
 	}
-	cc := c.Common()
-	if cc.Method != nil {
-		// In principle we don't add interprocedural flows for receiver
-		// objects. At a call site, the receiver object is interface
-		// while the callee object is concrete. The flow from interface
-		// to concrete type in general does not make sense. The exception
-		// is when the concrete type is a named function type (see #57756).
-		//
-		// The flow other way around would bake in information from the
-		// initial call graph.
-		if isFunction(f.Params[0].Type()) {
-			b.addInFlowEdge(b.nodeFromVal(cc.Value), b.nodeFromVal(f.Params[0]))
+	for _, tuple := range []*types.Tuple{sig.Params(), sig.Results()} {
+		for i := 0; i < tuple.Len(); i++ {
+			if hasTypeFlow(tuple.At(i).Type()) {
+				return true
+			}
 		}
 	}
-
-	offset := 0
-	if cc.Method != nil {
-		offset = 1
-	}
-	for i, v := range cc.Args {
-		// Parameters of f might not be available, as in the case
-		// when vta is used within the golang.org/x/tools/go/analysis
-		// framework (see github.com/golang/go/issues/50670).
-		//
-		// TODO: investigate other cases of missing body and parameters
-		if len(f.Params) <= i+offset {
-			return
-		}
-		b.addInFlowAliasEdges(b.nodeFromVal(f.Params[i+offset]), b.nodeFromVal(v))
-	}
+	return false
 }
 
 // rtrn creates flow edges from the operands of the return
