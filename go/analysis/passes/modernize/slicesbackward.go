@@ -202,6 +202,12 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				otherUses++
 			}
 
+			// The body reads neither i nor s[i], so the loop direction is not
+			// observable and there is nothing for slices.Backward to express.
+			if otherUses == 0 && sliceIdxs == 0 {
+				continue nextLoop
+			}
+
 			// Build the suggested fix.
 			//
 			// for i := len(s) - 1;     i >= 0; i-- { ... s[i] ... }
@@ -230,9 +236,9 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				})
 			}
 
-			// Replace the loop header with a range over slices.Backward. In
-			// well-typed code, at least one of the index or value variables must be
-			// referenced inside the loop body (otherUses + sliceIndexes > 0).
+			// Replace the loop header with a range over slices.Backward. By the
+			// check above, at least one of the index or value variables is
+			// referenced inside the loop body (otherUses + sliceIdxs > 0).
 			var vars string
 			if otherUses == 0 { // sliceIdxs > 0
 				// All uses of i are s[i]; drop the index variable.
