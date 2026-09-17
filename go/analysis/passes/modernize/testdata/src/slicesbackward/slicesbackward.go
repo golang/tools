@@ -78,6 +78,20 @@ func indexNoSliceAccess(s []int) {
 	}
 }
 
+// Should NOT fire: the body reads neither i nor s[i], so the loop direction
+// is not observable.
+func indexUnused(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		println("hi")
+	}
+}
+
+// Should NOT fire: empty body, so neither i nor s[i] is read.
+func emptyBody(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+	}
+}
+
 // Should NOT fire: condition is i > 0, not i >= 0.
 func condGT(s []int) {
 	for i := len(s) - 1; i > 0; i-- {
