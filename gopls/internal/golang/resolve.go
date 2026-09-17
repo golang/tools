@@ -34,17 +34,6 @@ import (
 // 5. Client return ApplyWorkspaceEditResult with applied = true
 // 6. Client sends a textDocument/didChange notification, with the edits applied (optional)
 
-// In vscode-go, because it is a standard LSP client, cannot do step 4 as
-// described. Instead it calls "workspace/executeCommand" with command
-// 'gopls.lsp' and parameter.Method "command/resolve".
-//
-// ExecuteCommand() calls command.Dispatch() which calls LSP()
-// which calls protocol.ServerDispatchCall("command/resolve")
-// which calls ResolveCommand. command.Dispatch() switches on param.Command and LSP() passes param.Method
-// to ServerDispatchCall
-
-// The neovim flow is simpler, as 'command/resolve' can be invoked directly.
-
 var addTagsForm = []protocol.FormField{
 	{
 		ID:          "tags",
