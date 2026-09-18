@@ -905,7 +905,7 @@ func supportsDialog(options settings.ClientOptions, forms ...[]protocol.FormFiel
 	// Ensure that at least one form does not depend on unsupported types.
 	for _, form := range forms {
 		if !slices.ContainsFunc(form, func(field protocol.FormField) bool {
-			return !options.SupportedInteractiveInputTypes[formFieldInputType(field.Type)]
+			return !options.SupportedInteractiveInputTypes[formFieldInputKind(field.Type)]
 		}) {
 			return true // form is free of unsupported types
 		}
@@ -914,26 +914,26 @@ func supportsDialog(options settings.ClientOptions, forms ...[]protocol.FormFiel
 	return false
 }
 
-// formFieldInputType extracts the interactive input type from a
+// formFieldInputKind extracts the interactive input type from a
 // protocol.FormFieldType*.
 //
 // It panics if the type is unknown, as forms are generated internally by gopls.
-func formFieldInputType(typ any) settings.InteractiveInputType {
+func formFieldInputKind(typ any) protocol.FormFieldKind {
 	switch t := typ.(type) {
 	case protocol.FormFieldTypeString:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeFile:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeBool:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeNumber:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeEnum:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeLazyEnum:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	case protocol.FormFieldTypeList:
-		return settings.InteractiveInputType(t.Kind)
+		return t.Kind
 	default:
 		// A form field type was added to gopls without updating this function.
 		panic(fmt.Sprintf("gopls bug: unhandled FormFieldType %T", typ))

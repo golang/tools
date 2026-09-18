@@ -128,9 +128,9 @@ func resolveImplementInterface(options settings.ClientOptions, param *protocol.E
 	}
 
 	var form []protocol.FormField
-	if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeLazyEnum]; ok {
+	if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindLazyEnum]; ok {
 		form = implementInterfaceFormLazyEnum
-	} else if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeString]; ok {
+	} else if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindString]; ok {
 		form = implementInterfaceFormString
 	} else {
 		// This should not happen, as the gopls should not offer such code
@@ -169,9 +169,9 @@ func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.Exec
 		return err
 	}
 	var form []protocol.FormField
-	if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeFile]; ok {
+	if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindFile]; ok {
 		form = moveDeclarationFormFile
-	} else if ok := options.SupportedInteractiveInputTypes[settings.InteractiveInputTypeString]; ok {
+	} else if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindString]; ok {
 		form = moveDeclarationFormString
 	} else {
 		// This should not happen because gopls should not offer this code action if the
