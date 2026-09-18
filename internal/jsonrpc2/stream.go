@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"strconv"
 	"strings"
 )
@@ -31,15 +30,15 @@ type Stream interface {
 	Close() error
 }
 
-// Framer wraps a network connection up into a Stream.
+// Framer wraps an io.ReadWriteCloser up into a Stream.
 // It is responsible for the framing and encoding of messages into wire form.
 // NewRawStream and NewHeaderStream are implementations of a Framer.
-type Framer func(conn net.Conn) Stream
+type Framer func(conn io.ReadWriteCloser) Stream
 
-// NewRawStream returns a Stream built on top of a net.Conn.
+// NewRawStream returns a Stream built on top of an io.ReadWriteCloser.
 // The messages are sent with no wrapping, and rely on json decode consistency
 // to determine message boundaries.
-func NewRawStream(conn net.Conn) Stream {
+func NewRawStream(conn io.ReadWriteCloser) Stream {
 	return &rawStream{
 		conn: conn,
 		in:   json.NewDecoder(conn),
@@ -47,7 +46,7 @@ func NewRawStream(conn net.Conn) Stream {
 }
 
 type rawStream struct {
-	conn net.Conn
+	conn io.ReadWriteCloser
 	in   *json.Decoder
 }
 
@@ -83,10 +82,10 @@ func (s *rawStream) Close() error {
 	return s.conn.Close()
 }
 
-// NewHeaderStream returns a Stream built on top of a net.Conn.
+// NewHeaderStream returns a Stream built on top of a io.ReadWriteCloser.
 // The messages are sent with HTTP content length and MIME type headers.
 // This is the format used by LSP and others.
-func NewHeaderStream(conn net.Conn) Stream {
+func NewHeaderStream(conn io.ReadWriteCloser) Stream {
 	return &headerStream{
 		conn: conn,
 		in:   bufio.NewReader(conn),
@@ -94,7 +93,7 @@ func NewHeaderStream(conn net.Conn) Stream {
 }
 
 type headerStream struct {
-	conn net.Conn
+	conn io.ReadWriteCloser
 	in   *bufio.Reader
 }
 
