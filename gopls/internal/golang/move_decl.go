@@ -459,6 +459,11 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 //
 // Also returns true if the dependency added is from an iota const group,
 // as we should avoid doing duplicate work on these objects.
+//
+// TODO(hxjiang): make this O(1). Rescanning the enclosing block per constant
+// makes computing the moving set of an n-constant block O(n^2) (33ms at
+// n=1000). Instead, build an implicitDeclGraph in buildSymbolRefGraph that
+// links each coupling class in a cycle.
 func implicitDependencies(pkg *cache.Package, obj types.Object) (coupled []types.Object, isIota bool) {
 	switch obj := obj.(type) {
 	case *types.TypeName:
@@ -530,43 +535,34 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // For each symbol's dependencies (as specified by edges in the declGraph), we add
 // the symbol to the moving set.
 func computeMovingSet(srcPkg, destPkg *cache.Package, graph declGraph, targetObj types.Object) map[types.Object]bool {
-	moving := make(map[types.Object]bool)
+	visited := map[types.Object]bool{targetObj: true}
 	if srcPkg == destPkg {
 		// If the move is within the same package, we only need to move the
 		// declaration itself.
-		moving[targetObj] = true
-		return moving
+		return visited
 	}
 
-	var queue []types.Object
-	addToMoving := func(obj types.Object) {
-		if obj == nil || moving[obj] {
-			return
+	queue := []types.Object{targetObj}
+	enqueue := func(obj types.Object) {
+		if visited[obj] {
+			return // visited
 		}
-		moving[obj] = true
+
+		visited[obj] = true
 		queue = append(queue, obj)
-		deps, isIota := implicitDependencies(srcPkg, obj)
-		for _, c := range deps {
-			if !moving[c] {
-				moving[c] = true
-				// We will have already added all necessary dependencies of the const group
-				// to the moving set, so we don't need to explore them again.
-				if !isIota {
-					queue = append(queue, c)
-				}
-			}
-		}
 	}
-	addToMoving(targetObj)
-
 	for len(queue) > 0 {
-		u := queue[0]
+		current := queue[0] // dequeue
 		queue = queue[1:]
-		for v := range graph[u] {
-			addToMoving(v)
+		for v := range graph[current] { // explicit deps
+			enqueue(v)
+		}
+		deps, _ := implicitDependencies(srcPkg, current) // implicit deps
+		for _, c := range deps {
+			enqueue(c)
 		}
 	}
-	return moving
+	return visited
 }
 
 // pkgTransitivelyImports reports whether fromPkg imports targetPkg directly or transitively.
