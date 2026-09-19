@@ -17,7 +17,7 @@ import (
 
 // MethodValue returns the Function implementing method sel, building
 // wrapper methods on demand. It returns nil if sel denotes an
-// interface or generic method.
+// interface or generic method, or a method of a generic type.
 //
 // Precondition: sel.Kind() == MethodVal.
 //
@@ -28,31 +28,27 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if sel.Kind() != types.MethodVal {
 		panic(fmt.Sprintf("MethodValue(%s) kind != MethodVal", sel))
 	}
+
+	method := sel.Obj().(*types.Func)
+	if method.Signature().TypeParams().Len() > 0 {
+		return nil // generic method
+	}
+
 	T := sel.Recv()
 	if types.IsInterface(T) {
 		return nil // interface method or type parameter
 	}
 
-	// When the method has no type parameters of its own, the selection type
-	// is parameterized iff the receiver is, so the receiver check alone
-	// suffices and Selection.Type() — which allocates a new Signature on
-	// every call — need not be materialized. Only generic methods take the
-	// full check; there the type is canonicalized first, since
-	// isParameterized memoizes by type identity and an uncanonicalized
-	// argument would add one permanently retained entry per call (#81308).
-	if sel.Obj().(*types.Func).Signature().TypeParams().Len() == 0 {
-		if prog.isParameterized(T) {
-			return nil // method on generic type
-		}
-	} else if prog.isParameterized(T, prog.canon.Type(sel.Type())) {
-		return nil // method on generic type or generic method
+	// We can avoid materializing sel.Type(): it will be parameterized iff
+	// the receiver type T is too (see go.dev/issue/81308).
+	if prog.isParameterized(T) {
+		return nil // method on generic type
 	}
 
 	if prog.mode&LogSource != 0 {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	method := sel.Obj().(*types.Func)
 	key := methodKeyOf(method.Pkg(), method.Name())
 
 	// The critical section returns a builder only if it created a

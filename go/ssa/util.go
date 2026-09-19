@@ -309,6 +309,13 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 func (c *canonizer) Type(T types.Type) types.Type {
 	T = types.Unalias(T) // remove the top level alias.
 
+	// A Signature's receiver is not part of its type identity, so a method
+	// signature must not stand in for an identical function signature, nor
+	// for a method signature with a different receiver (go.dev/issue/81602).
+	if sig, ok := T.(*types.Signature); ok && sig.Recv() != nil {
+		return T
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
