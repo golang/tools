@@ -1,0 +1,17 @@
+Check that the modernize analyzer does not report
+invalid SuggestedFixes on an unclosed struct literal.
+
+See golang/go#81590.
+
+-- flags --
+-ignore_extra_diags
+-min_go=go1.27
+
+-- a.go --
+//go:build go1.27
+package a
+
+type B struct { x int }
+type A struct { B }
+
+var _ = A{B: B{x: 1
