@@ -1,8 +1,11 @@
-// Copyright 2023 The Go Authors. All rights reserved.
+// Copyright 2026 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// The unusedparams command runs the unusedparams analyzer.
+//go:build ignore
+
+// The unusedparams command applies the golang.org/x/tools/gopls/internal/analysis/unusedparams
+// analysis to the specified packages of Go source code.
 package main
 
 import (

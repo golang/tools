@@ -22,6 +22,9 @@ import (
 //go:embed doc.go
 var doc string
 
+// No standalone main.go: this analyzer only adds fixes to type errors,
+// and is thus useful only within gopls.
+
 var Analyzer = &analysis.Analyzer{
 	Name:             "noresultvalues",
 	Doc:              analyzerutil.MustExtractDoc(doc, "noresultvalues"),

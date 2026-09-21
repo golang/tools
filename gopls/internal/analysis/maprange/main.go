@@ -4,7 +4,8 @@
 
 //go:build ignore
 
-// The unusedfunc command runs the maprange analyzer.
+// The maprange command applies the golang.org/x/tools/gopls/internal/analysis/maprange
+// analysis to the specified packages of Go source code.
 package main
 
 import (

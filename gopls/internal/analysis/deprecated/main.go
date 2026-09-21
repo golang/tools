@@ -4,13 +4,13 @@
 
 //go:build ignore
 
-// The writestring command applies the golang.org/x/tools/gopls/internal/analysis/writestring
+// The deprecated command applies the golang.org/x/tools/gopls/internal/analysis/deprecated
 // analysis to the specified packages of Go source code.
 package main
 
 import (
 	"golang.org/x/tools/go/analysis/singlechecker"
-	"golang.org/x/tools/gopls/internal/analysis/writestring"
+	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 )
 
-func main() { singlechecker.Main(writestring.Analyzer) }
+func main() { singlechecker.Main(deprecated.Analyzer) }

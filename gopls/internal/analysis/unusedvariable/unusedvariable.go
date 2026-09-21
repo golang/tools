@@ -19,6 +19,9 @@ import (
 
 const Doc = `check for unused variables and suggest fixes`
 
+// No standalone main.go: this analyzer only adds fixes to type errors,
+// and is thus useful only within gopls.
+
 var Analyzer = &analysis.Analyzer{
 	Name:             "unusedvariable",
 	Doc:              Doc,
