@@ -5,11 +5,15 @@
 package golang
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,6 +22,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -90,21 +95,34 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
-	var destPkg *cache.Package
-	if fh.URI().DirPath() == destURI.DirPath() {
-		// Moving within the same package.
-		destPkg = srcPkg
-	} else {
-		destPkg, _, _ = NarrowestPackageForFile(ctx, snapshot, destURI)
-		if destPkg == nil {
-			// Destination file is new. Find an existing package in the same directory
-			// as the destination file.
-			destPkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath())
+	var (
+		destPkg *cache.Package
+		destFH  file.Handle
+		destPGF *parsego.File
+	)
+	{
+		destFH, err = snapshot.ReadFile(ctx, destURI)
+		if err != nil {
+			return nil, protocol.Location{}, err
 		}
-	}
-	if destPkg == nil {
-		// TODO: support destination file in a new package (destPkg == nil).
-		return nil, protocol.Location{}, fmt.Errorf("could not resolve destination package")
+		if _, err := destFH.Content(); err == nil { // destination file exists
+			destPkg, destPGF, err = NarrowestPackageForFile(ctx, snapshot, destURI)
+			if err != nil {
+				return nil, protocol.Location{}, err
+			}
+		} else if errors.Is(err, os.ErrNotExist) { // destination file does not exist
+			// TODO(mkalil): narrowestPackageForDir always returns the non-test
+			// package, but if the dest URI is ".../_test.go", we should consider
+			// asking the user whether to use package "dest_test" or package
+			// "dest" through dynamic questions.
+			destPkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath())
+			if destPkg == nil {
+				// TODO: support destination file in a new package (destPkg == nil).
+				return nil, protocol.Location{}, fmt.Errorf("could not resolve destination package")
+			}
+		} else { // unknown error
+			return nil, protocol.Location{}, err
+		}
 	}
 
 	start, end, err := srcPGF.RangePos(loc.Range)
@@ -125,11 +143,25 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err := canMove(snapshot, srcPkg, destPkg, destURI, graph, moving, targetObj); err != nil {
 		return nil, protocol.Location{}, err
 	}
-	return nil, protocol.Location{}, nil
+	// Generate protocol.DocumentChanges necessary for moving the declaration.
+
+	// Add the moving decls to the dest file.
+	changes, destRng, err := addDeclsToFile(ctx, snapshot, srcPkg, destPkg, srcPGF, destPGF, destFH, moving)
+	// TODO(mkalil):
+	// - Modify the decls to use local import names in the dest package.
+	// - Handle floating comments.
+	// - Remove the decls from the current file and remove unnecessary imports.
+	// - Add imports to the dest file.
+	// - Update references across all packages.
+	return changes, protocol.Location{URI: destURI, Range: destRng}, nil
 }
 
-// narrowestPackageForDir finds the package corresponding to dir, assuming that the file
-// at dir does not yet exist.
+// narrowestPackageForDir finds the non-test package corresponding to dir,
+// assuming that the file at dir does not yet exist.
+//
+// By filtering out packages with mp.ForTest != "", it skips test variants
+// (e.g. "p [p.test]") and external test packages (e.g. "p_test [p.test]"),
+// ensuring that only the ordinary non-test package for the directory is returned.
 func narrowestPackageForDir(ctx context.Context, snapshot *cache.Snapshot, dir string) *cache.Package {
 	metas, err := snapshot.WorkspaceMetadata(ctx)
 	if err != nil {
@@ -534,7 +566,10 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 		srcPkgPath = srcMeta.PkgPath
 		srcName    = srcMeta.Name
 		destName   = destMeta.Name
-		isCrossPkg = srcMeta.ID != destMeta.ID
+		// Test variants have different IDs but share the same package path.
+		// A move from a normal package to a test variant is considered
+		// a same package move.
+		isCrossPkg = srcMeta.PkgPath != destMeta.PkgPath
 	)
 	// We don't need to check for import cycles or package-level symbols conflicts
 	// if the move is in the same package.
@@ -591,4 +626,148 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 		}
 	}
 	return nil
+}
+
+// extractMovingDeclarations returns the text of the declarations to move.
+// TODO(mkalil): Update moving decls to use local import names.
+// TODO(mkalil): Preserve floating comments.
+func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bool) (string, error) {
+	var (
+		info = srcPkg.TypesInfo()
+		fset = srcPkg.FileSet()
+		buf  bytes.Buffer
+	)
+	for _, pgf := range srcPkg.CompiledGoFiles() {
+		for _, decl := range pgf.File.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if obj, ok := info.Defs[decl.Name].(*types.Func); ok && moving[obj] {
+					var declBuf bytes.Buffer
+					if err := format.Node(&declBuf, fset, decl); err != nil {
+						return "", err
+					}
+					buf.WriteString(declBuf.String())
+					buf.WriteString("\n\n")
+				}
+			case *ast.GenDecl:
+				var movingSpecs []ast.Spec
+				for _, spec := range decl.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						if obj, ok := info.Defs[spec.Name]; ok && moving[obj] {
+							movingSpecs = append(movingSpecs, spec)
+						}
+					case *ast.ValueSpec:
+						for _, id := range spec.Names {
+							if obj, ok := info.Defs[id]; ok && moving[obj] {
+								movingSpecs = append(movingSpecs, spec)
+							}
+						}
+					}
+				}
+
+				if len(movingSpecs) > 0 {
+					var declToPrint ast.Node = decl
+					if len(movingSpecs) < len(decl.Specs) {
+						// Only a subset of the specs are moving, so wrap them in a new GenDecl.
+						declToPrint = &ast.GenDecl{
+							Doc:    decl.Doc,
+							TokPos: decl.TokPos,
+							Tok:    decl.Tok,
+							Specs:  movingSpecs,
+						}
+					}
+					var declBuf bytes.Buffer
+					if err := format.Node(&declBuf, fset, declToPrint); err != nil {
+						return "", err
+					}
+					buf.WriteString(declBuf.String())
+					buf.WriteString("\n\n")
+				}
+			}
+		}
+	}
+	return buf.String(), nil
+}
+
+// addDeclsToFile returns the protocol.DocumentChanges necessary
+// to add the given list of declarations to the target file.
+// It also returns the protocol.Range where the first declaration was added in destURI.
+func addDeclsToFile(ctx context.Context, snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, srcPGF, destPGF *parsego.File, destFH file.Handle,
+	moving map[types.Object]bool) ([]protocol.DocumentChange, protocol.Range, error) {
+	declsText, err := extractMovingDeclarations(srcPkg, moving)
+	if err != nil {
+		return nil, protocol.Range{}, err
+	}
+
+	// Destination file already exists.
+	if destPGF != nil {
+		var edits []protocol.TextEdit
+		// TODO(mkalil): write the file imports
+
+		// Append the formatted declarations to the end of the file.
+		endRange, err := destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
+		if err != nil {
+			return nil, protocol.Range{}, err
+		}
+		edits = append(edits, protocol.TextEdit{
+			Range:   endRange,
+			NewText: declsText + "\n",
+		})
+		// Range where we add the declaration (two lines after the current file end)
+		destRng := protocol.Range{
+			Start: protocol.Position{Line: endRange.End.Line + 2, Character: 0},
+			End:   protocol.Position{Line: endRange.End.Line + 2, Character: 0},
+		}
+		return []protocol.DocumentChange{
+			protocol.DocumentChangeEdit(destFH, edits),
+		}, destRng, nil
+	}
+
+	// Destination file is new. We need to write the package declaration.
+	// If it is a same package move, also copy the build constraints
+	// and copyright comment if they exist.
+	var fileBuf bytes.Buffer
+	if srcPkg.Metadata().ID == destPkg.Metadata().ID {
+		if c := CopyrightComment(srcPGF.File); c != nil {
+			text, err := srcPGF.NodeText(c)
+			if err != nil {
+				return nil, protocol.Range{}, err
+			}
+			fileBuf.Write(text)
+			// One empty line between copyright header and following.
+			fileBuf.WriteString("\n\n")
+		}
+
+		if c := buildConstraintComment(srcPGF.File); c != nil {
+			text, err := srcPGF.NodeText(c)
+			if err != nil {
+				return nil, protocol.Range{}, err
+			}
+			fileBuf.Write(text)
+			// One empty line between build constraint and following.
+			fileBuf.WriteString("\n\n")
+		}
+	}
+	fmt.Fprintf(&fileBuf, "package %s\n\n", destPkg.Types().Name())
+	fileBuf.WriteString(declsText)
+	fileBuf.WriteString("\n")
+
+	// TODO(mkalil): write the file imports
+	formatted, err := format.Source(fileBuf.Bytes())
+	if err != nil {
+		return nil, protocol.Range{}, fmt.Errorf("formatting new file: %w", err)
+	}
+
+	// TODO(mkalil): Empty protocol.Range matches the top of the file. Show the
+	// actual location of the symbol instead.
+	return []protocol.DocumentChange{
+		protocol.DocumentChangeCreate(destFH.URI()),
+		protocol.DocumentChangeEdit(destFH, []protocol.TextEdit{
+			{
+				Range:   protocol.Range{},
+				NewText: string(formatted),
+			},
+		}),
+	}, protocol.Range{}, nil
 }

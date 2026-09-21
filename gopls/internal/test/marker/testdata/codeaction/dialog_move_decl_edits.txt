@@ -1,0 +1,194 @@
+Test move declaration refactoring: extracting declarations to the destination file.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/movedecledits
+
+go 1.20
+
+-- src/func.go --
+package src
+
+func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_func)
+	return a + b
+}
+
+-- src/type.go --
+package src
+
+type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_type)
+	X int
+	Y int
+}
+
+-- src/newfile.go --
+package src
+
+// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
+func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file)
+	return x * y
+}
+
+-- src/samepkg_new.go --
+package src
+
+// Same-package move to a new file: src/created.go does not exist yet and must be created.
+func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/created.go"}`, result=move_samepkg_new_file)
+	return "same package new file"
+}
+
+-- src/header.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.20
+
+package src
+
+func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/header_created.go"}`, result=move_samepkg_header)
+	return "header"
+}
+
+
+-- src/spec.go --
+package src
+
+type (
+	First int
+	Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
+)
+
+-- src/counter.go --
+package src
+
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_decl_with_method)
+	Count int
+}
+
+func (c *Counter) Inc() {
+	c.Count++
+}
+
+-- src/iota.go --
+package src
+
+const (
+	Zero = iota
+	One
+	Two
+)
+
+-- src/helper.go --
+package src
+
+func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/helper_test.go"}`, result=move_to_test_file)
+	return 42
+}
+
+-- src/helper_test.go --
+package src
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+-- dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- @move_to_test_file/src/helper_test.go --
+package src
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+func HelperForTest() int {
+	return 42
+}
+
+
+-- @move_func/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func Add(a, b int) int {
+	return a + b
+}
+
+
+-- @move_type/dest/dest.go --
+package dest
+
+func Existing() {}
+
+type Point struct {
+	X int
+	Y int
+}
+
+
+-- @move_new_file/dest/newfile.go --
+package dest
+
+// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
+func Multiply(x, y int) int {
+	return x * y
+}
+-- @move_samepkg_new_file/src/created.go --
+package src
+
+// Same-package move to a new file: src/created.go does not exist yet and must be created.
+func Separate() string {
+	return "same package new file"
+}
+-- @move_samepkg_header/src/header_created.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.20
+
+package src
+
+func WithHeader() string {
+	return "header"
+}
+-- @move_subset_spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+type Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
+
+
+
+-- @move_decl_with_method/dest/dest.go --
+package dest
+
+func Existing() {}
+
+type Counter struct {
+	Count int
+}
+
+func (c *Counter) Inc() {
+	c.Count++
+}
+
+
