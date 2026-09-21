@@ -1,0 +1,185 @@
+Test move declaration refactoring: import additions and deletions.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/movedeclimports
+
+go 1.20
+
+-- dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- dest/has_import.go --
+package dest
+
+import "strings"
+
+func Join(a, b string) string {
+	return strings.Join([]string{a, b}, "")
+}
+
+-- src/single.go --
+package src
+
+import "bytes"
+
+func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
+	b.WriteString("hello")
+}
+
+-- src/dup_import.go --
+package src
+
+import "strings"
+
+func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
+	return strings.HasPrefix(s, "a")
+}
+
+-- src/newfile.go --
+package src
+
+import "bytes"
+
+func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
+	return new(bytes.Buffer)
+}
+
+-- src/shared.go --
+package src
+
+import "fmt"
+
+func MoveMe() { //@codeaction(re"MoveMe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_shared_import)
+	fmt.Println("moving")
+}
+
+func StayMe() {
+	fmt.Println("staying")
+}
+
+-- src/multi_spec.go --
+package src
+
+import (
+	"bytes"
+	"strings"
+)
+
+func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
+	b.Reset()
+}
+
+func StayStrings(s string) bool {
+	return strings.Contains(s, "x")
+}
+
+-- @move_single_import/src/single.go --
+package src
+
+
+
+func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
+	b.WriteString("hello")
+}
+
+-- @move_single_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+func WriteBuf(b *bytes.Buffer) {
+	b.WriteString("hello")
+}
+-- @move_dup_import/src/dup_import.go --
+package src
+
+
+
+func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
+	return strings.HasPrefix(s, "a")
+}
+
+-- @move_dup_import/dest/has_import.go --
+package dest
+
+import "strings"
+
+func Join(a, b string) string {
+	return strings.Join([]string{a, b}, "")
+}
+
+func HasPrefix(s string) bool {
+	return strings.HasPrefix(s, "a")
+}
+-- @move_new_file_import/src/newfile.go --
+package src
+
+
+
+func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
+	return new(bytes.Buffer)
+}
+
+-- @move_new_file_import/dest/newfile.go --
+package dest
+
+import (
+	"bytes"
+)
+
+func MakeBuf() *bytes.Buffer {
+	return new(bytes.Buffer)
+}
+-- @move_shared_import/dest/dest.go --
+package dest
+
+import "fmt"
+
+func Existing() {}
+
+func MoveMe() {
+	fmt.Println("moving")
+}
+-- @move_multi_spec_import/src/multi_spec.go --
+package src
+
+import (
+	
+	"strings"
+)
+
+func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
+	b.Reset()
+}
+
+func StayStrings(s string) bool {
+	return strings.Contains(s, "x")
+}
+
+-- @move_multi_spec_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+func MoveBytes(b *bytes.Buffer) {
+	b.Reset()
+}

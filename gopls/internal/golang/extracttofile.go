@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // canExtractToNewFile reports whether the code in the given range can be extracted to a new file.
@@ -33,11 +34,11 @@ func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 	return ok
 }
 
-// findImportEdits finds imports specs that needs to be added to the new file
-// or deleted from the old file if the range is extracted to a new file.
+// findImportChanges finds imports specs that needs to be added to the destination file
+// or deleted from the old file if the given ranges are extracted.
 //
 // TODO: handle dot imports.
-func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds, deletes []*ast.ImportSpec, _ error) {
+func findImportChanges(file *ast.File, info *types.Info, ranges ...astutil.Range) (adds, deletes []*ast.ImportSpec, _ error) {
 	// make a map from a pkgName to its references
 	pkgNameReferences := make(map[*types.PkgName][]*ast.Ident)
 	for ident, use := range info.Uses {
@@ -46,9 +47,9 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 		}
 	}
 
-	// PkgName referenced in the extracted selection must be
+	// PkgName referenced in any extracted selection must be
 	// imported in the new file.
-	// PkgName only referenced in the extracted selection must be
+	// PkgName only referenced in extracted selections must be
 	// deleted from the original file.
 	for _, spec := range file.Imports {
 		if spec.Name != nil && spec.Name.Name == "." {
@@ -62,7 +63,14 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 		usedInSelection := false
 		usedInNonSelection := false
 		for _, ident := range pkgNameReferences[pkgName] {
-			if posRangeContains(start, end, ident.Pos(), ident.End()) {
+			inSelection := false
+			for _, rng := range ranges {
+				if posRangeContains(rng.Start, rng.EndPos, ident.Pos(), ident.End()) {
+					inSelection = true
+					break
+				}
+			}
+			if inSelection {
 				usedInSelection = true
 			} else {
 				usedInNonSelection = true
@@ -117,7 +125,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, bug.Errorf("invalid range: %v", err)
 	}
 
-	adds, deletes, err := findImportEdits(pgf.File, pkg.TypesInfo(), start, end)
+	adds, deletes, err := findImportChanges(pgf.File, pkg.TypesInfo(), astutil.RangeOf(start, end))
 	if err != nil {
 		return nil, err
 	}

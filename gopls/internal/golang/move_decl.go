@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/ast/edge"
@@ -27,7 +28,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/refactor"
 )
 
 // moveDeclarationFormFile asks where to move a declaration, through the file
@@ -147,6 +150,9 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 
 	// Add the moving decls to the dest file.
 	changes, destRng, err := addDeclsToFile(ctx, snapshot, srcPkg, destPkg, srcPGF, destPGF, destFH, moving)
+	if err != nil {
+		return nil, protocol.Location{}, err
+	}
 	// TODO(mkalil):
 	// - Modify the decls to use local import names in the dest package.
 	// - Handle floating comments.
@@ -631,11 +637,13 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 // extractMovingDeclarations returns the text of the declarations to move.
 // TODO(mkalil): Update moving decls to use local import names.
 // TODO(mkalil): Preserve floating comments.
-func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bool) (string, error) {
+// TODO(mkalil): Refactor to return []declRange instead of text and ranges.
+func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bool) (string, []astutil.Range, error) {
 	var (
-		info = srcPkg.TypesInfo()
-		fset = srcPkg.FileSet()
-		buf  bytes.Buffer
+		info       = srcPkg.TypesInfo()
+		fset       = srcPkg.FileSet()
+		buf        bytes.Buffer
+		declRanges []astutil.Range
 	)
 	for _, pgf := range srcPkg.CompiledGoFiles() {
 		for _, decl := range pgf.File.Decls {
@@ -644,10 +652,11 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 				if obj, ok := info.Defs[decl.Name].(*types.Func); ok && moving[obj] {
 					var declBuf bytes.Buffer
 					if err := format.Node(&declBuf, fset, decl); err != nil {
-						return "", err
+						return "", nil, err
 					}
 					buf.WriteString(declBuf.String())
 					buf.WriteString("\n\n")
+					declRanges = append(declRanges, astutil.NodeRange(decl))
 				}
 			case *ast.GenDecl:
 				var movingSpecs []ast.Spec
@@ -656,11 +665,13 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 					case *ast.TypeSpec:
 						if obj, ok := info.Defs[spec.Name]; ok && moving[obj] {
 							movingSpecs = append(movingSpecs, spec)
+							declRanges = append(declRanges, astutil.NodeRange(spec))
 						}
 					case *ast.ValueSpec:
 						for _, id := range spec.Names {
 							if obj, ok := info.Defs[id]; ok && moving[obj] {
 								movingSpecs = append(movingSpecs, spec)
+								declRanges = append(declRanges, astutil.NodeRange(spec))
 							}
 						}
 					}
@@ -679,7 +690,7 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 					}
 					var declBuf bytes.Buffer
 					if err := format.Node(&declBuf, fset, declToPrint); err != nil {
-						return "", err
+						return "", nil, err
 					}
 					buf.WriteString(declBuf.String())
 					buf.WriteString("\n\n")
@@ -687,87 +698,152 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 			}
 		}
 	}
-	return buf.String(), nil
+	return buf.String(), declRanges, nil
 }
 
-// addDeclsToFile returns the protocol.DocumentChanges necessary
-// to add the given list of declarations to the target file.
-// It also returns the protocol.Range where the first declaration was added in destURI.
+// addDeclsToFile returns the protocol.DocumentChanges necessary to add the
+// given list of declarations to the target file and update imports (adding
+// imports in the dest file and removing unused imports in the src file). It
+// also returns the protocol.Range where the first declaration was added in
+// destURI.
 func addDeclsToFile(ctx context.Context, snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, srcPGF, destPGF *parsego.File, destFH file.Handle,
 	moving map[types.Object]bool) ([]protocol.DocumentChange, protocol.Range, error) {
-	declsText, err := extractMovingDeclarations(srcPkg, moving)
+	declsText, declRanges, err := extractMovingDeclarations(srcPkg, moving)
+	if err != nil {
+		return nil, protocol.Range{}, err
+	}
+	destAddImportEdits, srcDeleteImportEdits, err := updateSrcDestImports(srcPkg, destPkg, srcPGF, destPGF, declRanges)
 	if err != nil {
 		return nil, protocol.Range{}, err
 	}
 
-	// Destination file already exists.
-	if destPGF != nil {
-		var edits []protocol.TextEdit
-		// TODO(mkalil): write the file imports
-
-		// Append the formatted declarations to the end of the file.
-		endRange, err := destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
+	var changes []protocol.DocumentChange
+	if len(srcDeleteImportEdits) > 0 {
+		srcFH, err := snapshot.ReadFile(ctx, srcPGF.URI)
 		if err != nil {
 			return nil, protocol.Range{}, err
 		}
-		edits = append(edits, protocol.TextEdit{
-			Range:   endRange,
-			NewText: declsText + "\n",
+		changes = append(changes, protocol.DocumentChangeEdit(srcFH, srcDeleteImportEdits))
+	}
+
+	var (
+		destEdits []protocol.TextEdit
+		destRng   protocol.Range
+	)
+
+	if destPGF == nil {
+		// Destination file is new.
+		// Create file.
+		changes = append(changes, protocol.DocumentChangeCreate(destFH.URI()))
+
+		var headerBuf bytes.Buffer
+		// Add copyright and build constraints if same package move.
+		if srcPkg.Metadata().ID == destPkg.Metadata().ID {
+			if c := CopyrightComment(srcPGF.File); c != nil {
+				text, err := srcPGF.NodeText(c)
+				if err != nil {
+					return nil, protocol.Range{}, err
+				}
+				headerBuf.Write(text)
+				headerBuf.WriteString("\n\n")
+			}
+
+			if c := buildConstraintComment(srcPGF.File); c != nil {
+				text, err := srcPGF.NodeText(c)
+				if err != nil {
+					return nil, protocol.Range{}, err
+				}
+				headerBuf.Write(text)
+				headerBuf.WriteString("\n\n")
+			}
+		}
+		// Add package clause
+		fmt.Fprintf(&headerBuf, "package %s\n\n", destPkg.Types().Name())
+		destEdits = append(destEdits, protocol.TextEdit{
+			Range:   protocol.Range{},
+			NewText: headerBuf.String(),
 		})
-		// Range where we add the declaration (two lines after the current file end)
-		destRng := protocol.Range{
+	}
+
+	// Import edits and moving decls.
+	destEdits = append(destEdits, destAddImportEdits...)
+	endRange := protocol.Range{}
+	if destPGF != nil {
+		endRange, err = destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
+		if err != nil {
+			return nil, protocol.Range{}, err
+		}
+		// Range where we add the moving declarations (two lines after the current file end)
+		destRng = protocol.Range{
 			Start: protocol.Position{Line: endRange.End.Line + 2, Character: 0},
 			End:   protocol.Position{Line: endRange.End.Line + 2, Character: 0},
 		}
-		return []protocol.DocumentChange{
-			protocol.DocumentChangeEdit(destFH, edits),
-		}, destRng, nil
 	}
+	destEdits = append(destEdits, protocol.TextEdit{
+		Range:   endRange,
+		NewText: strings.TrimRight(declsText, "\n") + "\n", // ensure decl text ends with one newline
+	})
 
-	// Destination file is new. We need to write the package declaration.
-	// If it is a same package move, also copy the build constraints
-	// and copyright comment if they exist.
-	var fileBuf bytes.Buffer
-	if srcPkg.Metadata().ID == destPkg.Metadata().ID {
-		if c := CopyrightComment(srcPGF.File); c != nil {
-			text, err := srcPGF.NodeText(c)
-			if err != nil {
-				return nil, protocol.Range{}, err
-			}
-			fileBuf.Write(text)
-			// One empty line between copyright header and following.
-			fileBuf.WriteString("\n\n")
-		}
+	changes = append(changes, protocol.DocumentChangeEdit(destFH, destEdits))
+	return changes, destRng, nil
+}
 
-		if c := buildConstraintComment(srcPGF.File); c != nil {
-			text, err := srcPGF.NodeText(c)
-			if err != nil {
-				return nil, protocol.Range{}, err
-			}
-			fileBuf.Write(text)
-			// One empty line between build constraint and following.
-			fileBuf.WriteString("\n\n")
-		}
-	}
-	fmt.Fprintf(&fileBuf, "package %s\n\n", destPkg.Types().Name())
-	fileBuf.WriteString(declsText)
-	fileBuf.WriteString("\n")
-
-	// TODO(mkalil): write the file imports
-	formatted, err := format.Source(fileBuf.Bytes())
+// updateSrcDestImports returns:
+// - destAddImportEdits: text edits to add imports to the destination file
+// - srcDeleteImportEdits: text edits to remove unused imports from srcPGF
+// This only considers imports necessary based on packages used inside
+// the moving declarations.
+// Note: destPGF may be nil if the target destination file is a new file.
+func updateSrcDestImports(srcPkg, destPkg *cache.Package, srcPGF, destPGF *parsego.File, declRanges []astutil.Range) (
+	destAddImportEdits []protocol.TextEdit,
+	srcDeleteImportEdits []protocol.TextEdit,
+	err error,
+) {
+	adds, deletes, err := findImportChanges(srcPGF.File, srcPkg.TypesInfo(), declRanges...)
 	if err != nil {
-		return nil, protocol.Range{}, fmt.Errorf("formatting new file: %w", err)
+		return nil, nil, err
+	}
+	srcDeleteImportEdits = importDeletesEdits(srcPGF, deletes)
+	if destPGF != nil {
+		// Destination file already exists: calculate text edits via refactor.AddImport.
+		for _, spec := range adds {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return nil, nil, err
+			}
+			name := ""
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			_, impEdits := refactor.AddImport(destPkg.TypesInfo(), destPGF.File, name, path, "", destPGF.File.FileEnd-1)
+			for _, edit := range impEdits {
+				editRng, err := destPGF.PosRange(edit.Pos, edit.End)
+				if err != nil {
+					return nil, nil, err
+				}
+				destAddImportEdits = append(destAddImportEdits, protocol.TextEdit{
+					Range:   editRng,
+					NewText: string(edit.NewText),
+				})
+			}
+		}
+	} else if len(adds) > 0 {
+		// Destination file is new: insert imports at start of file.
+		var buf bytes.Buffer
+		buf.WriteString("import (\n")
+		for _, spec := range adds {
+			if spec.Name != nil {
+				fmt.Fprintf(&buf, "\t%s %s\n", spec.Name.Name, spec.Path.Value)
+			} else {
+				fmt.Fprintf(&buf, "\t%s\n", spec.Path.Value)
+			}
+		}
+		buf.WriteString(")\n\n")
+		destAddImportEdits = append(destAddImportEdits, protocol.TextEdit{
+			Range:   protocol.Range{},
+			NewText: buf.String(),
+		})
 	}
 
-	// TODO(mkalil): Empty protocol.Range matches the top of the file. Show the
-	// actual location of the symbol instead.
-	return []protocol.DocumentChange{
-		protocol.DocumentChangeCreate(destFH.URI()),
-		protocol.DocumentChangeEdit(destFH, []protocol.TextEdit{
-			{
-				Range:   protocol.Range{},
-				NewText: string(formatted),
-			},
-		}),
-	}, protocol.Range{}, nil
+	return destAddImportEdits, srcDeleteImportEdits, nil
 }

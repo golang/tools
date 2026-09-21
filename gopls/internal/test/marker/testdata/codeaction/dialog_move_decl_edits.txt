@@ -120,8 +120,6 @@ func TestExisting(t *testing.T) {}
 func HelperForTest() int {
 	return 42
 }
-
-
 -- @move_func/dest/dest.go --
 package dest
 
@@ -130,8 +128,6 @@ func Existing() {}
 func Add(a, b int) int {
 	return a + b
 }
-
-
 -- @move_type/dest/dest.go --
 package dest
 
@@ -141,8 +137,6 @@ type Point struct {
 	X int
 	Y int
 }
-
-
 -- @move_new_file/dest/newfile.go --
 package dest
 
@@ -175,9 +169,6 @@ package dest
 func Existing() {}
 
 type Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
-
-
-
 -- @move_decl_with_method/dest/dest.go --
 package dest
 
@@ -190,5 +181,3 @@ type Counter struct {
 func (c *Counter) Inc() {
 	c.Count++
 }
-
-

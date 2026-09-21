@@ -141,7 +141,7 @@ func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPk
 		typSpecBuf.WriteString("\n")
 	}
 	// Calculate imports to add to the destination file.
-	adds, deletes, err := findImportEdits(curPGF.File, curPkg.TypesInfo(), spec.Pos(), spec.End())
+	adds, deletes, err := findImportChanges(curPGF.File, curPkg.TypesInfo(), astutil.RangeOf(spec.Pos(), spec.End()))
 	if err != nil {
 		return nil, protocol.Range{}, err
 	}
