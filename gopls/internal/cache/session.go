@@ -559,6 +559,9 @@ checkFiles:
 		if folder == nil || !folder.Options.ZeroConfig {
 			continue // only guess views for open files
 		}
+		if folder.excludes(uri) {
+			continue
+		}
 		fh, err := fs.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
@@ -781,6 +784,8 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 		return nil, fmt.Errorf("session is shut down")
 	}
 
+	modifications = s.dropExcluded(modifications)
+
 	// Update overlays.
 	//
 	// This is done while holding viewMu because the set of open files affects
@@ -987,6 +992,31 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 		}
 	}
 	return result
+}
+
+// dropExcluded omits modifications for URIs excluded by a folder's directoryFilters.
+func (s *Session) dropExcluded(mods []file.Modification) []file.Modification {
+	if len(s.views) == 0 {
+		return mods
+	}
+	keep := mods[:0]
+	for _, m := range mods {
+		if s.excludedByFilters(m.URI) {
+			continue
+		}
+		keep = append(keep, m)
+	}
+	return keep
+}
+
+// excludedByFilters reports whether uri is excluded by any workspace folder filter.
+func (s *Session) excludedByFilters(uri protocol.DocumentURI) bool {
+	for _, v := range s.views {
+		if v.folder != nil && v.folder.excludes(uri) {
+			return true
+		}
+	}
+	return false
 }
 
 // updateOverlays updates the set of overlays and returns a map of any existing
