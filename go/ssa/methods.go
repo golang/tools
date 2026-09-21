@@ -32,10 +32,18 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	// Selection.Type allocates a new Signature on each call, and
-	// isParameterized memoizes by type identity, so an uncanonicalized
+	// When the method has no type parameters of its own, the selection type
+	// is parameterized iff the receiver is, so the receiver check alone
+	// suffices and Selection.Type() — which allocates a new Signature on
+	// every call — need not be materialized. Only generic methods take the
+	// full check; there the type is canonicalized first, since
+	// isParameterized memoizes by type identity and an uncanonicalized
 	// argument would add one permanently retained entry per call (#81308).
-	if prog.isParameterized(T, prog.canon.Type(sel.Type())) {
+	if sel.Obj().(*types.Func).Signature().TypeParams().Len() == 0 {
+		if prog.isParameterized(T) {
+			return nil // method on generic type
+		}
+	} else if prog.isParameterized(T, prog.canon.Type(sel.Type())) {
 		return nil // method on generic type or generic method
 	}
 
