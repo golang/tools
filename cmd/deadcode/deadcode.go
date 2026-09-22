@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	_ "embed"
 	"encoding/json"
 	"flag"
@@ -22,7 +23,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"slices"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -338,13 +338,8 @@ func main() {
 		// methods such as (T).Marshal and (*T).Unmarshal
 		// together better than sorting.
 		fns := slices.Collect(maps.Keys(m))
-		sort.Slice(fns, func(i, j int) bool {
-			xposn := fset.Position(fns[i].Pos())
-			yposn := fset.Position(fns[j].Pos())
-			if xposn.Filename != yposn.Filename {
-				return xposn.Filename < yposn.Filename
-			}
-			return xposn.Line < yposn.Line
+		slices.SortFunc(fns, func(x, y *ssa.Function) int {
+			return comparePos(fset, x.Pos(), y.Pos())
 		})
 
 		var functions []jsonFunction
@@ -471,19 +466,17 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 		isTesting := func(p *types.Package) bool { return p.Path() == "testing" }
 		return slices.ContainsFunc(fn.Pkg.Pkg.Imports(), isTesting)
 	}
-	sort.Slice(roots, func(i, j int) bool {
-		x, y := roots[i], roots[j]
-		xtest := importsTesting(x)
-		ytest := importsTesting(y)
-		if xtest != ytest {
-			return !xtest // non-tests before tests
+	slices.SortFunc(roots, func(x, y *ssa.Function) int {
+		// non-tests before tests
+		if d := boolCompare(importsTesting(x), importsTesting(y)); d != 0 {
+			return d
 		}
-		xinit := x.Name() == "init"
-		yinit := y.Name() == "init"
-		if xinit != yinit {
-			return !xinit // mains before inits
+		// mains before inits
+		if d := boolCompare(x.Name() == "init", y.Name() == "init"); d != 0 {
+			return d
 		}
-		return false
+		// tie-break by name
+		return strings.Compare(x.String(), y.String())
 	})
 
 	search := func(allowDynamic bool) (*callgraph.Node, []*callgraph.Edge) {
@@ -510,6 +503,28 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 						node = edge.Caller
 					}
 				}
+
+				// Sort out-edges for determinism: the
+				// order in which rta.Analyze adds edges
+				// depends on the iteration order of its
+				// internal maps.
+				//
+				// (The BFS visits each node at most once, so
+				// each Out slice is sorted at most once.)
+				fset := node.Func.Prog.Fset
+				slices.SortFunc(node.Out, func(x, y *callgraph.Edge) int {
+					// Sort by textual order of call sites.
+					if d := comparePos(fset, x.Pos(), y.Pos()); d != 0 {
+						return d
+					}
+					// For polymorphic call sites, use callee position to break ties.
+					if d := comparePos(fset, x.Callee.Func.Pos(), y.Callee.Func.Pos()); d != 0 {
+						return d
+					}
+					// Break remaining ties (generic instances, wrappers,
+					// synthetic edges with no site) by string form.
+					return strings.Compare(x.Callee.Func.String(), y.Callee.Func.String())
+				})
 
 				for _, edge := range node.Out {
 					if allowDynamic || isStaticCall(edge) {
@@ -549,6 +564,22 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 
 func isStaticCall(edge *callgraph.Edge) bool {
 	return edge.Site != nil && edge.Site.Common().StaticCallee() != nil
+}
+
+// comparePos compares two positions by (file, line, column).
+// When used on function declarations, it's a total order.
+func comparePos(fset *token.FileSet, x, y token.Pos) int {
+	// (We can't use Pos values directly since files are
+	// parsed concurrently and don't have a stable Pos numbering.)
+	xposn := fset.Position(x)
+	yposn := fset.Position(y)
+	if d := strings.Compare(xposn.Filename, yposn.Filename); d != 0 {
+		return d
+	}
+	if d := cmp.Compare(xposn.Line, yposn.Line); d != 0 {
+		return d
+	}
+	return cmp.Compare(xposn.Column, yposn.Column)
 }
 
 var cwd, _ = os.Getwd()
@@ -593,6 +624,19 @@ func isMarkerMethod(fn *ssa.Function, interfaceTypes []*types.Interface) bool {
 	return slices.ContainsFunc(interfaceTypes, func(iface *types.Interface) bool {
 		return types.Implements(fn.Signature.Recv().Type(), iface)
 	})
+}
+
+// stopgap for go.dev/issue/61643
+func boolCompare(x, y bool) int {
+	return btoi(x) - btoi(y)
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
 }
 
 // -- output protocol (for JSON or text/template) --

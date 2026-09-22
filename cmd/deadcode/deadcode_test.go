@@ -43,16 +43,7 @@ func Test(t *testing.T) {
 			}
 
 			// Write the archive files to the temp directory.
-			tmpdir := t.TempDir()
-			for _, f := range ar.Files {
-				filename := filepath.Join(tmpdir, f.Name)
-				if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filename, f.Data, 0666); err != nil {
-					t.Fatal(err)
-				}
-			}
+			tmpdir := extractTxtar(t, ar)
 
 			// Parse archive comment as directives of these forms:
 			//
@@ -140,6 +131,99 @@ func Test(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDeterminism checks that the output of the deadcode command
+// does not vary from one run to the next. It has a different form
+// from the other tests because it is intentionally order-sensitive.
+func TestDeterminism(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
+	const archive = `
+-- go.mod --
+module example.com
+go 1.21
+
+-- main.go --
+package main
+
+// These dead functions are all declared on the same line.
+func dead1() {}; func dead2() {}; func dead3() {}; func dead4() {}; func dead5() {}; func dead6() {}
+
+// These live functions all have the same signature and are
+// address-taken, so they are all candidate callees of the dynamic
+// call in main, and all of them reach target by a path of the same
+// length. (There is no static path to target.)
+var funcs = []func(){live1, live2, live3, live4, live5, live6}
+
+func main() {
+	for _, f := range funcs {
+		f()
+	}
+}
+
+func live1() { target() }
+func live2() { target() }
+func live3() { target() }
+func live4() { target() }
+func live5() { target() }
+func live6() { target() }
+
+func target() {}
+`
+	exe := buildDeadcode(t)
+	tmpdir := extractTxtar(t, txtar.Parse([]byte(archive)))
+
+	for _, args := range [][]string{
+		{"."},
+		{"-whylive=example.com.target", "."},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+
+			// A single discrepancy is enough to fail.
+			// (Before the fix, both scenarios were detected
+			// within the first three runs.)
+			const runs = 10
+			var first string
+			for i := range runs {
+				cmd := exec.Command(exe, args...)
+				cmd.Stdout = new(bytes.Buffer)
+				cmd.Stderr = new(bytes.Buffer)
+				cmd.Dir = tmpdir
+				cmd.Env = append(os.Environ(), "GOPROXY=", "GO111MODULE=on")
+				if err := cmd.Run(); err != nil {
+					t.Fatalf("deadcode failed: %v (stderr=%s)", err, cmd.Stderr)
+				}
+				got := fmt.Sprint(cmd.Stdout)
+				if i == 0 {
+					first = got
+				} else if got != first {
+					t.Fatalf("output of run #%d differs from run #1:\n"+
+						"run #1: <<%s>>\nrun #%d: <<%s>>", i+1, first, i+1, got)
+				}
+			}
+		})
+	}
+}
+
+// extractTxtar writes the files of the archive to a new
+// temporary directory and returns its name.
+//
+// TODO(adonovan): move to [testfiles.ExtractTxtarToTmp].
+// Many other tests want it.
+func extractTxtar(t *testing.T, ar *txtar.Archive) string {
+	tmpdir := t.TempDir()
+	for _, f := range ar.Files {
+		filename := filepath.Join(tmpdir, f.Name)
+		if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, f.Data, 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return tmpdir
 }
 
 // buildDeadcode builds the deadcode executable.
