@@ -32,22 +32,18 @@ func searchForEnclosing(info *types.Info, curIdent inspector.Cursor) *types.Type
 	if !ok {
 		return nil
 	}
-	recv := typesinternal.Unpointer(sel.Recv())
-
 	// Keep track of the last exported type seen.
 	var exported *types.TypeName
-	if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
-		exported = named.Obj()
+	note := func(t types.Type) {
+		if named, ok := types.Unalias(typesinternal.Unpointer(t)).(*types.Named); ok && named.Obj().Exported() {
+			exported = named.Obj()
+		}
 	}
+	note(sel.Recv())
 	// We don't want the last element, as that's the field or
 	// method itself.
-	for _, index := range sel.Index()[:len(sel.Index())-1] {
-		if r, ok := recv.Underlying().(*types.Struct); ok {
-			recv = typesinternal.Unpointer(r.Field(index).Type())
-			if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
-				exported = named.Obj()
-			}
-		}
+	for field := range typesinternal.ImplicitFieldSelections(sel) {
+		note(field.Type())
 	}
 	return exported
 }
