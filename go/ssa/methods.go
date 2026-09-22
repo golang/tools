@@ -32,58 +32,79 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	// Selection.Type allocates a new Signature on each call, and
-	// isParameterized memoizes by type identity, so an uncanonicalized
-	// argument would add one permanently retained entry per call (#81308).
-	if prog.isParameterized(T, prog.canon.Type(sel.Type())) {
-		return nil // method on generic type or generic method
+	// A method has no single Function if it is generic (has its own
+	// type parameters) or if its receiver type contains a free type
+	// parameter. Check those directly rather than via sel.Type(),
+	// which allocates a fresh Signature on every call that would then
+	// have to be canonicalized and hashed only to be discarded
+	// (#81308): this is the hot path of RTA and VTA.
+	obj := sel.Obj().(*types.Func)
+	if obj.Type().(*types.Signature).TypeParams().Len() > 0 || prog.isParameterized(T) {
+		return nil // generic method or method on generic type
 	}
 
 	if prog.mode&LogSource != 0 {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	var b builder
-
-	m := func() *Function {
-		prog.methodsMu.Lock()
-		defer prog.methodsMu.Unlock()
-
-		// Get or create SSA method set.
-		mset, ok := prog.methodSets.At(T).(*methodSet)
-		if !ok {
-			mset = &methodSet{mapping: make(map[string]*Function)}
-			prog.methodSets.Set(T, mset)
-		}
-
-		// Get or create SSA method.
-		id := sel.Obj().Id()
-		fn, ok := mset.mapping[id]
-		if !ok {
-			obj := sel.Obj().(*types.Func)
-			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
-			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel), nil)
-				fn.buildshared = b.shared()
-				b.enqueue(fn)
-			} else {
-				fn = prog.objectMethod(obj, nil, &b)
-			}
-			if fn.Signature.Recv() == nil {
-				panic(fn)
-			}
-			mset.mapping[id] = fn
-		} else {
+	fn, b := prog.lookupOrCreateMethod(sel, obj)
+	if b == nil {
+		// Common case: fn was created by an earlier call.
+		// Wait for it only if some other builder is still building it.
+		if !fn.buildshared.isTransitivelyDone() {
+			var b builder
 			b.waitForSharedFunction(fn)
+			b.iterate()
 		}
+	} else {
+		b.iterate()
+	}
+	return fn
+}
 
-		return fn
-	}()
+// lookupOrCreateMethod returns the Function implementing method sel
+// of the concrete, non-parameterized type sel.Recv(), creating it on
+// demand. If it created the Function, it also returns the builder in
+// which the new function (and any it depends on) is enqueued, and the
+// caller must run that builder to a fixed point; otherwise the builder
+// result is nil. Separating the two cases keeps the common hit path
+// free of allocations: a builder escapes to the heap.
+//
+// Acquires prog.methodsMu.
+func (prog *Program) lookupOrCreateMethod(sel *types.Selection, obj *types.Func) (*Function, *builder) {
+	T := sel.Recv()
+	id := obj.Id()
 
-	b.iterate()
+	prog.methodsMu.Lock()
+	defer prog.methodsMu.Unlock()
 
-	return m
+	// Get or create SSA method set.
+	mset, ok := prog.methodSets.At(T).(*methodSet)
+	if !ok {
+		mset = &methodSet{mapping: make(map[string]*Function)}
+		prog.methodSets.Set(T, mset)
+	}
+
+	// Get or create SSA method.
+	if fn, ok := mset.mapping[id]; ok {
+		return fn, nil
+	}
+	b := new(builder)
+	var fn *Function
+	needsPromotion := len(sel.Index()) > 1
+	needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
+	if needsPromotion || needsIndirection {
+		fn = createWrapper(prog, toSelection(sel), nil)
+		fn.buildshared = b.shared()
+		b.enqueue(fn)
+	} else {
+		fn = prog.objectMethod(obj, nil, b)
+	}
+	if fn.Signature.Recv() == nil {
+		panic(fn)
+	}
+	mset.mapping[id] = fn
+	return fn, b
 }
 
 // objectMethod returns the Function for a given method symbol.
