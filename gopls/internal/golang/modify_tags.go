@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
@@ -27,8 +29,6 @@ import (
 
 // addTagsForm asks which struct tags to add, and how to derive their values
 // from the field names.
-//
-// TODO(hxjiang): move form validation logic to here.
 var addTagsForm = []protocol.FormField{
 	{
 		ID:          "tags",
@@ -79,6 +79,72 @@ var removeTagsForm = []protocol.FormField{
 		Required:    true,
 		Default:     "json", // TODO(?): put the existing tags here?
 	},
+}
+
+func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
+	var a0 command.ModifyTagsArgs
+	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
+		return err
+	}
+	switch a0.Modification {
+	case "add":
+		if !supportsDialog(options, addTagsForm) {
+			return nil
+		}
+
+		// First call, return the form.
+		if len(param.FormAnswers) == 0 {
+			param.FormFields = addTagsForm
+			return nil
+		}
+
+		v0, err := param.RequiredAnswer[string]("tags")
+		if err != nil {
+			return err
+		}
+
+		if _, err = SanitizeTags(v0); err != nil {
+			form := slices.Clone(addTagsForm)
+			form[0].Error = err.Error()
+			param.FormFields = form
+			return nil
+		}
+
+		if _, err = param.RequiredAnswer[string]("transform"); err != nil {
+			return err
+		}
+		// PJW: what happens when the user enters a bad value? (i think the client handles it)
+
+		param.FormFields = nil
+		return nil
+	case "remove":
+		if !supportsDialog(options, removeTagsForm) {
+			return nil
+		}
+
+		// First call, return the form
+		if len(param.FormAnswers) == 0 {
+			// TODO? show the user the current list of tags?
+			param.FormFields = removeTagsForm
+			return nil
+		}
+
+		v, err := param.RequiredAnswer[string]("tags")
+		if err != nil {
+			return err
+		}
+		if _, err := SanitizeTags(v); err != nil {
+			form := slices.Clone(addTagsForm)
+			form[0].Error = err.Error()
+			param.FormFields = form
+			return nil
+		}
+
+		param.FormFields = nil
+		return nil
+	default:
+		return fmt.Errorf("unsupported modify tags operation: %s", a0.Modification)
+	}
 }
 
 // SanitizeTags cleans up comma-separated tags and ensures they are valid.

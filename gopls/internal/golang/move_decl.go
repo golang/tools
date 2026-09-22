@@ -20,13 +20,13 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/moreiters"
 )
 
 // moveDeclarationFormFile asks where to move a declaration, through the file
 // picker of the client.
-//
-// TODO(hxjiang): move form validation logic to here.
 var moveDeclarationFormFile = []protocol.FormField{
 	{
 		ID:          "file",
@@ -49,6 +49,39 @@ var moveDeclarationFormString = []protocol.FormField{
 		},
 		Required: true,
 	},
+}
+
+func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
+	var a0 command.MoveDeclarationArgs
+	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
+		return err
+	}
+	var form []protocol.FormField
+	if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindFile]; ok {
+		form = moveDeclarationFormFile
+	} else if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindString]; ok {
+		form = moveDeclarationFormString
+	} else {
+		// This should not happen because gopls should not offer this code action if the
+		// language client does not support any kind above.
+		return fmt.Errorf("internal error: unsupported interactive input types: %v", options.SupportedInteractiveInputTypes)
+	}
+
+	// First call, return the empty form.
+	if len(param.FormAnswers) == 0 {
+		param.FormFields = form
+		return nil
+	}
+
+	file, err := param.RequiredAnswer[string]("file")
+	if err != nil {
+		return err
+	}
+	if _, err := protocol.ParseDocumentURI(file); err != nil {
+		return err
+	}
+	param.FormFields = nil
+	return nil
 }
 
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
