@@ -1182,6 +1182,67 @@ import _ "rsc.io/quote"
 	}
 }
 
+// Tests that scanDirForPackage handles a root that is a dependency's module
+// directory within the module cache (as added by newModuleResolver), computing
+// the import path relative to the module cache rather than to the root.
+func TestScanDirForPackageDependencyRoot(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.mod --
+module x
+
+require rsc.io/quote v1.5.2
+-- x.go --
+package x
+import _ "rsc.io/quote"
+`, "")
+	defer mt.cleanup()
+
+	r := mt.env.resolver.(*ModuleResolver)
+	modDir := filepath.Join(r.moduleCacheDir, "rsc.io", "quote@v1.5.2")
+	root := gopathwalk.Root{Path: modDir, Type: gopathwalk.RootModuleCache}
+	for _, tt := range []struct {
+		dir  string
+		want string // nonCanonicalImportPath
+	}{
+		{modDir, "rsc.io/quote"},
+		{filepath.Join(modDir, "buggy"), "rsc.io/quote/buggy"},
+	} {
+		info := r.scanDirForPackage(root, tt.dir)
+		if info.err != nil {
+			t.Errorf("scanDirForPackage(%q, %q): %v", root.Path, tt.dir, info.err)
+			continue
+		}
+		if info.nonCanonicalImportPath != tt.want {
+			t.Errorf("scanDirForPackage(%q, %q).nonCanonicalImportPath = %q, want %q", root.Path, tt.dir, info.nonCanonicalImportPath, tt.want)
+		}
+	}
+}
+
+// Tests that packages in dependencies are found by scanning only the
+// dependencies' module directories, without scanning the whole module cache.
+func TestScanDependencyRoots(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.mod --
+module x
+
+require rsc.io/quote v1.5.2
+-- x.go --
+package x
+import _ "rsc.io/quote"
+`, "")
+	defer mt.cleanup()
+
+	// Remove the module cache root, leaving only the roots for the
+	// direct and indirect dependencies' directories within it.
+	r := mt.env.resolver.(*ModuleResolver)
+	r.roots = slices.DeleteFunc(r.roots, func(root gopathwalk.Root) bool {
+		return root.Path == r.moduleCacheDir
+	})
+
+	mt.assertScanFinds("rsc.io/quote", "quote")
+	mt.assertScanFinds("rsc.io/sampler", "sampler")
+}
+
 // Tests that crud in the module cache is ignored.
 func TestInvalidModCache(t *testing.T) {
 	testenv.NeedsTool(t, "go")
