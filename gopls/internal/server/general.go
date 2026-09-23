@@ -877,6 +877,8 @@ func recordClientInfo(clientName string) {
 		{"Antigravity", "gopls/client:antigravity"},
 		{"Jetski", "gopls/client:antigravity"},
 		{"Windsurf", "gopls/client:windsurf"},
+
+		// TODO: add 'gopls-cli' once telemetry proposal is approved.
 	} {
 		if strings.HasPrefix(clientName, cli.clientNamePrefix) {
 			counter.Inc(cli.telemetryKey)

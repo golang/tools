@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moreslices"
@@ -384,6 +385,22 @@ func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitializ
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(rootDir)
 	params.Capabilities.Workspace.Configuration = true
+
+	// Identify ourselves to the server. Editors put their own name here, and
+	// gopls uses it for telemetry; see recordClientInfo.
+	//
+	// The version matters only when the client and the server are distinct
+	// binaries, which happens when -remote names an explicit address: the
+	// address for -remote=auto is specific to the executable, so a daemon
+	// reached that way always has the same version as its client.
+	//
+	// This name identifies the client; it must not be used to select server
+	// behavior. See the comment in (*Snapshot).watchSubdirs for why keying
+	// behavior on a client name is a mistake.
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    "gopls-cli",
+		Version: versionpkg.Version(),
+	}
 
 	// If you add an additional option here,
 	// you must update the map key of settings.DefaultOptions called in (*Application).connect.
