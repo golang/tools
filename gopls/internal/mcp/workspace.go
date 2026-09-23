@@ -19,10 +19,36 @@ import (
 	"golang.org/x/tools/gopls/internal/util/immutable"
 )
 
-func (h *handler) workspaceHandler(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+// WorkspaceParams defines the input arguments for the go_workspace tool.
+type WorkspaceParams struct {
+	Dir string `json:"dir,omitempty" jsonschema:"the optional workspace directory path or file URI to inspect"`
+}
+
+func parseDirURI(dir string) protocol.DocumentURI {
+	if strings.HasPrefix(dir, "file://") {
+		if uri, err := protocol.ParseDocumentURI(dir); err == nil {
+			return uri
+		}
+	}
+	return protocol.URIFromPath(dir)
+}
+
+func (h *handler) workspaceHandler(ctx context.Context, req *mcp.CallToolRequest, params WorkspaceParams) (*mcp.CallToolResult, any, error) {
 	countGoWorkspaceMCP.Inc()
 	var summary bytes.Buffer
 	views := h.session.Views()
+	if params.Dir != "" {
+		targetURI := parseDirURI(params.Dir)
+		var matched []*cache.View
+		for _, v := range views {
+			if v.Root().Encloses(targetURI) || targetURI.Encloses(v.Root()) {
+				matched = append(matched, v)
+			}
+		}
+		if len(matched) > 0 {
+			views = matched
+		}
+	}
 	for _, v := range views {
 		snapshot, release, err := v.Snapshot()
 		if err != nil {

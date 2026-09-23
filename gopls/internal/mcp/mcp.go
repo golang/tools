@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -173,6 +172,27 @@ func NewServer(session *cache.Session, lspServer protocol.Server, rootsHandler f
 		lspServer: lspServer,
 	}
 	opts := &mcp.ServerOptions{}
+	if rootsHandler != nil {
+		// TODO(hxjiang): deprecate roots following upstream SEP 2577.
+		// https://modelcontextprotocol.io/seps/2577-deprecate-roots-sampling-and-logging
+		queryRoots := func(ctx context.Context, session *mcp.ServerSession) {
+			if session == nil {
+				return
+			}
+			iparams := session.InitializeParams()
+			if iparams == nil || iparams.Capabilities == nil || iparams.Capabilities.RootsV2 == nil {
+				return
+			}
+			roots, err := session.ListRoots(ctx, &mcp.ListRootsParams{})
+			rootsHandler(roots, err)
+		}
+		opts.InitializedHandler = func(ctx context.Context, req *mcp.InitializedRequest) {
+			queryRoots(ctx, req.Session)
+		}
+		opts.RootsListChangedHandler = func(ctx context.Context, req *mcp.RootsListChangedRequest) {
+			queryRoots(ctx, req.Session)
+		}
+	}
 	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "gopls", Version: "v1.0.0"}, opts)
 
 	defaultTools := []string{
@@ -221,49 +241,6 @@ func NewServer(session *cache.Session, lspServer protocol.Server, rootsHandler f
 	}
 	for _, tool := range tools {
 		addToolByName(mcpServer, h, tool)
-	}
-
-	// Subscribe to the roots change.
-	if rootsHandler != nil {
-		mcpServer.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
-			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-				result, err := next(ctx, method, req)
-
-				// Read roots list after initialized once and every time roots
-				// list changes and pass them to handler.
-				//
-				// See MCP spec:
-				//
-				//  The server SHOULD NOT send requests other than pings
-				//  and logging before receiving the initialized notification.
-				//
-				// https://modelcontextprotocol.info/specification/2024-11-05/basic/lifecycle/#initialization
-				if method == "notifications/initialized" || method == "notifications/roots/list_changed" {
-					go func() {
-						var session *mcp.ServerSession
-						for s := range mcpServer.Sessions() {
-							if s.ID() == req.GetSession().ID() {
-								session = s
-								break
-							}
-						}
-
-						if session == nil { // session terminated.
-							return
-						}
-
-						if session.InitializeParams().Capabilities.RootsV2 == nil {
-							return // client does not support roots
-						}
-
-						roots, err := session.ListRoots(context.Background(), &mcp.ListRootsParams{})
-						rootsHandler(roots, err)
-					}()
-				}
-
-				return result, err
-			}
-		})
 	}
 
 	return mcpServer
@@ -355,10 +332,6 @@ does the same for a symbol in the imported package "lib".
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_workspace",
 			Description: "Summarize the Go programming language workspace",
-			InputSchema: &jsonschema.Schema{
-				Type:       "object",
-				Properties: map[string]*jsonschema.Schema{},
-			},
 		}, h.workspaceHandler)
 	case "go_vulncheck":
 		mcp.AddTool(mcpServer, &mcp.Tool{
