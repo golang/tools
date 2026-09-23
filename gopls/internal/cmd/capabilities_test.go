@@ -42,8 +42,8 @@ func TestCapabilities(t *testing.T) {
 
 	// Initialize the client.
 	// (Unlike app.connect, we use minimal Initialize params.)
-	client := newClient(app)
 	options := settings.DefaultOptions(app.options)
+	client := newClient(app, options)
 	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(tmpDir)

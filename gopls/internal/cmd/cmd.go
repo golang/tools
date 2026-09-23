@@ -330,6 +330,12 @@ func (app *application) connect(ctx context.Context) (*cli, *cache.Session, erro
 		return nil, nil, fmt.Errorf("finding workdir: %v", err)
 	}
 	options := settings.DefaultOptions(app.options)
+	if app.PrepareOptions != nil {
+		app.PrepareOptions(options)
+	}
+	if app.VeryVerbose {
+		options.VerboseOutput = true
+	}
 	params := initParams(root, options)
 	if app.Remote != "" {
 		// When connecting to a remote daemon, inject the client's local Go
@@ -340,8 +346,24 @@ func (app *application) connect(ctx context.Context) (*cli, *cache.Session, erro
 		if err := lsprpc.AddGoEnv(ctx, params); err != nil {
 			return nil, nil, fmt.Errorf("reading Go environment: %w", err)
 		}
+		initOpts, ok := params.InitializationOptions.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected type for InitializationOptions: %T", params.InitializationOptions)
+		}
+		if envVal, ok := initOpts["env"]; ok {
+			envMap, ok := envVal.(map[string]any)
+			if !ok {
+				return nil, nil, fmt.Errorf(`unexpected type for InitializationOptions["env"]: %T`, envVal)
+			}
+			if options.Env == nil {
+				options.Env = make(map[string]string, len(envMap))
+			}
+			for k, v := range envMap {
+				options.Env[k] = fmt.Sprint(v)
+			}
+		}
 	}
-	client := newClient(app)
+	client := newClient(app, options)
 	var (
 		svr  protocol.Server
 		sess *cache.Session
@@ -391,6 +413,9 @@ func (app *application) connect(ctx context.Context) (*cli, *cache.Session, erro
 }
 
 func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitialize {
+	if opts == nil {
+		opts = settings.DefaultOptions()
+	}
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(rootDir)
 	params.Capabilities.Workspace.Configuration = true
@@ -435,9 +460,7 @@ func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitializ
 	params.Capabilities.Workspace.FileOperations = &protocol.FileOperationClientCapabilities{
 		DidCreate: true,
 	}
-	params.InitializationOptions = map[string]any{
-		"symbolMatcher": string(opts.SymbolMatcher),
-	}
+	params.InitializationOptions = goplsOptions(opts)
 	return params
 }
 
@@ -461,7 +484,8 @@ func (client *client) initialize(ctx context.Context, server protocol.Server, pa
 // connection; it conceptually corresponds to a single call to
 // connect(2).
 type client struct {
-	app *application
+	app     *application
+	options *settings.Options
 
 	initializeResult *protocol.InitializeResult // includes server capabilities
 
@@ -489,9 +513,10 @@ type cmdFile struct {
 	diagnostics   []protocol.Diagnostic
 }
 
-func newClient(app *application) *client {
+func newClient(app *application, options *settings.Options) *client {
 	return &client{
 		app:     app,
+		options: options,
 		files:   make(map[protocol.DocumentURI]*cmdFile),
 		iwlDone: make(chan struct{}),
 	}
@@ -565,20 +590,156 @@ func (cli *client) Configuration(ctx context.Context, p *protocol.ParamConfigura
 		if item.Section != "gopls" {
 			continue
 		}
-		m := map[string]any{
-			"analyses": map[string]any{
-				"fillreturns":    true,
-				"nonewvars":      true,
-				"noresultvalues": true,
-				"undeclaredname": true,
-			},
-		}
-		if cli.app.VeryVerbose {
-			m["verboseOutput"] = true
-		}
-		results[i] = m
+		results[i] = goplsOptions(cli.options)
 	}
 	return results, nil
+}
+
+// goplsOptions returns the configuration map for section "gopls" based on
+// the client's options.
+//
+// TODO: investigate auto-generating this or adding json struct tags.
+func goplsOptions(opts *settings.Options) map[string]any {
+	// Preserve the historical CLI defaults for type-error analyzers.
+	// (undeclaredname was replaced with a direct code action in v0.17.0
+	// and is no longer a valid analyzer setting.)
+	analyses := map[string]any{
+		"fillreturns":    true,
+		"nonewvars":      true,
+		"noresultvalues": true,
+	}
+	m := map[string]any{
+		"analyses": analyses,
+	}
+	if opts == nil {
+		return m
+	}
+	if opts.VerboseOutput {
+		m["verboseOutput"] = true
+	}
+	if opts.VerboseWorkDoneProgress {
+		m["verboseWorkDoneProgress"] = true
+	}
+	if opts.SymbolMatcher != "" {
+		m["symbolMatcher"] = string(opts.SymbolMatcher)
+	}
+	if opts.SymbolStyle != "" {
+		m["symbolStyle"] = string(opts.SymbolStyle)
+	}
+	if opts.SymbolScope != "" {
+		m["symbolScope"] = string(opts.SymbolScope)
+	}
+	if opts.SemanticTokens {
+		m["semanticTokens"] = true
+	}
+	// User-configured analyses are merged into the non-nil default analyses
+	// map initialized above, rather than replacing it (individual entries may
+	// still override a default).
+	for k, v := range opts.Analyses {
+		analyses[k] = v
+	}
+	if len(opts.Codelenses) > 0 {
+		lenses := make(map[string]any, len(opts.Codelenses))
+		for k, v := range opts.Codelenses {
+			lenses[string(k)] = v
+		}
+		m["codelenses"] = lenses
+	}
+	if len(opts.BuildFlags) > 0 {
+		m["buildFlags"] = anySlice(opts.BuildFlags)
+	}
+	if len(opts.DirectoryFilters) > 0 {
+		m["directoryFilters"] = anySlice(opts.DirectoryFilters)
+	}
+	if opts.HoverKind != "" {
+		m["hoverKind"] = string(opts.HoverKind)
+	}
+	if opts.LinkTarget != "" {
+		m["linkTarget"] = opts.LinkTarget
+	}
+	switch opts.LinksInHover {
+	case settings.LinksInHover_None:
+		m["linksInHover"] = false
+	case settings.LinksInHover_LinkTarget:
+		m["linksInHover"] = true
+	case settings.LinksInHover_Gopls:
+		m["linksInHover"] = "gopls"
+	}
+	if opts.Local != "" {
+		m["local"] = opts.Local
+	}
+	if opts.Gofumpt {
+		m["gofumpt"] = true
+	}
+	if opts.StaticcheckProvided {
+		m["staticcheck"] = opts.Staticcheck
+	}
+	if len(opts.Hints) > 0 {
+		hints := make(map[string]any, len(opts.Hints))
+		for k, v := range opts.Hints {
+			hints[string(k)] = v
+		}
+		m["hints"] = hints
+	}
+	if len(opts.Annotations) > 0 {
+		annotations := make(map[string]any, len(opts.Annotations))
+		for k, v := range opts.Annotations {
+			annotations[string(k)] = v
+		}
+		m["annotations"] = annotations
+	}
+	if opts.Vulncheck != "" {
+		m["vulncheck"] = string(opts.Vulncheck)
+	}
+	if opts.DiagnosticsDelay > 0 {
+		m["diagnosticsDelay"] = opts.DiagnosticsDelay.String()
+	}
+	if opts.DiagnosticsTrigger != "" {
+		m["diagnosticsTrigger"] = string(opts.DiagnosticsTrigger)
+	}
+	if opts.FileWatcher != "" {
+		m["fileWatcher"] = string(opts.FileWatcher)
+	}
+	if len(opts.StandaloneTags) > 0 {
+		m["standaloneTags"] = anySlice(opts.StandaloneTags)
+	}
+	if len(opts.TemplateExtensions) > 0 {
+		m["templateExtensions"] = anySlice(opts.TemplateExtensions)
+	}
+	if opts.Matcher != "" {
+		m["matcher"] = string(opts.Matcher)
+	}
+	if opts.ImportShortcut != "" {
+		m["importShortcut"] = string(opts.ImportShortcut)
+	}
+	if opts.UsePlaceholders {
+		m["usePlaceholders"] = true
+	}
+	if !opts.CompleteUnimported {
+		m["completeUnimported"] = false
+	}
+	if !opts.DeepCompletion {
+		m["deepCompletion"] = false
+	}
+	if !opts.CompleteFunctionCalls {
+		m["completeFunctionCalls"] = false
+	}
+	if len(opts.Env) > 0 {
+		env := make(map[string]any, len(opts.Env))
+		for k, v := range opts.Env {
+			env[k] = v
+		}
+		m["env"] = env
+	}
+	return m
+}
+
+func anySlice[T any](s []T) []any {
+	res := make([]any, len(s))
+	for i, v := range s {
+		res[i] = v
+	}
+	return res
 }
 
 func (cli *client) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {

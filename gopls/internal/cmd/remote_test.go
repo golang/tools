@@ -32,6 +32,13 @@ package a
 const Hello = "hello"
 
 var _ = Hello
+
+-- a_test.go --
+package a
+
+import "testing"
+
+func TestFoo(t *testing.T) {}
 `
 
 // TestRemoteAuto tests that -remote=auto starts a daemon if none is running,
@@ -239,6 +246,50 @@ var _ = Arch
 		res := goplsWithEnv(t, tree, clientEnv, append(remote, "definition", "a.go:3:9")...)
 		res.checkExit(true)
 		res.checkStdout(fmt.Sprintf(`arch_%s\.go:5:7-11: defined here as const Arch`, altArch))
+	}
+}
+
+// TestRemoteAutoOptionsParity tests that client configuration options
+// (such as symbol matcher and codelenses["test"]) are propagated to the
+// daemon and honored across requests.
+func TestRemoteAutoOptionsParity(t *testing.T) {
+	t.Parallel()
+	needsAutoRemote(t)
+
+	tree := writeTree(t, remoteFiles)
+	xdg := runtimeDir(t)
+	baseEnv := []string{"XDG_RUNTIME_DIR=" + xdg}
+	remote := []string{"-remote=auto;optparity", "-remote.listen.timeout=" + listenTimeout}
+
+	// 1. workspace_symbol matcher parity:
+	// A CaseSensitive query for lowercase "hello" must not match "Hello",
+	// while a query for "Hello" must match.
+	{
+		res := goplsWithEnv(t, tree, baseEnv, append(remote, "workspace_symbol", "-matcher=CaseSensitive", "hello")...)
+		res.checkExit(true)
+		if strings.Contains(res.stdout, "Hello") {
+			t.Errorf("workspace_symbol -matcher=CaseSensitive found Hello for 'hello': %s", res.stdout)
+		}
+	}
+	{
+		res := goplsWithEnv(t, tree, baseEnv, append(remote, "workspace_symbol", "-matcher=CaseSensitive", "Hello")...)
+		res.checkExit(true)
+		res.checkStdout(`a\.go:3:7-12 Hello Constant`)
+	}
+
+	// 2. codelens parity:
+	// 'codelens' overrides the default for codelenses["test"] (off by default)
+	// to true. The daemon must receive this setting and return the test lens.
+	{
+		want := gopls(t, tree, "codelens", "a_test.go")
+		want.checkExit(true)
+		want.checkStdout("run test")
+
+		res := goplsWithEnv(t, tree, baseEnv, append(remote, "codelens", "a_test.go")...)
+		res.checkExit(true)
+		if res.stdout != want.stdout {
+			t.Errorf("codelens -remote stdout = <<%s>>, want <<%s>>", res.stdout, want.stdout)
+		}
 	}
 }
 
