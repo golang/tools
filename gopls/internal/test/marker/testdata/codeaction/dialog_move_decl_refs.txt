@@ -1,0 +1,273 @@
+Test move declaration refactoring: updating references across source, destination, and other packages.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/movedeclrefs
+
+go 1.20
+
+-- dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- dest2/dest2.go --
+package dest2
+
+func Existing() {}
+
+-- src/in_src.go --
+package src
+
+func TargetInSrc() int { //@codeaction(re"TargetInSrc", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_in_src)
+	return 42
+}
+
+func CallerSameFile() int {
+	return TargetInSrc()
+}
+
+-- @ref_in_src/dest2/dest2.go --
+package dest2
+
+func Existing() {}
+
+func TargetInSrc() int {
+	return 42
+}
+-- @ref_in_src/src/in_src.go --
+package src
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+func TargetInSrc() int { //@codeaction(re"TargetInSrc", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_in_src)
+	return 42
+}
+
+func CallerSameFile() int {
+	return dest2.TargetInSrc()
+}
+
+-- @ref_in_src/src/in_src_test.go --
+package src
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+import "testing"
+
+func TestInternal(t *testing.T) {
+	_ = dest2.TargetInSrc()
+}
+
+-- @ref_in_src/src/other_src.go --
+package src
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+func CallerOtherFile() int {
+	return dest2.TargetInSrc()
+}
+
+-- @ref_in_src/src/x_test.go --
+package src_test
+
+import (
+	"testing"
+
+	
+	"golang.org/lsptests/movedeclrefs/dest2"
+)
+
+func TestExternal(t *testing.T) {
+	_ = dest2.TargetInSrc()
+}
+
+-- src/other_src.go --
+package src
+
+func CallerOtherFile() int {
+	return TargetInSrc()
+}
+
+-- src/in_src_test.go --
+package src
+
+import "testing"
+
+func TestInternal(t *testing.T) {
+	_ = TargetInSrc()
+}
+
+-- src/x_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedeclrefs/src"
+)
+
+func TestExternal(t *testing.T) {
+	_ = src.TargetInSrc()
+}
+
+-- src/to_dest.go --
+package src
+
+func MoveToDest() int { //@codeaction(re"MoveToDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_dest)
+	return 7
+}
+
+-- @ref_in_dest/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func MoveToDest() int {
+	return 7
+}
+-- @ref_in_dest/dest/use_src.go --
+package dest
+
+
+
+func UseFromDest() int {
+	return MoveToDest()
+}
+
+-- dest/use_src.go --
+package dest
+
+import "golang.org/lsptests/movedeclrefs/src"
+
+func UseFromDest() int {
+	return src.MoveToDest()
+}
+
+-- src/to_ext.go --
+package src
+
+func StayInSrc() int {
+	return 1
+}
+
+func MoveForExtOnly() int { //@codeaction(re"MoveForExtOnly", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_drop_src)
+	return 2
+}
+
+func MoveForExtShared() int { //@codeaction(re"MoveForExtShared", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_keep_src)
+	return 3
+}
+
+-- @ref_in_ext_drop_src/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func MoveForExtOnly() int {
+	return 2
+}
+-- @ref_in_ext_drop_src/ext/only_moving.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/dest"
+
+
+
+func UseOnlyMoving() int {
+	return dest.MoveForExtOnly()
+}
+
+-- @ref_in_ext_keep_src/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func MoveForExtShared() int {
+	return 3
+}
+-- @ref_in_ext_keep_src/ext/shared_src.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/dest"
+
+import "golang.org/lsptests/movedeclrefs/src"
+
+func UseBoth() int {
+	return dest.MoveForExtShared() + src.StayInSrc()
+}
+
+-- ext/only_moving.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/src"
+
+func UseOnlyMoving() int {
+	return src.MoveForExtOnly()
+}
+
+-- ext/shared_src.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/src"
+
+func UseBoth() int {
+	return src.MoveForExtShared() + src.StayInSrc()
+}
+
+-- src/type_method.go --
+package src
+
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_type_method)
+	Val int
+}
+
+func (c *Counter) Inc() {
+	c.Val++
+}
+
+func UseCounterInSrc() {
+	var c Counter
+	c.Inc()
+}
+-- @ref_type_method/dest2/dest2.go --
+package dest2
+
+func Existing() {}
+
+type Counter struct {
+	Val int
+}
+
+func (c *Counter) Inc() {
+	c.Val++
+}
+-- @ref_type_method/src/type_method.go --
+package src
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_type_method)
+	Val int
+}
+
+func (c *Counter) Inc() {
+	c.Val++
+}
+
+func UseCounterInSrc() {
+	var c dest2.Counter
+	c.Inc()
+}

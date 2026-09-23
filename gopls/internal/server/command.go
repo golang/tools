@@ -2003,6 +2003,7 @@ func (c *commandHandler) MoveType(ctx context.Context, args command.MoveTypeArgs
 }
 
 func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveDeclarationArgs, params *protocol.InteractiveParams) (action command.Action, err error) {
+	var movingLoc protocol.Location
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -2025,11 +2026,16 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 		if filepath.Ext(destURI.Path()) != ".go" {
 			return fmt.Errorf("destination file must have a .go extension")
 		}
-		changes, _, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)
+		changes, loc, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)
 		if err != nil {
 			return err
 		}
+		movingLoc = loc
 		action = applyEdits{c.s.client, changes}
+		showDocumentImpl(ctx, c.s.client, protocol.URI(movingLoc.URI), &movingLoc.Range, c.s.options)
+		// Open the file where the declaration was moved to. TODO(hxjiang): This
+		// only works for moves to existing files. For a new file, the edits haven't
+		// been applied yet so the file hasn't been created. How to fix this?
 		return nil
 	})
 	return action, err
