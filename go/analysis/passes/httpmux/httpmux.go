@@ -85,8 +85,7 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 		return false
 	}
 	recv := fn.Signature().Recv() // isMethodNamed() -> non-nil
-	isPtr, named := typesinternal.ReceiverNamed(recv)
-	return isPtr && typesinternal.IsTypeNamed(named, "net/http", "ServeMux")
+	return typesinternal.IsPointerToNamed(recv.Type(), "net/http", "ServeMux")
 }
 
 // isMethodNamed reports when a function f is a method,

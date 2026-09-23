@@ -1186,7 +1186,7 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 
 				if sig := fn.Signature(); sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
 					if sig.Recv() != nil {
-						if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
+						if isPtr, named := typesinternal.RecvBase(fn); named != nil {
 							if isPtr {
 								fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
 							} else {

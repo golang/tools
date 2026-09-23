@@ -86,13 +86,16 @@ var x struct {
 var _ = x.z //@hover("z", "z", Z)
 
 type Al2 = int
+type AlStruct = struct{ w int }
 type N struct{
 	x Al2
 	y struct{ ZA }
+	AlStruct
 }
 type Al = *N
 type S struct{ Al }
 type ZA = *Z
+var _ S //@hover("S", "S", S)
 var _ = new(S).x //@hover("x", "x", X)
 var _ = new(S).y.z //@hover("z", "z", Zz), hover("y", "y", y)
 
@@ -153,3 +156,21 @@ field z int // through ZA
 ```go
 field y struct{ZA} // through Al
 ```
+-- @S --
+```go
+type S struct{ Al }
+```
+
+---
+
+```go
+// Embedded fields:
+x        Al2        // through Al          
+y        struct{ZA} // through Al          
+w        int        // through Al.AlStruct 
+AlStruct AlStruct   // through Al          
+```
+
+---
+
+[`p.S` on pkg.go.dev](https://pkg.go.dev/example.com#S)

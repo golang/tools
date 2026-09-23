@@ -117,12 +117,10 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	if !sym.Exported() {
 		// Unexported method of exported type?
 		if fn, ok := sym.(*types.Func); ok {
-			if recv := fn.Signature().Recv(); recv != nil {
-				_, named := typesinternal.ReceiverNamed(recv)
-				if named != nil && named.Obj().Exported() {
-					sym = named.Obj()
-					goto below
-				}
+			_, named := typesinternal.RecvBase(fn)
+			if named != nil && named.Obj().Exported() {
+				sym = named.Obj()
+				goto below
 			}
 		}
 
@@ -144,8 +142,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	// Inv: sym is field or method, or local.
 	switch sym := sym.(type) {
 	case *types.Func: // => method
-		sig := sym.Signature()
-		isPtr, named := typesinternal.ReceiverNamed(sig.Recv())
+		isPtr, named := typesinternal.RecvBase(sym)
 		if named != nil {
 			if !named.Obj().Exported() {
 				return wholePackage(sym.Pkg()) // exported method of unexported type
@@ -423,8 +420,7 @@ window.addEventListener('load', function() {
 	// option emits an <option> for the specified symbol.
 	//
 	// recvType is the apparent receiver type, which may
-	// differ from ReceiverNamed(obj.Signature.Recv).Name
-	// for promoted methods.
+	// differ from RecvBase(obj).Name for promoted methods.
 	option := func(obj types.Object, recvType string) {
 		// Render functions/methods as "(recv) Method(p1, ..., pN)".
 		fragment := obj.Name()
@@ -517,7 +513,7 @@ window.addEventListener('load', function() {
 				if fn, ok := obj.(*types.Func); ok {
 					sig := fn.Signature()
 					if sig.Recv() != nil {
-						_, named := typesinternal.ReceiverNamed(sig.Recv())
+						_, named := typesinternal.RecvBase(fn)
 						if named != nil {
 							fragment := named.Obj().Name() + "." + fn.Name()
 							return web.PkgURL(viewID, PackagePath(fn.Pkg().Path()), fragment)

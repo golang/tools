@@ -404,10 +404,11 @@ func prettyName(fn *ssa.Function, qualified bool) string {
 		}
 
 		// method receiver?
-		if recv := fn.Signature.Recv(); recv != nil {
-			_, named := typesinternal.ReceiverNamed(recv)
-			buf.WriteString(named.Obj().Name())
-			buf.WriteByte('.')
+		if obj, ok := fn.Object().(*types.Func); ok {
+			if _, named := typesinternal.RecvBase(obj); named != nil {
+				buf.WriteString(named.Obj().Name())
+				buf.WriteByte('.')
+			}
 		}
 
 		// function/method name

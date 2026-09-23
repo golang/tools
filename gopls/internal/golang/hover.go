@@ -1827,7 +1827,7 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 
 	// Handle Method.
 	if fn, _ := obj.(*types.Func); fn != nil {
-		isPtr, named := typesinternal.ReceiverNamed(fn.Signature().Recv())
+		isPtr, named := typesinternal.RecvBase(fn)
 		if named != nil && typesinternal.IsPackageLevel(named.Obj()) {
 			for _, s := range symbols {
 				if s.Kind != stdlib.Method {
@@ -2016,14 +2016,14 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 		if !accessibleTo(f, from) {
 			return false
 		}
-		// Check that the field is not shadowed.
-		obj, _, _ := types.LookupFieldOrMethod(t, true, f.Pkg(), f.Name())
-		return obj == f
+		// Check that the field is promoted and not shadowed.
+		obj, index, _ := types.LookupFieldOrMethod(t, true, f.Pkg(), f.Name())
+		return obj == f && len(index) > 1
 	}
 
 	var fields []promotedField
-	var visit func(t types.Type, stack []*types.Named)
-	visit = func(t types.Type, stack []*types.Named) {
+	var visit func(t types.Type, stack []*types.Var)
+	visit = func(t types.Type, stack []*types.Var) {
 		tStruct, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct)
 		if !ok {
 			return
@@ -2032,27 +2032,25 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 		for f := range tStruct.Fields() {
 
 			// Handle recursion through anonymous fields.
-			if f.Anonymous() {
-				if _, named := typesinternal.ReceiverNamed(f); named != nil {
-					// If we've already visited this named type
-					// on this path, break the cycle.
-					for _, x := range stack {
-						if x.Origin() == named.Origin() {
-							continue fieldloop
-						}
+			if f.Embedded() {
+				// If we've already visited this embedded field
+				// on this path, break the cycle.
+				for _, x := range stack {
+					if x.Origin() == f.Origin() {
+						continue fieldloop
 					}
-					visit(f.Type(), append(stack, named))
 				}
+				visit(f.Type(), append(stack, f))
 			}
 
 			// Save accessible promoted fields.
 			if len(stack) > 0 && wantField(f) {
 				var path strings.Builder
-				for i, t := range stack {
+				for i, f := range stack {
 					if i > 0 {
 						path.WriteByte('.')
 					}
-					path.WriteString(t.Obj().Name())
+					path.WriteString(f.Name())
 				}
 				fields = append(fields, promotedField{
 					path:  path.String(),

@@ -194,8 +194,7 @@ func makeLen(T types.Type) *Builtin {
 // receiverTypeArgs returns the type arguments to a method's receiver.
 // Returns an empty list if the receiver does not have type arguments.
 func receiverTypeArgs(method *types.Func) []types.Type {
-	recv := method.Signature().Recv()
-	_, named := typesinternal.ReceiverNamed(recv)
+	_, named := typesinternal.RecvBase(method)
 	if named == nil {
 		return nil // recv is anonymous struct/interface
 	}

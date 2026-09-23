@@ -135,7 +135,7 @@ func matchTestFunc(fn *ast.FuncDecl, info *types.Info, nameRe *regexp.Regexp, pa
 	}
 
 	// Check the type of the only parameter
-	// (We don't Unalias or use typesinternal.ReceiverNamed
+	// (We don't Unalias or use typesinternal.RecvBase
 	// in the two checks below because "go test" can't see
 	// through aliases when enumerating Test* functions;
 	// it's syntactic.)

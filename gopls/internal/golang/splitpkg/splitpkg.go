@@ -159,9 +159,9 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 					// but since they are coupled to the named type
 					// they should be omitted in the UI for brevity.
 					name := fn.Name()
-					if recv := fn.Signature().Recv(); recv != nil {
+					if fn.Signature().Recv() != nil {
 						fn = fn.Origin()
-						_, named := typesinternal.ReceiverNamed(recv)
+						_, named := typesinternal.RecvBase(fn)
 						name = named.Obj().Name() + "." + name
 					} else if name == "init" {
 						// Disambiguate top-level init functions.
