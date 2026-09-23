@@ -121,13 +121,10 @@ func TestMCPCommandLogging(t *testing.T) {
 		want     string
 		dontWant string
 	}{
-		// The log "initialize" appears at least twice in the RPC logs, first as
-		// an "initialize" request and then as a notification
-		// "notifications/initialized". Waiting for the initialized notification
-		// could result in a race, so instead verify we see the initialize
-		// request log.
-		{"notrace.log", false, "stdin", "initialize"},
-		{"trace.log", true, "initialize", ""},
+		// Under MCP 2026-07-28, the client probes server/discover rather
+		// than sending the legacy initialize handshake.
+		{"notrace.log", false, "stdin", "server/discover"},
+		{"trace.log", true, "server/discover", ""},
 	}
 
 	dir := t.TempDir()

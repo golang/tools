@@ -122,7 +122,9 @@ func TestClientRootChange(t *testing.T) {
 	serverSession, _ := server.Connect(ctx, serverTransport, nil)
 	defer serverSession.Close()
 
-	clientSession, _ := client.Connect(ctx, clientTransport, nil)
+	// ListRoots is a server-initiated request, so this session negotiates a
+	// protocol version (2025-11-25) that supports server-initiated roots (SEP-2577).
+	clientSession, _ := client.Connect(ctx, clientTransport, &mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"})
 	defer clientSession.Close()
 
 	// Phase 1: Wait for the initial handshake and first root fetch
