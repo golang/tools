@@ -131,4 +131,6 @@ func (f BinderFunc) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) json
 // composed to build jsonrpc2 servers.
 type Middleware func(jsonrpc2_v2.Binder) jsonrpc2_v2.Binder
 
-var GetGoEnv = getGoEnv
+var GetGoEnv = func(ctx context.Context, env map[string]any) (map[string]string, error) {
+	return getGoEnv(ctx, "", env)
+}

@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -32,45 +34,15 @@ func GoEnvMiddleware() (Middleware, error) {
 	}), nil
 }
 
-// This function is almost identical to addGoEnvToInitializeRequest in lsprpc.go.
-// Make changes in parallel.
+// addGoEnvToInitializeRequestV2 uses AddGoEnv to update the initialize request.
 func addGoEnvToInitializeRequestV2(ctx context.Context, req *jsonrpc2_v2.Request) error {
 	var params protocol.ParamInitialize
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return err
 	}
-	var opts map[string]any
-	switch v := params.InitializationOptions.(type) {
-	case nil:
-		opts = make(map[string]any)
-	case map[string]any:
-		opts = v
-	default:
-		return fmt.Errorf("unexpected type for InitializationOptions: %T", v)
-	}
-	envOpt, ok := opts["env"]
-	if !ok {
-		envOpt = make(map[string]any)
-	}
-	env, ok := envOpt.(map[string]any)
-	if !ok {
-		return fmt.Errorf("env option is %T, expected a map", envOpt)
-	}
-	goenv, err := GetGoEnv(ctx, env)
-	if err != nil {
+	if err := AddGoEnv(ctx, &params); err != nil {
 		return err
 	}
-	// We don't want to propagate GOWORK unless explicitly set since that could mess with
-	// path inference during cmd/go invocations, see golang/go#51825.
-	_, goworkSet := os.LookupEnv("GOWORK")
-	for govar, value := range goenv {
-		if govar == "GOWORK" && !goworkSet {
-			continue
-		}
-		env[govar] = value
-	}
-	opts["env"] = env
-	params.InitializationOptions = opts
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("marshaling updated options: %v", err)
@@ -131,3 +103,106 @@ func TestGoEnvMiddleware(t *testing.T) {
 		t.Errorf("GONOPROXY=%q, want %q", got, want)
 	}
 }
+
+func TestAddGoEnv(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
+	altArch := "arm64"
+	if runtime.GOARCH == "arm64" {
+		altArch = "amd64"
+	}
+
+	t.Run("preserves existing overrides", func(t *testing.T) {
+		params := &protocol.ParamInitialize{
+			InitializationOptions: map[string]any{
+				"env": map[string]any{
+					"GOARCH": altArch,
+				},
+			},
+		}
+		if err := AddGoEnv(t.Context(), params); err != nil {
+			t.Fatal(err)
+		}
+		opts := params.InitializationOptions.(map[string]any)
+		env := opts["env"].(map[string]any)
+		if got, want := env["GOARCH"], altArch; got != want {
+			t.Errorf("GOARCH = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("nil params", func(t *testing.T) {
+		if err := AddGoEnv(t.Context(), nil); err == nil {
+			t.Fatal("AddGoEnv(nil) succeeded, want error")
+		}
+	})
+
+	t.Run("map[string]string env", func(t *testing.T) {
+		params := &protocol.ParamInitialize{
+			InitializationOptions: map[string]any{
+				"env": map[string]string{
+					"GOARCH": altArch,
+				},
+			},
+		}
+		if err := AddGoEnv(t.Context(), params); err != nil {
+			t.Fatal(err)
+		}
+		opts := params.InitializationOptions.(map[string]any)
+		env := opts["env"].(map[string]any)
+		if got, want := env["GOARCH"], altArch; got != want {
+			t.Errorf("GOARCH = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("WorkspaceFolders", func(t *testing.T) {
+		dir := t.TempDir()
+		gomod := filepath.Join(dir, "go.mod")
+		if err := os.WriteFile(gomod, []byte("module example.com\ngo 1.18\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		missing := filepath.Join(t.TempDir(), "nonexistent")
+		params := &protocol.ParamInitialize{
+			WorkspaceFolders: []protocol.WorkspaceFolder{
+				{URI: string(protocol.URIFromPath(missing))},
+				{URI: string(protocol.URIFromPath(dir))},
+			},
+		}
+		if err := AddGoEnv(t.Context(), params); err != nil {
+			t.Fatal(err)
+		}
+		opts := params.InitializationOptions.(map[string]any)
+		env := opts["env"].(map[string]any)
+		if got, want := env["GOMOD"], gomod; got != want {
+			t.Errorf("GOMOD = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestAddGoEnv_GOWORK(t *testing.T) {
+	if orig, ok := os.LookupEnv("GOWORK"); ok {
+		os.Unsetenv("GOWORK")
+		t.Cleanup(func() { os.Setenv("GOWORK", orig) })
+	}
+	params := &protocol.ParamInitialize{}
+	if err := AddGoEnv(t.Context(), params); err != nil {
+		t.Fatal(err)
+	}
+	opts := params.InitializationOptions.(map[string]any)
+	env := opts["env"].(map[string]any)
+	if _, ok := env["GOWORK"]; ok {
+		t.Errorf("env[GOWORK] present when unset in os.Environ")
+	}
+
+	// When GOWORK is explicitly set in os.Environ, it should be in env.
+	t.Setenv("GOWORK", "off")
+	params2 := &protocol.ParamInitialize{}
+	if err := AddGoEnv(t.Context(), params2); err != nil {
+		t.Fatal(err)
+	}
+	opts2 := params2.InitializationOptions.(map[string]any)
+	env2 := opts2["env"].(map[string]any)
+	if got, want := env2["GOWORK"], "off"; got != want {
+		t.Errorf("env[GOWORK] = %v, want %v", got, want)
+	}
+}
+

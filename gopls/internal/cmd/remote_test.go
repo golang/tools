@@ -12,11 +12,13 @@ package cmd_test
 // (including ENTRYPOINT) to the daemon that it starts.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"text/template"
 )
 
 const remoteFiles = `
@@ -170,6 +172,74 @@ func TestRemoteExplicitAddress(t *testing.T) {
 	res.checkExit(false)
 	res.checkStderr("failed to dial remote")
 	checkEmptyDir(t, dir) // no daemon bound the socket
+}
+
+// TestRemoteAutoEnvParity tests that environment variables set on the client
+// (such as GOARCH) are honored by a daemon started by a client with a
+// different environment.
+func TestRemoteAutoEnvParity(t *testing.T) {
+	t.Parallel()
+	needsAutoRemote(t)
+
+	altArch := "arm64"
+	if runtime.GOARCH == "arm64" {
+		altArch = "amd64"
+	}
+
+	const treeTmpl = `
+-- go.mod --
+module example.com
+go 1.18
+
+-- arch_{{.HostArch}}.go --
+//go:build {{.HostArch}}
+
+package a
+
+const Arch = "{{.HostArch}}"
+
+-- arch_{{.AltArch}}.go --
+//go:build {{.AltArch}}
+
+package a
+
+const Arch = "{{.AltArch}}"
+
+-- a.go --
+package a
+
+var _ = Arch
+`
+	tmpl := template.Must(template.New("tree").Parse(treeTmpl))
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, map[string]string{
+		"HostArch": runtime.GOARCH,
+		"AltArch":  altArch,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tree := writeTree(t, buf.String())
+
+	xdg := runtimeDir(t)
+	baseEnv := []string{"XDG_RUNTIME_DIR=" + xdg}
+	remote := []string{"-remote=auto;envparity", "-remote.listen.timeout=" + listenTimeout}
+
+	// First command starts the daemon using the host's default GOARCH.
+	{
+		res := goplsWithEnv(t, tree, baseEnv, append(remote, "definition", "a.go:3:9")...)
+		res.checkExit(true)
+		res.checkStdout(fmt.Sprintf(`arch_%s\.go:5:7-11: defined here as const Arch`, runtime.GOARCH))
+	}
+
+	// Second command reuses the running daemon, but sets GOARCH to altArch in
+	// its environment. The daemon must evaluate the query using the client's
+	// GOARCH, not the daemon's host GOARCH.
+	{
+		clientEnv := append([]string{"GOARCH=" + altArch}, baseEnv...)
+		res := goplsWithEnv(t, tree, clientEnv, append(remote, "definition", "a.go:3:9")...)
+		res.checkExit(true)
+		res.checkStdout(fmt.Sprintf(`arch_%s\.go:5:7-11: defined here as const Arch`, altArch))
+	}
 }
 
 // listenTimeout is the -remote.listen.timeout of the daemons started by these

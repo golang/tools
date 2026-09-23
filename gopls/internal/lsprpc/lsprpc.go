@@ -388,16 +388,12 @@ func (f *forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	}
 }
 
-// addGoEnvToInitializeRequest builds a new initialize request in which we set
-// any environment variables output by `go env` and not already present in the
-// request.
-//
-// It returns an error if r is not an initialize request, or is otherwise
-// malformed.
-func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonrpc2.Request, error) {
-	var params protocol.ParamInitialize
-	if err := json.Unmarshal(r.Params(), &params); err != nil {
-		return nil, err
+// AddGoEnv populates the "env" property of params.InitializationOptions with
+// variables from `go env` run in the client environment, omitting GOWORK
+// unless explicitly set in the process environment.
+func AddGoEnv(ctx context.Context, params *protocol.ParamInitialize) error {
+	if params == nil {
+		return fmt.Errorf("nil initialize params")
 	}
 	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
@@ -406,19 +402,47 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	case map[string]any:
 		opts = v
 	default:
-		return nil, fmt.Errorf("unexpected type for InitializationOptions: %T", v)
+		return fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
 		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf(`env option is %T, expected a map`, envOpt)
+	var env map[string]any
+	switch e := envOpt.(type) {
+	case map[string]any:
+		env = e
+	case map[string]string:
+		env = make(map[string]any, len(e))
+		for k, v := range e {
+			env[k] = v
+		}
+	default:
+		return fmt.Errorf(`env option is %T, expected a map`, envOpt)
 	}
-	goenv, err := getGoEnv(ctx, env)
+	var dir string
+	if d := params.RootURI.Path(); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			dir = d
+		}
+	}
+	if dir == "" {
+		// Editors connecting via the forwarder may populate WorkspaceFolders
+		// instead of the deprecated RootURI.
+		for _, folder := range params.WorkspaceFolders {
+			if uri, err := protocol.ParseDocumentURI(folder.URI); err == nil {
+				if d := uri.Path(); d != "" {
+					if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+						dir = d
+						break
+					}
+				}
+			}
+		}
+	}
+	goenv, err := getGoEnv(ctx, dir, env)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// We don't want to propagate GOWORK unless explicitly set since that could mess with
 	// path inference during cmd/go invocations, see golang/go#51825.
@@ -431,6 +455,23 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	}
 	opts["env"] = env
 	params.InitializationOptions = opts
+	return nil
+}
+
+// addGoEnvToInitializeRequest builds a new initialize request in which we set
+// any environment variables output by `go env` and not already present in the
+// request.
+//
+// It returns an error if r is not an initialize request, or is otherwise
+// malformed.
+func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonrpc2.Request, error) {
+	var params protocol.ParamInitialize
+	if err := json.Unmarshal(r.Params(), &params); err != nil {
+		return nil, err
+	}
+	if err := AddGoEnv(ctx, &params); err != nil {
+		return nil, err
+	}
 	call, ok := r.(*jsonrpc2.Call)
 	if !ok {
 		return nil, fmt.Errorf("%T is not a *jsonrpc2.Call", r)

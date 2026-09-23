@@ -12,16 +12,17 @@ import (
 	"golang.org/x/tools/internal/gocommand"
 )
 
-func getGoEnv(ctx context.Context, env map[string]any) (map[string]string, error) {
+func getGoEnv(ctx context.Context, dir string, env map[string]any) (map[string]string, error) {
 	var runEnv []string
 	for k, v := range env {
 		runEnv = append(runEnv, fmt.Sprintf("%s=%s", k, v))
 	}
 	runner := gocommand.Runner{}
 	output, err := runner.Run(ctx, gocommand.Invocation{
-		Verb: "env",
-		Args: []string{"-json"},
-		Env:  runEnv,
+		Verb:       "env",
+		Args:       []string{"-json"},
+		Env:        runEnv,
+		WorkingDir: dir,
 	})
 	if err != nil {
 		return nil, err

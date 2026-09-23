@@ -330,6 +330,17 @@ func (app *application) connect(ctx context.Context) (*cli, *cache.Session, erro
 		return nil, nil, fmt.Errorf("finding workdir: %v", err)
 	}
 	options := settings.DefaultOptions(app.options)
+	params := initParams(root, options)
+	if app.Remote != "" {
+		// When connecting to a remote daemon, inject the client's local Go
+		// environment into the initialize request. The daemon's workspace
+		// environment defaults to the process environment in which the daemon
+		// was started; sending the client's local environment ensures that
+		// commands run with the client's GOARCH, GOOS, GOFLAGS, etc.
+		if err := lsprpc.AddGoEnv(ctx, params); err != nil {
+			return nil, nil, fmt.Errorf("reading Go environment: %w", err)
+		}
+	}
 	client := newClient(app)
 	var (
 		svr  protocol.Server
@@ -372,7 +383,7 @@ func (app *application) connect(ctx context.Context) (*cli, *cache.Session, erro
 			jsonrpc2.MustReplyHandler(
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
-	cli, err := client.initialize(ctx, svr, initParams(root, options))
+	cli, err := client.initialize(ctx, svr, params)
 	if err != nil {
 		return nil, nil, err
 	}
