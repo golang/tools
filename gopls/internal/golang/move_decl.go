@@ -301,16 +301,22 @@ func moveDeclTarget(info *types.Info, curSel inspector.Cursor) (inspector.Cursor
 	return inspector.Cursor{}, "", nil
 }
 
-// declGraph is a directed graph where an edge (u, v) means top-level
-// symbol u references top-level symbol v in the same package.
-// declGraph[u][v] == true, then u depends on v.
-type declGraph map[types.Object]map[types.Object]bool
+// declGraph records, for each top-level symbol of a package, the other
+// top-level symbols that must move along with it.
+type declGraph struct {
+	// If explicit[u][v] is true, u refers to v by name in its declaration.
+	explicit map[types.Object]map[types.Object]bool
+
+	// If implicit[u][v] is true, u does not refer to v, but v must move
+	// whenever u moves.
+	implicit map[types.Object]map[types.Object]bool
+}
 
 type graphBuilder struct {
 	pkg  *types.Package
 	info *types.Info
 
-	graph declGraph
+	graph *declGraph
 }
 
 // collect traverses node "root" and for every top-level package symbol "to"
@@ -325,22 +331,22 @@ func (gb *graphBuilder) collect(from types.Object, root ast.Node) {
 		switch n := n.(type) {
 		case *ast.SelectorExpr:
 			if sel, ok := gb.info.Selections[n]; ok {
-				gb.addRef(from, sel.Obj())
+				gb.addExplicit(from, sel.Obj())
 				ast.Inspect(n.X, visit)
 				// No need to visit n.Sel, since we already
 				// recorded a ref via info.Selections above.
 				return false
 			}
 		case *ast.Ident:
-			gb.addRef(from, gb.info.Uses[n])
+			gb.addExplicit(from, gb.info.Uses[n])
 		}
 		return true
 	}
 	ast.Inspect(root, visit)
 }
 
-// addRef records a reference (directed edge) from "from" to "to".
-func (gb *graphBuilder) addRef(from, to types.Object) {
+// addExplicit records a reference (directed edge) from "from" to "to".
+func (gb *graphBuilder) addExplicit(from, to types.Object) {
 	if from == nil || to == nil || from == to {
 		return
 	}
@@ -351,23 +357,40 @@ func (gb *graphBuilder) addRef(from, to types.Object) {
 	if fn, ok := to.(*types.Func); ok {
 		to = fn.Origin()
 	}
-	if gb.graph[to] == nil {
+	explicit := gb.graph.explicit
+	if explicit[to] == nil {
 		return // not a top-level symbol
 	}
 	// Because we do a pass to initialize an edge set for every symbol,
-	// gb.graph[from] is guaranteed to be non-nil.
-	gb.graph[from][to] = true
+	// explicit[from] is guaranteed to be non-nil.
+	explicit[from][to] = true
 }
 
-// Compute the symbol reference graph for the src package.
-// Go through each top-level declaration. Create a directed edge (u, v) if
-// a decl u references decl v.
-func buildSymbolRefGraph(src *cache.Package) declGraph {
-	gb := &graphBuilder{
-		pkg:   src.Types(),
-		info:  src.TypesInfo(),
-		graph: make(declGraph),
+// addImplicit records that "to" must move whenever "from" moves.
+func (gb *graphBuilder) addImplicit(from, to types.Object) {
+	if from == nil || to == nil || from == to {
+		return
 	}
+	implicit := gb.graph.implicit
+	if implicit[from] == nil {
+		implicit[from] = make(map[types.Object]bool)
+	}
+	implicit[from][to] = true
+}
+
+// buildSymbolRefGraph computes the declaration graph for the src package.
+// Go through each top-level declaration. Create a directed edge (u, v) if
+// a decl u references decl v, or if v must move whenever u does.
+func buildSymbolRefGraph(src *cache.Package) *declGraph {
+	gb := &graphBuilder{
+		pkg:  src.Types(),
+		info: src.TypesInfo(),
+		graph: &declGraph{
+			explicit: make(map[types.Object]map[types.Object]bool),
+			implicit: make(map[types.Object]map[types.Object]bool),
+		},
+	}
+	explicit := gb.graph.explicit
 
 	// First pass: collect all top-level symbols in the source package.
 	for _, pgf := range src.CompiledGoFiles() {
@@ -375,7 +398,7 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
 				if fn, ok := gb.info.Defs[decl.Name].(*types.Func); ok {
-					gb.graph[fn] = make(map[types.Object]bool)
+					explicit[fn] = make(map[types.Object]bool)
 				}
 			case *ast.GenDecl:
 				switch decl.Tok {
@@ -383,14 +406,14 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 					for _, spec := range decl.Specs {
 						for _, id := range spec.(*ast.ValueSpec).Names {
 							if obj := gb.info.Defs[id]; obj != nil {
-								gb.graph[obj] = make(map[types.Object]bool)
+								explicit[obj] = make(map[types.Object]bool)
 							}
 						}
 					}
 				case token.TYPE:
 					for _, spec := range decl.Specs {
 						if obj := gb.info.Defs[spec.(*ast.TypeSpec).Name]; obj != nil {
-							gb.graph[obj] = make(map[types.Object]bool)
+							explicit[obj] = make(map[types.Object]bool)
 						}
 					}
 				}
@@ -409,6 +432,16 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 			case *ast.GenDecl:
 				switch decl.Tok {
 				case token.CONST, token.VAR:
+					if decl.Tok == token.CONST {
+						// Constants in an iota group must all move together.
+						// Link them in a cycle, so that reaching any one of
+						// them reaches the rest.
+						if objs, ok := usesIota(gb.info, decl); ok {
+							for i, obj := range objs {
+								gb.addImplicit(obj, objs[(i+1)%len(objs)])
+							}
+						}
+					}
 					for _, spec := range decl.Specs {
 						vspec := spec.(*ast.ValueSpec)
 						for i, id := range vspec.Names {
@@ -440,6 +473,16 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 							if tspec.TypeParams != nil {
 								gb.collect(obj, tspec.TypeParams)
 							}
+							// A type is coupled to its methods. We only move
+							// methods declared in the source package, not those
+							// inherited from embedded types in other packages
+							// (so we can't use types.NewMethodSet).
+							// TODO(mkalil): Should we move functions whose signature represents a constructor for this type?
+							if named, ok := obj.Type().(*types.Named); ok {
+								for m := range named.Methods() {
+									gb.addImplicit(obj, m)
+								}
+							}
 						}
 					}
 				}
@@ -447,49 +490,6 @@ func buildSymbolRefGraph(src *cache.Package) declGraph {
 		}
 	}
 	return gb.graph
-}
-
-// implicitDependencies returns all package-level symbols that must move
-// together with obj due to language coupling rules. These are ths symbols
-// that the given obj has an implicit dependency on.
-// Rules:
-//   - Type: all methods in its method set.
-//   - Method: receiver type declaration and all other methods on that receiver.
-//   - Const group using iota: all constants in the entire const (...) block.
-//
-// Also returns true if the dependency added is from an iota const group,
-// as we should avoid doing duplicate work on these objects.
-//
-// TODO(hxjiang): make this O(1). Rescanning the enclosing block per constant
-// makes computing the moving set of an n-constant block O(n^2) (33ms at
-// n=1000). Instead, build an implicitDeclGraph in buildSymbolRefGraph that
-// links each coupling class in a cycle.
-func implicitDependencies(pkg *cache.Package, obj types.Object) (coupled []types.Object, isIota bool) {
-	switch obj := obj.(type) {
-	case *types.TypeName:
-		if named, ok := obj.Type().(*types.Named); ok {
-			// We only move methods declared in the source package, not methods inherited
-			// from embedded types in other packages (so we can't use types.NewMethodSet).
-			// TODO(mkalil): Should we move functions whose signature represents a constructor for this type?
-			for m := range named.Methods() {
-				coupled = append(coupled, m)
-			}
-		}
-	case *types.Const:
-		// If the declaration is inside a const group using iota, add all constants in the entire block.
-		if pgf, err := pkg.FileEnclosing(obj.Pos()); err == nil {
-			if cur, ok := pgf.Cursor().FindByPos(obj.Pos(), obj.Pos()); ok {
-				if declCur, ok := moreiters.First(cur.Enclosing((*ast.GenDecl)(nil))); ok {
-					genDecl := declCur.Node().(*ast.GenDecl)
-					if objs, ok := usesIota(pkg.TypesInfo(), genDecl); ok {
-						isIota = true
-						coupled = append(coupled, objs...)
-					}
-				}
-			}
-		}
-	}
-	return coupled, isIota
 }
 
 // usesIota reports whether the GenDecl contains a use of iota. It returns
@@ -534,7 +534,7 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // For each of these symbols, we also include their coupled symbols, recursively.
 // For each symbol's dependencies (as specified by edges in the declGraph), we add
 // the symbol to the moving set.
-func computeMovingSet(srcPkg, destPkg *cache.Package, graph declGraph, targetObj types.Object) map[types.Object]bool {
+func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetObj types.Object) map[types.Object]bool {
 	visited := map[types.Object]bool{targetObj: true}
 	if srcPkg == destPkg {
 		// If the move is within the same package, we only need to move the
@@ -554,12 +554,11 @@ func computeMovingSet(srcPkg, destPkg *cache.Package, graph declGraph, targetObj
 	for len(queue) > 0 {
 		current := queue[0] // dequeue
 		queue = queue[1:]
-		for v := range graph[current] { // explicit deps
+		for v := range graph.explicit[current] {
 			enqueue(v)
 		}
-		deps, _ := implicitDependencies(srcPkg, current) // implicit deps
-		for _, c := range deps {
-			enqueue(c)
+		for v := range graph.implicit[current] {
+			enqueue(v)
 		}
 	}
 	return visited
@@ -583,10 +582,12 @@ func pkgTransitivelyImports(g *metadata.Graph, fromPkg, targetPkg *metadata.Pack
 // remainingReferencesMoving reports whether any decl in the graph that is not in the
 // moving set depends on any object in the moving set. It also reports a list of the names of unexported
 // objects in the moving set that are referenced by an object in the remaining set.
-func remainingReferencesMoving(graph declGraph, moving map[types.Object]bool) (names []string, refExisting bool) {
+func remainingReferencesMoving(graph *declGraph, moving map[types.Object]bool) (names []string, refExisting bool) {
 	var unexported []types.Object
 	seen := make(map[types.Object]bool)
-	for obj, deps := range graph {
+	// Only explicit edges can cross the boundary: the moving set is closed
+	// under implicit edges, so a coupling class always moves as a whole.
+	for obj, deps := range graph.explicit {
 		if !moving[obj] {
 			for n := range deps {
 				if moving[n] {
@@ -617,7 +618,7 @@ func remainingReferencesMoving(graph declGraph, moving map[types.Object]bool) (n
 //   - import cycles
 //   - illegal imports (i.e. internal imports)
 //   - shadowing and name conflicts in the destination package
-func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI protocol.DocumentURI, graph declGraph, moving map[types.Object]bool, moveTarget types.Object) error {
+func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool, moveTarget types.Object) error {
 	var (
 		srcMeta    = srcPkg.Metadata()
 		destMeta   = destPkg.Metadata()
