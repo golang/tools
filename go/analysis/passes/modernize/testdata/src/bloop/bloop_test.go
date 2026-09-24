@@ -15,6 +15,15 @@ func BenchmarkA(b *testing.B) {
 	}
 }
 
+func BenchmarkResetBeforeLoop(b *testing.B) {
+	println("slow")
+	// comment before ResetTimer
+	b.ResetTimer() // comment on the same line as ResetTimer (deleted)
+	// comment after ResetTimer
+	for range b.N { // want "b.N can be modernized using b.Loop.."
+	}
+}
+
 var otherBenchmark *testing.B
 
 func BenchmarkOtherReceiver(b *testing.B) {
