@@ -796,6 +796,13 @@ func (s *server) Shutdown(ctx context.Context) error {
 			s.web.server.Shutdown(ctx) // ignore error
 		}
 
+		s.modificationMu.Lock()
+		if s.cancelPrevDiagnostics != nil {
+			s.cancelPrevDiagnostics()
+			s.cancelPrevDiagnostics = nil
+		}
+		s.modificationMu.Unlock()
+
 		// drop all the active views
 		s.session.Shutdown(ctx)
 		s.state = serverShutDown

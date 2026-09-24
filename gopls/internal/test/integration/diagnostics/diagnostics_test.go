@@ -2251,3 +2251,28 @@ func Foo() {}
 		env.AfterChange(NoDiagnostics())
 	})
 }
+
+func TestOrphanedFileDiagnostics_Shutdown(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+func _() {}
+`
+	WithOptions(
+		Settings{
+			"diagnosticsDelay": "100ms",
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.RegexpReplace("a.go", "func _", "func f")
+		if err := env.Editor.Shutdown(env.Ctx); err != nil {
+			t.Fatal(err)
+		}
+		env.Await(NoErrorLogs())
+	})
+}

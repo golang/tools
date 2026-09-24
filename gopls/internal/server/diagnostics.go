@@ -177,7 +177,7 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 		err = s.updateOrphanedFileDiagnostics(ctx, modID, orphanedFileDiagnostics)
 	}
 	if err != nil {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && !errors.Is(err, cache.ErrSessionShutdown) {
 			event.Error(ctx, "warning: while diagnosing orphaned files", err)
 		}
 	}
