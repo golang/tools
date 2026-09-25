@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/edge"
@@ -76,8 +77,9 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 	}
 	constant := info.Types[expr0].Value != nil
 
-	// Generate name(s) for new declaration.
-	baseName := cond(constant, "newConst", "newVar")
+	// Generate name for new declaration.
+	rawBaseName := suggestBaseName(info, expr0)
+	baseName := cleanVarName(rawBaseName, constant)
 	var lhsNames []string
 	switch expr := expr0.(type) {
 	case *ast.CallExpr:
@@ -90,11 +92,25 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 
 		} else {
 			// call with multiple results
-			idx := 0
-			for range tup.Len() {
-				// Generate a unique variable for each result.
-				var name string
-				name, idx = generateName(idx, baseName, hasCollision)
+			usedNames := make(map[string]bool)
+			collisionWithUsed := func(name string) bool {
+				return usedNames[name] || hasCollision(name)
+			}
+
+			for idx := range tup.Len() {
+				v := tup.At(idx)
+				var elemBaseName string
+
+				if idx == 0 && rawBaseName != "" {
+					elemBaseName = baseName
+				}
+
+				if elemBaseName == "" {
+					elemBaseName = cleanVarName(suggestBaseNameFromType(v.Type()), false)
+				}
+
+				name, _ := generateName(0, elemBaseName, collisionWithUsed)
+				usedNames[name] = true
 				lhsNames = append(lhsNames, name)
 			}
 		}
@@ -262,6 +278,183 @@ Outer:
 	return fset, &analysis.SuggestedFix{
 		TextEdits: textEdits,
 	}, nil
+}
+
+// cleanVarName returns a formatted lower camelCase variable name derived from raw.
+// If raw is empty, it falls back to a default name ("newConst" if constant is true, otherwise "newVar").
+func cleanVarName(raw string, constant bool) string {
+	if raw != "" {
+		return lowerName(raw)
+	}
+
+	return cond(constant, "newConst", "newVar")
+}
+
+// suggestBaseName returns a raw candidate variable name for an expression.
+// To avoid generating noisy names, it returns "" unless it finds a high-confidence match.
+//
+// Checks in order:
+//  1. Function calls: extracts the name only if it starts with a recognized prefix
+//     (like "get" or "fetch") and strips it ('getUsers()' -> 'Users').
+//  2. Field selectors: uses the field name, ignoring method calls ('user.Name' -> 'Name').
+//  3. Identifiers: uses the name as-is.
+//  4. Expression type: falls back to [suggestBaseNameFromType].
+//
+// The returned string is raw and should be passed to [cleanVarName].
+func suggestBaseName(info *types.Info, expr ast.Expr) string {
+	if call, ok := expr.(*ast.CallExpr); ok {
+		var funcName string
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			funcName = fn.Name
+		case *ast.SelectorExpr:
+			funcName = fn.Sel.Name
+		}
+
+		if funcName != "" {
+			if cleaned := stripFuncPrefixes(funcName); cleaned != "" {
+				return cleaned
+			}
+		}
+	}
+
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		if tv, ok := info.Types[sel]; ok && tv.IsValue() {
+			if _, isSelection := info.Selections[sel]; !isSelection || info.Selections[sel].Kind() != types.MethodVal {
+				return sel.Sel.Name
+			}
+		}
+	}
+
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name
+	}
+
+	if tv, ok := info.Types[expr]; ok && tv.Type != nil {
+		if tName := suggestBaseNameFromType(tv.Type); tName != "" {
+			return tName
+		}
+	}
+
+	return ""
+}
+
+// prefixes is a list of common action prefixes stripped from function names
+// to produce cleaner candidate variable names.
+var prefixes = []string{"get", "fetch", "read", "parse", "extract", "calculate", "new", "create"}
+
+// stripFuncPrefixes removes common action prefixes (such as "get", "fetch", "new")
+// from a function name to produce a cleaner variable name.
+func stripFuncPrefixes(name string) string {
+	lowerName := strings.ToLower(name)
+
+	for _, p := range prefixes {
+		if strings.HasPrefix(lowerName, p) && len(name) > len(p) {
+			return name[len(p):]
+		}
+	}
+
+	return ""
+}
+
+// suggestBaseNameFromType returns a raw candidate variable name based on type t.
+// It returns "" for anonymous or vague types where a candidate name would likely be noise.
+//
+// Checks in order:
+//  1. Known types: returns idiomatic names ('error' -> 'err').
+//  2. Named types: uses the type name ('User' -> 'User').
+//  3. Pointers: unwraps element type ('*Config' -> 'Config' -> 'Config').
+//  4. Containers: delegates to [containerVarName] ('[]Item' -> 'Items').
+//
+// The returned string is raw and should be passed to [cleanVarName].
+func suggestBaseNameFromType(t types.Type) string {
+	if t == nil {
+		return ""
+	}
+
+	if s := wellKnownVarName(t); s != "" {
+		return s
+	}
+
+	switch tt := t.(type) {
+	case *types.Named:
+		return tt.Obj().Name()
+	case *types.Pointer:
+		return suggestBaseNameFromType(tt.Elem())
+	}
+
+	if s := containerVarName(t); s != "" {
+		return s
+	}
+
+	return ""
+}
+
+// wellKnownVarName returns idiomatic variable names for well-known types,
+// such as "err" for error types.
+func wellKnownVarName(t types.Type) string {
+	if types.Identical(t, errorType) {
+		return "err"
+	}
+
+	return ""
+}
+
+// containerVarName returns a name for slices, arrays, and channels.
+// Slices and arrays get an "s" suffix ('Item' -> 'Items'), while channels
+// use the element name as-is ('Event' -> 'Event').
+//
+// Simple "s" suffixing stays lightweight and avoids complex pluralization rules,
+// even if it occasionally produces minor typos (e.g., "entitys").
+func containerVarName(t types.Type) string {
+	switch tt := t.Underlying().(type) {
+	case *types.Array:
+		if elemName := suggestBaseNameFromType(tt.Elem()); elemName != "" {
+			return elemName + "s"
+		}
+	case *types.Slice:
+		if elemName := suggestBaseNameFromType(tt.Elem()); elemName != "" {
+			return elemName + "s"
+		}
+	case *types.Chan:
+		if elemName := suggestBaseNameFromType(tt.Elem()); elemName != "" {
+			return elemName
+		}
+	}
+
+	return ""
+}
+
+// lowerName converts an initial upper-case segment or acronym in s to lower case,
+// preserving camelCase formatting (e.g., "URLString" becomes "urlString", "HTTP" becomes "http").
+func lowerName(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	runes := []rune(s)
+	n := 0
+	for n < len(runes) && unicode.IsUpper(runes[n]) {
+		n++
+	}
+
+	if n == 0 {
+		return s
+	}
+
+	if n == len(runes) {
+		return strings.ToLower(s)
+	}
+
+	if n > 1 {
+		n--
+	}
+
+	for i := 0; i < n; i++ {
+		runes[i] = unicode.ToLower(runes[i])
+	}
+
+	return string(runes)
 }
 
 // stmtToInsertVarBefore returns the ast.Stmt before which we can safely insert a new variable,
@@ -529,11 +722,23 @@ func freshNameOutsideRange(info *types.Info, file *ast.File, pos, start, end tok
 	})
 }
 
+// generateName attempts to form a unique, valid variable name by appending a numeric
+// suffix (derived from idx) to the given prefix.
+//
+// It automatically increments the suffix index if the generated name collides with a Go keyword
+// or if hasCollision returns true for that name (indicating a collision with an existing variable
+// or another variable generated in the same scope).
+//
+// Returns the unique name and the next available index to use for subsequent name generations.
 func generateName(idx int, prefix string, hasCollision func(string) bool) (string, int) {
 	name := prefix
 	if idx != 0 {
 		name += fmt.Sprintf("%d", idx)
+	} else if token.IsKeyword(name) {
+		idx++
+		name = fmt.Sprintf("%v%d", prefix, idx)
 	}
+
 	for hasCollision(name) {
 		idx++
 		name = fmt.Sprintf("%v%d", prefix, idx)
