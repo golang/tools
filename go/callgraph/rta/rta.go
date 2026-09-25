@@ -107,14 +107,18 @@ type rta struct {
 	// m:n "implements" relation needed by the algorithm.
 
 	// concreteTypes maps each concrete type to information about it.
+	// concreteList holds the same infos in insertion order, for
+	// iteration without walking the hash map.
 	// Keys are types.Type, values are *concreteTypeInfo.
 	// Only concrete types used as MakeInterface operands are included.
 	concreteTypes typeutil.Map
+	concreteList  []*concreteTypeInfo
 
 	// interfaceTypes maps each interface type to information about it.
 	// Keys are *types.Interface, values are *interfaceTypeInfo.
 	// Only interfaces used in "invoke"-mode CallInstructions are included.
 	interfaceTypes typeutil.Map
+	interfaceList  []*interfaceTypeInfo
 }
 
 type concreteTypeInfo struct {
@@ -369,16 +373,16 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 			fprint: fingerprint(r.prog.MethodSets.MethodSet(C)),
 		}
 		r.concreteTypes.Set(C, cinfo)
+		r.concreteList = append(r.concreteList, cinfo)
 
 		// Ascertain set of interfaces C implements
 		// and update the 'implements' relation.
-		r.interfaceTypes.Iterate(func(I types.Type, v any) {
-			iinfo := v.(*interfaceTypeInfo)
-			if I := types.Unalias(I).(*types.Interface); implements(cinfo, iinfo) {
+		for _, iinfo := range r.interfaceList {
+			if implements(cinfo, iinfo) {
 				iinfo.implementations = append(iinfo.implementations, C)
-				cinfo.implements = append(cinfo.implements, I)
+				cinfo.implements = append(cinfo.implements, iinfo.I)
 			}
-		})
+		}
 	}
 
 	return cinfo.implements
@@ -396,16 +400,16 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 			fprint: fingerprint(r.prog.MethodSets.MethodSet(I)),
 		}
 		r.interfaceTypes.Set(I, iinfo)
+		r.interfaceList = append(r.interfaceList, iinfo)
 
 		// Ascertain set of concrete types that implement I
 		// and update the 'implements' relation.
-		r.concreteTypes.Iterate(func(C types.Type, v any) {
-			cinfo := v.(*concreteTypeInfo)
+		for _, cinfo := range r.concreteList {
 			if implements(cinfo, iinfo) {
 				cinfo.implements = append(cinfo.implements, I)
-				iinfo.implementations = append(iinfo.implementations, C)
+				iinfo.implementations = append(iinfo.implementations, cinfo.C)
 			}
-		})
+		}
 	}
 	return iinfo.implementations
 }
