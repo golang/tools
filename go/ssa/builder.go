@@ -172,12 +172,9 @@ func (b *builder) enqueue(fn *Function) {
 // This should include any functions that may be built by other
 // builders.
 func (b *builder) waitForSharedFunction(fn *Function) {
-	// Check whether fn is already built before calling b.shared(),
-	// which allocates a task and a channel that b.iterate() would
-	// then have to close and wait on. The common case, a lookup of
-	// a method that was created and built long ago, needs neither.
-	if t := fn.buildshared; t != nil && !t.isTransitivelyDone() { // maybe need to wait?
-		b.shared().addEdge(t)
+	if fn.buildshared != nil { // maybe need to wait?
+		s := b.shared()
+		s.addEdge(fn.buildshared)
 	}
 }
 
