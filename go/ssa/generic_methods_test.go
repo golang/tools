@@ -336,14 +336,39 @@ func TestGenericMethods(t *testing.T) {
 		}
 	}
 
-	testBuilds := []string{
-		// instantiate same signature with value / pointer receivers
-		fmt.Sprintf(g, "_ = g.M[bool]; _ = g.N[bool]"),
-		fmt.Sprintf(n, "_ = n.M[bool]; _ = n.N[bool]"),
+	const receiverCases = `package p
+type G[P any] struct { x P }
+func (g G[P]) M[Q any](q Q) (P, Q) { return g.x, q }
+func (g *G[P]) N[Q any](q Q) (P, Q) { return g.x, q }
+func same[P, Q any](q Q) (P, Q) { var p P; return p, q }
+func value[P, Q any]() func(G[P], Q) (P, Q) { return G[P].M[Q] }
+func pointer[P, Q any]() func(*G[P], Q) (P, Q) { return (*G[P]).N[Q] }
+type Outer[P any] struct { G[P] }
+func promoted[P, Q any]() func(Outer[P], Q) (P, Q) { return Outer[P].M[Q] }
+func f() {
+    %s
+}`
+
+	testBuilds := []struct {
+		prog  string
+		stmts string
+	}{
+		// Value and pointer receivers on generic and non-generic types.
+		{g, "_ = g.M[bool]; _ = g.N[bool]"},
+		{n, "_ = n.M[bool]; _ = n.N[bool]"},
+		// An ordinary function has the same signature as M without its receiver.
+		// It must not cause the method's instantiated signature to lose its receiver.
+		{receiverCases, `_, _ = same[int, string]("ordinary function"); value[int, string]()(G[int]{42}, "value")`},
+		// Pointer receiver.
+		{receiverCases, `g := G[int]{42}; pointer[int, string]()(&g, "pointer")`},
+		// Promoted method.
+		{receiverCases, `promoted[int, string]()(Outer[int]{G[int]{42}}, "promoted")`},
 	}
 
-	for _, prog := range testBuilds {
-		build(t, prog)
+	for _, test := range testBuilds {
+		src := fmt.Sprintf(test.prog, test.stmts)
+		buildMode(t, src, ssa.SanityCheckFunctions)
+		buildMode(t, src, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	}
 }
 
@@ -354,6 +379,10 @@ type call struct {
 }
 
 func build(t *testing.T, src string) *ssa.Package {
+	return buildMode(t, src, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+}
+
+func buildMode(t *testing.T, src string, mode ssa.BuilderMode) *ssa.Package {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "p.go", src, 0)
 	if err != nil {
@@ -373,7 +402,7 @@ func build(t *testing.T, src string) *ssa.Package {
 		t.Fatal(err)
 	}
 
-	prog := ssa.NewProgram(fset, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	prog := ssa.NewProgram(fset, mode)
 	p := prog.CreatePackage(pkg, []*ast.File{f}, info, true)
 	prog.Build()
 
