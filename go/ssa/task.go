@@ -97,7 +97,7 @@ func (x *task) wait() {
 	// u is transitively done.
 	for _, u := range work {
 		if u != nil {
-			x.transitive.Store(true)
+			u.transitive.Store(true)
 		}
 	}
 }
