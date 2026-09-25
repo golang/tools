@@ -99,6 +99,280 @@ func StayStrings(s string) bool {
 	return strings.Contains(s, "x")
 }
 
+-- src/widget.go --
+package src
+
+import "bytes"
+
+// Widget's method is in another file, and both files import "bytes".
+type Widget struct { //@codeaction(re"Widget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_import)
+	buf *bytes.Buffer
+}
+
+-- @move_multi_file_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+type Widget struct { //@codeaction(re"Widget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_import)
+	buf *bytes.Buffer
+}
+
+func (w *Widget) Reset() {
+	w.buf = new(bytes.Buffer)
+}
+-- @move_multi_file_import/src/widget.go --
+package src
+
+
+
+// Widget's method is in another file, and both files import "bytes".
+
+
+-- @move_multi_file_import/src/widget_methods.go --
+package src
+
+import (
+	
+	"strings"
+)
+
+
+
+func StayUpper(s string) string {
+	return strings.ToUpper(s)
+}
+
+-- src/widget_methods.go --
+package src
+
+import (
+	"bytes"
+	"strings"
+)
+
+func (w *Widget) Reset() {
+	w.buf = new(bytes.Buffer)
+}
+
+func StayUpper(s string) string {
+	return strings.ToUpper(s)
+}
+
+-- src/gadget.go --
+package src
+
+import "bytes"
+
+// UsesBytes's method is in another file, which imports "bytes" as bytes2.
+type UsesBytes struct { //@codeaction(re"UsesBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_renamed_import)
+	buf *bytes.Buffer
+}
+
+-- @move_multi_file_renamed_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+import bytes2 "bytes"
+
+func Existing() {}
+
+type UsesBytes struct { //@codeaction(re"UsesBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_renamed_import)
+	buf *bytes.Buffer
+}
+
+func (g *UsesBytes) Reset() {
+	g.buf = new(bytes2.Buffer)
+}
+-- @move_multi_file_renamed_import/src/gadget.go --
+package src
+
+
+
+// UsesBytes's method is in another file, which imports "bytes" as bytes2.
+
+
+-- @move_multi_file_renamed_import/src/gadget_methods.go --
+package src
+
+
+
+
+
+-- src/gadget_methods.go --
+package src
+
+import bytes2 "bytes"
+
+func (g *UsesBytes) Reset() {
+	g.buf = new(bytes2.Buffer)
+}
+
+-- src/uses_dest.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// CallsDest refers to the dest package, which must not import itself.
+func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
+	dest.Existing()
+}
+
+-- @move_no_self_import/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
+	dest.Existing()
+}
+-- @move_no_self_import/src/uses_dest.go --
+package src
+
+
+
+// CallsDest refers to the dest package, which must not import itself.
+
+
+-- src/commented.go --
+package src
+
+import "bytes" // for Buffer
+
+// Commented's method is in another file, which imports "bytes" without a comment.
+type Commented struct { //@codeaction(re"Commented", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_commented_import)
+	buf *bytes.Buffer
+}
+
+-- @move_commented_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+type Commented struct { //@codeaction(re"Commented", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_commented_import)
+	buf *bytes.Buffer
+}
+
+func (c *Commented) Reset() {
+	c.buf = new(bytes.Buffer)
+}
+-- @move_commented_import/src/commented.go --
+package src
+
+ // for Buffer
+
+// Commented's method is in another file, which imports "bytes" without a comment.
+
+
+-- @move_commented_import/src/commented_methods.go --
+package src
+
+
+
+
+
+-- src/commented_methods.go --
+package src
+
+import "bytes"
+
+func (c *Commented) Reset() {
+	c.buf = new(bytes.Buffer)
+}
+
+-- src/order.go --
+package src
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+// Describe needs several imports. Their order in dest must be deterministic.
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+
+-- @move_import_order_existing/dest/dest.go --
+package dest
+
+import "bytes"
+
+import "errors"
+
+import "fmt"
+
+import "strings"
+
+import "unicode"
+
+func Existing() {}
+
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+-- @move_import_order_existing/src/order.go --
+package src
+
+import (
+	
+	
+	
+	
+	
+)
+
+// Describe needs several imports. Their order in dest must be deterministic.
+
+
+-- @move_import_order_new/dest/describe.go --
+package dest
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+-- @move_import_order_new/src/order.go --
+package src
+
+import (
+	
+	
+	
+	
+	
+)
+
+// Describe needs several imports. Their order in dest must be deterministic.
+
+
 -- @move_single_import/src/single.go --
 package src
 

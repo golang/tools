@@ -34,7 +34,7 @@ func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 	return ok
 }
 
-// findImportChanges finds imports specs that needs to be added to the destination file
+// findImportChanges finds imports specs that need to be added to the destination file
 // or deleted from the old file if the given ranges are extracted.
 //
 // TODO: handle dot imports.
@@ -197,6 +197,7 @@ func importDeletesEdits(pgf *parsego.File, deletes []*ast.ImportSpec) (edits []p
 	// For parenthesised declarations like `import ("fmt"\n "log")`
 	// we only remove the ImportSpec, because removing the whole declaration
 	// might remove other ImportsSpecs we don't want to touch.
+	// TODO(mkalil): This doesn't delete inline comments, and it probably should.
 	unparenthesizedImports := unparenthesizedImports(pgf)
 	for _, importSpec := range deletes {
 		var n ast.Node = importSpec

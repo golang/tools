@@ -123,6 +123,8 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		show    protocol.Range // Location where the decls are added. We'll redirect the editor view to here.
 	)
 	// Extract the ranges of the moving declarations.
+	// TODO(mkalil): make the type map[uri][]movingRange to group ranges by URI so
+	// we can more easily calculate imports inside updateSrcDestImports.
 	movingRanges, err := extractMovingDeclarations(srcPkg, moving)
 	if err != nil {
 		return nil, protocol.Location{}, err
@@ -139,20 +141,11 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		edits[destFH.URI()] = newFileEdits
 	}
 
-	// Compute import changes based on packages referenced within the moving decls.
-	destAddImportEdits, srcDeleteImportEdits, err := updateSrcDestImports(srcPkg, destPkg, srcPGF, destPGF, declRanges)
-	if err != nil {
+	// Source and dest: update imports based on packages referenced within the
+	// moving decls. This must come after the new file header edit, since both
+	// insert at the start of a new dest file and are applied in order.
+	if err := updateSrcDestImports(srcPkg, destPkg, destPGF, destFH.URI(), movingRanges, edits); err != nil {
 		return nil, protocol.Location{}, err
-	}
-
-	// Source: delete unused imports.
-	if len(srcDeleteImportEdits) > 0 {
-		edits[srcFH.URI()] = append(edits[srcFH.URI()], srcDeleteImportEdits...)
-	}
-
-	// Dest: add new imports.
-	if len(destAddImportEdits) > 0 {
-		edits[destFH.URI()] = append(edits[destFH.URI()], destAddImportEdits...)
 	}
 
 	// Dest: determine file range to add moving declarations.
@@ -208,6 +201,11 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		return nil, protocol.Location{}, err
 	}
 	changes = append(changes, docChanges...)
+	// TODO(mkalil): Rewrite package qualifiers inside the moving decls. The moved
+	// text is copied exactly from src, so a moving decl that refers to destPkg
+	// (e.g. "dest.Existing()") keeps its "dest." qualifier, which doesn't compile
+	// in dest.
+	// TODO(mkalil): Handle edge cases involving interfaces.
 	return changes, protocol.Location{URI: destURI, Range: show}, nil
 }
 
@@ -802,41 +800,61 @@ func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]p
 	return edits, nil
 }
 
-// updateSrcDestImports returns:
-// - destAddImportEdits: text edits to add imports to the destination file
-// - srcDeleteImportEdits: text edits to remove unused imports from srcPGF
+// updateSrcDestImports records edits to remove imports that become unused
+// in each source file, and to add the imports needed by the moving
+// declarations to the destination file, destURI.
 // It only handles packages that are used by the moving declarations.
 // Note: destPGF may be nil if the target destination file is a new file.
-func updateSrcDestImports(srcPkg, destPkg *cache.Package, srcPGF, destPGF *parsego.File, declRanges []astutil.Range) (
-	destAddImportEdits []protocol.TextEdit,
-	srcDeleteImportEdits []protocol.TextEdit,
-	err error,
-) {
-	adds, deletes, err := findImportChanges(srcPGF.File, srcPkg.TypesInfo(), declRanges...)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Do not add a self-import of destPkg to the destination file.
-	// (findImportEdits may return a dest import if the dest package is referenced
-	// as part of some moving declaration.)
-	var filteredAdds []*ast.ImportSpec
-	for _, spec := range adds {
-		if pkgName := srcPkg.TypesInfo().PkgNameOf(spec); pkgName != nil &&
-			pkgName.Imported().Path() == string(destPkg.Metadata().PkgPath) {
+func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File, destURI protocol.DocumentURI, movingRanges []movingRange, edits map[protocol.DocumentURI][]protocol.TextEdit) error {
+	// Imports belong to a file, so find the import changes separately for each
+	// source file that has moving declarations.
+	var adds []*ast.ImportSpec
+	type importKey struct{ name, path string }
+	seen := make(map[importKey]bool) // imports already in adds
+	for _, curPGF := range srcPkg.CompiledGoFiles() {
+		var curFileRanges []astutil.Range
+		for _, r := range movingRanges {
+			if r.pgf == curPGF {
+				curFileRanges = append(curFileRanges, r.Range())
+			}
+		}
+		if len(curFileRanges) == 0 {
+			// Not moving anything from current file.
 			continue
 		}
-		filteredAdds = append(filteredAdds, spec)
+		destAdds, srcDeletes, err := findImportChanges(curPGF.File, srcPkg.TypesInfo(), curFileRanges...)
+		if err != nil {
+			return err
+		}
+		if len(srcDeletes) > 0 {
+			edits[curPGF.URI] = append(edits[curPGF.URI], importDeletesEdits(curPGF, srcDeletes)...)
+		}
+		// Several source files may import the same package but we should add it only once.
+		for _, spec := range destAdds {
+			key := importKey{path: spec.Path.Value}
+			if spec.Name != nil {
+				key.name = spec.Name.Name
+			}
+			if !seen[key] {
+				seen[key] = true
+				// Do not add a self-import of destPkg to the destination file.
+				// (findImportChanges may return a dest import if the dest package is referenced
+				// as part of some moving declaration.)
+				if pkgName := srcPkg.TypesInfo().PkgNameOf(spec); pkgName != nil &&
+					pkgName.Imported().Path() == string(destPkg.Metadata().PkgPath) {
+					continue
+				}
+				adds = append(adds, spec)
+			}
+		}
 	}
-	adds = filteredAdds
-
-	srcDeleteImportEdits = importDeletesEdits(srcPGF, deletes)
 	if destPGF != nil {
 		// Destination file already exists: calculate text edits via addImport,
 		// which wraps refactor.AddImport.
 		for _, spec := range adds {
 			path, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
 			name := ""
 			if spec.Name != nil {
@@ -844,9 +862,9 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, srcPGF, destPGF *parse
 			}
 			_, impEdits, err := addImport(destPkg.TypesInfo(), destPGF, name, path, "", destPGF.File.FileEnd-1)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
-			destAddImportEdits = append(destAddImportEdits, impEdits...)
+			edits[destURI] = append(edits[destURI], impEdits...)
 		}
 	} else if len(adds) > 0 {
 		// Destination file is new: insert imports at start of file.
@@ -860,13 +878,13 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, srcPGF, destPGF *parse
 			}
 		}
 		buf.WriteString(")\n\n")
-		destAddImportEdits = append(destAddImportEdits, protocol.TextEdit{
+		edits[destURI] = append(edits[destURI], protocol.TextEdit{
 			Range:   protocol.Range{},
 			NewText: buf.String(),
 		})
 	}
 
-	return destAddImportEdits, srcDeleteImportEdits, nil
+	return nil
 }
 
 // addImport wraps [refactor.AddImport] and converts the resulting edits to [protocol.TextEdit]s.
