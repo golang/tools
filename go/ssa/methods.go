@@ -8,6 +8,7 @@ package ssa
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
@@ -51,47 +52,57 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	var b builder
+	method := sel.Obj().(*types.Func)
+	key := methodKeyOf(method.Pkg(), method.Name())
 
-	m := func() *Function {
+	// The critical section returns a builder only if it created a
+	// new Function. In the common case, a method created by an
+	// earlier call, it allocates nothing: a builder declared out
+	// here would escape to the heap on every call.
+	fn, b := func() (*Function, *builder) {
 		prog.methodsMu.Lock()
 		defer prog.methodsMu.Unlock()
 
 		// Get or create SSA method set.
 		mset, ok := prog.methodSets.At(T).(*methodSet)
 		if !ok {
-			mset = &methodSet{mapping: make(map[string]*Function)}
+			mset = &methodSet{mapping: make(map[methodKey]*Function)}
 			prog.methodSets.Set(T, mset)
 		}
 
 		// Get or create SSA method.
-		id := sel.Obj().Id()
-		fn, ok := mset.mapping[id]
-		if !ok {
-			obj := sel.Obj().(*types.Func)
-			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
-			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel), nil)
-				fn.buildshared = b.shared()
-				b.enqueue(fn)
-			} else {
-				fn = prog.objectMethod(obj, nil, &b)
-			}
-			if fn.Signature.Recv() == nil {
-				panic(fn)
-			}
-			mset.mapping[id] = fn
-		} else {
-			b.waitForSharedFunction(fn)
+		if fn, ok := mset.mapping[key]; ok {
+			return fn, nil
 		}
-
-		return fn
+		b := new(builder)
+		var fn *Function
+		needsPromotion := len(sel.Index()) > 1
+		needsIndirection := !isPointer(recvType(method)) && isPointer(T)
+		if needsPromotion || needsIndirection {
+			fn = createWrapper(prog, toSelection(sel), nil)
+			fn.buildshared = b.shared()
+			b.enqueue(fn)
+		} else {
+			fn = prog.objectMethod(method, nil, b)
+		}
+		if fn.Signature.Recv() == nil {
+			panic(fn)
+		}
+		mset.mapping[key] = fn
+		return fn, b
 	}()
 
-	b.iterate()
+	if b != nil {
+		b.iterate()
+	} else if !fn.buildshared.isTransitivelyDone() {
+		// fn was created by an earlier call and another builder
+		// is still building it: wait for that to finish.
+		var b builder
+		b.waitForSharedFunction(fn)
+		b.iterate()
+	}
 
-	return m
+	return fn
 }
 
 // objectMethod returns the Function for a given method symbol.
@@ -147,7 +158,7 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 	// type) pair, so this is the common case; it avoids computing
 	// the method set of T and searching it, which dominates the
 	// cost of the slow path below.
-	if fn := prog.existingMethod(T, types.Id(pkg, name)); fn != nil {
+	if fn := prog.existingMethod(T, methodKeyOf(pkg, name)); fn != nil {
 		return fn
 	}
 
@@ -158,17 +169,18 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 	return prog.MethodValue(sel)
 }
 
-// existingMethod returns the Function implementing method id of
-// the concrete type T if it has already been created and built, or
-// nil. A recorded method implies that T was found to be concrete and
-// non-parameterized and the method non-generic when it was created.
+// existingMethod returns the Function implementing the method of
+// the concrete type T identified by key, if it has already been
+// created and built, or nil. A recorded method implies that T was
+// found to be concrete and non-parameterized and the method
+// non-generic when it was created.
 //
 // Acquires prog.methodsMu.
-func (prog *Program) existingMethod(T types.Type, id string) *Function {
+func (prog *Program) existingMethod(T types.Type, key methodKey) *Function {
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
 	if mset, ok := prog.methodSets.At(T).(*methodSet); ok {
-		if fn := mset.mapping[id]; fn != nil && fn.buildshared.isTransitivelyDone() {
+		if fn := mset.mapping[key]; fn != nil && fn.buildshared.isTransitivelyDone() {
 			return fn
 		}
 	}
@@ -177,7 +189,26 @@ func (prog *Program) existingMethod(T types.Type, id string) *Function {
 
 // methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
 type methodSet struct {
-	mapping map[string]*Function // populated lazily
+	mapping map[methodKey]*Function // populated lazily
+}
+
+// methodKey identifies a method within a method set the same way
+// types.Id does, by name for exported methods and by package path
+// and name for unexported ones, without building a string.
+type methodKey struct {
+	path string // package path, or "" if name is exported
+	name string
+}
+
+func methodKeyOf(pkg *types.Package, name string) methodKey {
+	if token.IsExported(name) {
+		return methodKey{"", name}
+	}
+	path := "_" // as types.Id does when pkg is nil
+	if pkg != nil {
+		path = pkg.Path()
+	}
+	return methodKey{path, name}
 }
 
 // RuntimeTypes returns a new unordered slice containing all types in
