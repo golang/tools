@@ -44,7 +44,7 @@ package dest2
 
 func Existing() {}
 
-func TargetInSrc() int {
+func TargetInSrc() int { //@codeaction(re"TargetInSrc", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_in_src)
 	return 42
 }
 -- @ref_in_src/src/in_src.go --
@@ -52,9 +52,7 @@ package src
 
 import "golang.org/lsptests/movedeclrefs/dest2"
 
-func TargetInSrc() int { //@codeaction(re"TargetInSrc", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_in_src)
-	return 42
-}
+
 
 func CallerSameFile() int {
 	return dest2.TargetInSrc()
@@ -135,7 +133,7 @@ package dest
 
 func Existing() {}
 
-func MoveToDest() int {
+func MoveToDest() int { //@codeaction(re"MoveToDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_dest)
 	return 7
 }
 -- @ref_in_dest/dest/use_src.go --
@@ -146,6 +144,11 @@ package dest
 func UseFromDest() int {
 	return MoveToDest()
 }
+
+-- @ref_in_dest/src/to_dest.go --
+package src
+
+
 
 -- dest/use_src.go --
 package dest
@@ -176,7 +179,7 @@ package dest
 
 func Existing() {}
 
-func MoveForExtOnly() int {
+func MoveForExtOnly() int { //@codeaction(re"MoveForExtOnly", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_drop_src)
 	return 2
 }
 -- @ref_in_ext_drop_src/ext/only_moving.go --
@@ -190,12 +193,25 @@ func UseOnlyMoving() int {
 	return dest.MoveForExtOnly()
 }
 
+-- @ref_in_ext_drop_src/src/to_ext.go --
+package src
+
+func StayInSrc() int {
+	return 1
+}
+
+
+
+func MoveForExtShared() int { //@codeaction(re"MoveForExtShared", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_keep_src)
+	return 3
+}
+
 -- @ref_in_ext_keep_src/dest/dest.go --
 package dest
 
 func Existing() {}
 
-func MoveForExtShared() int {
+func MoveForExtShared() int { //@codeaction(re"MoveForExtShared", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_keep_src)
 	return 3
 }
 -- @ref_in_ext_keep_src/ext/shared_src.go --
@@ -208,6 +224,19 @@ import "golang.org/lsptests/movedeclrefs/src"
 func UseBoth() int {
 	return dest.MoveForExtShared() + src.StayInSrc()
 }
+
+-- @ref_in_ext_keep_src/src/to_ext.go --
+package src
+
+func StayInSrc() int {
+	return 1
+}
+
+func MoveForExtOnly() int { //@codeaction(re"MoveForExtOnly", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_drop_src)
+	return 2
+}
+
+
 
 -- ext/only_moving.go --
 package ext
@@ -247,7 +276,7 @@ package dest2
 
 func Existing() {}
 
-type Counter struct {
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_type_method)
 	Val int
 }
 
@@ -259,13 +288,9 @@ package src
 
 import "golang.org/lsptests/movedeclrefs/dest2"
 
-type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_type_method)
-	Val int
-}
 
-func (c *Counter) Inc() {
-	c.Val++
-}
+
+
 
 func UseCounterInSrc() {
 	var c dest2.Counter

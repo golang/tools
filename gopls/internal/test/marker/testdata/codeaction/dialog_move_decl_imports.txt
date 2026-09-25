@@ -72,6 +72,17 @@ func StayMe() {
 	fmt.Println("staying")
 }
 
+-- @move_shared_import/src/shared.go --
+package src
+
+import "fmt"
+
+
+
+func StayMe() {
+	fmt.Println("staying")
+}
+
 -- src/multi_spec.go --
 package src
 
@@ -93,9 +104,7 @@ package src
 
 
 
-func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
-	b.WriteString("hello")
-}
+
 
 -- @move_single_import/dest/dest.go --
 package dest
@@ -104,7 +113,7 @@ import "bytes"
 
 func Existing() {}
 
-func WriteBuf(b *bytes.Buffer) {
+func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
 	b.WriteString("hello")
 }
 -- @move_dup_import/src/dup_import.go --
@@ -112,9 +121,7 @@ package src
 
 
 
-func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
-	return strings.HasPrefix(s, "a")
-}
+
 
 -- @move_dup_import/dest/has_import.go --
 package dest
@@ -125,7 +132,7 @@ func Join(a, b string) string {
 	return strings.Join([]string{a, b}, "")
 }
 
-func HasPrefix(s string) bool {
+func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
 	return strings.HasPrefix(s, "a")
 }
 -- @move_new_file_import/src/newfile.go --
@@ -133,9 +140,7 @@ package src
 
 
 
-func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
-	return new(bytes.Buffer)
-}
+
 
 -- @move_new_file_import/dest/newfile.go --
 package dest
@@ -144,7 +149,7 @@ import (
 	"bytes"
 )
 
-func MakeBuf() *bytes.Buffer {
+func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
 	return new(bytes.Buffer)
 }
 -- @move_shared_import/dest/dest.go --
@@ -154,7 +159,7 @@ import "fmt"
 
 func Existing() {}
 
-func MoveMe() {
+func MoveMe() { //@codeaction(re"MoveMe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_shared_import)
 	fmt.Println("moving")
 }
 -- @move_multi_spec_import/src/multi_spec.go --
@@ -165,9 +170,7 @@ import (
 	"strings"
 )
 
-func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
-	b.Reset()
-}
+
 
 func StayStrings(s string) bool {
 	return strings.Contains(s, "x")
@@ -180,6 +183,6 @@ import "bytes"
 
 func Existing() {}
 
-func MoveBytes(b *bytes.Buffer) {
+func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
 	b.Reset()
 }
