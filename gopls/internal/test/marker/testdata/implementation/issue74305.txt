@@ -8,4 +8,4 @@ go 1.18
 -- a/a.go --
 package a
 
-var _ = undefined() //@ diag("undefined", re"undefined"), implementation("(", err="not a dynamic function call")
+var _ = undefined() //@ diag("undefined", re"undefined"), implementation("(", err="no identifier found")
