@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -198,7 +199,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 				watchQueueMu.Unlock()
 
 				for _, dir := range queue {
-					if err := w.WatchDir(dir); err != nil {
+					if err := watchGoWorkspace(dir, w.WatchDir); err != nil {
 						errHandler(err)
 					}
 				}
@@ -218,6 +219,21 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		log.Printf("Listening for MCP messages on stdin...")
 		return internalmcp.StartStdIO(ctx, sess, cli.server, rpcLog, watchRoots)
 	}
+}
+
+// watchGoWorkspace only registers a watch when dir contains a module or workspace
+// file. It does not search for projects above or below the client-supplied root.
+func watchGoWorkspace(dir string, watchDir func(string) error) error {
+	for _, name := range []string{"go.mod", "go.work"} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err == nil && info.Mode().IsRegular() {
+			return watchDir(dir)
+		}
+	}
+	return fmt.Errorf("skipping watch for %q: no go.mod or go.work in this directory", dir)
 }
 
 // staticSessions implements the [internalmcp.Sessions] interface for a single gopls
