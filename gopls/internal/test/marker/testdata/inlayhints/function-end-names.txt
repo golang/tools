@@ -1,0 +1,26 @@
+Test of the "function end names" inlay hint (#80465).
+
+-- settings.json --
+{"hints": {"functionEndNames": true}}
+
+-- p/p.go --
+package p //@inlayhints(out)
+
+type T struct{}
+
+func foo() {
+	func() {}
+}
+
+func (T) method() {}
+
+-- @out --
+package p //@inlayhints(out)
+
+type T struct{}
+
+func foo() {
+	func() {}
+}< // foo>
+
+func (T) method() {}< // method>
