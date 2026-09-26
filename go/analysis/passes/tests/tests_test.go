@@ -18,5 +18,6 @@ func Test(t *testing.T) {
 		"b_x_test", // loads "b" and "b_x_test"
 		"divergent",
 		"typeparams",
+		"underscore", // loads "underscore", "underscore [underscore.test]", and "underscore_test [underscore.test]"
 	)
 }

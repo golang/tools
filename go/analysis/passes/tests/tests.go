@@ -402,12 +402,21 @@ func checkExampleName(pass *analysis.Pass, fn *ast.FuncDecl) {
 		return
 	}
 
+	exName := strings.TrimPrefix(fnName, "Example")
+	if exampleNameMatches(pass.Pkg, exName) {
+		// Some interpretation of the name refers to a known identifier.
+		return
+	}
+
+	// The name matches nothing. Diagnose it relative to the longest
+	// leading identifier that is known (e.g. Foo_Bar in ExampleFoo_Bar_Nope,
+	// given a type Foo_Bar), or else to its first '_'-separated element.
 	var (
-		exName = strings.TrimPrefix(fnName, "Example")
-		elems  = strings.SplitN(exName, "_", 3)
-		ident  = elems[0]
-		objs   = lookup(pass.Pkg, ident)
+		ident = exampleIdent(pass.Pkg, exName)
+		elems = strings.SplitN(exName[len(ident):], "_", 3)
+		objs  = lookup(pass.Pkg, ident)
 	)
+	elems[0] = ident
 	if ident != "" && len(objs) == 0 {
 		// Check ExampleFoo and ExampleBadFoo.
 		pass.Reportf(fn.Pos(), "%s refers to unknown identifier: %s", fnName, ident)
@@ -446,6 +455,56 @@ func checkExampleName(pass *analysis.Pass, fn *ast.FuncDecl) {
 		// Check ExampleFoo_Method_suffix and ExampleFoo_Method_Badsuffix.
 		pass.Reportf(fn.Pos(), "%s has malformed example suffix: %s", fnName, elems[2])
 	}
+}
+
+// exampleNameMatches reports whether exName, an example name without
+// its "Example" prefix, refers to a known identifier, using the same
+// rules as go/doc: ExampleFoo_Bar matches a type named Foo_Bar or a
+// method named Foo.Bar, and ExampleFoo_bar matches a type named
+// Foo_bar or Foo (with a "bar" suffix). Every '_' is tried as the
+// start of a suffix, which must begin with a lowercase letter.
+func exampleNameMatches(pkg *types.Package, exName string) bool {
+	for i := len(exName); i >= 0; i = strings.LastIndexByte(exName[:i], '_') {
+		if i < len(exName) && !isExampleSuffix(exName[i+1:]) {
+			continue
+		}
+		prefix := exName[:i]
+		if prefix == "" {
+			// Example_suffix is a package-level example.
+			return true
+		}
+		if len(lookup(pkg, prefix)) > 0 {
+			// ExampleFoo or ExampleFoo_Bar for a type Foo_Bar.
+			return true
+		}
+		// ExampleFoo_Bar for a field or method Foo.Bar.
+		// Either name may itself contain underscores.
+		for j := 1; j < len(prefix)-1; j++ {
+			if prefix[j] != '_' {
+				continue
+			}
+			recv, member := prefix[:j], prefix[j+1:]
+			for _, obj := range lookup(pkg, recv) {
+				if obj, _, _ := types.LookupFieldOrMethod(obj.Type(), true, obj.Pkg(), member); obj != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// exampleIdent returns the longest prefix of exName, ending before a
+// '_' or at the end of exName, that is a known identifier. If there is
+// none, it returns the part of exName before the first '_'.
+func exampleIdent(pkg *types.Package, exName string) string {
+	for i := len(exName); i > 0; i = strings.LastIndexByte(exName[:i], '_') {
+		if len(lookup(pkg, exName[:i])) > 0 {
+			return exName[:i]
+		}
+	}
+	ident, _, _ := strings.Cut(exName, "_")
+	return ident
 }
 
 func checkTest(pass *analysis.Pass, fn *ast.FuncDecl, prefix string) {
