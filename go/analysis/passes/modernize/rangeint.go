@@ -151,16 +151,46 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						}
 
 						used := false
-						for curId := range curLoop.Child(loop.Body).Preorder((*ast.Ident)(nil)) {
-							id := curId.Node().(*ast.Ident)
-							if info.Uses[id] == v {
+						body := curLoop.Child(loop.Body)
+						for curId := range typeindex.Uses(v) {
+							if body.Contains(curId) {
 								used = true
 
-								// Reject if any is an l-value (assigned or address-taken):
-								// a "for range int" loop does not respect assignments to
-								// the loop variable.
+								// Reject if any use in the body is an l-value
+								// (assigned or address-taken): a "for range int" loop
+								// does not respect assignments to the loop variable.
 								if typesinternal.IsAssignedOrAddressTaken(info, curId) {
 									continue nextLoop
+								}
+							}
+
+							// If i is a pre-existing variable (for i = 0; ...),
+							// don't offer a fix if its value after the loop could
+							// be observed directly or via aliasing, as a range loop
+							// leaves i with a different final value (limit-1) and
+							// shares a single variable across iterations (go.dev/issue/77161).
+							if init.Tok == token.ASSIGN {
+								// Is i used after the loop?
+								if curId.Node().Pos() > loop.End() {
+									continue nextLoop
+								}
+								// Is i assigned or address-taken outside the loop?
+								//     var i int
+								//     p := &i
+								//     for i = 0; i < 10; i++ {}
+								//     return *p
+								if !curLoop.Contains(curId) && typesinternal.IsAssignedOrAddressTaken(info, curId) {
+									continue nextLoop
+								}
+								// Is i captured by a closure within the scope of i?
+								//     var i int
+								//     f := func() int { return i } // or defer func() { print(i) }()
+								//     for i = 0; i < 10; i++ {}
+								//     return f()
+								for curFunc := range curId.Enclosing((*ast.FuncLit)(nil)) {
+									if curFunc.Node().Pos() > v.Pos() {
+										continue nextLoop
+									}
 								}
 							}
 						}
@@ -172,46 +202,6 @@ func rangeint(pass *analysis.Pass) (any, error) {
 								Pos: index.Pos(),
 								End: init.Rhs[0].Pos(),
 							})
-						}
-
-						// If i is used after the loop,
-						// don't offer a fix, as a range loop
-						// leaves i with a different final value (limit-1).
-						if init.Tok == token.ASSIGN {
-							// Find the nearest ancestor that is not a label.
-							// Otherwise, checking for i usage outside of a for
-							// loop might not function properly further below.
-							// This is because the i usage might be a child of
-							// the loop's parent's parent, for example:
-							//     var i int
-							// Loop:
-							//     for i = 0; i < 10; i++ { break loop }
-							//     // i is in the sibling of the label, not the loop
-							//     fmt.Println(i)
-							//
-							ancestor := curLoop.Parent()
-							for is[*ast.LabeledStmt](ancestor.Node()) {
-								ancestor = ancestor.Parent()
-							}
-							for curId := range ancestor.Preorder((*ast.Ident)(nil)) {
-								id := curId.Node().(*ast.Ident)
-								if info.Uses[id] == v {
-									// Is i used after loop?
-									if id.Pos() > loop.End() {
-										continue nextLoop
-									}
-									// Is i used within a defer statement
-									// that is within the scope of i?
-									//     var i int
-									//     defer func() { print(i)}
-									//     for i = ... { ... }
-									for curDefer := range curId.Enclosing((*ast.DeferStmt)(nil)) {
-										if curDefer.Node().Pos() > v.Pos() {
-											continue nextLoop
-										}
-									}
-								}
-							}
 						}
 
 						// The loop index (v) must not be a type parameter constrained by
