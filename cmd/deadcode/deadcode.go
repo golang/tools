@@ -155,7 +155,6 @@ func main() {
 	// Create SSA-form program representation
 	// and find main packages.
 	prog, pkgs := ssautil.AllPackages(initial, ssa.InstantiateGenerics)
-	prog.Build()
 
 	mains := ssautil.MainPackages(pkgs)
 	if len(mains) == 0 {
@@ -205,6 +204,11 @@ func main() {
 			}
 		}
 	})
+
+	// Build function bodies only now: nothing below uses the
+	// syntax or type information of initial, so it can be
+	// freed as each package is built.
+	prog.Build()
 
 	// Compute the reachabilty from main.
 	// (Build a call graph only for -whylive.)
