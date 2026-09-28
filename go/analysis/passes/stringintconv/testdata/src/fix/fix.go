@@ -1,5 +1,7 @@
-// This code relies on pre-1.28 string(integer) conversion rules.
-//go:build !go1.28
+// This code relies on pre-go1.28 string(integer) conversion rules;
+// the build tag downgrades the file to go1.21 (the oldest version
+// to which a build tag can downgrade).
+//go:build go1.21
 
 package fix
 
