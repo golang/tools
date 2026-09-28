@@ -974,5 +974,6 @@ This code action is offered only in editors that support interactive code action
 The screenshots below show the seqence of steps in an editor that supports interactive code actions with a searchable list:
 
 ![Before "Implement interface"](../assets/implement-interface-before.png)
-![Selecting the interface](../assets/implement-interface-select-enum.png)
+![Selecting the interface](../assets/implement-interface-select-interface.png)
+![Selecting the type parameter](../assets/implement-interface-select-type-param.png)
 ![After "Implement interface"](../assets/implement-interface-after.png)
