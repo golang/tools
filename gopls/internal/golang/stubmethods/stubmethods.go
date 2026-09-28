@@ -43,7 +43,10 @@ type IfaceStubInfo struct {
 // more generally. Refactor to share logic, after auditing 'satisfy'
 // for safety on ill-typed code.
 func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, pos, end token.Pos) *IfaceStubInfo {
-	cur, _ := pgf.Cursor().FindByPos(pos, end)
+	cur, ok := pgf.Cursor().FindByPos(pos, end)
+	if !ok {
+		return nil
+	}
 	for cur := range cur.Enclosing() {
 		// TODO: do cur = unparenEnclosing(cur) first, once CL 701035 lands.
 		switch cur.ParentEdgeKind() {
