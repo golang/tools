@@ -21,53 +21,72 @@ import (
 // from the specified package, plus any necessary edits to the file's
 // import declaration to add a new import.
 //
-// If the import already exists, and is accessible at pos, AddImport
+// If poses is non-empty, AddImport ensures that the chosen package prefix
+// is accessible and unshadowed at all specified positions.
+//
+// If the import already exists, and is accessible at all poses, AddImport
 // returns the existing name and no edits. (If the existing import is
 // a dot import, the prefix is "".)
 //
 // Otherwise, it adds a new import, using a local name derived from
-// the preferred name. To request a blank import, use a preferredName
-// of "_", and discard the prefix result; member is ignored in this
-// case.
+// the preferred name that is unshadowed at all poses. To request a blank
+// import, use a preferredName of "_", and discard the prefix result;
+// member is ignored in this case.
 //
 // AddImport accepts the caller's implicit claim that the imported
 // package declares member.
 //
 // AddImport does not mutate its arguments.
-func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (prefix string, edits []Edit) {
-	// Find innermost enclosing lexical block.
-	scope := info.Scopes[file].Innermost(pos)
-	if scope == nil {
-		panic("no enclosing lexical block")
+func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, poses ...token.Pos) (prefix string, edits []Edit) {
+	fileScope := info.Scopes[file]
+	if fileScope == nil {
+		panic("no file scope")
+	}
+
+	scopes := make([]*types.Scope, len(poses))
+	for i, pos := range poses {
+		scopes[i] = fileScope.Innermost(pos)
+		if scopes[i] == nil {
+			panic("no enclosing lexical block")
+		}
 	}
 
 	// Is there an existing import of this package?
-	// If so, are we in its scope? (not shadowed)
+	// If so, are we in its scope at all poses? (not shadowed)
+specs:
 	for _, spec := range file.Imports {
 		pkgname := info.PkgNameOf(spec)
 		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
-			name := pkgname.Name()
 			if preferredName == "_" {
 				// Request for blank import; any existing import will do.
 				return "", nil
 			}
+			name := pkgname.Name()
+			prefix, ident := name+".", name
 			if name == "." {
-				// The scope of ident must be the file scope.
-				if s, _ := scope.LookupParent(member, pos); s == info.Scopes[file] {
-					return "", nil
-				}
-			} else if _, obj := scope.LookupParent(name, pos); obj == pkgname {
-				return name + ".", nil
+				prefix, ident = "", member
 			}
+			// The scope of ident must be the file scope at all poses.
+			for i, pos := range poses {
+				if s, _ := scopes[i].LookupParent(ident, pos); s != fileScope {
+					continue specs
+				}
+			}
+			return prefix, nil
 		}
 	}
 
 	// We must add a new import.
 
-	// Ensure we have a fresh name.
+	// Ensure we have a fresh name unshadowed at all poses and file scope.
 	newName := preferredName
 	if preferredName != "_" {
-		newName = FreshName(scope, pos, preferredName)
+		// No position scope check needed, only check file scope.
+		if len(poses) == 0 {
+			scopes = []*types.Scope{fileScope}
+			poses = []token.Pos{token.NoPos}
+		}
+		newName = freshName(scopes, poses, preferredName)
 		prefix = newName + "."
 	}
 

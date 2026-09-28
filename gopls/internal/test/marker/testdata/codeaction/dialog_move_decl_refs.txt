@@ -296,3 +296,41 @@ func UseCounterInSrc() {
 	var c dest2.Counter
 	c.Inc()
 }
+-- src/shadow.go --
+package src
+
+func Target() { //@codeaction(re"Target", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_shadow)
+}
+
+func _() {
+	var dest2 int
+	_ = dest2
+	Target()
+}
+
+func _() {
+	Target()
+}
+-- @ref_shadow/dest2/dest2.go --
+package dest2
+
+func Existing() {}
+
+func Target() { //@codeaction(re"Target", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_shadow)
+}
+-- @ref_shadow/src/shadow.go --
+package src
+
+import dest20 "golang.org/lsptests/movedeclrefs/dest2"
+
+
+
+func _() {
+	var dest2 int
+	_ = dest2
+	dest20.Target()
+}
+
+func _() {
+	dest20.Target()
+}

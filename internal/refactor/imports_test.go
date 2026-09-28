@@ -318,20 +318,91 @@ func _(io.Reader) {
 	fmt.Print
 }`,
 		},
+		{
+			descr: descr("multiple positions shadowed at one position"),
+			src: `package a
+
+func f1() {
+	«fmt fmt Print»
+}
+
+func f2() {
+	fmt := 1
+	_ = fmt
+	«fmt fmt Print»
+}`,
+			want: `package a
+
+import fmt0 "fmt"
+
+func f1() {
+	fmt0.Print
+}
+
+func f2() {
+	fmt := 1
+	_ = fmt
+	fmt0.Print
+}`,
+		},
+		{
+			descr: descr("existing import shadowed at second position"),
+			src: `package a
+
+import "fmt"
+
+func f1() {
+	fmt.Println()
+	«fmt fmt Print»
+}
+
+func f2() {
+	fmt := 1
+	_ = fmt
+	«fmt fmt Print»
+}`,
+			want: `package a
+
+import fmt0 "fmt"
+
+import "fmt"
+
+func f1() {
+	fmt.Println()
+	fmt0.Print
+}
+
+func f2() {
+	fmt := 1
+	_ = fmt
+	fmt0.Print
+}`,
+		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
-			// splice marker (name pkgpath member)
-			before, mid, ok1 := strings.Cut(test.src, "«")
-			mid, after, ok2 := strings.Cut(mid, "»")
-			if !ok1 || !ok2 {
+			// splice marker(s) (name pkgpath member)
+			var (
+				src                = test.src
+				offsets            []int
+				name, path, member string
+			)
+			for {
+				before, mid, ok1 := strings.Cut(src, "«")
+				mid, after, ok2 := strings.Cut(mid, "»")
+				if !ok1 || !ok2 {
+					break
+				}
+				fields := strings.Fields(mid)
+				if len(fields) != 3 {
+					t.Fatalf("splice marker needs 3 fields (got %q)", mid)
+				}
+				name, path, member = fields[0], fields[1], fields[2]
+				offsets = append(offsets, len(before))
+				src = before + "/*!*/" + after
+			}
+			if len(offsets) == 0 {
 				t.Fatal("no «name path member» marker")
 			}
-			src := before + "/*!*/" + after
-			fields := strings.Fields(mid)
-			if len(fields) != 3 {
-				t.Fatalf("splice marker needs 3 fields (got %q)", mid)
-			}
-			name, path, member := fields[0], fields[1], fields[2]
 
 			// parse
 			fset := token.NewFileSet()
@@ -339,7 +410,10 @@ func _(io.Reader) {
 			if err != nil {
 				t.Log(err)
 			}
-			pos := fset.File(f.FileStart).Pos(len(before))
+			var poses []token.Pos
+			for _, offset := range offsets {
+				poses = append(poses, fset.File(f.FileStart).Pos(offset))
+			}
 
 			// type-check
 			info := &types.Info{
@@ -357,7 +431,7 @@ func _(io.Reader) {
 			}
 			conf.Check(f.Name.Name, fset, []*ast.File{f}, info)
 
-			prefix, edits := refactor.AddImport(info, f, name, path, member, pos)
+			prefix, edits := refactor.AddImport(info, f, name, path, member, poses...)
 
 			var edit refactor.Edit
 			switch len(edits) {
