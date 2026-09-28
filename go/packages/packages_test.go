@@ -6,6 +6,7 @@ package packages_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/packagestest"
@@ -3790,5 +3792,54 @@ func cond[T any](cond bool, t, f T) T {
 		return t
 	} else {
 		return f
+	}
+}
+
+// TestGoVersionWithoutModule checks that packages that don't belong
+// to a module (GOPATH mode, and standard packages) are type-checked
+// using the go command's version, as cmd/go does when compiling them.
+func TestGoVersionWithoutModule(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	goCmdVersion, err := gocommand.GoVersion(context.Background(), gocommand.Invocation{}, new(gocommand.Runner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("go1.%d", goCmdVersion)
+
+	dir := writeTree(t, `
+-- gopath/src/a/a.go --
+package a
+
+import _ "errors"
+`)
+	gopath := filepath.Join(dir, "gopath")
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.LoadAllSyntax,
+		Env:  append(os.Environ(), "GOPATH="+gopath, "GO111MODULE=off", "GOPACKAGESDRIVER=off"),
+		Dir:  gopath,
+	}, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := make(map[string]bool)
+	for pkg := range packages.Postorder(pkgs) {
+		if pkg.PkgPath != "a" && pkg.PkgPath != "errors" {
+			continue
+		}
+		if pkg.Module != nil {
+			t.Errorf("package %s: unexpected Module %+v", pkg.PkgPath, pkg.Module)
+		}
+		for _, f := range pkg.Syntax {
+			if got := pkg.TypesInfo.FileVersions[f]; got != want {
+				t.Errorf("package %s: file %s: FileVersion = %q, want %q",
+					pkg.PkgPath, pkg.Fset.File(f.FileStart).Name(), got, want)
+			}
+		}
+		checked[pkg.PkgPath] = true
+	}
+	if !checked["a"] || !checked["errors"] {
+		t.Errorf("packages checked = %v, want a and errors", checked)
 	}
 }
