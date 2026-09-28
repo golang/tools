@@ -443,6 +443,11 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 			switch {
 			case errors.Is(err, context.Canceled):
 				deps.work.End(ctx, CommandCanceled)
+			case errors.Is(err, command.ErrPendingAnswer):
+				// The command asked the user a question and did nothing
+				// else. That is not a failure: it runs again, and reports
+				// its outcome, once the answer arrives.
+				deps.work.End(ctx, CommandCompleted)
 			case err != nil:
 				event.Error(ctx, "command error", err)
 				deps.work.End(ctx, CommandFailed)
@@ -1858,12 +1863,13 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// TODO(hxjiang): when the answer is missing or invalid, ask for it
-		// instead of failing, once the forms move out of golang/resolve.go.
-		iface, err := params.RequiredAnswer[string]("interface")
-		if err != nil {
+		d := golang.NewDialog(c.s.options.ClientOptions, params)
+		iface := d.Ask(golang.InterfaceQuestion)
+		if err := d.Check(); err != nil {
 			return err
 		}
+
+		// iface is a valid interface.
 
 		edits, err := golang.ImplementInterface(ctx, deps.snapshot, args.Location, iface)
 		if err != nil {
@@ -1880,35 +1886,37 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		progress: "Modifying tags",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// TODO(hxjiang): when an answer is missing or invalid, ask for it
-		// instead of failing, once the forms move out of golang/resolve.go.
-		if len(params.FormAnswers) > 0 {
-			switch args.Modification {
-			case "add":
-				tags, err := params.RequiredAnswer[string]("tags")
-				if err != nil {
+		// Ask the user which tags to modify, unless the arguments already say
+		// (as they do when the client cannot present a dialog: the code action
+		// then bakes its choice into them; see [golang.CodeActions]).
+		switch args.Modification {
+		case "add":
+			if args.Add == "" && args.AddOptions == "" { // not sure what to add
+				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				tags := d.Ask(golang.AddTagsQuestion)
+				transform := d.Ask(golang.TransformQuestion)
+				if err := d.Check(); err != nil {
 					return err
 				}
-				args.Add, err = golang.SanitizeTags(tags)
-				if err != nil {
-					return err
-				}
-				args.Transform, err = params.RequiredAnswer[string]("transform")
-				if err != nil {
-					return err
-				}
-			case "remove":
-				tags, err := params.RequiredAnswer[string]("tags")
-				if err != nil {
-					return err
-				}
-				args.Remove, err = golang.SanitizeTags(tags)
-				if err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("unsupported modify tags operation: %s", args.Modification)
+
+				// tags and transform are provided and valid.
+
+				args.Add, args.Transform = tags, transform
 			}
+		case "remove":
+			if args.Remove == "" && args.RemoveOptions == "" && !args.Clear { // not sure what to remove
+				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				tags := d.Ask(golang.RemoveTagsQuestion)
+				if err := d.Check(); err != nil {
+					return err
+				}
+
+				// tags is provided and valid.
+
+				args.Remove = tags
+			}
+		default:
+			return fmt.Errorf("unsupported modify tags operation: %s", args.Modification)
 		}
 
 		m := &modifytags.Modification{
@@ -2007,25 +2015,12 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// TODO(hxjiang): when the answer is missing or invalid, ask for it
-		// instead of failing, once the forms move out of golang/resolve.go.
-		var destURI protocol.DocumentURI
-		if params != nil && len(params.FormAnswers) > 0 {
-			file, err := params.RequiredAnswer[string]("file")
-			if err != nil {
-				return err
-			}
-			destURI, err = protocol.ParseDocumentURI(file)
-			if err != nil {
-				destURI = protocol.URIFromPath(file)
-			}
+		d := golang.NewDialog(c.s.options.ClientOptions, params)
+		destURI := d.Ask(golang.MoveDeclarationFileQuestion)
+		if err := d.Check(); err != nil {
+			return err
 		}
-		if destURI == "" {
-			return fmt.Errorf("destination file is required")
-		}
-		if filepath.Ext(destURI.Path()) != ".go" {
-			return fmt.Errorf("destination file must have a .go extension")
-		}
+
 		changes, loc, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)
 		if err != nil {
 			return err

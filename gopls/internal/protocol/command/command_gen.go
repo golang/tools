@@ -127,6 +127,21 @@ var Commands = []Command{
 	WorkspaceStats,
 }
 
+// interactiveCommands is the set of commands that may ask the user for
+// additional input before they can proceed.
+var interactiveCommands = map[Command]bool{
+	ImplementInterface: true,
+	ModifyTags:         true,
+	MoveDeclaration:    true,
+}
+
+// Interactive reports whether the command may ask the user for additional
+// input, through [protocol.InteractiveParams], before it can proceed.
+//
+// Such a command is resolved interactively, through "command/resolve", before
+// the client executes it; see [protocol.InteractiveParams].
+func (c Command) Interactive() bool { return interactiveCommands[c] }
+
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch Command(params.Command) {
 	case AddDependency:

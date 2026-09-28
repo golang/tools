@@ -25,72 +25,42 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// moveDeclarationFormFile asks where to move a declaration, through the file
-// picker of the client.
-var moveDeclarationFormFile = []protocol.FormField{
-	{
-		ID:          "file",
-		Description: "destination file for the moved declaration",
-		Type: protocol.FormFieldTypeFile{
-			Kind: "file",
-		},
-		Required: true,
-	},
-}
-
-// moveDeclarationFormString asks where to move a declaration, as plain text,
-// for clients that have no file picker.
-var moveDeclarationFormString = []protocol.FormField{
-	{
+var (
+	// MoveDeclarationFileQuestion asks for the destination file for a moved declaration,
+	// preferring the client's native file picker and falling back to a plain string URI input.
+	MoveDeclarationFileQuestion = formQuestion[string, protocol.DocumentURI]{
 		ID:          "file",
 		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
-		Type: protocol.FormFieldTypeFile{
-			Kind: "string",
+		Required:    true,
+		Types: []any{
+			protocol.FormFieldTypeFile{
+				Kind:    protocol.FormFieldKindFile,
+				Filters: []string{"go"}, // only move to a go file
+			},
+			protocol.FormFieldTypeString{
+				Kind: protocol.FormFieldKindString,
+			},
 		},
-		Required: true,
-	},
-}
-
-func resolveMoveDeclaration(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
-	var a0 command.MoveDeclarationArgs
-	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
-		return err
-	}
-	var form []protocol.FormField
-	if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindFile]; ok {
-		form = moveDeclarationFormFile
-	} else if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindString]; ok {
-		form = moveDeclarationFormString
-	} else {
-		// This should not happen because gopls should not offer this code action if the
-		// language client does not support any kind above.
-		return fmt.Errorf("internal error: unsupported interactive input types: %v", options.SupportedInteractiveInputTypes)
+		convert: func(dest string) (protocol.DocumentURI, error) {
+			destURI, err := protocol.ParseDocumentURI(dest)
+			if err != nil {
+				destURI = protocol.URIFromPath(dest)
+			}
+			if filepath.Ext(destURI.Path()) != ".go" {
+				return "", fmt.Errorf("destination file must be a go file")
+			}
+			return destURI, nil
+		},
 	}
 
-	// First call, return the empty form.
-	if len(param.FormAnswers) == 0 {
-		param.FormFields = form
-		return nil
-	}
-
-	file, err := param.RequiredAnswer[string]("file")
-	if err != nil {
-		return err
-	}
-	if _, err := protocol.ParseDocumentURI(file); err != nil {
-		return err
-	}
-	param.FormFields = nil
-	return nil
-}
+	moveDeclarationQuestions = []question{MoveDeclarationFileQuestion}
+)
 
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
 func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {

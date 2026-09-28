@@ -258,23 +258,6 @@ func (p *InteractiveParams) Answer[T any](id string) (v T, exists bool, err erro
 	return v, true, nil
 }
 
-// RequiredAnswer returns the answer with the given ID, converted to T, and
-// reports an error if the form does not have one.
-//
-// It suits a question whose FormField is Required, where an absent answer
-// means the client executed the request without completing the interactive
-// handshake.
-func (p *InteractiveParams) RequiredAnswer[T any](id string) (T, error) {
-	v, exists, err := p.Answer[T](id)
-	if err != nil {
-		return v, err
-	}
-	if !exists {
-		return v, fmt.Errorf("form lacks answer %q", id)
-	}
-	return v, nil
-}
-
 // InteractiveParams facilitates a multi-step, interactive dialogue between the
 // client and server during a Language Server Protocol (LSP) request.
 //

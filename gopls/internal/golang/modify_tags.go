@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -20,135 +19,78 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 )
 
-// addTagsForm asks which struct tags to add, and how to derive their values
-// from the field names.
-var addTagsForm = []protocol.FormField{
-	{
-		ID:          "tags",
+var (
+	// AddTagsQuestion asks which struct tags to add.
+	AddTagsQuestion = formQuestion[string, string]{
+		ID:          "addTags",
 		Description: `comma-separated list of tags to add; e.g.. "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
 		Required:    true,
 		Default:     "json",
-	},
-	{
+		Types: []any{
+			protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
+		},
+		convert: sanitizeTags,
+	}
+
+	// TransformQuestion asks how to derive struct tag values from field names.
+	TransformQuestion = formQuestion[string, string]{
 		ID:          "transform",
 		Description: `transform rule for added tags, e.g., "camelcase' or 'snakecase"`,
-		Type: protocol.FormFieldTypeEnum{
-			Kind: protocol.FormFieldKindEnum,
-			Entries: []protocol.FormEnumEntry{
-				{
-					Value:       "camelcase",
-					Description: "camelCase",
-				},
-				{
-					Value:       "lispcase",
-					Description: "lisp-case",
-				},
-				{
-					Value:       "pascalcase",
-					Description: "PascalCase",
-				},
-				{
-					Value:       "titlecase",
-					Description: "Title Case",
-				},
-				{
-					Value:       "snakecase",
-					Description: "snake_case",
+		Required:    true,
+		Default:     "camelcase",
+		Types: []any{
+			protocol.FormFieldTypeEnum{
+				Kind: protocol.FormFieldKindEnum,
+				Entries: []protocol.FormEnumEntry{
+					{
+						Value:       "camelcase",
+						Description: "camelCase",
+					},
+					{
+						Value:       "lispcase",
+						Description: "lisp-case",
+					},
+					{
+						Value:       "pascalcase",
+						Description: "PascalCase",
+					},
+					{
+						Value:       "titlecase",
+						Description: "Title Case",
+					},
+					{
+						Value:       "snakecase",
+						Description: "snake_case",
+					},
 				},
 			},
 		},
-		Required: true,
-		Default:  "camelcase",
-	},
-}
+	}
 
-// removeTagsForm asks which struct tags to remove.
-var removeTagsForm = []protocol.FormField{
-	{
-		ID:          "tags",
+	// RemoveTagsQuestion asks which struct tags to remove.
+	RemoveTagsQuestion = formQuestion[string, string]{
+		ID:          "removeTags",
 		Description: `comma-separated list of tags to remove; e.g., "json,xml"`,
-		Type:        protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
 		Required:    true,
 		Default:     "json", // TODO(?): put the existing tags here?
-	},
-}
-
-func resolveModifyTags(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
-	var a0 command.ModifyTagsArgs
-	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
-		return err
+		Types: []any{
+			protocol.FormFieldTypeString{Kind: protocol.FormFieldKindString},
+		},
+		convert: sanitizeTags,
 	}
-	switch a0.Modification {
-	case "add":
-		if !supportsDialog(options, addTagsForm) {
-			return nil
-		}
 
-		// First call, return the form.
-		if len(param.FormAnswers) == 0 {
-			param.FormFields = addTagsForm
-			return nil
-		}
+	addTagsQuestions    = []question{AddTagsQuestion, TransformQuestion}
+	removeTagsQuestions = []question{RemoveTagsQuestion}
+)
 
-		v0, err := param.RequiredAnswer[string]("tags")
-		if err != nil {
-			return err
-		}
-
-		if _, err = SanitizeTags(v0); err != nil {
-			form := slices.Clone(addTagsForm)
-			form[0].Error = err.Error()
-			param.FormFields = form
-			return nil
-		}
-
-		if _, err = param.RequiredAnswer[string]("transform"); err != nil {
-			return err
-		}
-		// PJW: what happens when the user enters a bad value? (i think the client handles it)
-
-		param.FormFields = nil
-		return nil
-	case "remove":
-		if !supportsDialog(options, removeTagsForm) {
-			return nil
-		}
-
-		// First call, return the form
-		if len(param.FormAnswers) == 0 {
-			// TODO? show the user the current list of tags?
-			param.FormFields = removeTagsForm
-			return nil
-		}
-
-		v, err := param.RequiredAnswer[string]("tags")
-		if err != nil {
-			return err
-		}
-		if _, err := SanitizeTags(v); err != nil {
-			form := slices.Clone(addTagsForm)
-			form[0].Error = err.Error()
-			param.FormFields = form
-			return nil
-		}
-
-		param.FormFields = nil
-		return nil
-	default:
-		return fmt.Errorf("unsupported modify tags operation: %s", a0.Modification)
-	}
-}
-
-// SanitizeTags cleans up comma-separated tags and ensures they are valid.
-func SanitizeTags(tags string) (string, error) {
+// sanitizeTags cleans up comma-separated tags and ensures they are valid.
+func sanitizeTags(tags string) (string, error) {
 	parts := strings.Split(tags, ",")
 	var clean []string
 

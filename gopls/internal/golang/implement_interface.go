@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 	"strings"
 
 	"golang.org/x/mod/module"
@@ -19,45 +18,39 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/golang/stubmethods"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// implementInterfaceFormLazyEnum asks which interface to implement, offering
-// the interfaces of the workspace as the user types.
-var implementInterfaceFormLazyEnum = []protocol.FormField{
-	{
+var (
+	// InterfaceQuestion asks which interface to implement, preferring workspace
+	// symbol search (LazyEnum) and falling back to a plain string prompt.
+	InterfaceQuestion = formQuestion[string, string]{
 		ID:          "interface",
 		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
-		Type: protocol.FormFieldTypeLazyEnum{
-			Kind:   protocol.FormFieldKindLazyEnum,
-			Source: "workspaceSymbol",
-			Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
-				Kinds: []protocol.SymbolKind{protocol.Interface},
-			}),
+		Required:    true,
+		Default:     "error",
+		Types: []any{
+			protocol.FormFieldTypeLazyEnum{
+				Kind:   protocol.FormFieldKindLazyEnum,
+				Source: "workspaceSymbol",
+				Config: mustMarshal(InteractiveWorkspaceSymbolEnumConfig{
+					Kinds: []protocol.SymbolKind{protocol.Interface},
+				}),
+			},
+			protocol.FormFieldTypeString{
+				Kind: protocol.FormFieldKindString,
+			},
 		},
-		Required: true,
-		Default:  "error",
-	},
-}
+		convert: func(name string) (string, error) {
+			return name, validInterfaceName(name)
+		},
+	}
 
-// implementInterfaceFormString asks which interface to implement, as plain
-// text, for clients that cannot search the workspace symbols.
-var implementInterfaceFormString = []protocol.FormField{
-	{
-		ID:          "interface",
-		Description: `fully qualified interface identifier path/to/pkg.interface; e.g., "net.Error"`,
-		Type: protocol.FormFieldTypeString{
-			Kind: protocol.FormFieldKindString,
-		},
-		Required: true,
-		Default:  "error",
-	},
-}
+	implementInterfaceQuestions = []question{InterfaceQuestion}
+)
 
 func mustMarshal(x any) json.RawMessage {
 	data, err := json.Marshal(x)
@@ -65,48 +58,6 @@ func mustMarshal(x any) json.RawMessage {
 		panic(err)
 	}
 	return json.RawMessage(data)
-}
-
-func resolveImplementInterface(options settings.ClientOptions, param *protocol.ExecuteCommandParams) error {
-	var a0 command.ImplementInterfaceArgs
-	if err := command.UnmarshalArgs(param.Arguments, &a0); err != nil {
-		return err
-	}
-
-	var form []protocol.FormField
-	if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindLazyEnum]; ok {
-		form = implementInterfaceFormLazyEnum
-	} else if ok := options.SupportedInteractiveInputTypes[protocol.FormFieldKindString]; ok {
-		form = implementInterfaceFormString
-	} else {
-		// This should not happen, as the gopls should not offer such code
-		// action if the language client does not support any kind above.
-		return fmt.Errorf("internal error: unsupported interactive input types: %v", options.SupportedInteractiveInputTypes)
-	}
-
-	// First call, return the empty form.
-	if len(param.FormAnswers) == 0 {
-		param.FormFields = form
-		return nil
-	}
-
-	v, err := param.RequiredAnswer[string]("interface")
-	if err != nil {
-		return err
-	}
-
-	if err := validInterfaceName(v); err != nil {
-		// The client only sends back answers, not the original form fields.
-		// Clone the static form template so we can attach the validation
-		// error and send the complete form back for the client to re-render.
-		form := slices.Clone(form)
-		form[0].Error = err.Error()
-		param.FormFields = form
-		return nil
-	}
-
-	param.FormFields = nil
-	return nil
 }
 
 // validInterfaceName returns an error unless name denotes an interface, as a
