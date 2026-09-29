@@ -64,7 +64,7 @@ func TestRTA(t *testing.T) {
 				t.Fatalf("failed to find the file with expected result within main package %s", archive)
 			}
 
-			prog, spkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+			prog, spkgs := ssautil.AllPackages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 
 			// find the main package to get functions for rta analysis
 			var mainPkg *ssa.Package
