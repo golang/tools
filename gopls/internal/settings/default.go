@@ -52,6 +52,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 					GoFreeSymbols:                     true,
 					GoSplitPackage:                    true,
 					GoplsDocFeatures:                  true,
+					GoplsDragonSlayer:                 true,
 					RefactorRewriteChangeQuote:        true,
 					RefactorRewriteFillStruct:         true,
 					RefactorRewriteFillSwitch:         true,

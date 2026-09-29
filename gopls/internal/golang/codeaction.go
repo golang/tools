@@ -269,6 +269,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 	{kind: settings.RefactorRewriteAddTags, fn: refactorRewriteAddStructTags, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveTags, fn: refactorRewriteRemoveStructTags, needPkg: true},
+	{kind: settings.GoplsDragonSlayer, fn: goplsDragonSlayer},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction

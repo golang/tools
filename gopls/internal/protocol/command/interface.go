@@ -370,6 +370,11 @@ type Interface interface {
 
 	// MoveDeclaration: Move a declaration to a different file.
 	MoveDeclaration(context.Context, MoveDeclarationArgs, *protocol.InteractiveParams) (Action, error)
+
+	// DragonSlayer: Slay the dragon
+	//
+	// Plays a tiny adventure game demonstrating interactive refactoring.
+	DragonSlayer(context.Context, DragonSlayerArgs, *protocol.InteractiveParams) (Action, error)
 }
 
 type RunTestsArgs struct {
@@ -913,6 +918,14 @@ type ImplementInterfaceArgs struct {
 	// implement. It must follow the pattern "path/to/package.InterfaceName"
 	// (e.g., "io.Reader").
 	Interface string
+}
+
+// DragonSlayerArgs holds the arguments to the DragonSlayer command.
+type DragonSlayerArgs struct {
+	// Location is the location where the user invoked the code action.
+	// This location must be within the name of a package-level variable
+	// named dragonSlayer.
+	Location protocol.Location
 }
 
 // ModifyTagsArgs holds variables that determine how struct tags are modified.

@@ -1993,6 +1993,51 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 	return action, err
 }
 
+func (c *commandHandler) DragonSlayer(ctx context.Context, args command.DragonSlayerArgs, params *protocol.InteractiveParams) (command.Action, error) {
+	d := golang.NewDialog(c.s.Options().ClientOptions, params)
+	won, msg, err := golang.DragonSlayer(d)
+	if err != nil {
+		return nil, err
+	}
+	if won {
+		return openURIAction{c.s.client, msg, "https://www.google.com/search?udm=2&q=slain+dragon", c.s.Options()}, nil
+	}
+	return showMessageAction{c.s.client, protocol.Info, msg}, nil
+}
+
+// TODO(hxjiang): find a better place for these [command.Action]
+// implementations (openURIAction, showMessageAction, and applyEdits), such as a
+// dedicated file or alongside [command.Action] itself.
+
+var _ command.Action = openURIAction{}
+
+// openURIAction is the deferred form of [openClientBrowser].
+type openURIAction struct {
+	cli   protocol.Client
+	title string
+	url   protocol.URI
+	opts  *settings.Options
+}
+
+func (a openURIAction) Perform(ctx context.Context) error {
+	openClientBrowser(ctx, a.cli, a.title, a.url, a.opts)
+	return nil
+}
+
+var _ command.Action = showMessageAction{}
+
+// showMessageAction is the deferred form of [showMessage].
+type showMessageAction struct {
+	cli protocol.Client
+	typ protocol.MessageType
+	msg string
+}
+
+func (a showMessageAction) Perform(ctx context.Context) error {
+	showMessage(ctx, a.cli, a.typ, a.msg)
+	return nil
+}
+
 func parseTransform(input string) (modifytags.Transform, error) {
 	switch input {
 	case "camelcase":

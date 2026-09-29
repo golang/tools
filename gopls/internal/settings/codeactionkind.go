@@ -85,7 +85,8 @@ const (
 	OrganizeImports            protocol.CodeActionKind = "source.organizeImports"
 
 	// gopls
-	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
+	GoplsDocFeatures  protocol.CodeActionKind = "gopls.doc.features"
+	GoplsDragonSlayer protocol.CodeActionKind = "gopls.dragonSlayer"
 
 	// refactor.rewrite
 	RefactorRewriteChangeQuote        protocol.CodeActionKind = "refactor.rewrite.changeQuote"

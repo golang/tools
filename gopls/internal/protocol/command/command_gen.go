@@ -35,6 +35,7 @@ const (
 	ClientOpenURL           Command = "gopls.client_open_url"
 	DiagnoseFiles           Command = "gopls.diagnose_files"
 	Doc                     Command = "gopls.doc"
+	DragonSlayer            Command = "gopls.dragon_slayer"
 	EditGoDirective         Command = "gopls.edit_go_directive"
 	ExtractToNewFile        Command = "gopls.extract_to_new_file"
 	FetchVulncheckResult    Command = "gopls.fetch_vulncheck_result"
@@ -87,6 +88,7 @@ var Commands = []Command{
 	ClientOpenURL,
 	DiagnoseFiles,
 	Doc,
+	DragonSlayer,
 	EditGoDirective,
 	ExtractToNewFile,
 	FetchVulncheckResult,
@@ -130,6 +132,7 @@ var Commands = []Command{
 // interactiveCommands is the set of commands that may ask the user for
 // additional input before they can proceed.
 var interactiveCommands = map[Command]bool{
+	DragonSlayer:       true,
 	ImplementInterface: true,
 	ModifyTags:         true,
 	MoveDeclaration:    true,
@@ -212,6 +215,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.Doc(ctx, a0)
+	case DragonSlayer:
+		var a0 DragonSlayerArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.DragonSlayer(ctx, a0, &params.InteractiveParams)
 	case EditGoDirective:
 		var a0 EditGoDirectiveArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -510,6 +519,14 @@ func NewDocCommand(title string, a0 DocArgs) *protocol.Command {
 	return &protocol.Command{
 		Title:     title,
 		Command:   Doc.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewDragonSlayerCommand(title string, a0 DragonSlayerArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   DragonSlayer.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }
