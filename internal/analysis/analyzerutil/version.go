@@ -14,26 +14,22 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-// FileGoVersion returns the effective Go version of the specified
-// file (e.g. "go1.24"), and reports whether it is known.
+// FileUsesGoVersion reports whether the specified file may use features of the
+// specified version of Go (e.g. "go1.24").
 //
-// The version is unknown when the type checker did not record a valid
-// version for the file, such as for parsed files that are ignored by
-// the type checker, or when neither the file nor the package
-// specifies a version, or in application that has not been updated to
-// populate the [types.Config.GoVersion] field added in Go 1.18.
+// It returns false when version information is not available,
+// such as for parsed files that are ignored by the type checker.
 //
-// For standard packages that are part of toolchain bootstrapping,
-// the result is the bootstrap toolchain version.
-//
-// Most analyzers should use the simpler [FileUsesGoVersion].
-// Use this function when you need to distinguish "unknown" from
-// "before", for example, to enable a check only for files that are
-// known to use an older version of Go.
-func FileGoVersion(pass *analysis.Pass, file *ast.File) (version string, known bool) {
-	fileVersion := pass.TypesInfo.FileVersions[file]
-	if fileVersion == "" || !versions.IsValid(fileVersion) {
-		return "", false // e.g. IgnoredFiles, or no Config.GoVersion
+// Tip: we recommend using this check "late", just before calling
+// pass.Report, rather than "early" (when entering each ast.File, or
+// each candidate node of interest, during the traversal), because the
+// operation is not free, yet is not a highly selective filter: the
+// fraction of files that pass most version checks is high and
+// increases over time.
+func FileUsesGoVersion(pass *analysis.Pass, file *ast.File, version string) (_res bool) {
+	fileVersion, ok := pass.TypesInfo.FileVersions[file]
+	if !ok {
+		return false // be conservative in the absence of information (e.g. IgnoredFiles)
 	}
 
 	// Standard packages that are part of toolchain bootstrapping
@@ -48,23 +44,5 @@ func FileGoVersion(pass *analysis.Pass, file *ast.File) (version string, known b
 		fileVersion = stdlib.BootstrapVersion.String() // package must bootstrap
 	}
 
-	return fileVersion, true
-}
-
-// FileUsesGoVersion reports whether the specified file may use
-// features of the specified version of Go (e.g. "go1.24").
-//
-// It returns false when version information is not available,
-// such as for parsed files that are ignored by the type checker.
-// Use [FileGoVersion] to distinguish "unknown" from "before".
-//
-// Tip: we recommend using this check "late", just before calling
-// pass.Report, rather than "early" (when entering each ast.File, or
-// each candidate node of interest, during the traversal), because the
-// operation is not free, yet is not a highly selective filter: the
-// fraction of files that pass most version checks is high and
-// increases over time.
-func FileUsesGoVersion(pass *analysis.Pass, file *ast.File, version string) bool {
-	fileVersion, known := FileGoVersion(pass, file)
-	return known && !versions.Before(fileVersion, version)
+	return !versions.Before(fileVersion, version)
 }

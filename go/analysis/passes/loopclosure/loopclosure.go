@@ -54,10 +54,8 @@ func run(pass *analysis.Pass) (any, error) {
 		var body *ast.BlockStmt
 		switch n := n.(type) {
 		case *ast.File:
-			// Only traverse the file if its goversion is
-			// known to be strictly before go1.22.
-			v, known := analyzerutil.FileGoVersion(pass, n)
-			return known && versions.Before(v, versions.Go1_22)
+			// Only traverse the file if its goversion is strictly before go1.22.
+			return !analyzerutil.FileUsesGoVersion(pass, n, versions.Go1_22)
 
 		case *ast.RangeStmt:
 			body = n.Body
