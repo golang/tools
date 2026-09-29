@@ -34,8 +34,9 @@ type Program struct {
 	canon *canonizer     // type canonicalization map
 	ctxt  *types.Context // cache for type checking instantiations
 
-	methodsMu  sync.Mutex
-	methodSets typeutil.Map // maps type to its concrete *methodSet
+	methodsMu     sync.Mutex
+	methodSets    typeutil.Map              // maps type to its concrete *methodSet
+	methodSetsPtr map[types.Type]*methodSet // cache of methodSets, keyed by type value
 
 	// memoization of whether a type refers to type parameters
 	hasParamsMu sync.Mutex
