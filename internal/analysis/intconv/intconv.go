@@ -11,7 +11,10 @@ package intconv
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
+	"go/token"
 	"go/types"
+	"math"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -64,6 +67,12 @@ func typeName(t types.Type) string {
 // Check reports whether the call is a conversion string(x) from a
 // non-byte, non-rune integer x, and if so, returns a diagnostic
 // with suggested fixes.
+//
+// Such conversions are rejected by the type checker in files
+// using go1.28 or later, so in practice the analyzer only sees
+// them in older files. (An exception is a tool built with a
+// pre-go1.28 go/types analyzing a go1.28 file, in which case
+// the diagnostic and its fix are just as useful.)
 func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, ok bool) {
 	call := curCall.Node().(*ast.CallExpr)
 
@@ -163,73 +172,139 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 		Pos:     call.Pos(),
 		Message: fmt.Sprintf("conversion from %s to %s yields a string of one rune, not a string of digits", source, target),
 	}
-	addFix := func(message string, edits []analysis.TextEdit) {
+	if !convertibleToRune {
+		return diag, true // no fixes
+	}
+	addFix := func(message string, edits ...analysis.TextEdit) {
 		diag.SuggestedFixes = append(diag.SuggestedFixes, analysis.SuggestedFix{
 			Message:   message,
 			TextEdits: edits,
 		})
 	}
+	edit := func(start, end token.Pos, text string) analysis.TextEdit {
+		return analysis.TextEdit{Pos: start, End: end, NewText: []byte(text)}
+	}
 
-	// Fix 1: use fmt.Sprint(x)
+	// sprintf returns edits that replace x by fmt.Sprintf("%verb", x),
+	// adding an import of "fmt" as needed.
+	// The conversion is retained unless T is exactly string:
 	//
-	// Prefer fmt.Sprint over strconv.Itoa, FormatInt,
-	// or FormatUint, as it works for any type.
-	// Add an import of "fmt" as needed.
+	//	string(x)   -> fmt.Sprintf("%verb", x)
+	//	mystring(x) -> mystring(fmt.Sprintf("%verb", x))
+	sprintf := func(verb string) []analysis.TextEdit {
+		start, end := arg.Pos(), arg.End()
+		if types.Identical(T, types.Typ[types.String]) {
+			start, end = call.Pos(), call.End()
+		}
+		file := astutil.EnclosingFile(curCall)
+		prefix, importEdits := refactor.AddImport(info, file, "fmt", "fmt", "Sprintf", arg.Pos())
+		return append(importEdits,
+			edit(start, arg.Pos(), prefix+`Sprintf("%`+verb+`", `),
+			edit(arg.End(), end, ")"))
+	}
+
+	// sprintfOK reports whether fmt.Sprintf may be used.
 	//
-	// Unless the type is exactly string, we must retain the conversion.
-	//
-	// Do not offer this fix if type parameters are involved,
+	// Do not use it if type parameters are involved,
 	// as there are too many combinations and subtleties.
 	// Consider x = rune | int16 | []byte: in all cases,
 	// string(x) is legal, but the appropriate diagnostic
-	// and fix differs. Similarly, don't offer the fix if
-	// the type has methods, as some {String,GoString,Format}
-	// may change the behavior of fmt.Sprint.
-	if len(ttypes) == 1 && len(vtypes) == 1 && types.NewMethodSet(V0).Len() == 0 {
-		file := astutil.EnclosingFile(curCall)
-		prefix, importEdits := refactor.AddImport(info, file, "fmt", "fmt", "Sprint", arg.Pos())
-		if types.Identical(T0, types.Typ[types.String]) {
-			// string(x) -> fmt.Sprint(x)
-			addFix("Format the number as a decimal", append(importEdits,
-				analysis.TextEdit{
-					Pos:     call.Fun.Pos(),
-					End:     call.Fun.End(),
-					NewText: []byte(prefix + "Sprint"),
-				}),
-			)
-		} else {
-			// mystring(x) -> mystring(fmt.Sprint(x))
-			addFix("Format the number as a decimal", append(importEdits,
-				analysis.TextEdit{
-					Pos:     call.Lparen + 1,
-					End:     call.Lparen + 1,
-					NewText: []byte(prefix + "Sprint("),
-				},
-				analysis.TextEdit{
-					Pos:     call.Rparen,
-					End:     call.Rparen,
-					NewText: []byte(")"),
-				}),
-			)
-		}
+	// and fix differs. Similarly, don't use it if the type
+	// has methods, as a Format method may change the behavior
+	// of fmt.Sprintf.
+	sprintfOK := len(ttypes) == 1 && len(vtypes) == 1 && types.NewMethodSet(V0).Len() == 0
+
+	// The first fix must preserve the existing behavior,
+	// since it is the one applied by "go fix". (This lets
+	// "go fix" migrate code before its go.mod file is
+	// upgraded to go1.28, at which point string(int)
+	// conversions become a compile error.)
+	//
+	// If no behavior-preserving fix is available,
+	// we offer no fixes at all.
+
+	// Fix 1: use string(rune(x)) or fmt.Sprintf("%c", x),
+	// preserving behavior.
+	//
+	// string(x) yields "\uFFFD" for any x outside the range of valid
+	// code points, whereas rune(x) truncates x to 32 bits, which may
+	// turn an invalid code point into a valid one. So rune(x) is
+	// exact only if x is a constant that fits in 32 bits, or if every
+	// type in the type set of V is at most 32 bits wide.
+	// (For uint32, values ≥ 1<<31 become negative runes, which are
+	// just as invalid.)
+	//
+	// For a wider type we use fmt.Sprintf("%c", x), which is exactly
+	// equivalent: fmt converts x to uint64 and treats any value
+	// above MaxRune (including negative values) as "\uFFFD".
+	// In addition to the sprintfOK conditions, we avoid a
+	// single-term type parameter (e.g. ~int64), since it
+	// could be instantiated by a type with a Format method,
+	// and untyped constants (whose default type int might
+	// overflow).
+	if runeIsExact(info, arg, vtypes) {
+		addFix("Convert a single rune to a string",
+			edit(arg.Pos(), arg.Pos(), "rune("),
+			edit(arg.End(), arg.End(), ")"))
+
+	} else if sprintfOK &&
+		!is[*types.TypeParam](types.Unalias(V)) &&
+		!isUntypedConst(info, arg) {
+		addFix("Convert single rune to string (preserves behavior)", sprintf("c")...)
+
+	} else {
+		return diag, true // no behavior-preserving fix, so no fixes
 	}
 
-	// Fix 2: use string(rune(x))
-	if convertibleToRune {
-		addFix("Convert a single rune to a string", []analysis.TextEdit{
-			{
-				Pos:     arg.Pos(),
-				End:     arg.Pos(),
-				NewText: []byte("rune("),
-			},
-			{
-				Pos:     arg.End(),
-				End:     arg.End(),
-				NewText: []byte(")"),
-			},
-		})
+	// Fix 2: use fmt.Sprintf("%d", x), which changes behavior.
+	//
+	// Prefer fmt.Sprintf over strconv.Itoa, FormatInt,
+	// or FormatUint, as it works for any integer type.
+	if sprintfOK {
+		addFix("Format number as decimal (changes behavior)", sprintf("d")...)
 	}
+
 	return diag, true
+}
+
+// runeIsExact reports whether string(rune(x)) is equivalent to
+// string(x) for the argument x, whose type set is vtypes.
+func runeIsExact(info *types.Info, x ast.Expr, vtypes []types.Type) bool {
+	// Constant that fits in 32 bits?
+	if tv := info.Types[x]; tv.Value != nil {
+		v, exact := constant.Int64Val(constant.ToInt(tv.Value))
+		return exact && math.MinInt32 <= v && v <= math.MaxInt32
+	}
+
+	// All types in the type set at most 32 bits wide?
+	for _, t := range vtypes {
+		u, ok := t.Underlying().(*types.Basic)
+		if !ok {
+			return false
+		}
+		switch u.Kind() {
+		case types.Int8, types.Int16, types.Int32,
+			types.Uint8, types.Uint16, types.Uint32:
+		default:
+			return false // int, int64, uint, uint64, uintptr, etc
+		}
+	}
+	return true
+}
+
+// isUntypedConst reports whether x is an untyped constant.
+func isUntypedConst(info *types.Info, x ast.Expr) bool {
+	tv := info.Types[x]
+	if tv.Value == nil {
+		return false
+	}
+	u, ok := tv.Type.(*types.Basic)
+	return ok && u.Info()&types.IsUntyped != 0
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }
 
 func structuralTypes(t types.Type) ([]types.Type, error) {
