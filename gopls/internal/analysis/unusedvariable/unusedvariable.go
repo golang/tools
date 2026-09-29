@@ -8,12 +8,15 @@ package unusedvariable
 import (
 	"fmt"
 	"go/ast"
+	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 )
 
@@ -60,6 +63,31 @@ func run(pass *analysis.Pass) (any, error) {
 
 			tokFile := pass.Fset.File(ident.Pos())
 			edits := refactor.DeleteVar(tokFile, pass.TypesInfo, curId)
+			if len(edits) > 0 {
+				// Also delete any assignments to the unused variable (golang/go#81809).
+				if v, ok := pass.TypesInfo.Defs[ident].(*types.Var); ok {
+					if curFunc, ok := moreiters.First(curId.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil))); ok {
+						for curUse := range curFunc.Preorder((*ast.Ident)(nil)) {
+							useIdent := curUse.Node().(*ast.Ident)
+							if pass.TypesInfo.Uses[useIdent] == v {
+								if slices.ContainsFunc(edits, func(e analysis.TextEdit) bool {
+									return e.Pos <= useIdent.Pos() && useIdent.End() <= e.End
+								}) {
+									continue // already deleted by an enclosing edit
+								}
+								useEdits := refactor.DeleteVar(tokFile, pass.TypesInfo, curUse)
+								if len(useEdits) == 0 {
+									// Since a partial fix would result in broken code,
+									// don't offer a fix at all.
+									edits = nil
+									break
+								}
+								edits = append(edits, useEdits...)
+							}
+						}
+					}
+				}
+			}
 			if len(edits) > 0 {
 				pass.Report(analysis.Diagnostic{
 					Pos:     ident.Pos(),

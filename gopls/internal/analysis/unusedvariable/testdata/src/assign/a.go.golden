@@ -32,9 +32,9 @@ func partOfMultiAssignment() {
 }
 
 func sideEffects(cBool chan bool, cInt chan int) {
-	_ = <-c            // want `declared (and|but) not used`
-	_ = fmt.Sprint("") // want `declared (and|but) not used`
-	_ = A{             // want `declared (and|but) not used`
+	<-c            // want `declared (and|but) not used`
+	fmt.Sprint("") // want `declared (and|but) not used`
+	_ = A{         // want `declared (and|but) not used`
 		b: func() int {
 			return 1
 		}(),
@@ -48,7 +48,7 @@ func sideEffects(cBool chan bool, cInt chan int) {
 	_ = []int{<-cInt}       // want `declared (and|but) not used`
 
 	// (ill-typed)
-	_ = func(s string) {}() // want `declared (and|but) not used`
+	func(s string) {}() // want `declared (and|but) not used`
 }
 
 func commentAbove() {
@@ -70,4 +70,10 @@ func fBool() bool {
 
 func fInt() int {
 	return 1
+}
+
+func issue81809(path string) error {
+	_, err := os.Open(path) // want `declared (and|but) not used`
+	_, err = os.Open(path)
+	return err
 }

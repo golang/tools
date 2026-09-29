@@ -85,3 +85,10 @@ func fBool() bool {
 func fInt() int {
 	return 1
 }
+
+func issue81809(path string) error {
+	b, err := os.Open(path) // want `declared (and|but) not used`
+	b = nil
+	b, err = os.Open(path)
+	return err
+}

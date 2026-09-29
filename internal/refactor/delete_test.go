@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -463,7 +464,15 @@ func TestDeleteVar(t *testing.T) {
 		},
 		{
 			"package p; func _() { v := fx() }",
-			"package p; func _() { _ = fx() }",
+			"package p; func _() { fx() }",
+		},
+		{
+			"package p; func _() { v := len(fx()) }",
+			"package p; func _() { _ = len(fx()) }",
+		},
+		{
+			"package p; func _() { v := int(fx()) }",
+			"package p; func _() { _ = int(fx()) }",
 		},
 		{
 			"package p; func _() { v := 1 // comment\n }",
@@ -487,13 +496,69 @@ func TestDeleteVar(t *testing.T) {
 		},
 		{
 			"package p; func _() { switch v := fx(); cond {} }",
-			"package p; func _() { switch _ = fx(); cond {} }",
+			"package p; func _() { switch fx(); cond {} }",
 		},
 		{
 			"package p; func _() { for v := 0; ; {} }",
 			"package p; func _() { for {} }",
 		},
+		{
+			"package p; func _() { _, v := fx(), 1 }",
+			"package p; func _() { fx() }",
+		},
+		{
+			"package p; func _() { v, _ := 1, fx() }",
+			"package p; func _() { fx() }",
+		},
+		{
+			"package p; func _() { var x int; x, v := 0, 1 }",
+			"package p; func _() { var x int; x = 0 }",
+		},
+		{
+			"package p; func _() { var x int; v, x := f() }",
+			"package p; func _() { var x int; _, x = f() }",
+		},
+		{
+			"package p; func _() { v = 0 }",
+			"package p; func _() {}",
+		},
+		{
+			"package p; func _() { v = fx() }",
+			"package p; func _() { fx() }",
+		},
+		{
+			"package p; func _() { v, _ = f() }",
+			"package p; func _() { f() }",
+		},
+		{
+			"package p; func _() { v, x = 0, 1 }",
+			"package p; func _() { x = 1 }",
+		},
+		{
+			"package p; func _() { v, x = f() }",
+			"package p; func _() { _, x = f() }",
+		},
+		{
+			"package p; func _(a, b []int) { v := copy(a, b) }",
+			"package p; func _(a, b []int) { copy(a, b) }",
+		},
+		{
+			"package p; func _() { v = recover() }",
+			"package p; func _() { recover() }",
+		},
+		{
+			"package p; func _(s []int) { v := append(s, 1) }",
+			"package p; func _(s []int) { _ = append(s, 1) }",
+		},
+		{
+			`package p; import "unsafe"; func _(p *int) { v := unsafe.Slice(p, fx()) }`,
+			`package p; import "unsafe"; func _(p *int) { _ = unsafe.Slice(p, fx()) }`,
+		},
 		// unhandled cases
+		{
+			"package p; func _() { v += 1 }", // compound assignment
+			"package p; func _() { v += 1 }",
+		},
 		{
 			"package p; func _(v int) {}", // parameter
 			"package p; func _(v int) {}",
@@ -517,11 +582,13 @@ func TestDeleteVar(t *testing.T) {
 			fset := token.NewFileSet()
 			f, _ := parser.ParseFile(fset, "p", test.src, parser.ParseComments) // allow errors
 			conf := types.Config{
-				Error: func(err error) {}, // allow errors
+				Error:    func(err error) {}, // allow errors
+				Importer: importer.Default(),
 			}
 			info := &types.Info{
 				Types: make(map[ast.Expr]types.TypeAndValue),
 				Defs:  make(map[*ast.Ident]types.Object),
+				Uses:  make(map[*ast.Ident]types.Object),
 			}
 			files := []*ast.File{f}
 			conf.Check("p", fset, files, info) // ignore error
@@ -529,11 +596,11 @@ func TestDeleteVar(t *testing.T) {
 			curId := func() inspector.Cursor {
 				for curId := range inspector.New(files).Root().Preorder((*ast.Ident)(nil)) {
 					id := curId.Node().(*ast.Ident)
-					if id.Name == "v" && info.Defs[id] != nil {
+					if id.Name == "v" {
 						return curId
 					}
 				}
-				t.Fatalf("can't find Defs[v]")
+				t.Fatalf("can't find Ident[v]")
 				panic("unreachable")
 			}()
 			tokFile := fset.File(f.Pos())

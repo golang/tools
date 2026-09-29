@@ -20,14 +20,21 @@ import (
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
-// DeleteVar returns edits to delete the declaration of a variable or
-// constant whose defining identifier is curId.
+// DeleteVar returns edits to delete the declaration or assignment of a
+// variable or constant whose defining or assigned identifier is curId.
 //
 // It handles variants including:
-// - GenDecl > ValueSpec versus AssignStmt;
+// - GenDecl > ValueSpec versus AssignStmt (:= or =);
 // - RHS expression has effects, or not;
 // - entire statement/declaration may be eliminated;
 // and removes associated comments.
+//
+// When an assignment's remaining LHS consists only of blank identifiers
+// and its RHS is a valid expression statement (such as a function call
+// f()), DeleteVar simplifies the assignment to an expression statement.
+// Note that if f is a pure function that was not recognized by
+// [typesinternal.NoEffects], this may cause the unusedresult analyzer
+// to report a diagnostic for the call.
 //
 // If it cannot make the necessary edits, such as for a function
 // parameter or result, it returns nil.
@@ -147,7 +154,10 @@ func deleteVarFromValueSpec(tokFile *token.File, info *types.Info, curIdent insp
 	}}
 }
 
-// Precondition: curId is Ident beneath AssignStmt.Lhs.
+// deleteVarFromAssignStmt returns edits to delete the declaration or
+// assignment of a variable within an AssignStmt.
+//
+// Precondition: curIdent is Ident beneath AssignStmt.Lhs.
 //
 // See also [deleteVarFromValueSpec], which has parallel structure.
 func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent inspector.Cursor) []Edit {
@@ -156,21 +166,34 @@ func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent ins
 		curStmt = curIdent.Parent()
 		assign  = curStmt.Node().(*ast.AssignStmt)
 	)
+	// Compound assignments (e.g. +=) both read and write the LHS,
+	// so the LHS cannot simply be deleted or blanked out.
+	if assign.Tok != token.DEFINE && assign.Tok != token.ASSIGN {
+		return nil // e.g. +=
+	}
 
-	declaresOtherNames := slices.ContainsFunc(assign.Lhs, func(lhs ast.Expr) bool {
+	// Does the statement assign to any LHS other than id and '_'?
+	// Unlike ValueSpec, an '=' AssignStmt may have non-Ident LHS
+	// expressions (like x.f or a[i]) which must be preserved.
+	// For example, when deleting v:
+	//   x, v := 1, 2    -> true  (assigns to x)
+	//   x.f, v = 1, 2   -> true  (assigns to non-Ident x.f)
+	//   v := 1          -> false
+	//   _, v = f()      -> false
+	assignsOtherLHS := slices.ContainsFunc(assign.Lhs, func(lhs ast.Expr) bool {
 		lhsId, ok := lhs.(*ast.Ident)
-		return ok && lhsId != id && lhsId.Name != "_"
+		return !ok || (lhsId != id && lhsId.Name != "_")
 	})
 	noRHSEffects := !slices.ContainsFunc(assign.Rhs, func(rhs ast.Expr) bool {
 		return !typesinternal.NoEffects(info, rhs)
 	})
-	if !declaresOtherNames && noRHSEffects {
+	if !assignsOtherLHS && noRHSEffects {
 		// The assignment is no longer needed, either to
-		// declare other variables, or for its side effects.
+		// assign to other variables, or for its side effects.
 		if edits := DeleteStmt(tokFile, curStmt); edits != nil {
 			return edits
 		}
-		// Statement could not not be deleted in this context.
+		// Statement could not be deleted in this context.
 		// Fall back to conservative deletion.
 	}
 
@@ -179,19 +202,55 @@ func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent ins
 	// or because it cannot deleted because of its context.
 	// Blank out or delete just one LHS.
 
+	// If no LHS variables remain and the single RHS expression is a valid
+	// statement (a call or channel receive), delete the LHS and '=' or ':='
+	// rather than leaving "_ = rhs" or "_, _ = rhs".
+	if !assignsOtherLHS && len(assign.Rhs) == 1 && isValidExprStmt(info, assign.Rhs[0]) {
+		return []Edit{{
+			Pos: assign.Pos(),
+			End: assign.Rhs[0].Pos(),
+		}}
+	}
+
 	// If the assignment is 1:1 and the RHS has no effects,
 	// we can delete the LHS and its corresponding RHS.
+	var edits []Edit
 	index := curIdent.ParentEdgeIndex()
 	if len(assign.Lhs) > 1 &&
 		len(assign.Lhs) == len(assign.Rhs) &&
 		typesinternal.NoEffects(info, assign.Rhs[index]) {
+
+		// If this is a 2:2 assignment where the other LHS is '_' and the
+		// other RHS is a valid statement (like "_, v := fx(), 1"),
+		// reduce the statement to just the other RHS ("fx()").
+		if !assignsOtherLHS && len(assign.Lhs) == 2 && isValidExprStmt(info, assign.Rhs[1-index]) {
+			if index == 1 {
+				// _, lhs1 := rhs0, rhs1  ->  rhs0
+				return []Edit{
+					{
+						Pos: assign.Pos(),
+						End: assign.Rhs[0].Pos(),
+					},
+					{
+						Pos: assign.Rhs[0].End(),
+						End: assign.Rhs[1].End(),
+					},
+				}
+			} else {
+				// lhs0, _ := rhs0, rhs1  ->  rhs1
+				return []Edit{{
+					Pos: assign.Pos(),
+					End: assign.Rhs[1].Pos(),
+				}}
+			}
+		}
 
 		if index == len(assign.Lhs)-1 {
 			// Delete final items.
 			//
 			// _, lhs1 := rhs0, rhs1
 			//  ------        ------
-			return []Edit{
+			edits = []Edit{
 				{
 					Pos: assign.Lhs[index-1].End(),
 					End: assign.Lhs[index].End(),
@@ -206,7 +265,7 @@ func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent ins
 			//
 			// lhs0, _ := rhs0, rhs1
 			// ------     ------
-			return []Edit{
+			edits = []Edit{
 				{
 					Pos: assign.Lhs[index].Pos(),
 					End: assign.Lhs[index+1].Pos(),
@@ -217,29 +276,62 @@ func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent ins
 				},
 			}
 		}
+	} else {
+		// We cannot delete the RHS.
+		// Blank out the LHS.
+		edits = []Edit{{
+			Pos:     id.Pos(),
+			End:     id.End(),
+			NewText: []byte("_"),
+		}}
 	}
 
-	// We cannot delete the RHS.
-	// Blank out the LHS.
-	edits := []Edit{{
-		Pos:     id.Pos(),
-		End:     id.End(),
-		NewText: []byte("_"),
-	}}
-
 	// If this eliminates the final variable declared by
-	// an := statement, we need to turn it into an =
+	// a := statement (i.e. any remaining LHS identifiers
+	// are '_' or redeclared variables appearing in info.Uses
+	// rather than info.Defs), we need to turn it into an =
 	// assignment to avoid a "no new variables on left
 	// side of :=" error.
-	if !declaresOtherNames {
-		edits = append(edits, Edit{
-			Pos:     assign.TokPos,
-			End:     assign.TokPos + token.Pos(len(":=")),
-			NewText: []byte("="),
+	if assign.Tok == token.DEFINE {
+		declaresOtherNames := slices.ContainsFunc(assign.Lhs, func(lhs ast.Expr) bool {
+			lhsId, ok := lhs.(*ast.Ident)
+			return ok && lhsId != id && lhsId.Name != "_" && info.Defs[lhsId] != nil
 		})
+		if !declaresOtherNames {
+			edits = append(edits, Edit{
+				Pos:     assign.TokPos,
+				End:     assign.TokPos + token.Pos(len(":=")),
+				NewText: []byte("="),
+			})
+		}
 	}
 
 	return edits
+}
+
+// isValidExprStmt reports whether expr may be used as an [ast.ExprStmt].
+// Only function/method calls (excluding conversions and
+// certain built-in functions) and channel receive operations are permitted
+// in statement context.
+func isValidExprStmt(info *types.Info, expr ast.Expr) bool {
+	switch expr := ast.Unparen(expr).(type) {
+	case *ast.CallExpr:
+		if info.Types[expr.Fun].IsType() {
+			return false // type conversion, e.g. int(f())
+		}
+		if b, ok := typesinternal.Callee(info, expr).(*types.Builtin); ok {
+			switch b.Name() {
+			case "clear", "close", "copy", "delete", "panic", "print", "println", "recover":
+				return true
+			default:
+				return false // e.g. len(f()), append(s, f()), make([]int, f()), unsafe.Slice(p, f())
+			}
+		}
+		return true
+	case *ast.UnaryExpr:
+		return expr.Op == token.ARROW // <-ch
+	}
+	return false
 }
 
 // DeleteSpec returns edits to delete the {Type,Value}Spec identified by curSpec.

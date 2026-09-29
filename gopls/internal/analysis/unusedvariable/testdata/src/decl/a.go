@@ -28,3 +28,12 @@ func c() {
 
 	panic(d)
 }
+
+func issue81809(f func() (int, error)) error {
+	var b int // want `declared (and|but) not used`
+	var err error
+	b = 1
+	b, _ = f()
+	b, err = f()
+	return err
+}
