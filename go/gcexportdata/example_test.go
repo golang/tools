@@ -22,9 +22,9 @@ import (
 )
 
 // ExampleRead uses gcexportdata.Read to load type information for the
-// "fmt" package from the fmt.a file produced by the gc compiler.
+// "fmt" package from the export data file produced by "go list -export".
 func ExampleRead() {
-	// Find the export data file.
+	// Build the export data file.
 	filename, path := gcexportdata.Find("fmt", "")
 	if filename == "" {
 		log.Fatalf("can't find export data for fmt")
