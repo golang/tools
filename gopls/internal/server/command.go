@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/types"
 	"io"
 	"log"
 	"maps"
@@ -45,6 +46,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/jsonrpc2"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
@@ -1863,13 +1865,33 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 		progress: "Implement interface X",
 		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		// TODO(hxjiang): consider passing ctx and snapshot to convert functions during
+		// initialization (e.g. via NewDialog), as question conversion often needs file info.
 		d := golang.NewDialog(c.s.options.ClientOptions, params)
-		iface := d.Ask(golang.InterfaceQuestion)
+		iface := d.Ask(golang.InterfaceQuestion.WithConvert(golang.ConvertInterface(ctx, deps.snapshot)))
 		if err := d.Check(); err != nil {
 			return err
 		}
 
-		// iface is a valid interface.
+		// Uninstantiated interface, ask user the type params.
+		var typeArgs []types.Type
+		for range iface.TypeParams().Len() {
+			typ := d.Ask(golang.TypeParamQuestion.WithConvert(golang.ConvertTypeParam(ctx, deps.snapshot)))
+			typeArgs = append(typeArgs, typ)
+		}
+		if err := d.Check(); err != nil {
+			return err
+		}
+
+		if len(typeArgs) > 0 {
+			inst, err := types.Instantiate(nil, iface, typeArgs, true)
+			if err != nil {
+				return err
+			}
+			iface = inst.(typesinternal.NamedOrAlias)
+		}
+
+		// iface is a valid (and instantiated, if generic) interface.
 
 		edits, err := golang.ImplementInterface(ctx, deps.snapshot, args.Location, iface)
 		if err != nil {

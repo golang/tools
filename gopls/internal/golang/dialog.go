@@ -22,8 +22,9 @@ import (
 type Dialog struct {
 	options settings.ClientOptions
 	params  *protocol.InteractiveParams
-	pending bool  // whether any answer is missing or failed validation
-	err     error // client protocol errors (malformed or duplicate answers)
+	seen    map[string]int // number of times each question ID has been asked
+	pending bool           // whether any answer is missing or failed validation
+	err     error          // client protocol errors (malformed or duplicate answers)
 }
 
 // NewDialog returns a new [Dialog] for negotiating and validating interactive
@@ -33,18 +34,24 @@ func NewDialog(options settings.ClientOptions, params *protocol.InteractiveParam
 	return &Dialog{
 		options: options,
 		params:  params,
+		seen:    make(map[string]int),
 	}
 }
 
 // Ask adds the best client-supported candidate for q to the dialog form,
 // validates and converts the user's answer (if provided), and returns the
-// converted value.
+// converted value. If the same question ID is asked multiple times, subsequent
+// fields are suffixed with 1, 2, etc.
 //
 // If the answer is missing or fails validation, Ask marks the dialog as pending
 // (and attaches any validation error to the field). If the answer is malformed,
 // Ask records the client error to be returned by [Dialog.Check].
 func (d *Dialog) Ask[In, Out any](q formQuestion[In, Out]) (res Out) {
 	field := q.bestField(d.options)
+	if n := d.seen[q.ID]; n > 0 {
+		field.ID = fmt.Sprintf("%s%d", q.ID, n)
+	}
+	d.seen[q.ID]++
 	defer func() {
 		d.params.FormFields = append(d.params.FormFields, field)
 	}()
@@ -96,6 +103,12 @@ type formQuestion[In, Out any] struct {
 	// ordered from most preferred to least preferred.
 	Types   []any
 	convert func(In) (Out, error)
+}
+
+// WithConvert returns a copy of q with the given convert function.
+func (q formQuestion[In, Out]) WithConvert(fn func(In) (Out, error)) formQuestion[In, Out] {
+	q.convert = fn
+	return q
 }
 
 // bestField returns a [protocol.FormField] using the most preferred candidate

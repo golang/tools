@@ -1,6 +1,9 @@
 This test checks the behavior of the 'Add methods to TYPE to implement an
 interface...' code action.
 
+TODO(hxjiang): marker tests with long answers JSON are becoming quite hard to read;
+consider defining answers separately rather than fitting everything on one end-of-line comment.
+
 -- capabilities.json --
 {
 	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
@@ -251,3 +254,78 @@ type InvisibleTypes interface {
 +}
 @@ -7 +12 @@
 +//@codeaction("Ok", "refactor.rewrite.implementInterface", edit=visible, answers=`{"interface":"golang.org/lsptests/implementinterface/visibility/bar/internal/bar.VisibleTypes"}`)
+-- generic/other/other.go --
+package other
+
+type Item struct{}
+
+-- generic/generic.go --
+package generic
+
+type Adder[T any] interface {
+	Add(x T) T
+}
+
+type ComparableAdder[T comparable] interface {
+	Add(x T) T
+}
+
+type Mapper[K, V any] interface {
+	Map(K) V
+}
+
+type Slice []int
+
+type IntBox struct{} //@codeaction("IntBox", "refactor.rewrite.implementInterface", edit=genericInt, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"int"}`)
+
+type ItemBox struct{} //@codeaction("ItemBox", "refactor.rewrite.implementInterface", edit=genericItem, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
+
+type MultiParamBox struct{} //@codeaction("MultiParamBox", "refactor.rewrite.implementInterface", edit=genericMulti, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Mapper","typeParam":"int","typeParam1":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
+
+type BadConstraintBox struct{} //@codeaction("BadConstraintBox", "refactor.rewrite.implementInterface", err=re"does not satisfy comparable", answers=`{"interface":"golang.org/lsptests/implementinterface/generic.ComparableAdder","typeParam":"golang.org/lsptests/implementinterface/generic.Slice"}`)
+
+-- @genericInt/generic/generic.go --
+@@ -17 +17,8 @@
+-type IntBox struct{} //@codeaction("IntBox", "refactor.rewrite.implementInterface", edit=genericInt, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"int"}`)
++type IntBox struct{}
++
++// Add implements [Adder].
++func (i *IntBox) Add(x int) int {
++	panic("unimplemented")
++}
++
++//@codeaction("IntBox", "refactor.rewrite.implementInterface", edit=genericInt, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"int"}`)
+@@ -24 +31 @@
+-
+-- @genericItem/generic/generic.go --
+@@ -3 +3,2 @@
++import "golang.org/lsptests/implementinterface/generic/other"
++
+@@ -19 +21,8 @@
+-type ItemBox struct{} //@codeaction("ItemBox", "refactor.rewrite.implementInterface", edit=genericItem, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
++type ItemBox struct{}
++
++// Add implements [Adder].
++func (i *ItemBox) Add(x other.Item) other.Item {
++	panic("unimplemented")
++}
++
++//@codeaction("ItemBox", "refactor.rewrite.implementInterface", edit=genericItem, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Adder","typeParam":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
+@@ -24 +33 @@
+-
+-- @genericMulti/generic/generic.go --
+@@ -3 +3,2 @@
++import "golang.org/lsptests/implementinterface/generic/other"
++
+@@ -21 +23,8 @@
+-type MultiParamBox struct{} //@codeaction("MultiParamBox", "refactor.rewrite.implementInterface", edit=genericMulti, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Mapper","typeParam":"int","typeParam1":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
++type MultiParamBox struct{}
++
++// Map implements [Mapper].
++func (m *MultiParamBox) Map(int) other.Item {
++	panic("unimplemented")
++}
++
++//@codeaction("MultiParamBox", "refactor.rewrite.implementInterface", edit=genericMulti, answers=`{"interface":"golang.org/lsptests/implementinterface/generic.Mapper","typeParam":"int","typeParam1":"golang.org/lsptests/implementinterface/generic/other.Item"}`)
+@@ -24 +33 @@
+-

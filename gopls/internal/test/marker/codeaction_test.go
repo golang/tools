@@ -315,44 +315,55 @@ func applyCodeAction(mark marker, action *protocol.CodeAction) ([]protocol.Docum
 			return nil, err
 		}
 
-		// Check if the command interactivity is required.
-		if len(cmd.FormFields) > 0 {
-			// Fill in "formAnswers" field from named arg "answers".
-			if rawArgs, ok := mark.note.NamedArgs["answers"]; ok {
-				args := make(map[string]any)
-				if err := json.Unmarshal([]byte(rawArgs.(string)), &args); err != nil {
-					mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
-				}
-				for k, v := range args {
-					// Expand $WORKDIR before sending it in "answers". Otherwise marker
-					// tests for features that use file URIs (e.g. Move Declaration) will
-					// fail.
-					if s, ok := v.(string); ok {
-						// On Windows, paths begin with "C:/..." (no leading slash),
-						// so prepending "file://" would yield an invalid 2-slash URI
-						// ("file://C:/..."). Replace "file://$WORKDIR" with RootURI()
-						// to ensure the canonical 3-slash format ("file:///C:/...").
-						// Any remaining "$WORKDIR" references (e.g. plain file paths)
-						// are replaced using slash-separated paths.
-						s = strings.ReplaceAll(s, "file://$WORKDIR", string(mark.run.env.Sandbox.Workdir.RootURI()))
-						s = strings.ReplaceAll(s, "$WORKDIR", filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()))
-						v = s
-					}
-					cmd.FormAnswers = append(cmd.FormAnswers, protocol.FormAnswer{
-						ID:    k,
-						Value: v,
-					})
+		// TODO(hxjiang): marker test actions with long answers JSON are becoming hard to read;
+		// consider defining answers or marker arguments separately (like other marker actions)
+		// rather than fitting everything into a single end-of-line comment.
+		var answers map[string]any
+		if rawArgs, ok := mark.note.NamedArgs["answers"]; ok {
+			if err := json.Unmarshal([]byte(rawArgs.(string)), &answers); err != nil {
+				mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
+			}
+			// Expand $WORKDIR before sending it in "answers". Otherwise marker
+			// tests for features that use file URIs (e.g. Move Declaration) will
+			// fail.
+			for k, v := range answers {
+				if s, ok := v.(string); ok {
+					// On Windows, paths begin with "C:/..." (no leading slash),
+					// so prepending "file://" would yield an invalid 2-slash URI
+					// ("file://C:/..."). Replace "file://$WORKDIR" with RootURI()
+					// to ensure the canonical 3-slash format ("file:///C:/...").
+					// Any remaining "$WORKDIR" references (e.g. plain file paths)
+					// are replaced using slash-separated paths.
+					s = strings.ReplaceAll(s, "file://$WORKDIR", string(mark.run.env.Sandbox.Workdir.RootURI()))
+					s = strings.ReplaceAll(s, "$WORKDIR", filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()))
+					answers[k] = s
 				}
 			}
+		}
 
-			// Re-resolve command with the "formAnswers" field filled.
+		var round int
+		for len(cmd.FormFields) > 0 {
+			if round++; round > 5 {
+				return nil, fmt.Errorf("failed to resolve command %q after 5 rounds", cmd.Command)
+			}
+			cmd.FormAnswers = nil
+			for _, field := range cmd.FormFields {
+				if field.Error != "" {
+					return nil, fmt.Errorf("form field %q error: %s", field.ID, field.Error)
+				}
+				v, ok := answers[field.ID]
+				if !ok {
+					return nil, fmt.Errorf("missing answer for question %q", field.ID)
+				}
+				cmd.FormAnswers = append(cmd.FormAnswers, protocol.FormAnswer{
+					ID:    field.ID,
+					Value: v,
+				})
+			}
+
 			cmd, err = resolveCommand(cmd)
 			if err != nil {
 				return nil, err
-			}
-
-			if len(cmd.FormFields) > 0 {
-				return nil, fmt.Errorf("got %v question after providing answers, expect 0", len(cmd.FormFields))
 			}
 		}
 
