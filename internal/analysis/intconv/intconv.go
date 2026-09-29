@@ -72,7 +72,9 @@ func typeName(t types.Type) string {
 // using go1.28 or later, so in practice the analyzer only sees
 // them in older files. (An exception is a tool built with a
 // pre-go1.28 go/types analyzing a go1.28 file, in which case
-// the diagnostic and its fix are just as useful.)
+// the diagnostic and its fix are just as useful.) However,
+// Check does not require that the package be well typed, so
+// gopls uses it to offer fixes for the type error.
 func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, ok bool) {
 	call := curCall.Node().(*ast.CallExpr)
 
