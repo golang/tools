@@ -390,6 +390,12 @@ func (f *Function) finishBody() {
 	// clear out other function state (keep consistent with buildParamsOnly)
 	f.subst = nil
 
+	// Release the package's type information, unless
+	// instances of f will later be built from it.
+	if !f.isGenericOrigin() {
+		f.info = nil
+	}
+
 	numberRegisters(f) // uses f.namedRegisters
 }
 
@@ -833,4 +839,11 @@ func returnExit(fn *Function, pos token.Pos) *exit {
 	}
 	fn.exits = append(fn.exits, e)
 	return e
+}
+
+// isGenericOrigin reports whether f is an uninstantiated generic
+// function or a method of an uninstantiated generic type.
+func (f *Function) isGenericOrigin() bool {
+	return (f.typeparams.Len() > 0 && len(f.typeargs) == 0) ||
+		(f.recvtypeparams.Len() > 0 && len(f.recvtypeargs) == 0)
 }
