@@ -207,8 +207,15 @@ func main() {
 
 	// Build function bodies only now: nothing below uses the
 	// syntax or type information of initial, so it can be
-	// freed as each package is built.
+	// freed as each package is built. Everything after this
+	// point works from the SSA program and its file set alone.
+	initial, pkgs = nil, nil // aid GC
 	prog.Build()
+
+	// -- types.Info is now unused and may be reclaimed by GC --
+
+	fset := prog.Fset
+	prog = nil
 
 	// Compute the reachabilty from main.
 	// (Build a call graph only for -whylive.)
@@ -228,7 +235,7 @@ func main() {
 	reachablePosn := make(map[token.Position]bool)
 	for fn := range res.Reachable {
 		if fn.Pos().IsValid() || fn.Name() == "init" {
-			reachablePosn[prog.Fset.Position(fn.Pos())] = true
+			reachablePosn[fset.Position(fn.Pos())] = true
 		}
 	}
 
@@ -260,7 +267,7 @@ func main() {
 
 		// Opt: remove the unreachable ones.
 		for fn := range targets {
-			if !reachablePosn[prog.Fset.Position(fn.Pos())] {
+			if !reachablePosn[fset.Position(fn.Pos())] {
 				delete(targets, fn)
 			}
 		}
@@ -287,7 +294,7 @@ func main() {
 			edges = append(edges, jsonEdge{
 				Initial:  cond(len(edges) == 0, prettyName(edge.Caller.Func, true), ""),
 				Kind:     cond(isStaticCall(edge), "static", "dynamic"),
-				Position: toJSONPosition(prog.Fset.Position(edge.Pos())),
+				Position: toJSONPosition(fset.Position(edge.Pos())),
 				Callee:   prettyName(edge.Callee.Func, true),
 			})
 		}
@@ -302,7 +309,7 @@ func main() {
 	// Group unreachable functions by package path.
 	byPkgPath := make(map[string]map[*ssa.Function]bool)
 	for _, fn := range sourceFuncs {
-		posn := prog.Fset.Position(fn.Pos())
+		posn := fset.Position(fn.Pos())
 
 		if !reachablePosn[posn] {
 			reachablePosn[posn] = true // suppress dups with same pos
@@ -332,8 +339,8 @@ func main() {
 		// together better than sorting.
 		fns := slices.Collect(maps.Keys(m))
 		sort.Slice(fns, func(i, j int) bool {
-			xposn := prog.Fset.Position(fns[i].Pos())
-			yposn := prog.Fset.Position(fns[j].Pos())
+			xposn := fset.Position(fns[i].Pos())
+			yposn := fset.Position(fns[j].Pos())
 			if xposn.Filename != yposn.Filename {
 				return xposn.Filename < yposn.Filename
 			}
@@ -342,7 +349,7 @@ func main() {
 
 		var functions []jsonFunction
 		for _, fn := range fns {
-			posn := prog.Fset.Position(fn.Pos())
+			posn := fset.Position(fn.Pos())
 
 			// Without -generated, skip functions declared in
 			// generated Go files.
