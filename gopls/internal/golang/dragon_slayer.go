@@ -64,8 +64,8 @@ var (
 		},
 	}
 
-	// DragonPickupQuestion asks whether the slayer picks up the sword.
-	DragonPickupQuestion = formQuestion[string, string]{
+	// DragonPickupSwordQuestion asks whether the slayer picks up the sword.
+	DragonPickupSwordQuestion = formQuestion[string, bool]{
 		ID:          "pickup",
 		Description: `A sword lies on the ground. Its blade is engraved: "dragonSlayer. Strike the belly."`,
 		Required:    true,
@@ -76,6 +76,15 @@ var (
 				{Value: "no", Description: "Leave it"},
 			},
 		}},
+		convert: func(s string) (bool, error) {
+			switch s {
+			case "yes":
+				return true, nil
+			case "no":
+				return false, nil
+			}
+			return false, fmt.Errorf("pickup doesn't accept answer: %s", s)
+		},
 	}
 
 	// DragonArmedAttackQuestion asks an armed slayer how to attack.
@@ -121,7 +130,7 @@ var (
 	}
 
 	dragonSlayerQuestions = []question{
-		DragonMoveQuestion, DragonPickupQuestion,
+		DragonMoveQuestion, DragonPickupSwordQuestion,
 		DragonArmedAttackQuestion, DragonUnarmedAttackQuestion, DragonTargetQuestion,
 	}
 )
@@ -147,7 +156,7 @@ func DragonSlayer(d *Dialog) (won bool, msg string, err error) {
 		pos = dragonPos{pos.x + delta.x, pos.y + delta.y}
 
 		if pos == dragonSword && !armed {
-			armed = d.Ask(DragonPickupQuestion) == "yes"
+			armed = d.Ask(DragonPickupSwordQuestion)
 			if err := d.Check(); err != nil {
 				return false, "", err
 			}
