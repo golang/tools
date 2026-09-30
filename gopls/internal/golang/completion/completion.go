@@ -1632,7 +1632,11 @@ func (c *completer) lexical(ctx context.Context) error {
 // this method makes sure you get candidates "[]int{}" and "[]int"
 // (the latter applies when completing a type name).
 func (c *completer) injectType(ctx context.Context, t types.Type) {
-	if t == nil {
+	// Do not synthesize candidates from invalid types (such as
+	// "map[string]invalid type" when an outer expected type is incomplete),
+	// as types.TypeString would literally produce "invalid type" in the
+	// candidate name.
+	if t == nil || !typeIsValid(t) {
 		return
 	}
 
@@ -2231,10 +2235,6 @@ type typeNameInference struct {
 func expectedCandidate(ctx context.Context, c *completer) (inf candidateInference) {
 	inf.typeName = expectTypeName(c)
 
-	if c.enclosingCompositeLiteral != nil {
-		inf.objType = expectedCompositeLiteralType(c.enclosingCompositeLiteral, c.pos)
-	}
-
 Nodes:
 	for i, node := range c.path {
 		switch node := node.(type) {
@@ -2273,6 +2273,49 @@ Nodes:
 				inf.objType = typ
 			}
 			return inf
+		case *ast.CompositeLit:
+			// Compute the expected element/field type from the enclosing
+			// composite literal, including when reached after skipping an
+			// inner builtin call (e.g., "Foo{Bar: make(<>)}"), where
+			// c.enclosingCompositeLiteral is nil because the call expression
+			// stopped initial composite literal inference.
+			if node.Lbrace < c.pos && c.pos <= node.Rbrace {
+				clInfo := c.enclosingCompositeLiteral
+				if clInfo == nil {
+					clInfo = enclosingCompositeLiteral(c.path[i:], c.pos, c.pkg.TypesInfo())
+				}
+				if clInfo != nil {
+					inf.objType = expectedCompositeLiteralType(clInfo, c.pos)
+				}
+				break Nodes
+			} else if breaksExpectedTypeInference(node, c.pos) {
+				return inf
+			}
+		case *ast.MapType:
+			// When completing inside the key or value of a MapType (after "map["),
+			// unwrap an expected map type from an outer context (such as
+			// "Foo: make(map[string]<>)" where Foo is map[string]int) to its key
+			// or value type. If the cursor is still on the "map" token itself
+			// (e.g., "Foo: make(map<>)"), leave inf.objType as the full map type
+			// so "map" can complete to "map[string]int".
+			if c.pos > node.Map+token.Pos(len("map")) {
+				defer func() {
+					if inf.objType != nil {
+						if mt, ok := inf.objType.Underlying().(*types.Map); ok {
+							if node.Key != nil && c.pos <= node.Key.End() {
+								inf.objType = mt.Key()
+							} else {
+								inf.objType = mt.Elem()
+							}
+							if !typeIsValid(inf.objType) {
+								inf.objType = nil
+							}
+						} else {
+							inf.objType = nil
+						}
+					}
+				}()
+			}
 		case *ast.CallExpr:
 			// Only consider CallExpr args if position falls between parens.
 			if node.Lparen < c.pos && c.pos <= node.Rparen {
@@ -2281,6 +2324,35 @@ Nodes:
 				if typ := typeConversion(node, c.pkg.TypesInfo()); typ != nil {
 					inf.convertibleTo = typ
 					break Nodes
+				}
+
+				// Check for Universe builtins before expectedCallParamType.
+				// For builtins like make(), go/types synthesizes a signature in
+				// TypesInfo().Types[node.Fun] from the call's existing (possibly
+				// incomplete/invalid) arguments, which would otherwise seed
+				// inf.objType with an invalid type.
+				if funIdent, ok := node.Fun.(*ast.Ident); ok {
+					obj := c.pkg.TypesInfo().ObjectOf(funIdent)
+
+					if obj != nil && obj.Parent() == types.Universe {
+						// Defer call to builtinArgType so we can provide it the
+						// inferred type from its parent node.
+						defer func() {
+							inf = c.builtinArgType(obj, node, inf)
+							inf.objKind = c.builtinArgKind(ctx, obj, node)
+						}()
+
+						// The expected type of builtin arguments like append() is
+						// the expected type of the builtin call itself. For
+						// example:
+						//
+						// var foo []int = append(<>)
+						//
+						// To find the expected type at <> we "skip" the append()
+						// node and get the expected type one level up, which is
+						// []int.
+						continue Nodes
+					}
 				}
 
 				if sig, ok := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature); ok {
@@ -2307,30 +2379,6 @@ Nodes:
 					}
 
 					inf = c.expectedCallParamType(inf, node, sig)
-				}
-
-				if funIdent, ok := node.Fun.(*ast.Ident); ok {
-					obj := c.pkg.TypesInfo().ObjectOf(funIdent)
-
-					if obj != nil && obj.Parent() == types.Universe {
-						// Defer call to builtinArgType so we can provide it the
-						// inferred type from its parent node.
-						defer func() {
-							inf = c.builtinArgType(obj, node, inf)
-							inf.objKind = c.builtinArgKind(ctx, obj, node)
-						}()
-
-						// The expected type of builtin arguments like append() is
-						// the expected type of the builtin call itself. For
-						// example:
-						//
-						// var foo []int = append(<>)
-						//
-						// To find the expected type at <> we "skip" the append()
-						// node and get the expected type one level up, which is
-						// []int.
-						continue Nodes
-					}
 				}
 
 				return inf
