@@ -130,3 +130,35 @@ func lastindex_byte_var_nonascii(s string, b byte) string {
 	}
 	return s
 }
+
+func lastindex_var_typed(s string) string {
+	var _, after, ok = strings.CutLast(s, "/") // want "strings.LastIndex can be simplified using strings.CutLast"
+	if ok {
+		return after
+	}
+	return s
+}
+
+func lastindex_var_typed_byte(s string) string {
+	var before, _, ok = strings.CutLast(s, "/") // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
+		return before
+	}
+	return s
+}
+
+func lastindex_var_typed_bytes(b []byte) []byte {
+	var before, _, ok = bytes.CutLast(b, []byte("/")) // want "bytes.LastIndex can be simplified using bytes.CutLast"
+	if ok {
+		return before
+	}
+	return b
+}
+
+func lastindex_var_typed_bytes_byte(b []byte) []byte {
+	var before, _, ok = bytes.CutLast(b, []byte{'/'}) // want "bytes.LastIndexByte can be simplified using bytes.CutLast"
+	if ok {
+		return before
+	}
+	return b
+}
