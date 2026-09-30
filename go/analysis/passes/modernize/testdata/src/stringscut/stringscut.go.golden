@@ -176,11 +176,46 @@ func basic_strings_byte_int(s string) bool {
 
 func basic_strings_byte_var(s string) bool {
 	b := byte('b')
-	before, _, ok := strings.Cut(s, string(b)) // want "strings.IndexByte can be simplified using strings.Cut"
+	before, _, ok := strings.Cut(s, string([]byte{b})) // want "strings.IndexByte can be simplified using strings.Cut"
 	if ok {
 		print(before)
 	}
 	return ok
+}
+
+func strings_byte_nonascii(s string) bool {
+	found := strings.Contains(s, "\xff") // want "strings.IndexByte can be simplified using strings.Contains"
+	return found
+}
+
+func strings_byte_var_nonascii(s string) string {
+	b := byte(0xff)
+	before, _, ok := strings.Cut(s, string([]byte{b})) // want "strings.IndexByte can be simplified using strings.Cut"
+	if ok {
+		return before
+	}
+	return ""
+}
+
+func strings_byte_nonascii_cut(s string) string {
+	before, _, ok := strings.Cut(s, "\xff") // want "strings.IndexByte can be simplified using strings.Cut"
+	if ok {
+		return before
+	}
+	return ""
+}
+
+func strings_byte_var_nonascii_contains(s string, b byte) bool {
+	found := strings.Contains(s, string([]byte{b})) // want "strings.IndexByte can be simplified using strings.Contains"
+	return found
+}
+
+func bytes_byte_nonascii(b []byte) []byte {
+	before, _, ok := bytes.Cut(b, []byte{0xff}) // want "bytes.IndexByte can be simplified using bytes.Cut"
+	if ok {
+		return before
+	}
+	return nil
 }
 
 func basic_bytes(b []byte) []byte {

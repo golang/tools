@@ -114,3 +114,19 @@ func lastindex_if_init(s string) string {
 	}
 	return s
 }
+
+func lastindex_byte_nonascii(s string) string {
+	i := strings.LastIndexByte(s, 0xff) // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+func lastindex_byte_var_nonascii(s string, b byte) string {
+	i := strings.LastIndexByte(s, b) // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if i >= 0 {
+		return s[:i]
+	}
+	return s
+}

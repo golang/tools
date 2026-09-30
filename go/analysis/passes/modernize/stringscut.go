@@ -355,25 +355,27 @@ func stringscut(pass *analysis.Pass) (any, error) {
 					searchByteVal := info.Types[substr].Value
 					if searchByteVal == nil {
 						// substr is a variable, e.g. substr := byte('b')
-						// use string(substr)
+						// use string([]byte{substr}), not string(substr),
+						// which would UTF-8 encode a byte >= 0x80 as a
+						// two-byte string.
 						edits = append(edits, []analysis.TextEdit{
 							{
 								Pos:     substr.Pos(),
-								NewText: []byte("string("),
+								NewText: []byte("string([]byte{"),
 							},
 							{
 								Pos:     substr.End(),
-								NewText: []byte(")"),
+								NewText: []byte("})"),
 							},
 						}...)
 					} else {
 						// substr is a byte constant
 						val, _ := constant.Int64Val(searchByteVal) // inv: must be a valid byte
-						// strings.Cut/CutLast/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
+						// strings.Cut/CutLast/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7", 0xff -> "\xff"
 						edits = append(edits, analysis.TextEdit{
 							Pos:     substr.Pos(),
 							End:     substr.End(),
-							NewText: strconv.AppendQuote(nil, string(byte(val))),
+							NewText: strconv.AppendQuote(nil, string([]byte{byte(val)})),
 						})
 					}
 				case "bytes":

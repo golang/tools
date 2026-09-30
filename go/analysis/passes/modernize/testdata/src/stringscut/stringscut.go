@@ -183,6 +183,41 @@ func basic_strings_byte_var(s string) bool {
 	return i >= 0
 }
 
+func strings_byte_nonascii(s string) bool {
+	i := strings.IndexByte(s, 0xff) // want "strings.IndexByte can be simplified using strings.Contains"
+	return i >= 0
+}
+
+func strings_byte_var_nonascii(s string) string {
+	b := byte(0xff)
+	i := strings.IndexByte(s, b) // want "strings.IndexByte can be simplified using strings.Cut"
+	if i >= 0 {
+		return s[:i]
+	}
+	return ""
+}
+
+func strings_byte_nonascii_cut(s string) string {
+	i := strings.IndexByte(s, 0xff) // want "strings.IndexByte can be simplified using strings.Cut"
+	if i >= 0 {
+		return s[:i]
+	}
+	return ""
+}
+
+func strings_byte_var_nonascii_contains(s string, b byte) bool {
+	i := strings.IndexByte(s, b) // want "strings.IndexByte can be simplified using strings.Contains"
+	return i >= 0
+}
+
+func bytes_byte_nonascii(b []byte) []byte {
+	i := bytes.IndexByte(b, 0xff) // want "bytes.IndexByte can be simplified using bytes.Cut"
+	if i >= 0 {
+		return b[:i]
+	}
+	return nil
+}
+
 func basic_bytes(b []byte) []byte {
 	i := bytes.Index(b, []byte("str")) // want "bytes.Index can be simplified using bytes.Cut"
 	if i >= 0 {

@@ -49,7 +49,7 @@ func lastindex_byte_int(s string) bool {
 
 func lastindex_byte_var(s string) bool {
 	b := byte('b')
-	before, _, ok := strings.CutLast(s, string(b)) // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	before, _, ok := strings.CutLast(s, string([]byte{b})) // want "strings.LastIndexByte can be simplified using strings.CutLast"
 	if ok {
 		print(before)
 	}
@@ -110,6 +110,22 @@ func lastindex_neg_else(s string) (string, string) {
 
 func lastindex_if_init(s string) string {
 	if before, _, ok := strings.CutLast(s, "."); ok { // want "strings.LastIndex can be simplified using strings.CutLast"
+		return before
+	}
+	return s
+}
+
+func lastindex_byte_nonascii(s string) string {
+	before, _, ok := strings.CutLast(s, "\xff") // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
+		return before
+	}
+	return s
+}
+
+func lastindex_byte_var_nonascii(s string, b byte) string {
+	before, _, ok := strings.CutLast(s, string([]byte{b})) // want "strings.LastIndexByte can be simplified using strings.CutLast"
+	if ok {
 		return before
 	}
 	return s
