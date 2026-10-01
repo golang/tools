@@ -3893,6 +3893,14 @@ No fix is offered in cases when the runtime type is dynamic, such as:
 
 or when the operand has potential side effects.
 
+Nor is a fix offered when the operand refers to a non-type symbol such as a variable, constant, function, or field, as in:
+
+	reflect.TypeOf(pkg.Var)
+	reflect.TypeOf(x.Field)
+	reflect.TypeOf([arrayLen]byte{})
+
+Replacing these with TypeFor\[T]() would erase the reference to the symbol, breaking any intended coupling between the reflected type and the type of that symbol.
+
 
 Default: on.
 
