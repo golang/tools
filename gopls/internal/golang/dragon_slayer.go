@@ -35,8 +35,8 @@ var (
 )
 
 var (
-	// DragonMoveQuestion asks which way the slayer goes next.
-	DragonMoveQuestion = formQuestion[string, dragonPos]{
+	// dragonMoveQuestion asks which way the slayer goes next.
+	dragonMoveQuestion = formQuestion[string, dragonPos]{
 		ID:          "move",
 		Description: "Which way? The dragon's roar echoes from the north-east.",
 		Required:    true,
@@ -64,8 +64,8 @@ var (
 		},
 	}
 
-	// DragonPickupSwordQuestion asks whether the slayer picks up the sword.
-	DragonPickupSwordQuestion = formQuestion[string, bool]{
+	// dragonPickupSwordQuestion asks whether the slayer picks up the sword.
+	dragonPickupSwordQuestion = formQuestion[string, bool]{
 		ID:          "pickup",
 		Description: `A sword lies on the ground. Its blade is engraved: "dragonSlayer. Strike the belly."`,
 		Required:    true,
@@ -87,8 +87,8 @@ var (
 		},
 	}
 
-	// DragonArmedAttackQuestion asks an armed slayer how to attack.
-	DragonArmedAttackQuestion = formQuestion[string, string]{
+	// dragonArmedAttackQuestion asks an armed slayer how to attack.
+	dragonArmedAttackQuestion = formQuestion[string, string]{
 		ID:          "attack",
 		Description: "You are in the dragon's lair! How do you attack?",
 		Required:    true,
@@ -101,8 +101,8 @@ var (
 		}},
 	}
 
-	// DragonUnarmedAttackQuestion asks an unarmed slayer how to attack.
-	DragonUnarmedAttackQuestion = formQuestion[string, string]{
+	// dragonUnarmedAttackQuestion asks an unarmed slayer how to attack.
+	dragonUnarmedAttackQuestion = formQuestion[string, string]{
 		ID:          "attack",
 		Description: "You are in the dragon's lair! (If only you had a sword...) How do you attack?",
 		Required:    true,
@@ -114,8 +114,8 @@ var (
 		}},
 	}
 
-	// DragonTargetQuestion asks where the slayer strikes.
-	DragonTargetQuestion = formQuestion[string, string]{
+	// dragonTargetQuestion asks where the slayer strikes.
+	dragonTargetQuestion = formQuestion[string, string]{
 		ID:          "target",
 		Description: "Where do you strike?",
 		Required:    true,
@@ -130,8 +130,8 @@ var (
 	}
 
 	dragonSlayerQuestions = []question{
-		DragonMoveQuestion, DragonPickupSwordQuestion,
-		DragonArmedAttackQuestion, DragonUnarmedAttackQuestion, DragonTargetQuestion,
+		dragonMoveQuestion, dragonPickupSwordQuestion,
+		dragonArmedAttackQuestion, dragonUnarmedAttackQuestion, dragonTargetQuestion,
 	}
 )
 
@@ -149,27 +149,22 @@ func DragonSlayer(d *Dialog) (won bool, msg string, err error) {
 		if moves == 6 { // maximum steps the slayer can move
 			return false, "You wandered for too long, and the dragon flew away.", nil
 		}
-		delta := d.Ask(DragonMoveQuestion)
+		delta := d.Ask(dragonMoveQuestion)
 		if err := d.Check(); err != nil {
 			return false, "", err
 		}
 		pos = dragonPos{pos.x + delta.x, pos.y + delta.y}
 
 		if pos == dragonSword && !armed {
-			armed = d.Ask(DragonPickupSwordQuestion)
+			armed = d.Ask(dragonPickupSwordQuestion)
 			if err := d.Check(); err != nil {
 				return false, "", err
 			}
 		}
 	}
 
-	var attackMethod string
-	if armed {
-		attackMethod = d.Ask(DragonArmedAttackQuestion)
-	} else {
-		attackMethod = d.Ask(DragonUnarmedAttackQuestion)
-	}
-	attackTarget := d.Ask(DragonTargetQuestion)
+	attackMethod := d.Ask(cond(armed, dragonArmedAttackQuestion, dragonUnarmedAttackQuestion))
+	attackTarget := d.Ask(dragonTargetQuestion)
 	if err := d.Check(); err != nil {
 		return false, "", err
 	}
