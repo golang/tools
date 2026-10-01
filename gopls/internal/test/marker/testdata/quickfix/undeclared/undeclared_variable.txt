@@ -18,7 +18,7 @@ func a() {
 
 -- @a/a.go --
 @@ -4 +4 @@
-+	y := 0
++	var y int
 -- b.go --
 package undeclared_var
 
@@ -30,7 +30,7 @@ func b() {
 
 -- @b/b.go --
 @@ -4 +4 @@
-+	n := 0
++	var n int
 -- c.go --
 package undeclared_var
 
@@ -42,7 +42,7 @@ func c() {
 
 -- @c/c.go --
 @@ -4 +4 @@
-+	i := 0
++	var i int
 -- add_colon.go --
 package undeclared_var
 
@@ -79,30 +79,75 @@ func selfAssign() {
 
 -- @lhs/self_assign.go --
 @@ -4 +4 @@
-+	ac := nil
++	var ac any
 -- @rhs/self_assign.go --
 @@ -4 +4 @@
-+	ac := 0
++	var ac int
 -- correct_type.go --
 package undeclared_var
+
 import "fmt"
+
 func selfAssign() {
 	fmt.Printf(ac) //@quickfix("ac", re"(undeclared name|undefined): ac", string)
 }
+
 -- @string/correct_type.go --
-@@ -4 +4 @@
-+	ac := ""
+@@ -6 +6 @@
++	var ac string
 -- ignore.go --
 package undeclared_var
+
 import "fmt"
+
 type Foo struct {
 	bar int
 }
+
 func selfAssign() {
 	f := Foo{}
 	b = f.bar
 	c := bar //@quickfix("bar", re"(undeclared name|undefined): bar", ignore)
 }
+
 -- @ignore/ignore.go --
-@@ -9 +9 @@
-+	bar := nil
+@@ -12 +12 @@
++	var bar any
+-- interface.go --
+package undeclared_var
+
+func f(...any) {}
+
+func _() {
+	f(d) //@quickfix("d", re"(undeclared|undefined)", interface)
+}
+
+-- @interface/interface.go --
+@@ -6 +6 @@
++	var d any
+-- pointer.go --
+package undeclared_var
+
+func _() {
+	var p *int
+	p = e //@quickfix("e", re"(undeclared|undefined)", pointer)
+	_ = p
+}
+
+-- @pointer/pointer.go --
+@@ -5 +5 @@
++	var e *int
+-- struct.go --
+package undeclared_var
+
+type S struct{}
+
+type T struct{ s S }
+
+func _() {
+	_ = T{s: g} //@quickfix("g", re"(undeclared|undefined)", struct)
+}
+
+-- @struct/struct.go --
+@@ -8 +8 @@
++	var g S
