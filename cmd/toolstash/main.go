@@ -132,6 +132,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -267,9 +268,12 @@ func compareTool() {
 		cmd[0] = filepath.Join(toolDir, tool)
 	}
 
-	outfile, ok := cmpRun(false, cmd)
+	outfile, linkobj, ok := cmpRun(false, cmd)
 	if ok {
 		os.Remove(outfile + ".stash")
+		if linkobj != "" {
+			os.Remove(linkobj + ".stash")
+		}
 		return
 	}
 
@@ -291,7 +295,7 @@ func compareTool() {
 			}
 		}
 		cmdN := injectflags(cmd, nil, useDashN)
-		_, ok := cmpRun(false, cmdN)
+		_, _, ok := cmpRun(false, cmdN)
 		if !ok {
 			if useDashN {
 				log.Printf("compiler output differs, with optimizers disabled (-N)")
@@ -319,8 +323,10 @@ func compareTool() {
 	}
 
 	cmdS := injectflags(cmd, []string{extra}, false)
-	outfile, _ = cmpRun(true, cmdS)
+	outfile, _, _ = cmpRun(true, cmdS)
 
+	// The outfile name is always the key used for log comparison,
+	// even if linkobj also exists.
 	fmt.Fprintf(os.Stderr, "\n%s\n", compareLogs(outfile))
 	os.Exit(2)
 }
@@ -335,7 +341,7 @@ func injectflags(cmd []string, extra []string, addDashN bool) []string {
 	return x
 }
 
-func cmpRun(keepLog bool, cmd []string) (outfile string, match bool) {
+func cmpRun(keepLog bool, cmd []string) (outfile, linkobj string, match bool) {
 	cmdStash := make([]string, len(cmd))
 	copy(cmdStash, cmd)
 	cmdStash[0] = toolStash
@@ -350,6 +356,11 @@ func cmpRun(keepLog bool, cmd []string) (outfile string, match bool) {
 			cmdStash = append([]string{cmdStash[0], "-o", outfile + ".stash"}, cmdStash[1:]...)
 			break
 		}
+	}
+	// Also handle -linkobj if present.
+	if i := slices.Index(cmdStash, "-linkobj"); i >= 0 {
+		linkobj = cmdStash[i+1]
+		cmdStash[i+1] += ".stash"
 	}
 
 	if outfile == "" {
@@ -383,8 +394,11 @@ func cmpRun(keepLog bool, cmd []string) (outfile string, match bool) {
 		}
 		log.Fatal(err)
 	}
-
-	return outfile, sameObject(outfile, outfile+".stash")
+	match = sameObject(outfile, outfile+".stash")
+	if match && linkobj != "" {
+		match = sameObject(linkobj, linkobj+".stash")
+	}
+	return outfile, linkobj, match
 }
 
 func sameObject(file1, file2 string) bool {
