@@ -1,0 +1,48 @@
+This test checks the "Create variable" quick fix in contexts where the
+generated declaration does not compile.
+
+The golden outputs below record the current, broken behavior.
+See golang/go#81808.
+
+-- interface.go --
+package a
+
+func f(...any) {}
+
+func _() {
+	f(undefinedInterface) //@quickfix("undefinedInterface", re"(undeclared|undefined)", interface)
+}
+-- @interface/interface.go --
+@@ -6 +6 @@
++	undefinedInterface := nil
+-- pointer.go --
+package a
+
+func _() {
+	var p *int
+	p = undefinedPointer //@quickfix("undefinedPointer", re"(undeclared|undefined)", pointer)
+	_ = p
+}
+-- @pointer/pointer.go --
+@@ -5 +5 @@
++	undefinedPointer := nil
+-- field.go --
+package a
+
+type S struct{ s string }
+
+func _() {
+	_ = S{s: undefinedField} //@quickfix("undefinedField", re"(undeclared|undefined)", field)
+}
+-- @field/field.go --
+@@ -6 +6 @@
++	undefinedField := 0
+-- type.go --
+package a
+
+func _() {
+	_ = undefinedType{} //@quickfix("undefinedType", re"(undeclared|undefined)", type)
+}
+-- @type/type.go --
+@@ -4 +4 @@
++	undefinedType := 0
