@@ -374,3 +374,26 @@ func labeledDecl(items []int, cond bool) {
 		}
 	}
 }
+
+var calls int
+
+func next() []int {
+	calls++
+	return nil
+}
+
+// Should NOT fire: the slice expression has side effects, and s[i]
+// evaluates it again in each iteration.
+func sliceExprWithSideEffects() {
+	for i := len(next()) - 1; i >= 0; i-- {
+		println(next()[i])
+	}
+}
+
+// SHOULD fire: the slice expression has side effects, but the body
+// does not index it, so it is still evaluated only once.
+func sliceExprWithSideEffectsNotIndexed() {
+	for i := range slices.Backward(next()) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+	}
+}
