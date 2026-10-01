@@ -381,7 +381,7 @@ Default: `true`.
 analyses specify analyses that the user would like to enable or disable.
 A map of the names of analysis passes that should be enabled/disabled.
 A full list of analyzers that gopls uses can be found in
-[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).
+[analyzers](https://go.dev/gopls/analyzers).
 
 Example Usage:
 
@@ -572,8 +572,7 @@ Default: `true`.
 **This setting is experimental and may be deleted.**
 
 hints specify inlay hints that users want to see. A full list of hints
-that gopls uses can be found in
-[inlayHints.md](https://github.com/golang/tools/blob/master/gopls/doc/inlayHints.md).
+that gopls uses can be found in [inlayHints](https://go.dev/gopls/inlayHints).
 
 Default: `{}`.
 

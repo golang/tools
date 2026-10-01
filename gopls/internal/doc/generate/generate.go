@@ -173,7 +173,7 @@ func loadAPI() (*doc.API, error) {
 				for _, a := range api.Analyzers {
 					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
-						Doc:     a.Doc,
+						Doc:     analyzerDocMarkdown(a.Doc), // EnumKey.Doc is Markdown
 						Default: strconv.FormatBool(a.Default),
 					})
 				}
@@ -543,6 +543,21 @@ func loadHints(settingsPkg *packages.Package) ([]*doc.Hint, error) {
 	return hints, nil
 }
 
+// analyzerDocMarkdown converts an analysis.Analyzer.Doc string, which
+// is in go/doc/comment syntax, to CommonMark for use in api.json.
+// Doc links are made absolute (pkg.go.dev) as the result may be
+// displayed outside go.dev, e.g. by VS Code. Heading IDs are omitted
+// because the {#id} syntax is not CommonMark, and nothing could link
+// to them anyway.
+func analyzerDocMarkdown(doc string) string {
+	doctree := new(comment.Parser).Parse(doc)
+	p := &comment.Printer{
+		DocLinkBaseURL: "https://pkg.go.dev",
+		HeadingID:      func(*comment.Heading) string { return "" },
+	}
+	return string(p.Markdown(doctree))
+}
+
 func lowerFirst(x string) string {
 	if x == "" {
 		return x
@@ -742,9 +757,26 @@ func capitalize(s string) string {
 	return string(unicode.ToUpper(rune(s[0]))) + s[1:]
 }
 
+// markdownTitle returns the Markdown form of a title, the plain-text
+// first line of a doc comment, escaping any Markdown metacharacters
+// (e.g. "TypeFor[T]()" would otherwise be rendered as a link).
+//
+// The title is treated as plain text, not go/doc/comment syntax,
+// so that [T] is not interpreted as a doc link within a heading.
+func markdownTitle(title string) string {
+	d := &comment.Doc{
+		Content: []comment.Block{
+			&comment.Paragraph{Text: []comment.Text{comment.Plain(title)}},
+		},
+	}
+	return strings.TrimSpace(string(new(comment.Printer).Markdown(d)))
+}
+
 func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, lens := range api.Lenses {
+		// Unlike analyzer docs, lens titles and docs are
+		// already Markdown (e.g. "Run `go generate`"), so no escaping.
 		fmt.Fprintf(&buf, "## `%s`: %s\n\n", lens.Lens, lens.Title)
 		writeStatus(&buf, lens.Status)
 		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
@@ -767,7 +799,7 @@ func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
 		fmt.Fprintf(&buf, "<a id='%s'></a>\n", analyzer.Name)
 		title, doc, _ := strings.Cut(analyzer.Doc, "\n")
 		title = strings.TrimPrefix(title, analyzer.Name+": ")
-		fmt.Fprintf(&buf, "## `%s`: %s\n\n", analyzer.Name, title)
+		fmt.Fprintf(&buf, "## `%s`: %s\n\n", analyzer.Name, markdownTitle(title))
 
 		// Convert Analyzer.Doc from go/doc/comment form to Markdown.
 		// Headings in doc comments are converted to ### (HeadingLevel=3).
