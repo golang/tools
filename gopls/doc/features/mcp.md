@@ -37,6 +37,13 @@ gopls mcp
 
 This runs a standalone gopls instance that speaks MCP over stdin/stdout.
 
+The headless file watcher accepts MCP client roots only when the directory
+contains a regular `go.mod` or `go.work` file. Other roots are skipped and
+logged; gopls does not search their ancestors or descendants for Go projects.
+Clients should supply module or workspace roots rather than a parent directory
+containing several repositories. Accepted roots are still watched recursively,
+so large workspaces may still use many file descriptors on kqueue platforms.
+
 ## Instructions to the model
 
 This gopls MCP server includes model instructions for its usage, describing
