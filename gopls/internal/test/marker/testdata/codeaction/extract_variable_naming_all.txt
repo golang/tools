@@ -1,0 +1,119 @@
+This test checks the 'refactor.extract.variable-all' and 'refactor.extract.constant-all'
+code action naming heuristics and edge cases when replacing multiple occurrences.
+
+-- go.mod --
+module example.com/extract
+
+go 1.21
+
+-- structs.go --
+package extract
+
+type MyItem struct{}
+
+type Struct struct {
+	MyField error
+	len     int
+}
+
+-- keywords.go --
+package extract
+
+func _() {
+	_ = Struct{} //@codeaction("Struct{}", "refactor.extract.variable-all", edit=keyword)
+	_ = Struct{}
+}
+
+-- @keyword/keywords.go --
+@@ -4,2 +4,3 @@
+-	_ = Struct{} //@codeaction("Struct{}", "refactor.extract.variable-all", edit=keyword)
+-	_ = Struct{}
++	struct1 := Struct{}
++	_ = struct1 //@codeaction("Struct{}", "refactor.extract.variable-all", edit=keyword)
++	_ = struct1
+-- prefixes.go --
+package extract
+
+func parseConfig() string { return "" }
+
+func GetURL() string { return "" }
+
+func FetchURLConfigHelloWorld() string { return "" }
+
+func _() {
+	_ = parseConfig() + parseConfig() //@codeaction("parseConfig()", "refactor.extract.variable-all", edit=strip_prefix)
+
+	_ = GetURL() + GetURL() //@codeaction("GetURL()", "refactor.extract.variable-all", edit=all_upper)
+
+	_ = FetchURLConfigHelloWorld() + FetchURLConfigHelloWorld() //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable-all", edit=upper)
+}
+
+-- @all_upper/prefixes.go --
+@@ -12 +12,2 @@
+-	_ = GetURL() + GetURL() //@codeaction("GetURL()", "refactor.extract.variable-all", edit=all_upper)
++	url := GetURL()
++	_ = url + url //@codeaction("GetURL()", "refactor.extract.variable-all", edit=all_upper)
+-- @strip_prefix/prefixes.go --
+@@ -10 +10,2 @@
+-	_ = parseConfig() + parseConfig() //@codeaction("parseConfig()", "refactor.extract.variable-all", edit=strip_prefix)
++	config := parseConfig()
++	_ = config + config //@codeaction("parseConfig()", "refactor.extract.variable-all", edit=strip_prefix)
+-- @upper/prefixes.go --
+@@ -14 +14,2 @@
+-	_ = FetchURLConfigHelloWorld() + FetchURLConfigHelloWorld() //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable-all", edit=upper)
++	urlConfigHelloWorld := FetchURLConfigHelloWorld()
++	_ = urlConfigHelloWorld + urlConfigHelloWorld //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable-all", edit=upper)
+-- fields.go --
+package extract
+
+func (s Struct) GetName() string { return "" }
+func (s Struct) Process() error { return nil }
+
+func _() {
+	s := Struct{}
+
+	_ = s.GetName() + s.GetName() //@codeaction("s.GetName()", "refactor.extract.variable-all", edit=method)
+
+	_ = s.Process() //@codeaction("s.Process()", "refactor.extract.variable-all", edit=method_priority)
+	_ = s.Process()
+}
+
+-- @method/fields.go --
+@@ -9 +9,2 @@
+-	_ = s.GetName() + s.GetName() //@codeaction("s.GetName()", "refactor.extract.variable-all", edit=method)
++	name := s.GetName()
++	_ = name + name //@codeaction("s.GetName()", "refactor.extract.variable-all", edit=method)
+-- @method_priority/fields.go --
+@@ -11,2 +11,3 @@
+-	_ = s.Process() //@codeaction("s.Process()", "refactor.extract.variable-all", edit=method_priority)
+-	_ = s.Process()
++	err := s.Process()
++	_ = err //@codeaction("s.Process()", "refactor.extract.variable-all", edit=method_priority)
++	_ = err
+-- constants.go --
+package extract
+
+import "fmt"
+
+func _() {
+	fmt.Println("http://localhost:8080") //@codeaction("\"http://localhost:8080\"", "refactor.extract.constant-all", edit=const_str)
+	fmt.Println("http://localhost:8080")
+
+	_ = 1024 * 1024 //@codeaction("1024 * 1024", "refactor.extract.constant-all", edit=const_expr)
+	_ = 1024 * 1024
+}
+
+-- @const_str/constants.go --
+@@ -6,2 +6,3 @@
+-	fmt.Println("http://localhost:8080") //@codeaction("\"http://localhost:8080\"", "refactor.extract.constant-all", edit=const_str)
+-	fmt.Println("http://localhost:8080")
++	const newConst = "http://localhost:8080"
++	fmt.Println(newConst) //@codeaction("\"http://localhost:8080\"", "refactor.extract.constant-all", edit=const_str)
++	fmt.Println(newConst)
+-- @const_expr/constants.go --
+@@ -9,2 +9,3 @@
+-	_ = 1024 * 1024 //@codeaction("1024 * 1024", "refactor.extract.constant-all", edit=const_expr)
+-	_ = 1024 * 1024
++	const newConst = 1024 * 1024
++	_ = newConst //@codeaction("1024 * 1024", "refactor.extract.constant-all", edit=const_expr)
++	_ = newConst
