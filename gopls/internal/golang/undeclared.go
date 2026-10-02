@@ -215,7 +215,10 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 			// only happens in case of a *ast.Ident
 			var name string
 			if ident, ok := arg.(*ast.Ident); ok {
-				name = ident.Name
+				// Don't reuse predeclared names such as true and false.
+				if obj := info.ObjectOf(ident); obj != nil && obj.Parent() != types.Universe {
+					name = ident.Name
+				}
 			}
 
 			if name == "" {
@@ -318,12 +321,10 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 }
 
 func typeToArgName(ty types.Type) string {
-	s := types.Default(ty).String()
-
 	switch t := types.Unalias(ty).(type) {
 	case *types.Basic:
 		// use first letter in type name for basic types
-		return s[0:1]
+		return types.Default(ty).String()[0:1]
 	case *types.Slice:
 		// use element type to decide var name for slices
 		return typeToArgName(t.Elem())
@@ -332,19 +333,36 @@ func typeToArgName(ty types.Type) string {
 		return typeToArgName(t.Elem())
 	case *types.Chan:
 		return "ch"
+	case *types.Pointer:
+		return typeToArgName(t.Elem())
+	case *types.Signature:
+		return "fn"
+	case *types.Map:
+		return "m"
+	case *types.Struct:
+		return "s"
+	case *types.Interface:
+		return "i"
 	}
 
-	s = strings.TrimFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r)
-	})
+	// Use the declared type name, avoiding type arguments and other syntax
+	// that may appear in the string representation of the type.
+	obj := typesinternal.TypeNameFor(ty)
+	if obj == nil {
+		return "arg"
+	}
+	s := obj.Name()
 
 	if s == "error" {
 		return "err"
 	}
 
-	// remove package (if present)
-	// and make first letter lowercase
-	a := []rune(s[strings.LastIndexByte(s, '.')+1:])
+	// Make the first letter lowercase, but don't produce a keyword.
+	a := []rune(s)
 	a[0] = unicode.ToLower(a[0])
-	return string(a)
+	s = string(a)
+	if token.IsKeyword(s) {
+		s += "_"
+	}
+	return s
 }
