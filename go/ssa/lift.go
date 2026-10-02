@@ -502,7 +502,15 @@ func replaceAll(x, y Value) {
 	var rands []*Value
 	pxrefs := x.Referrers()
 	pyrefs := y.Referrers()
-	for _, instr := range *pxrefs {
+	refs := *pxrefs
+	for i := 0; i < len(refs); {
+		instr := refs[i]
+		end := i + 1
+		// Repeated operands produce adjacent referrers.
+		for end < len(refs) && refs[end] == instr {
+			end++
+		}
+
 		rands = instr.Operands(rands[:0]) // recycle storage
 		for _, rand := range rands {
 			if *rand != nil {
@@ -512,8 +520,9 @@ func replaceAll(x, y Value) {
 			}
 		}
 		if pyrefs != nil {
-			*pyrefs = append(*pyrefs, instr) // dups ok
+			*pyrefs = append(*pyrefs, refs[i:end]...)
 		}
+		i = end
 	}
 	*pxrefs = nil // x is now unreferenced
 }
