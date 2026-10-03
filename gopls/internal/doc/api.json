@@ -1792,7 +1792,7 @@
 						},
 						{
 							"Name": "\"structtag\"",
-							"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.",
+							"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.\n\nAlso report json tags that set the name of a field when they were\nalmost certainly meant to do something else: a tag such as \"-,omitempty\",\nwhich gives the field the name \"-\" instead of omitting it, and the tag\n\"omitempty\", which gives the field the name \"omitempty\" instead of\nsetting that option.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3859,7 +3859,7 @@
 		},
 		{
 			"Name": "structtag",
-			"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.",
+			"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.\n\nAlso report json tags that set the name of a field when they were\nalmost certainly meant to do something else: a tag such as \"-,omitempty\",\nwhich gives the field the name \"-\" instead of omitting it, and the tag\n\"omitempty\", which gives the field the name \"omitempty\" instead of\nsetting that option.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/structtag",
 			"Default": true
 		},

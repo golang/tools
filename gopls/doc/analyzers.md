@@ -4446,6 +4446,8 @@ Package documentation: [stringsseq](https://pkg.go.dev/golang.org/x/tools/go/ana
 
 Also report certain struct tags (json, xml) used with unexported fields.
 
+Also report json tags that set the name of a field when they were almost certainly meant to do something else: a tag such as "-,omitempty", which gives the field the name "-" instead of omitting it, and the tag "omitempty", which gives the field the name "omitempty" instead of setting that option.
+
 
 Default: on.
 
