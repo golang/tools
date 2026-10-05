@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -168,29 +170,43 @@ var docLinkRegex = regexp.MustCompile(`\[\*?([\pL_][\pL_0-9]*(\.[\pL_][\pL_0-9]*
 // findDocLinkIndices finds the indices of the doc links in the line.
 // It will ignore the url link, e.g. "[go]: https://go.dev".
 // For a invalid url link, it would be considered as a doc link, e.g. "[go]: h://go.dev".
+//
+// As in go/doc/comment, a doc link must be both preceded and followed
+// by punctuation, spaces, tabs, or the start or end of a line, so that
+// (for example) "G[T]" and "map[K]V" do not contain doc links.
+// See https://go.dev/doc/comment#doclinks.
 func findDocLinkIndices(line string) [][]int {
 	indices := docLinkRegex.FindAllStringSubmatchIndex(line, -1)
-
-	ret := slices.DeleteFunc(
+	return slices.DeleteFunc(
 		indices,
 		func(index []int) bool {
-			// end is the end index of the first submatch, which is the next pos of ']'
-			end := index[1]
-
-			if end < len(line) && line[end] == ':' {
-				url := strings.TrimSpace(line[end+1:])
-				before, _, found := strings.Cut(url, "://")
-				if found && isScheme(before) {
-					// Valid URL, skip this match
-					return true
+			start, end := index[0], index[1] // indices surrounding "[...]"
+			if start > 0 {
+				if r, _ := utf8.DecodeLastRuneInString(line[:start]); !isDocLinkDelim(r) {
+					return true // reject: not preceded by punctuation or space
 				}
 			}
-
-			return false
+			if end < len(line) {
+				if r, _ := utf8.DecodeRuneInString(line[end:]); !isDocLinkDelim(r) {
+					return true // reject: not followed by punctuation or space
+				}
+				if line[end] == ':' {
+					url := strings.TrimSpace(line[end+1:])
+					before, _, found := strings.Cut(url, "://")
+					if found && isScheme(before) {
+						return true // reject: is a link with a valid URL
+					}
+				}
+			}
+			return false // retain
 		},
 	)
+}
 
-	return ret
+// isDocLinkDelim reports whether r may precede or follow a doc link.
+// It matches the logic of (*go/doc/comment.parseDoc).docLink.
+func isDocLinkDelim(r rune) bool {
+	return unicode.IsPunct(r) || r == ' ' || r == '\t' || r == '\n'
 }
 
 // isScheme reports whether s is a recognized URL scheme.
