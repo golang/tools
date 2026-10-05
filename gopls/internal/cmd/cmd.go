@@ -307,6 +307,7 @@ func (app *application) featureCommands() []command {
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
+		&inspect{app: app},
 		newRemote(app),
 		&links{app: app},
 		&prepareRename{app: app},

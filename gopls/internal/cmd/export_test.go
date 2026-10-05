@@ -10,6 +10,7 @@ package cmd
 type (
 	DefinitionJSON = definitionJSON
 	StatsJSON      = statsJSON
+	InspectJSON    = inspectJSON
 )
 
 // CommandNames returns the names of all commands, including the root command.

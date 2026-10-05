@@ -36,6 +36,7 @@ Features
   highlight         display selected identifier's highlights
   implementation    display selected identifier's implementation
   imports           updates import statements
+  inspect           display the target's definition location, hover docs, and signature
   remote            interact with the gopls daemon
   links             list links in a file
   prepare_rename    test validity of a rename operation at location
