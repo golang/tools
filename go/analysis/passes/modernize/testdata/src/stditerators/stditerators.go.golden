@@ -105,6 +105,11 @@ func _(t reflect.Type) {
 	for out := range t.Outs() { // want "NumOut/Out loop can simplified using Type.Outs iteration"
 		print(out)
 	}
+	for i := 0; i < t.NumField(); i++ { // nope: no call to x.At(i)
+		print()
+	}
+	for i := 0; i < t.NumField(); i++ { // nope: empty body
+	}
 }
 
 func _(v reflect.Value) {
