@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -190,8 +191,8 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 	nameCounts := map[string]int{}
 	for _, arg := range call.Args {
 		typ := info.TypeOf(arg)
-		if typ == nil {
-			return nil, nil, fmt.Errorf("unable to determine type for %s", arg)
+		if typ == nil || typ == types.Typ[types.Invalid] || strings.Contains(typ.String(), "invalid type") {
+			return nil, nil, fmt.Errorf("unable to determine type for argument %s", astutil.Format(fset, arg))
 		}
 
 		switch t := typ.(type) {
