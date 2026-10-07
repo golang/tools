@@ -10,6 +10,7 @@ import (
 	"iter"
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A conversion represents a syntax node at which an assignment or explicit
@@ -176,7 +177,9 @@ func conversions(root inspector.Cursor, info *types.Info) iter.Seq[conversion] {
 
 			case *ast.CompositeLit:
 				// element assignments in slice, array, map, and struct literals.
-				switch t := info.TypeOf(n).Underlying().(type) {
+				// (The literal may have type *T if its type is implicit,
+				// as in []*T{{...}} or, since go1.28, f({...}).)
+				switch t := typesinternal.Unpointer(info.TypeOf(n)).Underlying().(type) {
 				case *types.Slice, *types.Array:
 					for _, elt := range n.Elts {
 						if kv, ok := elt.(*ast.KeyValueExpr); ok {
