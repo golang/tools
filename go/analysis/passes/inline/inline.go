@@ -206,8 +206,7 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 				Fset:  a.pass.Fset,
 				Types: a.pass.Pkg,
 				Info:  a.pass.TypesInfo,
-				File:  astutil.EnclosingFile(cur),
-				Call:  call,
+				Call:  cur,
 				CountUses: func(pkgname *types.PkgName) int {
 					return moreiters.Len(a.index.Uses(pkgname))
 				},

@@ -12,6 +12,8 @@ import (
 	"go/types"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 // TestIssue73187 tests that inlining does not panic on variadic calls when
@@ -63,12 +65,12 @@ func main() {
 		}
 	}
 
+	curCall, _ := inspector.New([]*ast.File{file}).Root().FindNode(call)
 	caller := &Caller{
 		Fset:  fset,
 		Types: pkg,
 		Info:  info,
-		File:  file,
-		Call:  call,
+		Call:  curCall,
 	}
 
 	callee, err := AnalyzeCallee(t.Logf, fset, pkg, info, fDecl, []byte(src))

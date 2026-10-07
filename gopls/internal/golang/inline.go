@@ -14,7 +14,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
@@ -30,38 +29,36 @@ import (
 
 // enclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
-func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
-	// TODO(adonovan): simplify using pgf.Cursor
-	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
-
-	var call *ast.CallExpr
-loop:
-	for _, n := range path {
-		switch n := n.(type) {
-		case *ast.FuncLit:
-			break loop
-		case *ast.CallExpr:
-			call = n
-			break loop
+func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (inspector.Cursor, *types.Func, error) {
+	cur, ok := pgf.Cursor().FindByPos(start, end)
+	if !ok {
+		return inspector.Cursor{}, nil, fmt.Errorf("no enclosing call")
+	}
+	var curCall inspector.Cursor
+	for cur := range cur.Enclosing((*ast.FuncLit)(nil), (*ast.CallExpr)(nil)) {
+		if is[*ast.CallExpr](cur.Node()) {
+			curCall = cur
 		}
+		break
 	}
-	if call == nil {
-		return nil, nil, fmt.Errorf("no enclosing call")
+	if !curCall.Valid() {
+		return inspector.Cursor{}, nil, fmt.Errorf("no enclosing call")
 	}
+	call := curCall.Node().(*ast.CallExpr)
 	if safetoken.Line(pgf.Tok, call.Lparen) != safetoken.Line(pgf.Tok, start) {
-		return nil, nil, fmt.Errorf("enclosing call is not on this line")
+		return inspector.Cursor{}, nil, fmt.Errorf("enclosing call is not on this line")
 	}
 	fn := typeutil.StaticCallee(pkg.TypesInfo(), call)
 	if fn == nil {
-		return nil, nil, fmt.Errorf("not a static call to a Go function")
+		return inspector.Cursor{}, nil, fmt.Errorf("not a static call to a Go function")
 	}
-	return call, fn, nil
+	return curCall, fn, nil
 }
 
 func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.Package, callerPGF *parsego.File, start, end token.Pos) (_ *token.FileSet, _ *analysis.SuggestedFix, err error) {
 	countInlineCall.Inc()
 	// Find enclosing static call.
-	call, fn, err := enclosingStaticCall(callerPkg, callerPGF, start, end)
+	curCall, fn, err := enclosingStaticCall(callerPkg, callerPGF, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,8 +109,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		Fset:      callerPkg.FileSet(),
 		Types:     callerPkg.Types(),
 		Info:      callerPkg.TypesInfo(),
-		File:      callerPGF.File,
-		Call:      call,
+		Call:      curCall,
 		CountUses: nil, // (use inefficient default implementation)
 	}
 

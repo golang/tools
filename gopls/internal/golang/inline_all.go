@@ -11,7 +11,8 @@ import (
 	"go/parser"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -121,7 +122,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 	type fileCalls struct {
 		pkg   *cache.Package
 		pgf   *parsego.File
-		calls []*ast.CallExpr
+		calls []inspector.Cursor // of *ast.CallExpr, in pgf
 	}
 
 	refsByFile := make(map[protocol.DocumentURI]*fileCalls)
@@ -138,46 +139,32 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		}
 
 		var (
-			name *ast.Ident
-			call *ast.CallExpr
+			name    *ast.Ident
+			curCall inspector.Cursor
 		)
-		path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-		name, _ = path[0].(*ast.Ident)
+		if cur, ok := pgf.Cursor().FindByPos(start, end); ok && is[*ast.Ident](cur.Node()) {
+			name = cur.Node().(*ast.Ident)
 
-		// Walk up enclosing expressions to find a call where name is the callee
-		// (c.Fun), rather than an argument (e.g. use(f) or s.M(f)).
-		// See https://golang.org/issue/80834.
-		child := ast.Node(name)
-		for _, parent := range path[1:] {
-			switch p := parent.(type) {
-			case *ast.SelectorExpr: // pkg.F(1), x.M(1), or T.M(t, 1)
-				if p.Sel == child {
-					child = p
-					continue
-				}
-			case *ast.ParenExpr: // ((F))(1)
-				if p.X == child {
-					child = p
-					continue
-				}
-			case *ast.IndexExpr: // F[T](1)
-				if p.X == child {
-					child = p
-					continue
-				}
-			case *ast.IndexListExpr: // F[T1, T2](1)
-				if p.X == child {
-					child = p
-					continue
-				}
-			case *ast.CallExpr: // F(1)
-				if p.Fun == child {
-					call = p
+			// Walk up enclosing expressions to find a call where name is the callee
+			// (c.Fun), rather than an argument (e.g. use(f) or s.M(f)).
+			// See https://golang.org/issue/80834.
+		loop:
+			for {
+				switch cur.ParentEdgeKind() {
+				case edge.SelectorExpr_Sel, // pkg.F(1), x.M(1), or T.M(t, 1)
+					edge.ParenExpr_X,     // ((F))(1)
+					edge.IndexExpr_X,     // F[T](1)
+					edge.IndexListExpr_X: // F[T1, T2](1)
+					cur = cur.Parent()
+				case edge.CallExpr_Fun: // F(1)
+					curCall = cur.Parent()
+					break loop
+				default:
+					break loop
 				}
 			}
-			break
 		}
-		if name == nil || call == nil {
+		if !curCall.Valid() {
 			// TODO(rfindley): handle this case with eta-abstraction:
 			// a reference to the target function f in a non-call position
 			//    use(f)
@@ -185,6 +172,9 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 			//    use(func(...) { f(...) })
 			return nil, fmt.Errorf("cannot inline: found non-call function reference %v", ref)
 		}
+		// Inv: name != nil.
+
+		call := curCall.Node().(*ast.CallExpr)
 
 		// Heuristic: ignore references that overlap with type checker errors, as they may
 		// lead to invalid results (see golang/go#70268).
@@ -194,7 +184,6 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 				hasTypeErrors = true
 			}
 		}
-
 		if hasTypeErrors {
 			continue
 		}
@@ -220,7 +209,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 			}
 			refsByFile[ref.URI] = callInfo
 		}
-		callInfo.calls = append(callInfo.calls, call)
+		callInfo.calls = append(callInfo.calls, curCall)
 	}
 
 	// Inline each call within the same decl in sequence, re-typechecking after
@@ -231,6 +220,10 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 	// on separate files independently.
 	result := make(map[protocol.DocumentURI][]byte)
 	for uri, callInfo := range refsByFile {
+		// Each iteration of the loop below updates content, file,
+		// tpkg, tinfo, and calls (cursors used as inline.Caller.Call)
+		// together; at the top of the loop they all describe the same
+		// version of the file.
 		var (
 			calls   = callInfo.calls
 			fset    = callInfo.pkg.FileSet()
@@ -245,8 +238,11 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		// respect to the inlined outer call, and so the heuristic we use to find
 		// the next call (counting from top-to-bottom) does not work.
 		for i := range calls {
-			if i > 0 && calls[i-1].End() > calls[i].Pos() {
-				return nil, fmt.Errorf("%s: can't inline overlapping call %s", uri, types.ExprString(calls[i-1]))
+			if i > 0 {
+				prev, call := calls[i-1].Node().(*ast.CallExpr), calls[i].Node()
+				if prev.End() > call.Pos() {
+					return nil, fmt.Errorf("%s: can't inline overlapping call %s", uri, types.ExprString(prev))
+				}
 			}
 		}
 
@@ -256,7 +252,6 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 				Fset:      fset,
 				Types:     tpkg,
 				Info:      tinfo,
-				File:      file,
 				Call:      calls[currentCall],
 				CountUses: nil, // TODO(adonovan): opt: amortize across callInfo.pkg
 			}
@@ -335,17 +330,15 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 				return nil, bug.Errorf("type checking after inlining failed: %v", err)
 			}
 
-			// Collect calls to the target function in the modified declaration.
-			var calls2 []*ast.CallExpr
-			ast.Inspect(file, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok {
-					fn := typeutil.StaticCallee(tinfo, call)
-					if fn != nil && fn.Pkg().Path() == string(pkg.Metadata().PkgPath) && fn.Name() == origDecl.Name.Name {
-						calls2 = append(calls2, call)
-					}
+			// Collect calls to the target function in the modified declaration,
+			// using a new inspector for the re-parsed file.
+			var calls2 []inspector.Cursor
+			for curCall := range inspector.New([]*ast.File{file}).Root().Preorder((*ast.CallExpr)(nil)) {
+				fn := typeutil.StaticCallee(tinfo, curCall.Node().(*ast.CallExpr))
+				if fn != nil && fn.Pkg().Path() == string(pkg.Metadata().PkgPath) && fn.Name() == origDecl.Name.Name {
+					calls2 = append(calls2, curCall)
 				}
-				return true
-			})
+			}
 
 			// If the number of calls has increased, this process will never cease.
 			// If the number of calls has decreased, assume that inlining removed a

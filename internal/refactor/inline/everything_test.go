@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/diff"
@@ -98,14 +99,11 @@ func TestEverything(t *testing.T) {
 		// Find all static function calls in the package.
 		for _, callerFile := range callerPkg.Syntax {
 			noMutCheck := checkNoMutation(callerFile)
-			ast.Inspect(callerFile, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
+			for curCall := range inspector.New([]*ast.File{callerFile}).Root().Preorder((*ast.CallExpr)(nil)) {
+				call := curCall.Node().(*ast.CallExpr)
 				fn := typeutil.StaticCallee(callerPkg.TypesInfo, call)
 				if fn == nil {
-					return true
+					continue
 				}
 
 				// Prepare caller info.
@@ -118,8 +116,7 @@ func TestEverything(t *testing.T) {
 					Fset:  callerPkg.Fset,
 					Types: callerPkg.Types,
 					Info:  callerPkg.TypesInfo,
-					File:  callerFile,
-					Call:  call,
+					Call:  curCall,
 				}
 
 				// Analyze callee.
@@ -182,7 +179,7 @@ func TestEverything(t *testing.T) {
 						return
 					}
 
-					got, err := applyEdits(caller.Types, caller.File.FileStart, callerContent, res.Edits)
+					got, err := applyEdits(caller.Types, callerFile.FileStart, callerContent, res.Edits)
 					if err != nil {
 						t.Fatalf("can't apply inliner edits: %v", err)
 					}
@@ -229,8 +226,7 @@ func TestEverything(t *testing.T) {
 							got)
 					}
 				})
-				return true
-			})
+			}
 			noMutCheck()
 		}
 	}

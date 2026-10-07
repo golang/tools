@@ -22,7 +22,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/driverutil"
@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/txtar"
 )
 
@@ -216,18 +217,15 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	// Find innermost call enclosing the pattern match.
 	var caller *inline.Caller
 	{
-		path, _ := astutil.PathEnclosingInterval(file, startPos, endPos)
-		for _, n := range path {
-			if call, ok := n.(*ast.CallExpr); ok {
-				caller = &inline.Caller{
-					Fset:  pkg.Fset,
-					Types: pkg.Types,
-					Info:  pkg.TypesInfo,
-					File:  file,
-					Call:  call,
-				}
-				break
+		cur, _ := inspector.New([]*ast.File{file}).Root().FindByPos(startPos, endPos)
+		for curCall := range cur.Enclosing((*ast.CallExpr)(nil)) {
+			caller = &inline.Caller{
+				Fset:  pkg.Fset,
+				Types: pkg.Types,
+				Info:  pkg.TypesInfo,
+				Call:  curCall,
 			}
+			break
 		}
 		if caller == nil {
 			return fmt.Errorf("no enclosing call")
@@ -235,7 +233,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Is it a static function call?
-	fn := typeutil.StaticCallee(caller.Info, caller.Call)
+	fn := typeutil.StaticCallee(caller.Info, caller.Call.Node().(*ast.CallExpr))
 	if fn == nil {
 		return fmt.Errorf("cannot inline: not a static call")
 	}
@@ -297,7 +295,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 			return nil, err
 		}
 
-		check := checkNoMutation(caller.File)
+		check := checkNoMutation(file)
 		defer check()
 		return inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	}()
@@ -312,7 +310,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Inline succeeded.
-	got, err := applyEdits(caller.Types, caller.File.FileStart, content, res.Edits)
+	got, err := applyEdits(caller.Types, file.FileStart, content, res.Edits)
 	if err != nil {
 		return err
 	}
@@ -1873,36 +1871,9 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatalf("declaration of func %s not found: %s", funcName, test.callee)
 			}
 
-			// Parse caller file and find first call to f().
+			// Parse caller file.
 			callerContent := addPackageClause(test.caller)
 			callerFile := mustParse("caller.go", callerContent)
-			var call *ast.CallExpr
-			ast.Inspect(callerFile, func(n ast.Node) bool {
-				if n, ok := n.(*ast.CallExpr); ok {
-					switch fun := n.Fun.(type) {
-					case *ast.SelectorExpr:
-						if fun.Sel.Name == funcName {
-							call = n
-						}
-					case *ast.Ident:
-						if fun.Name == funcName {
-							call = n
-						}
-					case *ast.IndexExpr:
-						if id, ok := fun.X.(*ast.Ident); ok && id.Name == funcName {
-							call = n
-						}
-					case *ast.IndexListExpr:
-						if id, ok := fun.X.(*ast.Ident); ok && id.Name == funcName {
-							call = n
-						}
-					}
-				}
-				return call == nil
-			})
-			if call == nil {
-				t.Fatalf("call to %s not found: %s", funcName, test.caller)
-			}
 
 			// Type check both files as one package.
 			info := &types.Info{
@@ -1920,6 +1891,18 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatal("transformation introduced type errors")
 			}
 
+			// Find first call to f() in caller file.
+			var curCall inspector.Cursor
+			for cur := range inspector.New([]*ast.File{callerFile}).Root().Preorder((*ast.CallExpr)(nil)) {
+				if id := typesinternal.UsedIdent(info, cur.Node().(*ast.CallExpr).Fun); id != nil && id.Name == funcName {
+					curCall = cur
+					break
+				}
+			}
+			if !curCall.Valid() {
+				t.Fatalf("call to %s not found: %s", funcName, test.caller)
+			}
+
 			// Analyze callee and inline call.
 			doIt := func() (*inline.Result, error) {
 				callee, err := inline.AnalyzeCallee(t.Logf, fset, pkg, info, decl, []byte(calleeContent))
@@ -1934,10 +1917,9 @@ func runTests(t *testing.T, tests []testcase) {
 					Fset:  fset,
 					Types: pkg,
 					Info:  info,
-					File:  callerFile,
-					Call:  call,
+					Call:  curCall,
 				}
-				check := checkNoMutation(caller.File)
+				check := checkNoMutation(callerFile)
 				defer check()
 				return inline.Inline(caller, callee, &inline.Options{
 					Logf:          t.Logf,
