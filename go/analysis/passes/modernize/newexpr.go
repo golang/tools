@@ -151,6 +151,13 @@ func run(pass *analysis.Pass) (any, error) {
 				arg := call.Args[0]
 				tvarg := info.Types[arg]
 
+				// A composite literal whose type is inferred from
+				// the parameter (go1.28) cannot be an operand of new,
+				// which supplies no target type: new({1, 2}) is an error.
+				if lit, ok := ast.Unparen(arg).(*ast.CompositeLit); ok && lit.Type == nil {
+					continue
+				}
+
 				// Constants: we must work around the type checker
 				// bug that causes info.Types to wrongly report the
 				// "typed" type for an untyped constant.
