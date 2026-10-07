@@ -68,8 +68,14 @@ func Test(t *testing.T) {
 		"testdata/no_after_return.txtar",
 		"testdata/type_mismatch.txtar",
 		"testdata/expr_type_mismatch.txtar",
+		"testdata/k.txtar",
 	} {
 		t.Run(filename, func(t *testing.T) {
+			// TODO(adonovan): remove when go1.28 is assured.
+			if filename == "testdata/k.txtar" {
+				testenv.NeedsGo1Point(t, 28)
+			}
+
 			// Extract and load packages from test archive.
 			dir := testfiles.ExtractTxtarFileToTmp(t, filename)
 			cfg := packages.Config{
