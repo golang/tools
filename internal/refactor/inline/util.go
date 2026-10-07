@@ -90,6 +90,39 @@ func trivialConversion(fromValue constant.Value, from, to types.Type) bool {
 	return types.Identical(from, to)
 }
 
+// isInferredCompLit reports whether e is a CompositeLit without an
+// explicit type. Such expressions cannot be moved to an arbitrary context.
+func isInferredCompLit(e ast.Expr) bool {
+	lit, ok := e.(*ast.CompositeLit)
+	return ok && lit.Type == nil
+}
+
+// explicitType returns syntax for x with its implicit type T made
+// explicit. isPtr indicates whether the type denoted by T is a pointer.
+//
+// If x is an inferred composite literal {...}, the result is T{...},
+// or &E{...} if T is *E, or, if T is some other pointer type (e.g. a
+// named pointer type), the conversion T({...}).
+// Otherwise the result is the conversion T(x).
+//
+// The result shares structure with T and x.
+func explicitType(T ast.Expr, isPtr bool, x ast.Expr) ast.Expr {
+	if lit, ok := x.(*ast.CompositeLit); ok && lit.Type == nil {
+		T := ast.Unparen(T) // (T){...} is not valid
+		if !isPtr {
+			lit = new(*lit) // shallow copy
+			lit.Type = T
+			return lit // T{...}
+		}
+		if star, ok := T.(*ast.StarExpr); ok {
+			lit = new(*lit) // shallow copy
+			lit.Type = star.X
+			return &ast.UnaryExpr{Op: token.AND, X: lit} // &E{...}
+		}
+	}
+	return convert(T, x) // T(x)
+}
+
 func checkInfoFields(info *types.Info) {
 	assert(info.Defs != nil, "types.Info.Defs is nil")
 	assert(info.Implicits != nil, "types.Info.Implicits is nil")
@@ -123,7 +156,7 @@ func convert(T, x ast.Expr) *ast.CallExpr {
 	}
 	return &ast.CallExpr{
 		Fun:  T,
-		Args: []ast.Expr{x},
+		Args: []ast.Expr{ast.Unparen(x)},
 	}
 }
 

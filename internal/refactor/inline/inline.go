@@ -1019,14 +1019,17 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 			if callee.NumResults == 1 {
 				logf("strategy: reduce expr-context call to { return expr }")
 				// (includes some simple tail-calls)
+				expr := results[0]
 
 				// Make implicit return conversion explicit.
 				if anyNonTrivialReturns {
-					results[0] = convert(calleeDecl.Type.Results.List[0].Type, results[0])
+					// The body is a single return statement (see above).
+					isPtr := callee.Returns[0][0]&pointerResult != 0
+					expr = explicitType(calleeDecl.Type.Results.List[0].Type, isPtr, expr)
 				}
 
 				res.old = caller.Call
-				res.new = results[0]
+				res.new = expr
 				return res, nil
 
 			} else if !anyNonTrivialReturns {
@@ -1879,9 +1882,7 @@ next:
 					(ref.Assignable && ref.IfaceAssignment && !param.info.IsInterface) ||
 					(!ref.Assignable && !trivialConversion(arg.constant, arg.typ, param.obj.Type()))
 
-				if needType &&
-					!types.Identical(types.Default(arg.typ), param.obj.Type()) {
-
+				if needType && !types.Identical(types.Default(arg.typ), param.obj.Type()) {
 					// If arg.expr is already an interface call, strip it.
 					if call, ok := argExpr.(*ast.CallExpr); ok && len(call.Args) == 1 {
 						if typ, ok := isConversion(caller.Info, call); ok && isNonTypeParamInterface(typ) {
@@ -1892,6 +1893,24 @@ next:
 					argExpr = convert(param.fieldType, argExpr)
 					logf("param %q (offset %d): adding explicit %s -> %s conversion around argument",
 						param.info.Name, ref.Offset, arg.typ, param.obj.Type())
+
+				} else if isInferredCompLit(arg.expr) {
+					// The argument is a go1.28 composite literal {...}
+					// whose type is inferred from the parameter.
+					// It cannot be moved to an arbitrary context,
+					// but its type is that of the parameter so the identity
+					// check used for other arguments would not detect the
+					// need for an explicit type.
+					//
+					// Unless the reference assigns it to a known
+					// non-interface type, we must make its type
+					// explicit, preferably as T{...} rather than T({...}).
+					if !ref.Assignable || ref.IfaceAssignment || ref.AffectsInference {
+						argExpr = explicitType(param.fieldType, isPointer(param.obj.Type()), argExpr)
+						logf("param %q (offset %d): adding explicit type %s to composite literal argument",
+							param.info.Name, ref.Offset, param.obj.Type())
+					}
+
 				}
 				replace(ref.Offset, internalastutil.CloneNode(argExpr), arg.variadic)
 			}
@@ -2388,7 +2407,11 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, params []*
 	for i, arg := range args {
 		if arg != nil {
 			values = append(values, arg.expr)
-			sameType = append(sameType, types.Identical(types.Default(arg.typ), params[i].obj.Type()))
+			// An untyped constant needs an explicit type unless
+			// its default type matches the parameter (see above).
+			// An inferred composite literal {...} always needs one,
+			// even though its recorded type is the parameter type.
+			sameType = append(sameType, !isInferredCompLit(arg.expr) && types.Identical(types.Default(arg.typ), params[i].obj.Type()))
 		}
 	}
 	for _, field := range calleeDecl.Type.Params.List {
@@ -3667,14 +3690,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			if texpr == nil {
 				return nil, false
 			}
-			if _, ok := texpr.(*ast.StarExpr); ok {
-				// TODO(rfindley): is this necessary? Doesn't the formatter add these parens?
-				texpr = &ast.ParenExpr{X: texpr} // *T -> (*T)   so that (*T)(x) is valid
-			}
-			rhs[i] = &ast.CallExpr{
-				Fun:  texpr,
-				Args: []ast.Expr{expr},
-			}
+			rhs[i] = explicitType(texpr, isPointer(typ), expr)
 		}
 	}
 	logf("substrategy: convert assignment")

@@ -1970,6 +1970,97 @@ func TestRedundantConversions(t *testing.T) {
 	})
 }
 
+// TestInferredCompLits tests inlining of calls involving composite
+// literals {...} whose type is inferred from the assignment context
+// (go1.28; see go.dev/issue/12854 and go.dev/issue/82039).
+// Each such literal must remain in a context that supplies its type,
+// or have its type made explicit.
+func TestInferredCompLits(t *testing.T) {
+	testenv.NeedsGo1Point(t, 28) // TODO(adonovan): remove when go1.28 is assured.
+
+	runTests(t, []testcase{
+		{
+			"Argument used in interface context.",
+			`type T struct{ x, y int }; func f(t T) { g(t) }; func g(any) {}`,
+			`func _() { f({1, 2}) }`,
+			`func _() { g(T{1, 2}) }`,
+		},
+		{
+			"Argument used twice is bound to an explicitly typed var.",
+			`type T struct{ x, y int }; func f(t T) int { return t.x + t.y }`,
+			`func _() int { return f({1, 2}) }`,
+			`func _() int {
+	var t T = {1, 2}
+	return t.x + t.y
+}`,
+		},
+		{
+			"Argument assigned to var of known type.",
+			`type T struct{ x, y int }; func f(t T) T { var u T = t; return u }`,
+			`func _() T { return f({1, 2}) }`,
+			`func _() T {
+	var u T = {1, 2}
+	return u
+}`,
+		},
+		{
+			"Argument of pointer type is selected.",
+			`type T struct{ x, y int }; func f(p *T) int { return p.x }`,
+			`func _() int { return f({1, 2}) }`,
+			`func _() int { return (&T{1, 2}).x }`,
+		},
+		{
+			"Argument referenced twice in assignment context.",
+			`type T struct{ x, y int }; func f(t T) { g(t); g(t) }; func g(T) {}`,
+			`func _() { f({1, 2}) }`,
+			`func _() {
+	var t T = {1, 2}
+	g(t)
+	g(t)
+}`,
+		},
+		{
+			"Result assigned to new var.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() {
+	x := T{1, 2}
+	_ = x
+}`,
+		},
+		{
+			"Result is selected.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return T{1, 2}.x }`,
+		},
+		{
+			"Result of pointer type assigned to new var.",
+			`type T struct{ x, y int }; func f() *T { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() { x := &T{1, 2}; _ = x }`,
+		},
+		{
+			"Result of pointer type is selected.",
+			`type T struct{ x, y int }; func f() *T { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return (&T{1, 2}).x }`,
+		},
+		{
+			"Result of named pointer type assigned to new var needs a conversion.",
+			`type T struct{ x, y int }; type PT *T; func f() PT { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() { x := PT({1, 2}); _ = x }`,
+		},
+		{
+			"Result of named pointer type is selected via a conversion.",
+			`type T struct{ x, y int }; type PT *T; func f() PT { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return PT({1, 2}).x }`,
+		},
+	})
+}
+
 func runTests(t *testing.T, tests []testcase) {
 	for _, test := range tests {
 		t.Run(test.descr, func(t *testing.T) {

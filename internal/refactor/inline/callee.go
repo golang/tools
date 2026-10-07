@@ -49,7 +49,7 @@ type gobCallee struct {
 	Effects          []int                  // order in which parameters are evaluated (see calleefx)
 	HasDefer         bool                   // uses defer
 	HasBareReturn    bool                   // uses bare return in non-void function
-	Returns          [][]returnOperandFlags // metadata about result expressions for each return
+	Returns          [][]returnOperandFlags // metadata about result expressions for each return stmt in body
 	Labels           []string               // names of all control labels
 	Falcon           falconResult           // falcon constraint system
 }
@@ -61,6 +61,7 @@ type returnOperandFlags int
 const (
 	nonTrivialResult returnOperandFlags = 1 << iota // return operand has non-trivial conversion to result type
 	untypedNilResult                                // return operand is nil literal
+	pointerResult                                   // result type is a pointer
 )
 
 // A freeRef records a reference to a free object. Gob-serializable.
@@ -318,6 +319,12 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 					}
 					if !trivialConversion(info.Types[expr].Value, typ, sig.Results().At(i).Type()) {
 						flags |= nonTrivialResult
+					}
+					if isInferredCompLit(expr) { // e.g. return {1, 2}
+						flags |= nonTrivialResult
+					}
+					if isPointer(sig.Results().At(i).Type()) {
+						flags |= pointerResult
 					}
 					resultInfo = append(resultInfo, flags)
 				}
