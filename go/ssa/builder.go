@@ -466,9 +466,7 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 		} else {
 			v = emitLocal(fn, typ, e.Lbrace, "complit")
 		}
-		var sb storebuf
-		b.compLit(fn, v, e, true, &sb)
-		sb.emit(fn)
+		b.compLit(fn, v, e)
 		return &address{addr: v, pos: e.Lbrace, expr: e}
 
 	case *ast.ParenExpr:
@@ -562,37 +560,18 @@ func (sb *storebuf) emit(fn *Function) {
 }
 
 // assign emits to fn code to initialize the lvalue loc with the value
-// of expression e.  If isZero is true, assign assumes that loc holds
-// the zero value for its type.
+// of expression e.
 //
-// This is equivalent to loc.store(fn, b.expr(fn, e)), but may generate
-// better code in some cases, e.g., for composite literals in an
-// addressable location.
+// This is equivalent to loc.store(fn, b.expr(fn, e)).
 //
 // If sb is not nil, assign generates code to evaluate expression e, but
 // not to update loc.  Instead, the necessary stores are appended to the
 // storebuf sb so that they can be executed later.  This allows correct
 // in-place update of existing variables when the RHS is a composite
 // literal that may reference parts of the LHS.
-func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *storebuf) {
-	// Can we initialize it in place?
-	if e, ok := ast.Unparen(e).(*ast.CompositeLit); ok {
-		// A CompositeLit never evaluates to a pointer,
-		// so if the type of the location is a pointer,
-		// an &-operation is implied.
-		if !is[blank](loc) && isPointerCore(loc.typ()) { // avoid calling blank.typ()
-			ptr := b.addr(fn, e, true).address(fn)
-			// copy address
-			if sb != nil {
-				sb.store(loc, ptr)
-			} else {
-				loc.store(fn, ptr)
-			}
-			return
-		}
-	}
-
-	// simple case: just copy
+func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, sb *storebuf) {
+	// A pointer-typed CompositeLit (var _ *MyStruct = {})
+	// implies an &-operation; expr handles this.
 	rhs := b.expr(fn, e)
 	if sb != nil {
 		sb.store(loc, rhs)
@@ -628,6 +607,12 @@ func (b *builder) expr(fn *Function, e ast.Expr) Value {
 	return v
 }
 
+// expr0 compiles the non-constant unparenthesized r-value expression e.
+//
+// A composite literal is not addressable, so it is handled here.
+// If its implicit type is a pointer *T, it denotes &T{...},
+// so it allocates a new T and returns its address. Otherwise
+// it builds the literal in a temporary and loads its value.
 func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 	switch e := e.(type) {
 	case *ast.BasicLit:
@@ -949,7 +934,18 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			panic("unexpected container type in IndexExpr: " + xt.String())
 		}
 
-	case *ast.CompositeLit, *ast.StarExpr:
+	case *ast.CompositeLit:
+		// A composite literal with no explicit type whose
+		// (inferred) type is a pointer *T is equivalent to &T{...}.
+		// This occurs for nested literals (e.g. []*T{{}}) and,
+		// since go1.28, in any assignment context (e.g. f({})).
+		if isPointerCore(fn.typeOf(e)) {
+			return b.addr(fn, e, true).address(fn)
+		}
+		// Value-typed literal: build in a temporary and load.
+		return b.addr(fn, e, false).load(fn)
+
+	case *ast.StarExpr:
 		// Addressable types (lvalues)
 		return b.addr(fn, e, false).load(fn)
 	}
@@ -1167,7 +1163,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 				emitLocalVar(fn, identVar(fn, id))
 			}
 			lval := b.addr(fn, id, false) // non-escaping
-			b.assign(fn, lval, spec.Values[i], true, nil)
+			b.assign(fn, lval, spec.Values[i], nil)
 		}
 
 	case len(spec.Values) == 0:
@@ -1201,7 +1197,7 @@ func (b *builder) localValueSpec(fn *Function, spec *ast.ValueSpec) {
 // Note the similarity with localValueSpec.
 func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 	// Side effects of all LHSs and RHSs must occur in left-to-right order.
-	lvals, isZero := b.assignLHS(fn, lhss, isDef)
+	lvals := b.assignLHS(fn, lhss, isDef)
 	if len(lhss) == len(rhss) {
 		// Simple assignment:   x     = f()        (!isDef)
 		// Parallel assignment: x, y  = f(), g()   (!isDef)
@@ -1211,7 +1207,7 @@ func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 		// so we need a storebuf.
 		var sb storebuf
 		for i := range rhss {
-			b.assign(fn, lvals[i], rhss[i], isZero[i], &sb)
+			b.assign(fn, lvals[i], rhss[i], &sb)
 		}
 		sb.emit(fn)
 	} else {
@@ -1224,23 +1220,21 @@ func (b *builder) assignStmt(fn *Function, lhss, rhss []ast.Expr, isDef bool) {
 	}
 }
 
-func (b *builder) assignLHS(fn *Function, lhss []ast.Expr, isDef bool) ([]lvalue, []bool) {
+func (b *builder) assignLHS(fn *Function, lhss []ast.Expr, isDef bool) []lvalue {
 	lvals := make([]lvalue, len(lhss))
-	isZero := make([]bool, len(lhss))
 	for i, lhs := range lhss {
 		var lval lvalue = blank{}
 		if !isBlankIdent(lhs) {
 			if isDef {
 				if obj, ok := fn.info.Defs[lhs.(*ast.Ident)].(*types.Var); ok {
 					emitLocalVar(fn, obj)
-					isZero[i] = true
 				}
 			}
 			lval = b.addr(fn, lhs, false) // non-escaping
 		}
 		lvals[i] = lval
 	}
-	return lvals, isZero
+	return lvals
 }
 
 // assignSelectRecvStmt emits a receive assignment from a single-case select.
@@ -1258,7 +1252,7 @@ func (b *builder) assignSelectRecvStmt(fn *Function, assign *ast.AssignStmt) {
 		}
 	}
 
-	lvals, _ := b.assignLHS(fn, assign.Lhs, assign.Tok == token.DEFINE)
+	lvals := b.assignLHS(fn, assign.Lhs, assign.Tok == token.DEFINE)
 	for i, lval := range lvals {
 		lval.store(fn, values[i])
 	}
@@ -1284,33 +1278,25 @@ func (b *builder) arrayLen(fn *Function, elts []ast.Expr) int64 {
 // compLit emits to fn code to initialize a composite literal e at
 // address addr with type typ.
 //
-// Nested composite literals are recursively initialized in place
-// where possible. If isZero is true, compLit assumes that addr
-// holds the zero value for typ.
+// The variable addr must be a fresh zero-valued Alloc. Since it is
+// not reachable from any element expression, stores to it may be
+// interleaved with evaluation of the elements and need not be
+// deferred using a storebuf. In an assignment such as
 //
-// Because the elements of a composite literal may refer to the
-// variables being updated, as in the second line below,
-//
-//	x := T{a: 1}
 //	x = T{a: x.a}
 //
-// all the reads must occur before all the writes. Thus all stores to
-// loc are emitted to the storebuf sb for later execution.
+// the literal is built in a temporary and then copied to x
+// (see assignStmt), so all reads of x still precede the write.
 //
-// A CompositeLit may have pointer type only in the recursive (nested)
-// case when the type name is implicit.  e.g. in []*T{{}}, the inner
-// literal has type *T behaves like &T{}.
+// A CompositeLit may have pointer type only when the type name is
+// implicit, e.g. in []*T{{}}, the inner literal has type *T and
+// behaves like &T{}. (Since go1.28 the type may be omitted in any
+// assignment context, e.g. f({}) where f's parameter is *T.)
 // In that case, addr must hold a T, not a *T.
-func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero bool, sb *storebuf) {
+func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit) {
 	typ := typeparams.Deref(fn.typeOf(e)) // retain the named/alias/param type, if any
 	switch t := typeparams.CoreType(typ).(type) {
 	case *types.Struct:
-		if !isZero && len(e.Elts) != t.NumFields() {
-			// memclear
-			zt := typeparams.MustDeref(addr.Type())
-			sb.store(&address{addr, e.Lbrace, nil}, zeroConst(zt))
-			isZero = true
-		}
 		var fIndices []int
 		for i, e := range e.Elts {
 			var (
@@ -1341,7 +1327,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 			faddr.setPos(pos)
 			faddr.setType(types.NewPointer(fType))
 			fn.emit(faddr)
-			b.assign(fn, &address{addr: faddr, pos: pos, expr: e}, e, isZero, sb)
+			b.assign(fn, &address{addr: faddr, pos: pos, expr: e}, e, nil)
 		}
 
 	case *types.Array, *types.Slice:
@@ -1354,12 +1340,6 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 		case *types.Array:
 			at = t
 			array = addr
-
-			if !isZero && int64(len(e.Elts)) != at.Len() {
-				// memclear
-				zt := typeparams.MustDeref(array.Type())
-				sb.store(&address{array, e.Lbrace, nil}, zeroConst(zt))
-			}
 		}
 
 		var idx *Const
@@ -1382,19 +1362,14 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 			}
 			iaddr.setType(types.NewPointer(at.Elem()))
 			fn.emit(iaddr)
-			if t != at { // slice
-				// backing array is unaliased => storebuf not needed.
-				b.assign(fn, &address{addr: iaddr, pos: pos, expr: e}, e, true, nil)
-			} else {
-				b.assign(fn, &address{addr: iaddr, pos: pos, expr: e}, e, true, sb)
-			}
+			b.assign(fn, &address{addr: iaddr, pos: pos, expr: e}, e, nil)
 		}
 
 		if t != at { // slice
 			s := &Slice{X: array}
 			s.setPos(e.Lbrace)
 			s.setType(typ)
-			sb.store(&address{addr: addr, pos: e.Lbrace, expr: e}, fn.emit(s))
+			(&address{addr: addr, pos: e.Lbrace, expr: e}).store(fn, fn.emit(s))
 		}
 
 	case *types.Map:
@@ -1405,43 +1380,15 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 		for _, e := range e.Elts {
 			e := e.(*ast.KeyValueExpr)
 
-			// If a key expression in a map literal is itself a
-			// composite literal, the type may be omitted.
-			// For example:
-			//	map[*struct{}]bool{{}: true}
-			// An &-operation may be implied:
-			//	map[*struct{}]bool{&struct{}{}: true}
-			wantAddr := false
-			if _, ok := ast.Unparen(e.Key).(*ast.CompositeLit); ok {
-				wantAddr = isPointerCore(t.Key())
-			}
-
-			var key Value
-			if wantAddr {
-				// A CompositeLit never evaluates to a pointer,
-				// so if the type of the location is a pointer,
-				// an &-operation is implied.
-				key = b.addr(fn, e.Key, true).address(fn)
-			} else {
-				key = b.expr(fn, e.Key)
-			}
-
-			loc := element{
+			loc := &element{
 				m:   m,
-				k:   emitConv(fn, key, t.Key()),
+				k:   emitConv(fn, b.expr(fn, e.Key), t.Key()),
 				t:   t.Elem(),
 				pos: e.Colon,
 			}
-
-			// We call assign() only because it takes care
-			// of any &-operation required in the recursive
-			// case, e.g.,
-			// map[int]*struct{}{0: {}} implies &struct{}{}.
-			// In-place update is of course impossible,
-			// and no storebuf is needed.
-			b.assign(fn, &loc, e.Value, true, nil)
+			b.assign(fn, loc, e.Value, nil)
 		}
-		sb.store(&address{addr: addr, pos: e.Lbrace, expr: e}, m)
+		(&address{addr: addr, pos: e.Lbrace, expr: e}).store(fn, m)
 
 	default:
 		panic("unexpected CompositeLit type: " + typ.String())
@@ -3300,7 +3247,7 @@ func (b *builder) buildPackageInit(fn *Function) {
 			} else {
 				lval = blank{}
 			}
-			b.assign(fn, lval, varinit.Rhs, true, nil)
+			b.assign(fn, lval, varinit.Rhs, nil)
 		} else {
 			// n:1 initialization: var x, y :=  f()
 			tuple := b.exprN(fn, varinit.Rhs)
