@@ -55,7 +55,6 @@ func _() {
 package c
 import (
 	"context"
-	
 	"example.com/one/more/pkg"
 	pkg0 "example.com/some/other/pkg"
 	"example.com/define/my/typ"

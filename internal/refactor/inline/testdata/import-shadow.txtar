@@ -39,9 +39,8 @@ func B() {
 package a
 
 import (
-	log0 "log"
-
 	"log"
+	log0 "log"
 )
 
 func A() {

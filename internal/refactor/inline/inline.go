@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/astutil/free"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
@@ -291,46 +292,9 @@ func (st *state) inline() (*Result, error) {
 	// remove unneeded imports in this case because it is common
 	// to inlining a call from "dir1/a".F to "dir2/a".F, which
 	// leaves two imports of packages named 'a', both providing a.F.
-	//
-	// However, the only two import deletion tools at our disposal
-	// are astutil.DeleteNamedImport, which mutates the AST, and
-	// refactor.Delete{Spec,Decl}, which need a Cursor. So we need
-	// to reinvent the wheel here.
+	tokFile := caller.Fset.File(caller.file.FileStart)
 	for _, oldImport := range res.oldImports {
-		spec := oldImport.spec
-
-		// Include adjacent comments.
-		pos := spec.Pos()
-		if doc := spec.Doc; doc != nil {
-			pos = doc.Pos()
-		}
-		end := spec.End()
-		if doc := spec.Comment; doc != nil {
-			end = doc.End()
-		}
-
-		// Find the enclosing import decl.
-		// If it's paren-less, we must delete it too.
-		for _, decl := range caller.file.Decls {
-			decl, ok := decl.(*ast.GenDecl)
-			if !(ok && decl.Tok == token.IMPORT) {
-				break // stop at first non-import decl
-			}
-			if internalastutil.NodeContainsPos(decl, spec.Pos()) && !decl.Rparen.IsValid() {
-				// Include adjacent comments.
-				pos = decl.Pos()
-				if doc := decl.Doc; doc != nil {
-					pos = doc.Pos()
-				}
-				end = decl.End()
-				break
-			}
-		}
-
-		edits = append(edits, refactor.Edit{
-			Pos: pos,
-			End: end,
-		})
+		edits = append(edits, refactor.DeleteSpec(tokFile, oldImport.curSpec)...)
 	}
 
 	return &Result{
@@ -343,7 +307,7 @@ func (st *state) inline() (*Result, error) {
 // An oldImport is an import that will be deleted from the caller file.
 type oldImport struct {
 	pkgName *types.PkgName
-	spec    *ast.ImportSpec
+	curSpec inspector.Cursor // cursor for *ast.ImportSpec
 }
 
 // A newImport is an import that will be added to the caller file.
@@ -388,7 +352,9 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 		}
 	}
 
-	for _, imp := range caller.file.Imports {
+	curFile, _ := moreiters.First(caller.Call.Enclosing((*ast.File)(nil)))
+	for curSpec := range curFile.Preorder((*ast.ImportSpec)(nil)) {
+		imp := curSpec.Node().(*ast.ImportSpec)
 		if pkgName, ok := importedPkgName(caller.Info, imp); ok &&
 			pkgName.Name() != "." &&
 			pkgName.Name() != "_" {
@@ -425,7 +391,7 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 				path := pkgName.Imported().Path()
 				ist.importMap[path] = append(ist.importMap[path], pkgName.Name())
 			} else {
-				ist.oldImports = append(ist.oldImports, oldImport{pkgName: pkgName, spec: imp})
+				ist.oldImports = append(ist.oldImports, oldImport{pkgName: pkgName, curSpec: curSpec})
 			}
 		}
 	}
