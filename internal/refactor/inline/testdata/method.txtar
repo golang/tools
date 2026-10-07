@@ -104,7 +104,7 @@ func (T) h() int { return 1 }
 
 func _() {
 	var ptr *T
-	var _ T = *ptr
+	_ = *ptr
 	_ = 1 //@ inline(re"h", h)
 }
 

@@ -23,18 +23,17 @@ import (
 // Fewer edges and fewer reachable nodes implies a more precise result.
 // Comparison is done on a hello world http server using net/http.
 //
-// Current results were on an i7 macbook on go version devel go1.20-2730.
+// Current results were on an Apple M1 Pro on go version devel go1.28.
 // Number of nodes, edges, and reachable function are expected to vary between
 // go versions. Timing results are expected to vary between machines.
-// BenchmarkStatic-12	 53 ms/op     6 MB/op	12113 nodes	 37355 edges	1522 reachable
-// BenchmarkCHA-12    	 86 ms/op	 16 MB/op	12113 nodes	131717 edges	7640 reachable
-// BenchmarkRTA-12		110 ms/op	 12 MB/op	 6566 nodes	 42291 edges	5099 reachable
-// BenchmarkPTA-12	   1427 ms/op	600 MB/op	 8714 nodes	 28244 edges	4184 reachable
-// BenchmarkVTA-12		600 ms/op	 78 MB/op	12114 nodes	 44861 edges	4919 reachable
-// BenchmarkVTA2-12		793 ms/op	104 MB/op	 5450 nodes	 22208 edges	4042 reachable
-// BenchmarkVTA3-12		977 ms/op	124 MB/op	 4621 nodes	 19331 edges	3700 reachable
-// BenchmarkVTAAlt-12	372 ms/op	 57 MB/op	 7763 nodes	 29912 edges	4258 reachable
-// BenchmarkVTAAlt2-12	570 ms/op	 78 MB/op	 4838 nodes	 20169 edges	3737 reachable
+// BenchmarkStatic-8	 23 ms/op	  7 MB/op	16445 nodes	 50009 edges	 2257 reachable
+// BenchmarkCHA-8	 77 ms/op	 30 MB/op	16892 nodes	273567 edges	10678 reachable
+// BenchmarkRTA-8	 38 ms/op	 15 MB/op	 9803 nodes	 78643 edges	 7259 reachable
+// BenchmarkVTA-8	457 ms/op	111 MB/op	16891 nodes	 62496 edges	 7057 reachable
+// BenchmarkVTA2-8	585 ms/op	139 MB/op	 7941 nodes	 32283 edges	 5551 reachable
+// BenchmarkVTA3-8	692 ms/op	163 MB/op	 6550 nodes	 26918 edges	 3961 reachable
+// BenchmarkVTAAlt-8	256 ms/op	 79 MB/op	10839 nodes	 43095 edges	 5935 reachable
+// BenchmarkVTAAlt2-8	349 ms/op	104 MB/op	 6962 nodes	 28248 edges	 3980 reachable
 //
 // Note:
 // * Static is unsound and may miss real edges.
@@ -77,7 +76,9 @@ var (
 func example(t testing.TB) (*ssa.Program, *ssa.Function) {
 	once.Do(func() {
 		pkgs := testfiles.LoadPackages(t, txtar.Parse([]byte(httpEx)), ".")
-		prog, ssapkgs := ssautil.Packages(pkgs, ssa.InstantiateGenerics)
+		// Use AllPackages, not Packages, so that dependencies
+		// have function bodies too.
+		prog, ssapkgs := ssautil.AllPackages(pkgs, ssa.InstantiateGenerics)
 		prog.Build()
 		main = ssapkgs[0].Members["main"].(*ssa.Function)
 	})

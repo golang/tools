@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -194,4 +195,22 @@ func (pgf *File) Indentation(pos token.Pos) (string, error) {
 		}
 	}
 	return s, nil
+}
+
+// ProtocolTextEdits converts the analysis text edits (aka
+// [refactor.TextEdit]) to protocol form. It returns an error if the
+// edits are not within the specified file.
+func (pgf *File) ProtocolTextEdits(edits []analysis.TextEdit) ([]protocol.TextEdit, error) {
+	var pedits []protocol.TextEdit
+	for _, edit := range edits {
+		rng, err := pgf.PosRange(edit.Pos, edit.End)
+		if err != nil {
+			return nil, err
+		}
+		pedits = append(pedits, protocol.TextEdit{
+			Range:   rng,
+			NewText: string(edit.NewText),
+		})
+	}
+	return pedits, nil
 }

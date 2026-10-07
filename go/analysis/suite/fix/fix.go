@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/modernize"
+	"golang.org/x/tools/go/analysis/passes/stringintconv"
 )
 
 // Suite is the suite of analyzers run by cmd/fix.
@@ -31,6 +32,10 @@ var Suite = slices.Concat(
 		buildtag.Analyzer,
 		hostport.Analyzer,
 		inline.Analyzer,
+		// stringintconv's first fix, string(int) -> string(rune(int)),
+		// preserves behavior, and prepares for go1.28, which rejects
+		// string(int) conversions (go.dev/issue/3939).
+		stringintconv.Analyzer,
 	},
 	modernize.Suite,
 	// TODO(adonovan): add any other vet analyzers whose fixes are always safe.
@@ -41,6 +46,5 @@ var Suite = slices.Concat(
 	// - composites: some types (e.g. PointXY{1,2}) don't want field names.
 	// - timeformat: flipping MM/DD is a behavior change, but the code
 	//    could potentially be a workaround for another bug.
-	// - stringintconv: offers two fixes, user input required to choose.
 	// - fieldalignment: poor signal/noise; fix could be a regression.
 )

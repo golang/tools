@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/internal/analysis/intconv"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
@@ -300,19 +301,14 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	}
 
 	// Process any missing imports and pair them with the diagnostics they fix.
-	res := req.lazyInit[*allImportsFixesResult](ctx)
-	if res.err != nil {
-		return nil
-	}
-
-	// Separate this into a set of codeActions per diagnostic, where
-	// each action is the addition, removal, or renaming of one import.
-	for _, importFix := range res.editsPerFix {
-		fixedDiags := fixedByImportFix(importFix.fix, req.diagnostics)
-		if len(fixedDiags) == 0 {
-			continue
+	if res := req.lazyInit[*allImportsFixesResult](ctx); res.err == nil {
+		// Separate this into a set of codeActions per diagnostic, where
+		// each action is the addition, removal, or renaming of one import.
+		for _, importFix := range res.editsPerFix {
+			if fixedDiags := fixedByImportFix(importFix.fix, req.diagnostics); len(fixedDiags) > 0 {
+				req.addEditAction(importFixTitle(importFix.fix), fixedDiags, protocol.DocumentChangeEdit(req.fh, importFix.edits))
+			}
 		}
-		req.addEditAction(importFixTitle(importFix.fix), fixedDiags, protocol.DocumentChangeEdit(req.fh, importFix.edits))
 	}
 
 	// Quick fixes for type errors.
@@ -330,6 +326,36 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 
 		msg := typeError.Msg
 		switch {
+		// "cannot convert x (variable of type int) to type string:
+		// argument must have type byte or rune with go1.28 or later"
+		// Offer the same fixes as the stringintconv analyzer.
+		// (This case must precede the more general "cannot convert".)
+		case strings.Contains(msg, "argument must have type byte or rune"):
+			if cur, ok := req.pgf.Cursor().FindByPos(start, end); ok {
+				// The error is reported at the operand x; find enclosing conversion.
+				for curCall := range cur.Enclosing((*ast.CallExpr)(nil)) {
+					if diag, ok := intconv.Check(info, curCall); ok {
+						for _, fix := range diag.SuggestedFixes {
+							// The action indicates which diagnostics it will fix; filter them.
+							var fixedDiags []protocol.Diagnostic
+							for _, diag := range req.diagnostics {
+								if cache.DiagnosticSource(diag.Source) == cache.TypeError &&
+									strings.Contains(diag.MessageString(), msg) &&
+									protocol.Intersect(diag.Range, typeErrorRange) {
+									fixedDiags = append(fixedDiags, diag)
+								}
+							}
+							edits, err := req.pgf.ProtocolTextEdits(fix.TextEdits)
+							if err != nil {
+								continue
+							}
+							req.addEditAction(fix.Message, fixedDiags, protocol.DocumentChangeEdit(req.fh, edits))
+						}
+						break
+					}
+				}
+			}
+
 		// "Missing method" error? (stubmethods)
 		// Offer a "Declare missing methods of INTERFACE" code action.
 		// See [stubMissingInterfaceMethodsFixer] for command implementation.

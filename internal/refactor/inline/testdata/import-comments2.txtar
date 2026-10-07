@@ -65,7 +65,7 @@ const (
 )
 
 func foo() {
-	var _ context.Context = context.TODO()
+	_ = context.TODO()
 	pkg0.Foo(typ.T(5)) //@inline(re"Baz", out)
 	pkg.Bar()
 }

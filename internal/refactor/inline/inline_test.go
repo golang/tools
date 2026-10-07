@@ -428,7 +428,7 @@ func TestBasics(t *testing.T) {
 			`func f(s string, i int) { print(s, s, i, i) }`,
 			`func _() { f("hi", 0)  }`,
 			`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s, 0, 0)
 }`,
 		},
@@ -483,7 +483,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s string) { print(s, s) }`,
 				`func _() { f("hi")  }`,
 				`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s)
 }`,
 			},
@@ -498,7 +498,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(a [2]int) { print(a, a) }`,
 				`func _() { f([2]int{1, 2})  }`,
 				`func _() {
-	var a [2]int = [2]int{1, 2}
+	a := [2]int{1, 2}
 	print(a, a)
 }`,
 			},
@@ -513,7 +513,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s S) { print(s, s) }; type S struct { x int }`,
 				`func _() { f(S{x: 1})  }`,
 				`func _() {
-	var s S = S{x: 1}
+	s := S{x: 1}
 	print(s, s)
 }`,
 			},
@@ -558,7 +558,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]byte(s)) }`,
 				`func _() {
 	var s string
-	var b []byte = []byte(s)
+	b := []byte(s)
 	print(b, b)
 }`,
 			},
@@ -568,7 +568,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]uint8(s)) }`,
 				`func _() {
 	var s string
-	var b []uint8 = []uint8(s)
+	b := []uint8(s)
 	print(b, b)
 }`,
 			},
@@ -578,7 +578,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]rune(s)) }`,
 				`func _() {
 	var s string
-	var r []rune = []rune(s)
+	r := []rune(s)
 	print(r, r)
 }`,
 			},
@@ -588,7 +588,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f(B(s)) }`,
 				`func _() {
 	var s string
-	var b B = B(s)
+	b := B(s)
 	print(b, b)
 }`,
 			},
@@ -603,7 +603,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(i int) { print(i, i) }`,
 				`func _() { f(len(""))  }`,
 				`func _() {
-	var i int = len("")
+	i := len("")
 	print(i, i)
 }`,
 			},
@@ -612,7 +612,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(c complex128) { print(c, c) }`,
 				`func _() { f(complex(1.0, 2.0)) }`,
 				`func _() {
-	var c complex128 = complex(1.0, 2.0)
+	c := complex(1.0, 2.0)
 	print(c, c)
 }`,
 			},
@@ -623,7 +623,7 @@ func TestDuplicable(t *testing.T) {
 func f1(i int) int { return i + 1 }`,
 				`func _() { f(f1(1))  }`,
 				`func _() {
-	var i int = f1(1)
+	i := f1(1)
 	print(i, i)
 }`,
 			},
@@ -803,7 +803,7 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var z int; f(z) }`,
 			`func _() {
 	var z int
-	var _ int = z
+	_ = z
 	print([]int{})
 }`,
 		},
@@ -826,7 +826,7 @@ func TestSubstitution(t *testing.T) {
 			`func f(x int) { _ = func() { y := 1; print(y); print(x) } }`,
 			`func _(y int) { f(y) } `,
 			`func _(y int) {
-	var x int = y
+	x := y
 	_ = func() { y := 1; print(y); print(x) }
 }`,
 		},
@@ -1084,7 +1084,7 @@ func TestVariadic(t *testing.T) {
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { var args []any = slice; defer f(&args); println(args) }() }`,
+			`func _(slice []any) { func() { args := slice; defer f(&args); println(args) }() }`,
 		},
 		{
 			"Variadic cancellation (literalization with parameter elimination).",
@@ -1144,7 +1144,7 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) { x++ }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	x++
 }`,
 		},
@@ -1169,22 +1169,34 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) int { return <-h(g(2), x) }; func g(int) int; func h(int, int) chan int`,
 			`func _() { f(g(1)) }`,
 			`func _() {
-	var x int = g(1)
+	x := g(1)
 	<-h(g(2), x)
 }`,
 		},
 		{
-			"No binding decl due to shadowing of int",
+			// Omitting the type of z avoids shadowing of the built-in
+			// type name int by the earlier parameter named int, so a
+			// binding decl is possible.
+			"Binding decl omits type to avoid shadowing of int",
 			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func(int, y any, z int) { defer g(0); println(int, y, z) }(g(1), g(2), g(3)) }`,
+			`func _() {
+	func() {
+		var (
+			int, y any = g(1), g(2)
+			z          = g(3)
+		)
+		defer g(0)
+		println(int, y, z)
+	}()
+}`,
 		},
 		{
 			"An indirect method selection (*x).g acts as a read.",
 			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (T) g(x any) any { return x }`,
 			`func _(x *T) { f(x, recover()) }`,
 			`func _(x *T) {
-	var y any = recover()
+	y := recover()
 	x.g(y)
 }`,
 		},
@@ -1198,13 +1210,19 @@ func TestParameterBindingDecl(t *testing.T) {
 			"Literalization can make use of a binding decl (all params).",
 			`func f(x, y int) int { defer println(); return y + x }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x, y int = g(1), g(2); defer println(); return y + x }()) }`,
+			`func _() { println(func() int { x, y := g(1), g(2); defer println(); return y + x }()) }`,
 		},
 		{
 			"Literalization can make use of a binding decl (some params).",
 			`func f(x, y int) int { z := y + x; defer println(); return z }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x int = g(1); z := g(2) + x; defer println(); return z }()) }`,
+			`func _() { println(func() int { x := g(1); z := g(2) + x; defer println(); return z }()) }`,
+		},
+		{
+			"Binding decl keeps type for interface conversion.",
+			`func f(x any) { defer println(); println(x, x) }; func g() int`,
+			`func _() { f(g()) }`,
+			`func _() { func() { var x any = g(); defer println(); println(x, x) }() }`,
 		},
 		{
 			"Literalization can't yet use of a binding decl if named results.",
@@ -1271,7 +1289,7 @@ func TestEmbeddedFields(t *testing.T) {
 			`func (x T) _() { x.f() }`,
 			`func (x T) _() {
 	{
-		var x *T = &x
+		x := &x
 		g()
 		print(*x)
 	}
@@ -1306,7 +1324,7 @@ func TestSubstitutionGroups(t *testing.T) {
 			`func _() {
 	var a, b, c, d int
 	{
-		var a, b, c int = a + b + c, a + b, d
+		a, b, c := a+b+c, a+b, d
 		var d int
 		print(a, b, c, d)
 	}
@@ -1325,7 +1343,7 @@ func TestSubstitutionGroups(t *testing.T) {
 			`func _() {
 	var a, b, c, d, e int
 	{
-		var a, b, d int = a + b, c + d, e
+		a, b, d := a+b, c+d, e
 		var e int
 		print(a, b, c, d, e)
 	}
@@ -1347,7 +1365,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, c, b) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, g(3), b)
 }`,
 		},
@@ -1368,7 +1386,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), g(2), y, g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, y, b, g(3))
 }`,
 		},
@@ -1377,7 +1395,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), y, g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), y
+	a, b := g(1), y
 	print(a, g(2), b, g(3))
 }`,
 		},
@@ -1398,7 +1416,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; var x, y, z int`,
 			`func _() { f(x, y, z) }`,
 			`func _() {
-	var c int = z
+	c := z
 	print(x, y, recover().(int), c)
 }`,
 		},
@@ -1407,7 +1425,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; func g(int) int; var x, y, z int`,
 			`func _() { f(x, y, g(0))  }`,
 			`func _() {
-	var a, b, c int = x, y, g(0)
+	a, b, c := x, y, g(0)
 	print(a, b, recover().(int), c)
 }`,
 		},
@@ -1416,7 +1434,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d, e int) { print(b, a, c, e, d) }; func g(int) int; var x, y int`,
 			`func _() { f(x, g(1), g(2), y, g(3))  }`,
 			`func _() {
-	var a, b, c, d int = x, g(1), g(2), y
+	a, b, c, d := x, g(1), g(2), y
 	print(b, a, c, g(3), d)
 }`,
 		},
@@ -1436,7 +1454,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 	x := new(struct{ y int })
 	z := x
 	{
-		var x, y int = x.y, set(&x, z, nil)
+		x, y := x.y, set(&x, z, nil)
 		_ = x + y
 	}
 }`,
@@ -1449,7 +1467,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = &y }; func g(int) int`,
 			`func _() { f(g(1), g(2)) }`,
 			`func _() {
-	var _, y int = g(1), g(2)
+	_, y := g(1), g(2)
 	_ = &y
 }`,
 		},
@@ -1461,7 +1479,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = x }; func g(int) int; var v int`,
 			`func _() { f(v, g(2)) }`,
 			`func _() {
-	var x, _ int = v, g(2)
+	x, _ := v, g(2)
 	_ = x
 }`,
 		},
@@ -1497,7 +1515,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x int
 	)
 	_ = x + x + len(y+y)
@@ -1510,7 +1528,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x string
 	)
 	_ = x + y + y
@@ -1612,7 +1630,7 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
 			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
 			`func _() { var t *T; _ = t.f() }`,
-			`func _() { var t *T; _ = func() bool { var x T = *t; return x == x.id() }() }`,
+			`func _() { var t *T; _ = func() bool { x := *t; return x == x.id() }() }`,
 		},
 		{
 			"Check for shadowing error on type used in the conversion.",

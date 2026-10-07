@@ -100,6 +100,16 @@ func TestFromContext(t *testing.T) {
 		{`func _() { _ = «x» == "" }`, "string"}, // binary X operand
 		{`func _() { _ = 0 + «x» }`, "int"},      // binary Y operand
 
+		// key-value expressions in composite literals
+		{`type S struct{ a string; b int }; func _() { _ = S{b: «x»} }`, "int"},     // struct keyed value
+		{`type S struct{ a string; b int }; func _() { _ = S{«b»: 1} }`, "nothing"}, // struct keyed key
+		{`func _() { _ = []string{«x»: "a"} }`, "int"},                              // slice keyed key
+		{`func _() { _ = []string{0: «x»} }`, "string"},                             // slice keyed value
+		{`func _() { _ = [2]string{«x»: "a"} }`, "int"},                             // array keyed key
+		{`func _() { _ = [2]string{0: «x»} }`, "string"},                            // array keyed value
+		{`func _() { _ = map[string]int{«x»: 1} }`, "string"},                       // map key
+		{`func _() { _ = map[string]int{"a": «x»} }`, "int"},                        // map value
+
 		// misc
 		{`func _(x nonesuch) { x = «x» }`, "any"}, // invalid type fallback to any
 		{`func _() { switch «x» {} }`, "nothing"}, // unhandled context

@@ -155,7 +155,7 @@ nextComp:
 			)
 
 			i := 0
-			for field := range typesinternal.ImplicitFieldSelections(seln) {
+			for field := range typesinternal.ImplicitFieldSelections(&seln) {
 				t := field.Type()
 				ptr, isPtr := t.Underlying().(*types.Pointer)
 				if isPtr {
@@ -396,7 +396,7 @@ func populateMissingFields(info *types.Info, pkg *types.Package, file *ast.File,
 		}
 		explicit[field] = true // last field is explicit
 
-		for field := range typesinternal.ImplicitFieldSelections(seln) {
+		for field := range typesinternal.ImplicitFieldSelections(&seln) {
 			if explicit[field] {
 				return nil, fmt.Errorf("cannot fill both %q and its subfields", field.Name())
 			}

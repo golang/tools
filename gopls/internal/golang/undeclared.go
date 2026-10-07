@@ -46,6 +46,13 @@ func undeclaredFixTitle(curId inspector.Cursor, errMsg string) string {
 	if _, ok := curId.Parent().Node().(*ast.SelectorExpr); ok {
 		return ""
 	}
+	// TODO(golang/go#69947): support create undeclared type.
+	// A composite literal T{...} could be a struct, array, slice, or map,
+	// so it is ambiguous without inspecting the literal elements (e.g.
+	// {"k": "v"} vs {"a", "b"} vs {field: val}).
+	if curId.ParentEdgeKind() == edge.CompositeLit_Type {
+		return ""
+	}
 
 	// Undeclared quick fixes only work in function bodies.
 	block, _ := cursorutil.FirstEnclosing[*ast.BlockStmt](curId)
@@ -131,25 +138,15 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 		// Default to 0.
 		typ = types.Typ[types.Int]
 	}
-	expr, _ := typesinternal.ZeroExpr(typ, typesinternal.FileQualifier(file, pkg.Types()))
-	assignStmt := &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{expr},
-	}
-	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, assignStmt); err != nil {
-		return nil, nil, err
-	}
-	newLineIndent := "\n" + indent
-	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
+	qual := typesinternal.FileQualifier(file, pkg.Types())
+	decl := fmt.Sprintf("var %s %s\n%s", ident.Name, types.TypeString(typ, qual), indent)
 
 	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
 				Pos:     insertPos,
 				End:     insertPos,
-				NewText: []byte(assignment),
+				NewText: []byte(decl),
 			},
 		},
 	}, nil

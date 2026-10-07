@@ -1,0 +1,53 @@
+This test exercises removing unused parameters when the call site uses a
+parenthesized function or method expression.
+
+-- go.mod --
+module test.mod
+
+go 1.18
+
+-- a/a.go --
+package a
+
+type T struct{}
+
+func (T) M(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=a)
+
+func (T) N(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=b)
+
+func F(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=c)
+
+func _() {
+	var t T
+	(T.M)(t, 1)
+	((*T).N)(&t, 1)
+	(F)(1)
+}
+
+-- @a/a/a.go --
+@@ -5 +5 @@
+-func (T) M(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=a)
++func (T) M() {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=a)
+@@ -13 +13 @@
+-	(T.M)(t, 1)
++	t.M()
+@@ -17 +17 @@
+-
+-- @b/a/a.go --
+@@ -7 +7 @@
+-func (T) N(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=b)
++func (T) N() {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=b)
+@@ -14 +14 @@
+-	((*T).N)(&t, 1)
++	(&t).N()
+@@ -17 +17 @@
+-
+-- @c/a/a.go --
+@@ -9 +9 @@
+-func F(unused int) {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=c)
++func F() {} //@codeaction("unused", "refactor.rewrite.removeUnusedParam", edit=c)
+@@ -15 +15 @@
+-	(F)(1)
++	F()
+@@ -17 +17 @@
+-

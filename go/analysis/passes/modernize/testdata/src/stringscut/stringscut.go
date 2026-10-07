@@ -183,6 +183,41 @@ func basic_strings_byte_var(s string) bool {
 	return i >= 0
 }
 
+func strings_byte_nonascii(s string) bool {
+	i := strings.IndexByte(s, 0xff) // want "strings.IndexByte can be simplified using strings.Contains"
+	return i >= 0
+}
+
+func strings_byte_var_nonascii(s string) string {
+	b := byte(0xff)
+	i := strings.IndexByte(s, b) // want "strings.IndexByte can be simplified using strings.Cut"
+	if i >= 0 {
+		return s[:i]
+	}
+	return ""
+}
+
+func strings_byte_nonascii_cut(s string) string {
+	i := strings.IndexByte(s, 0xff) // want "strings.IndexByte can be simplified using strings.Cut"
+	if i >= 0 {
+		return s[:i]
+	}
+	return ""
+}
+
+func strings_byte_var_nonascii_contains(s string, b byte) bool {
+	i := strings.IndexByte(s, b) // want "strings.IndexByte can be simplified using strings.Contains"
+	return i >= 0
+}
+
+func bytes_byte_nonascii(b []byte) []byte {
+	i := bytes.IndexByte(b, 0xff) // want "bytes.IndexByte can be simplified using bytes.Cut"
+	if i >= 0 {
+		return b[:i]
+	}
+	return nil
+}
+
 func basic_bytes(b []byte) []byte {
 	i := bytes.Index(b, []byte("str")) // want "bytes.Index can be simplified using bytes.Cut"
 	if i >= 0 {
@@ -286,6 +321,53 @@ func index_and_before_after(s string) string {
 func idx_var_init(s string) (string, string) {
 	var idx = strings.Index(s, "=") // don't modernize: s[0:idx] is not guarded
 	return s[0:idx], s
+}
+
+func idx_var_typed_contains(s string) bool {
+	var idx int = strings.Index(s, "=") // want "strings.Index can be simplified using strings.Contains"
+	return idx >= 0
+}
+
+func idx_var_typed_comment(s string) bool {
+	var idx /* comment */ int = strings.Index(s, "=") // want "strings.Index can be simplified using strings.Contains"
+	return idx >= 0
+}
+
+func idx_var_typed_cut(s string) string {
+	var idx int = strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if idx >= 0 {
+		return s[:idx]
+	}
+	return ""
+}
+
+func idx_var_typed_cut_before_after(s string) (string, string) {
+	var idx int = strings.Index(s, "=") // want "strings.Index can be simplified using strings.Cut"
+	if idx >= 0 {
+		return s[:idx], s[idx+1:]
+	}
+	return "", ""
+}
+
+func idx_var_typed_byte(s string) bool {
+	var idx int = strings.IndexByte(s, '=') // want "strings.IndexByte can be simplified using strings.Contains"
+	return idx >= 0
+}
+
+func idx_var_typed_bytes(b []byte) []byte {
+	var idx int = bytes.Index(b, []byte("=")) // want "bytes.Index can be simplified using bytes.Cut"
+	if idx >= 0 {
+		return b[:idx]
+	}
+	return nil
+}
+
+func idx_var_typed_bytes_byte(b []byte) []byte {
+	var idx int = bytes.IndexByte(b, '=') // want "bytes.IndexByte can be simplified using bytes.Cut"
+	if idx >= 0 {
+		return b[:idx]
+	}
+	return nil
 }
 
 func idx_reassigned(s string) string {

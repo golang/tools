@@ -19,7 +19,17 @@ func Test(t *testing.T) {
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 
 	analysistest.Run(t, testdata, printf.Analyzer,
-		"a", "b", "nofmt", "nonconst", "typeparams", "issue62595", "issue68744", "issue70572", "issue72850", "issue76616", "w")
+		"a", "b", "nofmt", "nonconst", "typeparams", "issue62595", "issue68744", "issue70572", "issue72850", "issue76616")
+}
+
+// TestW is separate because the %w-of-pointer check is gated on
+// go1.27, and GOPATH-mode test packages are type-checked using the
+// go command's version.
+func TestW(t *testing.T) {
+	testenv.NeedsGoCommand1Point(t, 27)
+
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, printf.Analyzer, "w")
 }
 
 func TestNonConstantFmtString_Go123(t *testing.T) {

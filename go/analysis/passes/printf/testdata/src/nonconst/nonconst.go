@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.23
+
 // This file contains tests of the printf checker's handling of non-constant
 // format strings (golang/go#60529).
 
@@ -13,8 +15,8 @@ import (
 	"os"
 )
 
-// As the language version is empty here, and the new check is gated on go1.24,
-// diagnostics are suppressed here.
+// As the language version is go1.23 here (see build tag), and the new
+// check is gated on go1.24, diagnostics are suppressed here.
 func nonConstantFormat(s string) {
 	fmt.Printf(s)
 	fmt.Printf(s, "arg")

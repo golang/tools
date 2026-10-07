@@ -302,6 +302,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			// treatment impossible.
 
 			// Check that all uses of var i within loop body are x.At(i).
+			used := false
 			for curUse := range index.Uses(indexVar) {
 				if !curBody.Contains(curUse) {
 					continue
@@ -340,6 +341,15 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					End:     atCall.End(),
 					NewText: []byte(elem),
 				})
+				used = true
+			}
+
+			// The body does not call x.At(i), so the new loop
+			// variable would be unused and the fix would not compile.
+			// (A "for range" loop would compile, but would compute
+			// each element only to discard it.)
+			if !used {
+				continue nextCall
 			}
 
 			// Check file Go version is new enough for the iterator method.

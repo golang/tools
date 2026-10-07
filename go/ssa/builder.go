@@ -2979,6 +2979,9 @@ func (b *builder) buildParamsOnly(fn *Function) {
 
 	// clear out other function state (keep consistent with finishBody)
 	fn.subst = nil
+	if !fn.isGenericOrigin() {
+		fn.info = nil
+	}
 }
 
 // buildFromSyntax builds fn.Body from fn.syntax, which must be non-nil.

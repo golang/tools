@@ -429,23 +429,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	if isFieldOrMethod {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
 			if sel, ok := pkg.TypesInfo().Selections[selExpr]; ok && len(sel.Index()) > 1 {
-				var s strings.Builder
-				s.WriteString(" // through ")
-				t := sel.Recv()
-				for i, index := range sel.Index()[:len(sel.Index())-1] {
-					structType, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct)
-					if !ok {
-						break
-					}
-					if i > 0 {
-						s.WriteString(", ")
-					}
-					field := structType.Field(index)
-					t = field.Type()
-					s.WriteString(types.TypeString(t, qual))
+				var through []string
+				for field := range typesinternal.ImplicitFieldSelections(sel) {
+					through = append(through, types.TypeString(field.Type(), qual))
 				}
-				// Update signature to include embedded struct info.
-				signature += s.String()
+				if len(through) > 0 {
+					// Update signature to include embedded struct info.
+					signature += " // through " + strings.Join(through, ", ")
+				}
 			}
 		}
 	}

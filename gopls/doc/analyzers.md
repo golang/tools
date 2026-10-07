@@ -1134,7 +1134,7 @@ Default: on.
 Package documentation: [SA1008](https://staticcheck.dev/docs/checks/#SA1008)
 
 <a id='SA1010'></a>
-## `SA1010`: (*regexp.Regexp).FindAll called with n == 0, which will always return zero results
+## `SA1010`: (\*regexp.Regexp).FindAll called with n == 0, which will always return zero results
 
 If n >= 0, the function returns at most n matches/submatches. To return all results, specify a negative number.
 
@@ -1320,7 +1320,7 @@ Default: off. Enable by setting `"analyses": {"SA1024": true}`.
 Package documentation: [SA1024](https://staticcheck.dev/docs/checks/#SA1024)
 
 <a id='SA1025'></a>
-## `SA1025`: It is not possible to use (*time.Timer).Reset's return value correctly
+## `SA1025`: It is not possible to use (\*time.Timer).Reset's return value correctly
 
 Available since
 
@@ -1536,7 +1536,7 @@ Default: on.
 Package documentation: [SA4000](https://staticcheck.dev/docs/checks/#SA4000)
 
 <a id='SA4001'></a>
-## `SA4001`: &*x gets simplified to x, it does not copy x
+## `SA4001`: &\*x gets simplified to x, it does not copy x
 
 Available since
 
@@ -1947,7 +1947,7 @@ Default: on.
 Package documentation: [SA4026](https://staticcheck.dev/docs/checks/#SA4026)
 
 <a id='SA4027'></a>
-## `SA4027`: (*net/url.URL).Query returns a copy, modifying it doesn't change the URL
+## `SA4027`: (\*net/url.URL).Query returns a copy, modifying it doesn't change the URL
 
 (\*net/url.URL).Query parses the current value of net/url.URL.RawQuery and returns it as a map of type net/url.Values. Subsequent changes to this map will not affect the URL unless the map gets encoded and assigned to the URL's RawQuery.
 
@@ -2272,7 +2272,7 @@ Default: on.
 Package documentation: [SA6005](https://staticcheck.dev/docs/checks/#SA6005)
 
 <a id='SA6006'></a>
-## `SA6006`: Using io.WriteString to write []byte
+## `SA6006`: Using io.WriteString to write \[]byte
 
 Using io.WriteString to write a slice of bytes, as in
 
@@ -3137,7 +3137,7 @@ Default: on.
 Package documentation: [errorsas](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas)
 
 <a id='errorsastype'></a>
-## `errorsastype`: replace errors.As with errors.AsType[T]
+## `errorsastype`: replace errors.As with errors.AsType\[T]
 
 This analyzer suggests fixes to simplify uses of [errors.As](/errors#As) of this form:
 
@@ -3160,7 +3160,7 @@ Default: on.
 Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_errorsastype)
 
 <a id='errorsastypeshadow'></a>
-## `errorsastypeshadow`: report shadowing of errors.AsType[T] in if/else chains
+## `errorsastypeshadow`: report shadowing of errors.AsType\[T] in if/else chains
 
 For example:
 
@@ -3232,7 +3232,7 @@ Default: on.
 Package documentation: [fillreturns](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns)
 
 <a id='fmtappendf'></a>
-## `fmtappendf`: replace []byte(fmt.Sprintf) with fmt.Appendf
+## `fmtappendf`: replace \[]byte(fmt.Sprintf) with fmt.Appendf
 
 The fmtappendf analyzer suggests replacing \`\[]byte(fmt.Sprintf(...))\` with \`fmt.Appendf(nil, ...)\`. This avoids the intermediate allocation of a string by Sprintf, making the code more efficient. The suggestion also applies to fmt.Sprint and fmt.Sprintln.
 
@@ -3853,7 +3853,7 @@ Default: on.
 Package documentation: [recursiveiter](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/recursiveiter)
 
 <a id='reflecttypeassert'></a>
-## `reflecttypeassert`: replace v.Interface().(T) with reflect.TypeAssert[T](v)
+## `reflecttypeassert`: replace v.Interface().(T) with reflect.TypeAssert\[T](v)
 
 This analyzer suggests fixes to replace two-valued type assertions on the result of (reflect.Value).Interface with reflect.TypeAssert, introduced in go1.25, which avoids the intermediate allocation of an interface value, for example:
 
@@ -3867,7 +3867,7 @@ Default: on.
 Package documentation: [reflecttypeassert](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_reflecttypeassert)
 
 <a id='reflecttypefor'></a>
-## `reflecttypefor`: replace reflect.TypeOf(x) with TypeFor[T]()
+## `reflecttypefor`: replace reflect.TypeOf(x) with TypeFor\[T]()
 
 This analyzer suggests fixes to replace uses of reflect.TypeOf(x) with reflect.TypeFor, introduced in go1.22, when the desired runtime type is known at compile time, for example:
 
@@ -3892,6 +3892,14 @@ No fix is offered in cases when the runtime type is dynamic, such as:
 	reflect.TypeOf(r)
 
 or when the operand has potential side effects.
+
+Nor is a fix offered when the operand refers to a non-type symbol such as a variable, constant, function, or field, as in:
+
+	reflect.TypeOf(pkg.Var)
+	reflect.TypeOf(x.Field)
+	reflect.TypeOf([arrayLen]byte{})
+
+Replacing these with TypeFor\[T]() would erase the reference to the symbol, breaking any intended coupling between the reflected type and the type of that symbol.
 
 
 Default: on.
@@ -4251,7 +4259,13 @@ Package documentation: [stdversion](https://pkg.go.dev/golang.org/x/tools/go/ana
 
 This checker flags conversions of the form string(x) where x is an integer (but not byte or rune) type. Such conversions are discouraged because they return the UTF-8 representation of the Unicode code point x, and not a decimal string representation of x as one might expect. Furthermore, if x denotes an invalid code point, the conversion cannot be statically rejected.
 
-For conversions that intend on using the code point, consider replacing them with string(rune(x)). Otherwise, strconv.Itoa and its equivalents return the string representation of the value in the desired base.
+As of Go 1.28, such conversions are rejected by the compiler in files whose Go version is go1.28 or later.
+
+The checker offers two fixes. The first, which is applied by "go fix", preserves the existing behavior by converting x to a rune first: string(rune(x)). If x may be wider than 32 bits, truncation to a rune could turn an invalid code point into a valid one, so the fix instead uses fmt.Sprintf("%c", x), which, like string(x), yields "\\uFFFD" for all values outside the range of valid code points.
+
+The second fix formats the number as a decimal using fmt.Sprintf("%d", x), which is usually what was intended, but changes the behavior.
+
+To migrate a module to Go 1.28, run "go fix" before updating the go directive in its go.mod file, since after that, the package no longer compiles and cannot be analyzed.
 
 
 Default: on.
@@ -4461,7 +4475,7 @@ Default: on.
 Package documentation: [testingcontext](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_testingcontext)
 
 <a id='testinggoroutine'></a>
-## `testinggoroutine`: report calls to (*testing.T).Fatal from goroutines started by a test
+## `testinggoroutine`: report calls to (\*testing.T).Fatal from goroutines started by a test
 
 Functions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and Skip{,f,Now} methods of \*testing.T, must be called from the test goroutine itself. This checker detects calls to these functions that occur within a goroutine started by the test. For example:
 
