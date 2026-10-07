@@ -1,0 +1,214 @@
+Test move declaration refactoring: doc comments and trailing comments should move with their declarations.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/movedeclcomments
+
+go 1.20
+
+-- deps/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- deps/src/src.go --
+package src
+
+// Target's dependencies move with their doc and trailing comments.
+// Stays does not move, so its comments stay too.
+func Target() int { //@codeaction(re"Target", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/deps/dest/dest.go"}`, result=comments_deps)
+	return dep + blockDep + depStruct{}.n
+}
+
+// dep's doc comment.
+var dep = 1 // dep's trailing comment
+
+var blockDep = 2 /* blockDep's trailing block comment */
+
+// depStruct's doc comment.
+type depStruct struct {
+	n int // field comment
+} // depStruct's trailing comment
+
+// Stays's doc comment.
+func Stays() {} // Stays's trailing comment
+
+-- @comments_deps/deps/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Target's dependencies move with their doc and trailing comments.
+// Stays does not move, so its comments stay too.
+func Target() int { //@codeaction(re"Target", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/deps/dest/dest.go"}`, result=comments_deps)
+	return dep + blockDep + depStruct{}.n
+}
+
+// dep's doc comment.
+var dep = 1 // dep's trailing comment
+
+var blockDep = 2 /* blockDep's trailing block comment */
+
+// depStruct's doc comment.
+type depStruct struct {
+	n int // field comment
+} // depStruct's trailing comment
+-- @comments_deps/deps/src/src.go --
+package src
+
+// Stays's doc comment.
+func Stays() {} // Stays's trailing comment
+
+-- nextline/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- nextline/src/src.go --
+package src
+
+func NextLine() { //@codeaction(re"NextLine", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/nextline/dest/dest.go"}`, result=comments_next_line)
+}
+// This comment is on the line after NextLine's closing brace, so it is not
+// a trailing comment and stays in src.
+
+func Other() {}
+
+-- @comments_next_line/nextline/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func NextLine() { //@codeaction(re"NextLine", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/nextline/dest/dest.go"}`, result=comments_next_line)
+}
+-- @comments_next_line/nextline/src/src.go --
+package src
+
+// This comment is on the line after NextLine's closing brace, so it is not
+// a trailing comment and stays in src.
+
+func Other() {}
+
+-- spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- spec/src/spec.go --
+package src
+
+func UsesSecond() int { //@codeaction(re"UsesSecond", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec/dest/dest.go"}`, result=comments_spec)
+	return Second
+}
+
+var (
+	// First's doc comment.
+	First = 1 // First's trailing comment
+	// Second's doc comment goes before the "var" keyword added in dest.
+	Second = 2 // Second's trailing comment
+)
+
+-- @comments_spec/spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func UsesSecond() int { //@codeaction(re"UsesSecond", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec/dest/dest.go"}`, result=comments_spec)
+	return Second
+}
+
+// Second's doc comment goes before the "var" keyword added in dest.
+	var Second = 2 // Second's trailing comment
+-- @comments_spec/spec/src/spec.go --
+package src
+
+var (
+	// First's doc comment.
+	First = 1 // First's trailing comment
+	)
+
+-- groups/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- groups/src/src.go --
+package src
+
+func UsesGroups() int { //@codeaction(re"UsesGroups", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/groups/dest/dest.go"}`, result=comments_groups)
+	return wholeA + partB
+}
+
+// The whole group moves, with its doc comment.
+var (
+	wholeA = wholeB
+	wholeB = 1
+) // The whole group's trailing comment moves too.
+
+// Only partB moves, so this group doc comment stays with partA.
+var (
+	partA = 1 // partA's trailing comment
+	partB = 2 // partB's trailing comment
+) // This group's trailing comment stays.
+-- @comments_groups/groups/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func UsesGroups() int { //@codeaction(re"UsesGroups", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/groups/dest/dest.go"}`, result=comments_groups)
+	return wholeA + partB
+}
+
+// The whole group moves, with its doc comment.
+var (
+	wholeA = wholeB
+	wholeB = 1
+) // The whole group's trailing comment moves too.
+
+var partB = 2 // partB's trailing comment
+-- @comments_groups/groups/src/src.go --
+package src
+
+// Only partB moves, so this group doc comment stays with partA.
+var (
+	partA = 1 // partA's trailing comment
+	) // This group's trailing comment stays.
+-- header/src.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+
+//go:build go1.18
+
+package header
+
+// Moving Header to a new file in the same package copies this file's
+// copyright and build constraint to the new file.
+func Header() {} //@codeaction(re"Header", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/header/header_new.go"}`, result=comments_header)
+-- @comments_header/header/src.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+
+//go:build go1.18
+
+package header
+
+-- @comments_header/header/header_new.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+
+//go:build go1.18
+
+package header
+
+// Moving Header to a new file in the same package copies this file's
+// copyright and build constraint to the new file.
+func Header() {} //@codeaction(re"Header", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/header/header_new.go"}`, result=comments_header)

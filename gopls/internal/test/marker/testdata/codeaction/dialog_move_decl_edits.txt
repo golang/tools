@@ -28,8 +28,6 @@ func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration",
 -- @move_func/src/func.go --
 package src
 
-
-
 -- src/type.go --
 package src
 
@@ -40,8 +38,6 @@ type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", an
 
 -- @move_type/src/type.go --
 package src
-
-
 
 -- src/newfile.go --
 package src
@@ -54,9 +50,6 @@ func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDec
 -- @move_new_file/src/newfile.go --
 package src
 
-// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
-
-
 -- src/samepkg_new.go --
 package src
 
@@ -67,9 +60,6 @@ func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclarat
 
 -- @move_samepkg_new_file/src/samepkg_new.go --
 package src
-
-// Same-package move to a new file: src/created.go does not exist yet and must be created.
-
 
 -- src/header.go --
 // Copyright 2026 The Go Authors. All rights reserved.
@@ -94,14 +84,13 @@ func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDecl
 
 package src
 
-
-
-
 -- src/spec.go --
 package src
 
 type (
 	First int
+	// Second has a doc comment
+	// that spans multiple lines.
 	Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
 )
 
@@ -110,8 +99,7 @@ package src
 
 type (
 	First int
-	 //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
-)
+	)
 
 -- src/counter.go --
 package src
@@ -126,10 +114,6 @@ func (c *Counter) Inc() {
 
 -- @move_decl_with_method/src/counter.go --
 package src
-
-
-
-
 
 -- src/iota.go --
 package src
@@ -149,8 +133,6 @@ func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveD
 
 -- @move_to_test_file/src/helper.go --
 package src
-
-
 
 -- src/helper_test.go --
 package src
@@ -175,7 +157,7 @@ package dest
 
 func Existing() {}
 
-var Mover    = mover
+var Mover    = mover //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_spec_subset_multi)
 
 var mover    = 2
 -- @move_spec_subset_multi/src/spec_group.go --
@@ -184,8 +166,6 @@ package src
 // Moving Mover also moves its dependency mover: two of the four specs move.
 var (
 	Stay     = 1
-	 //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_spec_subset_multi)
-	
 	AlsoStay = 3
 )
 
@@ -203,15 +183,13 @@ package dest
 
 func Existing() {}
 
+// Moving Whole also moves whole, so every spec in the group moves.
 var (
 	Whole = whole //@codeaction(re"Whole", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_whole_gendecl)
 	whole = 1
 )
 -- @move_whole_gendecl/src/whole_group.go --
 package src
-
-// Moving Whole also moves whole, so every spec in the group moves.
-
 
 -- src/middle.go --
 package src
@@ -237,8 +215,6 @@ package src
 // Only Middle is removed; its neighbors stay.
 func Above() {}
 
-
-
 func Below() {}
 
 -- src/split_type.go --
@@ -255,20 +231,16 @@ func Existing() {}
 
 func (s Split) Method() {}
 
+// Split's method is in another file; both are removed from their own files.
 type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_remove_split)
 }
 -- @move_remove_split/src/split_methods.go --
 package src
 
-
-
 func KeepMe() {}
 
 -- @move_remove_split/src/split_type.go --
 package src
-
-// Split's method is in another file; both are removed from their own files.
-
 
 -- src/split_methods.go --
 package src
@@ -312,12 +284,14 @@ type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", an
 -- @move_new_file/dest/newfile.go --
 package dest
 
+// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
 func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file)
 	return x * y
 }
 -- @move_samepkg_new_file/src/created.go --
 package src
 
+// Same-package move to a new file: src/created.go does not exist yet and must be created.
 func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/created.go"}`, result=move_samepkg_new_file)
 	return "same package new file"
 }
@@ -338,7 +312,9 @@ package dest
 
 func Existing() {}
 
-type Second string
+// Second has a doc comment
+	// that spans multiple lines.
+	type Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
 -- @move_decl_with_method/dest/dest.go --
 package dest
 

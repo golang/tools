@@ -52,8 +52,6 @@ package src
 
 import "golang.org/lsptests/movedeclrefs/dest2"
 
-
-
 func CallerSameFile() int {
 	return dest2.TargetInSrc()
 }
@@ -148,8 +146,6 @@ func UseFromDest() int {
 -- @ref_in_dest/src/to_dest.go --
 package src
 
-
-
 -- dest/use_src.go --
 package dest
 
@@ -200,8 +196,6 @@ func StayInSrc() int {
 	return 1
 }
 
-
-
 func MoveForExtShared() int { //@codeaction(re"MoveForExtShared", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_keep_src)
 	return 3
 }
@@ -235,8 +229,6 @@ func StayInSrc() int {
 func MoveForExtOnly() int { //@codeaction(re"MoveForExtOnly", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=ref_in_ext_drop_src)
 	return 2
 }
-
-
 
 -- ext/only_moving.go --
 package ext
@@ -287,10 +279,6 @@ func (c *Counter) Inc() {
 package src
 
 import "golang.org/lsptests/movedeclrefs/dest2"
-
-
-
-
 
 func UseCounterInSrc() {
 	var c dest2.Counter

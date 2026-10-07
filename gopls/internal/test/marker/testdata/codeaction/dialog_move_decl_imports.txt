@@ -77,8 +77,6 @@ package src
 
 import "fmt"
 
-
-
 func StayMe() {
 	fmt.Println("staying")
 }
@@ -116,6 +114,7 @@ import "bytes"
 
 func Existing() {}
 
+// Widget's method is in another file, and both files import "bytes".
 type Widget struct { //@codeaction(re"Widget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_import)
 	buf *bytes.Buffer
 }
@@ -128,9 +127,6 @@ package src
 
 
 
-// Widget's method is in another file, and both files import "bytes".
-
-
 -- @move_multi_file_import/src/widget_methods.go --
 package src
 
@@ -138,8 +134,6 @@ import (
 	
 	"strings"
 )
-
-
 
 func StayUpper(s string) string {
 	return strings.ToUpper(s)
@@ -180,6 +174,7 @@ import bytes2 "bytes"
 
 func Existing() {}
 
+// UsesBytes's method is in another file, which imports "bytes" as bytes2.
 type UsesBytes struct { //@codeaction(re"UsesBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_renamed_import)
 	buf *bytes.Buffer
 }
@@ -192,13 +187,8 @@ package src
 
 
 
-// UsesBytes's method is in another file, which imports "bytes" as bytes2.
-
-
 -- @move_multi_file_renamed_import/src/gadget_methods.go --
 package src
-
-
 
 
 
@@ -233,6 +223,8 @@ package dest
 
 func Existing() {}
 
+// UsesDest refers to dest in its signature and body. The dest. qualifiers
+// are dropped, and the dest import is removed from src.
 func UsesDest(t Thing) Thing { //@codeaction(re"UsesDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest)
 	Existing()
 	return t
@@ -240,10 +232,6 @@ func UsesDest(t Thing) Thing { //@codeaction(re"UsesDest", "refactor.move.moveDe
 -- @move_uses_dest/src/uses_dest.go --
 package src
 
-
-
-// UsesDest refers to dest in its signature and body. The dest. qualifiers
-// are dropped, and the dest import is removed from src.
 
 
 -- src/uses_dest_renamed.go --
@@ -261,15 +249,13 @@ package dest
 
 func Existing() {}
 
+// UsesDestRenamed refers to dest through a renamed import.
 func UsesDestRenamed() { //@codeaction(re"UsesDestRenamed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_renamed)
 	Existing()
 }
 -- @move_uses_dest_renamed/src/uses_dest_renamed.go --
 package src
 
-
-
-// UsesDestRenamed refers to dest through a renamed import.
 
 
 -- src/uses_dest_shared.go --
@@ -292,6 +278,8 @@ package dest
 
 func Existing() {}
 
+// MovesWithDest drops its dest. qualifier, but src keeps the dest import
+// because StaysWithDest still uses it.
 func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_shared)
 	Existing()
 }
@@ -299,10 +287,6 @@ func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDecla
 package src
 
 import "golang.org/lsptests/movedeclimports/dest"
-
-// MovesWithDest drops its dest. qualifier, but src keeps the dest import
-// because StaysWithDest still uses it.
-
 
 func StaysWithDest() {
 	dest.Existing()
@@ -334,15 +318,13 @@ package dest
 
 func Existing() {}
 
+// CallsDest refers to the dest package, which must not import itself.
 func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
 	Existing()
 }
 -- @move_no_self_import/src/calls_dest.go --
 package src
 
-
-
-// CallsDest refers to the dest package, which must not import itself.
 
 
 -- src/commented.go --
@@ -362,6 +344,7 @@ import "bytes"
 
 func Existing() {}
 
+// Commented's method is in another file, which imports "bytes" without a comment.
 type Commented struct { //@codeaction(re"Commented", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_commented_import)
 	buf *bytes.Buffer
 }
@@ -374,13 +357,8 @@ package src
 
  // for Buffer
 
-// Commented's method is in another file, which imports "bytes" without a comment.
-
-
 -- @move_commented_import/src/commented_methods.go --
 package src
-
-
 
 
 
@@ -428,6 +406,7 @@ import "unicode"
 
 func Existing() {}
 
+// Describe needs several imports. Their order in dest must be deterministic.
 func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
 	if b == nil {
 		return errors.New("nil buffer")
@@ -446,9 +425,6 @@ import (
 	
 )
 
-// Describe needs several imports. Their order in dest must be deterministic.
-
-
 -- @move_import_order_new/dest/describe.go --
 package dest
 
@@ -460,6 +436,7 @@ import (
 	"unicode"
 )
 
+// Describe needs several imports. Their order in dest must be deterministic.
 func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
 	if b == nil {
 		return errors.New("nil buffer")
@@ -478,13 +455,8 @@ import (
 	
 )
 
-// Describe needs several imports. Their order in dest must be deterministic.
-
-
 -- @move_single_import/src/single.go --
 package src
-
-
 
 
 
@@ -503,8 +475,6 @@ package src
 
 
 
-
-
 -- @move_dup_import/dest/has_import.go --
 package dest
 
@@ -519,8 +489,6 @@ func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.move
 }
 -- @move_new_file_import/src/newfile.go --
 package src
-
-
 
 
 
@@ -552,8 +520,6 @@ import (
 	"strings"
 )
 
-
-
 func StayStrings(s string) bool {
 	return strings.Contains(s, "x")
 }
@@ -573,7 +539,7 @@ package dest
 
 func Existing() {}
 
-var DestThing Thing
+var DestThing Thing //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
 -- @move_uses_dest_spec/src/uses_dest_spec.go --
 package src
 
@@ -581,7 +547,6 @@ import "golang.org/lsptests/movedeclimports/dest"
 
 // Only DestThing moves out of the group; its dest. qualifier is dropped.
 var (
-	 //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
 	OtherThing dest.Thing
 )
 

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -188,7 +189,18 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	// Source: remove the moving decls. Moving decls may be in any file of srcPkg,
 	// not just srcPGF.
 	for _, r := range movingRanges {
-		rng, err := r.pgf.PosRange(r.start, r.end)
+		// Also delete trailing empty lines, to avoid leaving blocks of whitespace
+		// in the src files.
+		// TODO(mkalil): address the skewed indentation when removing single specs
+		// from a GenDecl.
+		end := r.end
+		offset, err := safetoken.Offset(r.pgf.Tok, end)
+		if err != nil {
+			return nil, protocol.Location{}, err
+		}
+		rest := r.pgf.Src[offset:]
+		end += token.Pos(len(rest) - len(bytes.TrimLeft(rest, " \t\n")))
+		rng, err := r.pgf.PosRange(r.start, end)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
@@ -685,15 +697,16 @@ type movingRange struct {
 	start, end token.Pos
 	// Keyword (e.g. var, const, type) if the range is a single spec of a GenDecl;
 	// token.ILLEGAL if it is a whole decl.
-	tok token.Token
+	tok  token.Token
+	node ast.Node // the moving *ast.FuncDecl, *ast.GenDecl, or ast.Spec
 }
 
 // Range returns the span of r in its source file.
 func (r movingRange) Range() astutil.Range { return astutil.RangeOf(r.start, r.end) }
 
-// text returns the source text of the movingRange r to insert in the
-// destination file. If r is a spec, its keyword is prepended to make it a
-// declaration, e.g. "var" in "var x = 1".
+// text returns the source text of the movingRange r, including its doc comment
+// and any trailing comments, to insert in the destination file. If r is a spec,
+// its keyword is prepended to make it a declaration, e.g. "var" in "var x = 1".
 // References to destPkg within r lose their qualifier, e.g. "dest.F()" becomes "F()".
 func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) {
 	startOff, endOff, err := safetoken.Offsets(r.pgf.Tok, r.start, r.end)
@@ -703,8 +716,8 @@ func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) 
 	// Delete the qualifier of each reference to destPkg.
 	// Edit offsets are relative to startOff.
 	var edits []diff.Edit
-	if curRange, ok := r.pgf.Cursor().FindByPos(r.start, r.end); ok {
-		for curSel := range curRange.Preorder((*ast.SelectorExpr)(nil)) {
+	if curNode, ok := r.pgf.Cursor().FindNode(r.node); ok {
+		for curSel := range curNode.Preorder((*ast.SelectorExpr)(nil)) {
 			sel := curSel.Node().(*ast.SelectorExpr)
 			if id, ok := sel.X.(*ast.Ident); ok {
 				if pkgName, ok := info.Uses[id].(*types.PkgName); ok && pkgName.Imported().Path() == destPkgPath {
@@ -723,8 +736,14 @@ func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) 
 		return "", err
 	}
 	if r.tok != token.ILLEGAL {
-		// Prepend a keyword ("var" or "type") to a single spec.
-		return r.tok.String() + " " + text, nil
+		// Prepend a keyword ("var", "const", or "type") to a single spec, after its
+		// doc comment, if any.
+		nodeOff, err := safetoken.Offset(r.pgf.Tok, r.node.Pos())
+		if err != nil {
+			return "", err
+		}
+		docCommentLen := nodeOff - startOff
+		return text[:docCommentLen] + r.tok.String() + " " + text[docCommentLen:], nil
 	}
 	return text, nil
 }
@@ -741,8 +760,6 @@ func ranges(movingRanges []movingRange) []astutil.Range {
 // extractMovingDeclarations returns the declarations to move, in file order.
 // If all specs of a GenDecl are moving, its range covers the whole GenDecl;
 // otherwise each moving spec gets its own range.
-// TODO(mkalil): Preserve doc comments, trailing comments, and comments between
-// adjacent decls that are both moving.
 func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bool) ([]movingRange, error) {
 	var (
 		info         = srcPkg.TypesInfo()
@@ -754,7 +771,22 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 	}
 	for _, pgf := range srcPkg.CompiledGoFiles() {
 		addMovingRange := func(n ast.Node, tok token.Token) {
-			movingRanges = append(movingRanges, movingRange{pgf: pgf, start: n.Pos(), end: n.End(), tok: tok})
+			// Include the decl's doc comment.
+			// TODO(hxjiang): consolidate this logic with the logic in hover.go that
+			// finds the comments associated with a node.
+			start := n.Pos()
+			if doc := astutil.DocComment(n); doc != nil {
+				start = doc.Pos()
+			}
+			// Include a trailing comment on the node's last line.
+			end := n.End()
+			comments := pgf.File.Comments
+			// Find the first comment that is located after the end of the node.
+			i := sort.Search(len(comments), func(i int) bool { return comments[i].Pos() >= end })
+			if i < len(comments) && safetoken.Line(pgf.Tok, comments[i].Pos()) == safetoken.Line(pgf.Tok, end) {
+				end = comments[i].End()
+			}
+			movingRanges = append(movingRanges, movingRange{pgf: pgf, node: n, start: start, end: end, tok: tok})
 		}
 		for _, decl := range pgf.File.Decls {
 			switch decl := decl.(type) {
