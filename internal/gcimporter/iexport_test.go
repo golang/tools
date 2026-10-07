@@ -30,8 +30,8 @@ import (
 
 func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
-	const bundle, shallow = false, false
-	if err := gcimporter.IExportCommon(&buf, fset, bundle, shallow, version, []*types.Package{pkg}, nil); err != nil {
+	const shallow = false
+	if err := gcimporter.IExportCommon(&buf, fset, shallow, version, []*types.Package{pkg}, nil); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -137,21 +137,6 @@ type UnknownType undefined
 		if typ := obj.Type().Underlying(); typ.String() != "invalid type" {
 			t.Errorf("errors.%s has underlying type %s, want invalid type", name, typ)
 		}
-	}
-
-	// (Sole) test of bundle functionality (250ms).
-	var bundle bytes.Buffer
-	if err := gcimporter.IExportBundle(&bundle, fset, allPkgs); err != nil {
-		t.Fatal(err)
-	}
-	fset2 := token.NewFileSet()
-	imports := make(map[string]*types.Package)
-	pkgs2, err := gcimporter.IImportBundle(fset2, imports, bundle.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, pkg := range allPkgs {
-		testPkg(t, fset, version, pkg, fset2, pkgs2[i])
 	}
 }
 
