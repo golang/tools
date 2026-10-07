@@ -25,7 +25,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
@@ -107,7 +109,8 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	if !ok {
 		return nil, protocol.Location{}, fmt.Errorf("no AST selection found at cursor")
 	}
-	_, _, targetObj := moveDeclTarget(srcPkg.TypesInfo(), cur)
+	srcInfo := srcPkg.TypesInfo()
+	_, _, targetObj := moveDeclTarget(srcInfo, cur)
 	if targetObj == nil {
 		return nil, protocol.Location{}, fmt.Errorf("could not resolve target declaration")
 	}
@@ -165,8 +168,9 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	}
 	// Dest: write the declarations at the bottom of the file.
 	var declsText strings.Builder
+	destPkgPath := string(destPkg.Metadata().PkgPath)
 	for i, r := range movingRanges {
-		text, err := r.text()
+		text, err := r.text(srcInfo, destPkgPath)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
@@ -201,10 +205,6 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		return nil, protocol.Location{}, err
 	}
 	changes = append(changes, docChanges...)
-	// TODO(mkalil): Rewrite package qualifiers inside the moving decls. The moved
-	// text is copied exactly from src, so a moving decl that refers to destPkg
-	// (e.g. "dest.Existing()") keeps its "dest." qualifier, which doesn't compile
-	// in dest.
 	// TODO(mkalil): Handle edge cases involving interfaces.
 	return changes, protocol.Location{URI: destURI, Range: show}, nil
 }
@@ -680,25 +680,53 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 
 // A movingRange is a decl in srcPkg that moves to the destination.
 type movingRange struct {
-	pgf        *parsego.File
-	start, end token.Pos    // span of the moving decl
-	group      *ast.GenDecl // if the range is a spec: the enclosing GenDecl, only some of whose specs move
+	pgf *parsego.File
+	// Span of the moving decl.
+	start, end token.Pos
+	// Keyword (e.g. var, const, type) if the range is a single spec of a GenDecl;
+	// token.ILLEGAL if it is a whole decl.
+	tok token.Token
 }
 
 // Range returns the span of r in its source file.
 func (r movingRange) Range() astutil.Range { return astutil.RangeOf(r.start, r.end) }
 
-// text returns the source text of r to insert in the destination file.
-// If r is a spec, its keyword is prepended to make it a declaration, e.g. "var x = 1".
-func (r movingRange) text() (string, error) {
-	src, err := r.pgf.PosText(r.start, r.end)
+// text returns the source text of the movingRange r to insert in the
+// destination file. If r is a spec, its keyword is prepended to make it a
+// declaration, e.g. "var" in "var x = 1".
+// References to destPkg within r lose their qualifier, e.g. "dest.F()" becomes "F()".
+func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) {
+	startOff, endOff, err := safetoken.Offsets(r.pgf.Tok, r.start, r.end)
 	if err != nil {
 		return "", err
 	}
-	if r.group != nil {
-		return r.group.Tok.String() + " " + string(src), nil
+	// Delete the qualifier of each reference to destPkg.
+	// Edit offsets are relative to startOff.
+	var edits []diff.Edit
+	if curRange, ok := r.pgf.Cursor().FindByPos(r.start, r.end); ok {
+		for curSel := range curRange.Preorder((*ast.SelectorExpr)(nil)) {
+			sel := curSel.Node().(*ast.SelectorExpr)
+			if id, ok := sel.X.(*ast.Ident); ok {
+				if pkgName, ok := info.Uses[id].(*types.PkgName); ok && pkgName.Imported().Path() == destPkgPath {
+					idOff, selOff, err := safetoken.Offsets(r.pgf.Tok, id.Pos(), sel.Sel.Pos())
+					if err != nil {
+						return "", err
+					}
+					edits = append(edits, diff.Edit{Start: idOff - startOff, End: selOff - startOff})
+				}
+			}
+		}
 	}
-	return string(src), nil
+	src := r.pgf.Src[startOff:endOff]
+	text, err := diff.Apply(string(src), edits)
+	if err != nil {
+		return "", err
+	}
+	if r.tok != token.ILLEGAL {
+		// Prepend a keyword ("var" or "type") to a single spec.
+		return r.tok.String() + " " + text, nil
+	}
+	return text, nil
 }
 
 // ranges returns the source spans of the given moving ranges.
@@ -725,14 +753,14 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 		return obj != nil && moving[obj]
 	}
 	for _, pgf := range srcPkg.CompiledGoFiles() {
-		addMovingRange := func(n ast.Node, group *ast.GenDecl) {
-			movingRanges = append(movingRanges, movingRange{pgf: pgf, start: n.Pos(), end: n.End(), group: group})
+		addMovingRange := func(n ast.Node, tok token.Token) {
+			movingRanges = append(movingRanges, movingRange{pgf: pgf, start: n.Pos(), end: n.End(), tok: tok})
 		}
 		for _, decl := range pgf.File.Decls {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
 				if isMoving(decl.Name) {
-					addMovingRange(decl, nil)
+					addMovingRange(decl, token.ILLEGAL)
 				}
 			case *ast.GenDecl:
 				var movingSpecs []ast.Spec
@@ -752,10 +780,10 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 					continue
 				}
 				if len(movingSpecs) == len(decl.Specs) {
-					addMovingRange(decl, nil) // the whole declaration moves
+					addMovingRange(decl, token.ILLEGAL) // the whole declaration moves
 				} else {
 					for _, spec := range movingSpecs {
-						addMovingRange(spec, decl)
+						addMovingRange(spec, decl.Tok)
 					}
 				}
 			}

@@ -211,7 +211,115 @@ func (g *UsesBytes) Reset() {
 	g.buf = new(bytes2.Buffer)
 }
 
+-- dest/thing.go --
+package dest
+
+type Thing int
+
 -- src/uses_dest.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// UsesDest refers to dest in its signature and body. The dest. qualifiers
+// are dropped, and the dest import is removed from src.
+func UsesDest(t dest.Thing) dest.Thing { //@codeaction(re"UsesDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest)
+	dest.Existing()
+	return t
+}
+
+-- @move_uses_dest/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func UsesDest(t Thing) Thing { //@codeaction(re"UsesDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest)
+	Existing()
+	return t
+}
+-- @move_uses_dest/src/uses_dest.go --
+package src
+
+
+
+// UsesDest refers to dest in its signature and body. The dest. qualifiers
+// are dropped, and the dest import is removed from src.
+
+
+-- src/uses_dest_renamed.go --
+package src
+
+import d "golang.org/lsptests/movedeclimports/dest"
+
+// UsesDestRenamed refers to dest through a renamed import.
+func UsesDestRenamed() { //@codeaction(re"UsesDestRenamed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_renamed)
+	d.Existing()
+}
+
+-- @move_uses_dest_renamed/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func UsesDestRenamed() { //@codeaction(re"UsesDestRenamed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_renamed)
+	Existing()
+}
+-- @move_uses_dest_renamed/src/uses_dest_renamed.go --
+package src
+
+
+
+// UsesDestRenamed refers to dest through a renamed import.
+
+
+-- src/uses_dest_shared.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// MovesWithDest drops its dest. qualifier, but src keeps the dest import
+// because StaysWithDest still uses it.
+func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_shared)
+	dest.Existing()
+}
+
+func StaysWithDest() {
+	dest.Existing()
+}
+
+-- @move_uses_dest_shared/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_shared)
+	Existing()
+}
+-- @move_uses_dest_shared/src/uses_dest_shared.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// MovesWithDest drops its dest. qualifier, but src keeps the dest import
+// because StaysWithDest still uses it.
+
+
+func StaysWithDest() {
+	dest.Existing()
+}
+
+-- src/uses_dest_spec.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// Only DestThing moves out of the group; its dest. qualifier is dropped.
+var (
+	DestThing dest.Thing //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
+	OtherThing dest.Thing
+)
+
+-- src/calls_dest.go --
 package src
 
 import "golang.org/lsptests/movedeclimports/dest"
@@ -227,9 +335,9 @@ package dest
 func Existing() {}
 
 func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
-	dest.Existing()
+	Existing()
 }
--- @move_no_self_import/src/uses_dest.go --
+-- @move_no_self_import/src/calls_dest.go --
 package src
 
 
@@ -460,3 +568,20 @@ func Existing() {}
 func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
 	b.Reset()
 }
+-- @move_uses_dest_spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+var DestThing Thing
+-- @move_uses_dest_spec/src/uses_dest_spec.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// Only DestThing moves out of the group; its dest. qualifier is dropped.
+var (
+	 //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
+	OtherThing dest.Thing
+)
+
