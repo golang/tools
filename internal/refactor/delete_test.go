@@ -580,3 +580,48 @@ func TestDeleteVar(t *testing.T) {
 		})
 	}
 }
+
+// TestDeleteDeclLineDirective checks that DeleteDecl's search for
+// comments on the same line as the end of the decl uses actual,
+// not //line-adjusted, line numbers.
+func TestDeleteDeclLineDirective(t *testing.T) {
+	// The //line directive makes the line of g() appear to
+	// be line 3, the same as the line of "var v int".
+	const src = `package p
+
+var v int
+
+func f() {
+//line other.go:3:1
+	g() // comment
+}
+`
+	const want = `package p
+
+
+
+func f() {
+//line other.go:3:1
+	g() // comment
+}
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	curDecl, ok := inspector.New([]*ast.File{f}).Root().FindNode(f.Decls[0])
+	if !ok {
+		t.Fatal("decl not found")
+	}
+	tokFile := fset.File(f.FileStart)
+	got := []byte(src)
+	edits := refactor.DeleteDecl(tokFile, curDecl)
+	for i := len(edits) - 1; i >= 0; i-- {
+		start, end := tokFile.Offset(edits[i].Pos), tokFile.Offset(edits[i].End)
+		got = slices.Concat(got[:start], edits[i].NewText, got[end:])
+	}
+	if string(got) != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
