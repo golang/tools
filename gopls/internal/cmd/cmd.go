@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moreslices"
@@ -88,10 +89,17 @@ type EditFlags struct {
 }
 
 // RemoteFlags defines the set of flags for the forward mode.
+//
+// These flags apply to every subcommand that connects to a server: 'serve'
+// forwards the LSP to the remote, and the other subcommands issue their LSP
+// requests to it. The 'gopls remote' subcommands are the exception: they
+// inspect a running daemon, and never start one.
 type RemoteFlags struct {
-	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment, and the daemon is started if it is not already running."`
 
 	// The following flags are used with -remote=auto mode.
+	// They configure the daemon at the time it is started, and have no
+	// effect if it is already running.
 	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
 	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon"`
 
@@ -300,6 +308,7 @@ func (app *application) featureCommands() []command {
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
+		&inspect{app: app},
 		newRemote(app),
 		&links{app: app},
 		&prepareRename{app: app},
@@ -334,7 +343,11 @@ func (app *application) connect(ctx context.Context) (*client, *cache.Session, e
 		ctx = protocol.WithClient(ctx, client)
 	} else {
 		// remote
-		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
+		//
+		// Passing remoteArgs allows an automatic address ("auto" or
+		// "auto;<id>") to start the daemon if it is not already running,
+		// configured by the -remote.* flags.
+		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote, app.remoteArgs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -342,8 +355,24 @@ func (app *application) connect(ctx context.Context) (*client, *cache.Session, e
 		jsonConn := jsonrpc2.NewConn(stream)
 		svr = protocol.ServerDispatcher(jsonConn)
 		ctx = protocol.WithClient(ctx, client)
+
+		// Handle incoming messages in the order the server sent them, unlike
+		// protocol.Handlers, which handles each one in its own goroutine.
+		//
+		// The commands rely on this order: the server sends, for example, the
+		// textDocument/publishDiagnostics notifications of a file before the
+		// response to the gopls.diagnose_files command that produced them, and
+		// 'gopls check' reads the diagnostics as soon as that response arrives.
+		// (In the local case, the server calls the client directly, so the same
+		// order holds.)
+		//
+		// TODO(hakim): implement pull-based diagnostics instead.
+		//
+		// This is safe only because no method of client sends a request to
+		// the server: such a request could not receive its response, because
+		// the loop that reads it is the loop that waits for the method.
 		jsonConn.Go(ctx,
-			protocol.Handlers(
+			jsonrpc2.MustReplyHandler(
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
 	if err := client.initialize(ctx, svr, initParams(root, options)); err != nil {
@@ -356,6 +385,22 @@ func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitializ
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(rootDir)
 	params.Capabilities.Workspace.Configuration = true
+
+	// Identify ourselves to the server. Editors put their own name here, and
+	// gopls uses it for telemetry; see recordClientInfo.
+	//
+	// The version matters only when the client and the server are distinct
+	// binaries, which happens when -remote names an explicit address: the
+	// address for -remote=auto is specific to the executable, so a daemon
+	// reached that way always has the same version as its client.
+	//
+	// This name identifies the client; it must not be used to select server
+	// behavior. See the comment in (*Snapshot).watchSubdirs for why keying
+	// behavior on a client name is a mistake.
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    "gopls-cli",
+		Version: versionpkg.Version(),
+	}
 
 	// If you add an additional option here,
 	// you must update the map key of settings.DefaultOptions called in (*Application).connect.

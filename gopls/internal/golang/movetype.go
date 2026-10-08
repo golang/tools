@@ -146,29 +146,21 @@ func addTypeToFile(ctx context.Context, snapshot *cache.Snapshot, curPkg, destPk
 		return nil, protocol.Range{}, err
 	}
 	var addImportEdits []protocol.TextEdit
-	{
-
-		for _, importSpec := range adds {
-			path, err := strconv.Unquote(importSpec.Path.Value)
-			if err != nil {
-				return nil, protocol.Range{}, err
-			}
-			name := ""
-			if importSpec.Name != nil {
-				name = importSpec.Name.Name
-			}
-			_, impEdits := refactor.AddImport(destPkg.TypesInfo(), destPGF.File, name, path, "", destPGF.File.FileEnd-1)
-			for _, edit := range impEdits {
-				editRng, err := destPGF.PosRange(edit.Pos, edit.End)
-				if err != nil {
-					return nil, protocol.Range{}, err
-				}
-				addImportEdits = append(addImportEdits, protocol.TextEdit{
-					Range:   editRng,
-					NewText: string(edit.NewText),
-				})
-			}
+	for _, importSpec := range adds {
+		path, err := strconv.Unquote(importSpec.Path.Value)
+		if err != nil {
+			return nil, protocol.Range{}, err
 		}
+		name := ""
+		if importSpec.Name != nil {
+			name = importSpec.Name.Name
+		}
+		_, impEdits := refactor.AddImport(destPkg.TypesInfo(), destPGF.File, name, path, "", destPGF.File.FileEnd-1)
+		pedits, err := destPGF.ProtocolTextEdits(impEdits)
+		if err != nil {
+			return nil, protocol.Range{}, err
+		}
+		addImportEdits = append(addImportEdits, pedits...)
 	}
 
 	// Imports that are now unused and can be removed from the current file.

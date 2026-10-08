@@ -211,6 +211,13 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				otherUses++
 			}
 
+			// Reject if s has side effects and the body evaluates it
+			// again in s[i]: the fix evaluates it only once, in the
+			// range header.
+			if sliceIdxs > 0 && !typesinternal.NoEffects(info, sliceExpr) {
+				continue nextLoop
+			}
+
 			// The body reads neither i nor s[i], so the loop direction is not
 			// observable and there is nothing for slices.Backward to express.
 			if otherUses == 0 && sliceIdxs == 0 {

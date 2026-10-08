@@ -248,6 +248,45 @@ func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
 		binary := cur.Parent().Node().(*ast.BinaryExpr)
 		return validType(info.TypeOf(binary.X))
 
+	case edge.KeyValueExpr_Key, edge.KeyValueExpr_Value:
+		kv := cur.Parent().Node().(*ast.KeyValueExpr)
+		compLit, ok := cur.Parent().Parent().Node().(*ast.CompositeLit)
+		if !ok {
+			return nil // can't happen
+		}
+		if t := info.TypeOf(compLit); t != nil {
+			switch under := typesinternal.Unpointer(t).Underlying().(type) {
+			case *types.Struct:
+				if ek == edge.KeyValueExpr_Key {
+					// TODO: support edge.KeyValueExpr_Key (inferring from kv.Value)
+					// when supporting creating undeclared struct fields.
+					return nil
+				} else if keyIdent, ok := kv.Key.(*ast.Ident); ok {
+					if obj, ok := info.Uses[keyIdent]; ok {
+						return validType(obj.Type())
+					}
+				}
+			case *types.Map:
+				if ek == edge.KeyValueExpr_Key {
+					return validType(under.Key())
+				} else {
+					return validType(under.Elem())
+				}
+			case *types.Slice:
+				if ek == edge.KeyValueExpr_Key {
+					return types.Typ[types.Int]
+				} else {
+					return validType(under.Elem())
+				}
+			case *types.Array:
+				if ek == edge.KeyValueExpr_Key {
+					return types.Typ[types.Int]
+				} else {
+					return validType(under.Elem())
+				}
+			}
+		}
+
 	default:
 		// TODO(adonovan): support other kinds of "holes" as the need arises.
 
@@ -263,8 +302,6 @@ func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
 		// IndexExpr_Index
 		// IndexExpr_X
 		// IndexListExpr_Indices
-		// KeyValueExpr_Key
-		// KeyValueExpr_Value
 		// MapType_Key
 		// RangeStmt_Key
 		// RangeStmt_X

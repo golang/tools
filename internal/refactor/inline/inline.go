@@ -829,7 +829,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	updateCalleeParams(calleeDecl, params)
 
 	// Create a var (param = arg; ...) decl for use by some strategies.
-	bindingDecl := createBindingDecl(logf, caller, args, calleeDecl, callee.Results)
+	bindingDecl := createBindingDecl(logf, caller, args, params, calleeDecl, callee.Results)
 
 	var remainingArgs []ast.Expr
 	for _, arg := range args {
@@ -2281,6 +2281,14 @@ type bindingDeclInfo struct {
 // reduces to:
 //
 //	{
+//	  p0, p1, p2 := a0, a1, a2
+//	  body
+//	}
+//
+// when each argument's default type is identical to its parameter
+// type. If a conversion is needed, the type is stated explicitly:
+//
+//	{
 //	  var (
 //	    p0, p1 T0 = a0, a1
 //	    p2     T1 = a2
@@ -2299,7 +2307,7 @@ type bindingDeclInfo struct {
 //
 // Strategies may impose additional checks on return
 // conversions, labels, defer, etc.
-func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
+func createBindingDecl(logf logger, caller *Caller, args []*argument, params []*parameter, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
 	// Spread calls are tricky as they may not align with the
 	// parameters' field groupings nor types.
 	// For example, given
@@ -2332,13 +2340,18 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 		// But Type is the untyped callee syntax,
 		// so we have to use a syntax-only algorithm.
 		const includeComplitIdents = true
-		free := free.Names(spec.Type, includeComplitIdents)
+		var frees map[string]bool
+		if spec.Type != nil {
+			frees = free.Names(spec.Type, includeComplitIdents)
+		} else {
+			frees = make(map[string]bool)
+		}
 		for _, value := range spec.Values {
 			for name := range freeVars(caller.Info, value) {
-				free[name] = true
+				frees[name] = true
 			}
 		}
-		for name := range free {
+		for name := range frees {
 			if names[name] {
 				logf("binding decl would shadow free name %q", name)
 				return true
@@ -2357,20 +2370,37 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 	// Bind parameters that were not eliminated through
 	// substitution. (Non-nil arguments correspond to the
 	// remaining parameters in calleeDecl.)
-	var values []ast.Expr
-	for _, arg := range args {
+	//
+	// Step 1: build ValueSpecs, omitting the explicit type when
+	// every argument in a param group already matches the
+	// parameter type (so var x = arg / x := arg is safe).
+	// Use types.Default so untyped constants get their default
+	// type; arg.constant alone is unreliable because it may still
+	// reflect the parameter's type from the original call context
+	// (e.g. untyped 1 passed to float64 has Kind Float).
+	var (
+		values   []ast.Expr
+		sameType []bool
+	)
+	for i, arg := range args {
 		if arg != nil {
 			values = append(values, arg.expr)
+			sameType = append(sameType, types.Identical(types.Default(arg.typ), params[i].obj.Type()))
 		}
 	}
 	for _, field := range calleeDecl.Type.Params.List {
-		// Each field (param group) becomes a ValueSpec.
+		n := len(field.Names)
+		var fieldType ast.Expr
+		if slices.Contains(sameType[:n], false) {
+			fieldType = cleanNode(field.Type)
+		}
 		spec := &ast.ValueSpec{
 			Names:  cleanNodes(field.Names),
-			Type:   cleanNode(field.Type),
-			Values: values[:len(field.Names)],
+			Type:   fieldType,
+			Values: values[:n],
 		}
-		values = values[len(field.Names):]
+		values = values[n:]
+		sameType = sameType[n:]
 		if shadow(spec) {
 			return nil
 		}
@@ -2380,8 +2410,8 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 
 	// results
 	//
-	// Add specs to declare any named result
-	// variables that are referenced by the body.
+	// Add specs to declare any named result variables referenced
+	// by the body, with explicit types as they have no initializers.
 	if calleeDecl.Type.Results != nil {
 		resultIdx := 0
 		for _, field := range calleeDecl.Type.Results.List {
@@ -2414,11 +2444,52 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 		return nil
 	}
 
-	stmt := &ast.DeclStmt{
-		Decl: &ast.GenDecl{
-			Tok:   token.VAR,
-			Specs: specs,
-		},
+	// If no spec requires an explicit type, flatten
+	//
+	//	var (
+	//		x, y = 1, 2
+	//		_    = ""
+	//	)
+	//
+	// into:
+	//
+	//	x, y, _ := 1, 2, ""
+	//
+	// (or _, _, _ = 1, 2, "" if no new names are introduced).
+	var (
+		lhs []ast.Expr
+		rhs []ast.Expr
+	)
+	for _, spec := range specs {
+		vs := spec.(*ast.ValueSpec)
+		if vs.Type != nil || len(vs.Values) == 0 {
+			lhs, rhs = nil, nil
+			break
+		}
+		for _, id := range vs.Names {
+			lhs = append(lhs, id)
+		}
+		rhs = append(rhs, vs.Values...)
+	}
+
+	var stmt ast.Stmt
+	if lhs == nil {
+		stmt = &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok:   token.VAR,
+				Specs: specs,
+			},
+		}
+	} else {
+		tok := token.DEFINE
+		if len(names) == 0 { // no new names introduced (all "_")
+			tok = token.ASSIGN
+		}
+		stmt = &ast.AssignStmt{
+			Lhs: lhs,
+			Tok: tok,
+			Rhs: rhs,
+		}
 	}
 	logf("binding decl: %s", debugFormatNode(caller.Fset, stmt))
 	return &bindingDeclInfo{names: names, stmt: stmt}

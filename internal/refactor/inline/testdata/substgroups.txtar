@@ -35,7 +35,7 @@ func _() {
 	var y int
 	const x, z = 1, 2
 	{
-		var x, y, z int = y, x, z
+		x, y, z := y, x, z
 		_ = x + a[y+z]
 	} //@ inline(re"falcon", falcon)
 }
@@ -68,7 +68,7 @@ func _() {
 	x := func() int { v++; return 0 }
 	y := func() int { v++; return 0 }
 	{
-		var w, x, y, z int = x(), w(), y(), x()
+		w, x, y, z := x(), w(), y(), x()
 		_ = x + w + y + z
 	} //@ inline(re"effects", effects)
 }

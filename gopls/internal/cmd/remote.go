@@ -55,6 +55,9 @@ func (c *listSessions) ShortHelp() string {
 }
 
 const listSessionsExamples = `
+Unlike other subcommands, 'gopls remote' never starts a daemon: it reports an
+error if none is listening at the -remote address.
+
 Examples:
 
 1) list sessions for the default daemon:

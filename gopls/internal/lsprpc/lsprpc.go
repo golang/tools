@@ -208,6 +208,10 @@ func QueryServerState(ctx context.Context, addr string) (any, error) {
 // dialRemote is used for making calls into the gopls daemon. addr should be a
 // URL, possibly on the synthetic 'auto' network (e.g. tcp://..., unix://...,
 // or auto://...).
+//
+// Unlike [ConnectToRemote], dialRemote never starts a daemon: it is used by
+// commands that inspect a daemon, which must not perturb the state they
+// report on.
 func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	network, address := ParseAddr(addr)
 	if network == autoNetwork {
@@ -219,7 +223,7 @@ func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	}
 	netConn, err := net.DialTimeout(network, address, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("dialing remote: %w", err)
+		return nil, fmt.Errorf("no gopls daemon is listening on %s;%s: %w", network, address, err)
 	}
 	serverConn := jsonrpc2.NewConn(jsonrpc2.NewHeaderStream(netConn))
 	serverConn.Go(ctx, jsonrpc2.MethodNotFound)
@@ -333,8 +337,14 @@ func (f *forwarder) handshake(ctx context.Context) {
 	)
 }
 
-func ConnectToRemote(ctx context.Context, addr string) (net.Conn, error) {
-	dialer, err := newAutoDialer(addr, nil)
+// ConnectToRemote dials the gopls daemon at the given address, which may be
+// on the synthetic 'auto' network (see [ParseAddr]).
+//
+// If the address is an automatic address ("auto" or "auto;<id>") and argFunc
+// is non-nil, and no daemon is already listening at the resolved address, a
+// new daemon is started with the arguments returned by argFunc.
+func ConnectToRemote(ctx context.Context, addr string, argFunc func(network, address string) []string) (net.Conn, error) {
+	dialer, err := newAutoDialer(addr, argFunc)
 	if err != nil {
 		return nil, err
 	}

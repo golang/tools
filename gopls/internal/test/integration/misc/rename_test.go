@@ -15,6 +15,7 @@ import (
 )
 
 func TestPrepareRenameMainPackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -51,6 +52,7 @@ func main() {
 
 // Test case for golang/go#56227
 func TestRenameWithUnsafeSlice(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -79,6 +81,7 @@ func _() {
 }
 
 func TestPrepareRenameWithNoPackageDeclaration(t *testing.T) {
+	t.Parallel()
 	const files = `
 go 1.14
 -- lib/a.go --
@@ -109,6 +112,7 @@ func main() {
 }
 
 func TestPrepareRenameFailWithUnknownModule(t *testing.T) {
+	t.Parallel()
 	const files = `
 go 1.14
 -- lib/a.go --
@@ -143,6 +147,7 @@ func main() {
 // This test ensures that each import of a renamed package
 // is also renamed if it would otherwise create a conflict.
 func TestRenamePackageWithConflicts(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -204,6 +209,7 @@ func main() {
 }
 
 func TestRenamePackageWithAlias(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -243,6 +249,7 @@ func main() {
 }
 
 func TestRenamePackageWithDifferentDirectoryPath(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -294,6 +301,7 @@ func main() {
 }
 
 func TestRenamePackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -340,6 +348,7 @@ func main() {
 
 // Test for golang/go#47564.
 func TestRenameInTestVariant(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -386,6 +395,7 @@ func main() {
 
 // This is a test that rename operation initiated by the editor function as expected.
 func TestRenameFileFromEditor(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -445,6 +455,7 @@ package b
 }
 
 func TestRenamePackage_Tests(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -513,6 +524,7 @@ func main() {
 }
 
 func TestRenamePackage_NestedModule(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.work --
 go 1.18
@@ -612,6 +624,7 @@ func main() {
 }
 
 func TestRenamePackage_DuplicateImport(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -666,6 +679,7 @@ func main() {
 }
 
 func TestRenamePackage_DuplicateBlankImport(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -720,6 +734,7 @@ func main() {
 }
 
 func TestRenamePackage_TestVariant(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -763,6 +778,7 @@ const Baz = foox.Foo
 }
 
 func TestRenamePackage_IntermediateTestVariant(t *testing.T) {
+	t.Parallel()
 	// In this test set up, we have the following import edges:
 	//   bar_test -> baz -> foo -> bar
 	//   bar_test -> foo -> bar
@@ -843,6 +859,7 @@ const _ = bar.Bar + baz.Baz + foox.Foo
 }
 
 func TestRenamePackage_Nesting(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -892,6 +909,7 @@ const C = libx.A + nested.B
 }
 
 func TestRenamePackage_InvalidName(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -918,6 +936,7 @@ const A = 1 + nested.B
 }
 
 func TestRenamePackage_InternalPackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -974,6 +993,7 @@ func main() {
 	})
 }
 func TestRenamePackage_InvalidPackageMove(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1027,6 +1047,7 @@ func checkTestdata(t *testing.T, env *Env) {
 
 // TestRenameIssue71657 checks that a panic no longer occurs in Rename
 func TestRenameIssue71657(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com

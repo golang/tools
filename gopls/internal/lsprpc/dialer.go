@@ -110,5 +110,9 @@ func (d *autoDialer) dialNet(ctx context.Context) (net.Conn, error) {
 			time.Sleep(dialTimeout - time.Since(startDial))
 		}
 	}
-	return nil, fmt.Errorf("dialing remote: %w", err)
+	if d.isAuto && d.argFunc != nil {
+		// We started a daemon, but it never accepted our connection.
+		return nil, fmt.Errorf("failed to start gopls daemon on %s;%s: %w", d.network, d.addr, err)
+	}
+	return nil, fmt.Errorf("failed to dial remote: %w", err)
 }

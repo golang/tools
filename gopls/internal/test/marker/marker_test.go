@@ -1292,6 +1292,9 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 		}
 		arg = arg2
 	}
+	if arg == nil {
+		return nil, fmt.Errorf("cannot convert nil to %s", paramType)
+	}
 	if reflect.TypeOf(arg).AssignableTo(paramType) {
 		return arg, nil // no conversion required
 	}
@@ -1317,12 +1320,15 @@ func convertNamedArgLocation(mark marker, arg any) (protocol.Location, error) {
 // convertLocation converts a string or regexp argument into the protocol
 // location corresponding to the first position of the string (or first match
 // of the regexp) in the line preceding the note.
+// A nil argument is converted to the zero location, denoting "no location".
 func convertLocation(mark marker, arg any) (protocol.Location, error) {
 	// matchContent is used to match the given argument against the file content
 	// starting at the marker line.
 	var matchContent func([]byte) (int, int, error)
 
 	switch arg := arg.(type) {
+	case nil:
+		return protocol.Location{}, nil // "no location", e.g. an empty hover result
 	case protocol.Location:
 		return arg, nil // nothing to do
 	case string:

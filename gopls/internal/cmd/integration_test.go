@@ -1075,6 +1075,59 @@ func (c C) Read(p []byte) (n int, err error) {
 	}
 }
 
+// TestInspect tests the 'inspect' subcommand (inspect.go).
+func TestInspect(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+// Doc for someFunctionName
+func someFunctionName()
+`)
+
+	{ // no files
+		res := gopls(t, tree, "inspect")
+		res.checkExit(false)
+		res.checkStderr(`inspect expects 1 argument \(target\)`)
+	}
+	{ // gopls resolve target error
+		res := gopls(t, tree, "inspect", "example.com/b.someFunctionName")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/b")
+	}
+	{ // success
+		res := gopls(t, tree, "inspect", "example.com/a.someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+	}
+	{ // success with pkg flag
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+	}
+	{ // testing json and markdown
+		res := gopls(t, tree, "inspect", "-json", "-markdown", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		var insp cmd.InspectJSON
+		if !res.toJSON(&insp) {
+			t.Error("res.toJSON failed")
+		}
+		if !strings.Contains(insp.Hover, "```go\nfunc someFunctionName()") {
+			t.Errorf("Hover does not contain a markdown code block. Got: %s", insp.Hover)
+		}
+	}
+}
+
 // TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (workspace_symbol.go).
 func TestWorkspaceSymbol(t *testing.T) {
 	t.Parallel()

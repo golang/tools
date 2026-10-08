@@ -67,7 +67,7 @@ const (
 )
 
 func _() {
-	var _ context.Context = context.TODO()
+	_ = context.TODO()
 pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
 	pkg.Bar()
 }

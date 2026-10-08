@@ -35,6 +35,7 @@ when making significant changes to existing features or when adding new ones.
   - [Folding Range](passive.md#folding-range): report text regions that can be "folded" (expanded/collapsed) in an editor
   - [Document Link](passive.md#document-link): extracts URLs from doc comments, strings in current file so client can linkify
 - [Diagnostics](diagnostics.md): compile errors and static analysis findings
+  - [Analyzers](../analyzers.md): index of all static analyzers
 - [Navigation](navigation.md): navigation of cross-references, types, and symbols
   - [Definition](navigation.md#definition): go to definition of selected symbol
   - [Type Definition](navigation.md#type-definition): go to definition of type of selected symbol

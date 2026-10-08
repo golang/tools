@@ -303,7 +303,7 @@ func DeleteDecl(tokFile *token.File, curDecl inspector.Cursor) []Edit {
 		//    var (...) // comment
 		var (
 			file        = curDecl.Parent().Node().(*ast.File)
-			lineOf      = tokFile.Line
+			lineOf      = func(pos token.Pos) int { return safeLineOf(tokFile, pos) }
 			declEndLine = lineOf(decl.End())
 		)
 		for _, cg := range file.Comments {
@@ -381,7 +381,7 @@ func DeleteStmt(file *token.File, curStmt inspector.Cursor) []Edit {
 	var (
 		stmt          = curStmt.Node().(ast.Stmt)
 		tokFile       = file
-		lineOf        = tokFile.Line
+		lineOf        = func(pos token.Pos) int { return safeLineOf(tokFile, pos) }
 		stmtStartLine = lineOf(stmt.Pos())
 		stmtEndLine   = lineOf(stmt.End())
 
@@ -562,4 +562,10 @@ func eolComment(n ast.Node) *ast.CommentGroup {
 		return n.Comment
 	}
 	return nil
+}
+
+// safeLineOf is like token.File.Line but ignores //line directives.
+// (See also gopls' safetoken package.)
+func safeLineOf(f *token.File, pos token.Pos) int {
+	return f.PositionFor(pos, false).Line
 }

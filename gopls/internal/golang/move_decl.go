@@ -872,18 +872,11 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, srcPGF, destPGF *parse
 // addImport wraps [refactor.AddImport] and converts the resulting edits to [protocol.TextEdit]s.
 func addImport(info *types.Info, pgf *parsego.File, preferredName, pkgPath, member string, pos token.Pos) (string, []protocol.TextEdit, error) {
 	prefix, impEdits := refactor.AddImport(info, pgf.File, preferredName, pkgPath, member, pos)
-	var edits []protocol.TextEdit
-	for _, edit := range impEdits {
-		rng, err := pgf.PosRange(edit.Pos, edit.End)
-		if err != nil {
-			return "", nil, err
-		}
-		edits = append(edits, protocol.TextEdit{
-			Range:   rng,
-			NewText: string(edit.NewText),
-		})
+	pedits, err := pgf.ProtocolTextEdits(impEdits)
+	if err != nil {
+		return "", nil, err
 	}
-	return prefix, edits, nil
+	return prefix, pedits, nil
 }
 
 // updateRefsToMoving records edits to update references to moving symbols

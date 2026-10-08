@@ -124,6 +124,7 @@ func TestHelpTree(t *testing.T) {
 			wantPatterns: []string{
 				"print information about current gopls sessions",
 				"Usage:",
+				"never starts a daemon",
 				"list sessions for the default daemon",
 			},
 		},

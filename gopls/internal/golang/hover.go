@@ -429,23 +429,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	if isFieldOrMethod {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
 			if sel, ok := pkg.TypesInfo().Selections[selExpr]; ok && len(sel.Index()) > 1 {
-				var s strings.Builder
-				s.WriteString(" // through ")
-				t := sel.Recv()
-				for i, index := range sel.Index()[:len(sel.Index())-1] {
-					structType, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct)
-					if !ok {
-						break
-					}
-					if i > 0 {
-						s.WriteString(", ")
-					}
-					field := structType.Field(index)
-					t = field.Type()
-					s.WriteString(types.TypeString(t, qual))
+				var through []string
+				for field := range typesinternal.ImplicitFieldSelections(sel) {
+					through = append(through, types.TypeString(field.Type(), qual))
 				}
-				// Update signature to include embedded struct info.
-				signature += s.String()
+				if len(through) > 0 {
+					// Update signature to include embedded struct info.
+					signature += " // through " + strings.Join(through, ", ")
+				}
 			}
 		}
 	}
@@ -813,6 +804,16 @@ func formatDocComment(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	// Attaching doc links to the bottom of the comment. The non-deterministic
 	// order is acceptable as these will be removed later by the [formatHover].
+	//
+	// TODO(adonovan): converting doc links to "[Text]: URL" link
+	// definitions is lossy: go/doc/comment applies the doc-link boundary
+	// rule (punctuation or space on each side) only to doc links, not to
+	// links with definitions, so a real doc link [T] causes every "[T]"
+	// in the comment to become a link, including the one in "G[T]".
+	// Either go/doc/comment should apply the rule to all links
+	// (see https://go.dev/issue/82013), or we should stop emitting
+	// link definitions and instead resolve doc links via
+	// [comment.Printer.DocLinkURL].
 	if len(docLinks) > 0 {
 		docBuf.WriteString("\n")
 		for doc, link := range docLinks {

@@ -224,6 +224,8 @@ Here is the list of supported action markers:
     matching hover content. Be careful to avoid self-satisfying hover markers:
     if the hover content literally includes the marker comment itself,
     it will always contain the expected string! A backslash escape may help.
+    To assert that there is no hover result, use hover(src, nil, re"^$").
+    (Beware: the empty substring "" matches any content.)
 
   - hovererr(src, sm stringMatcher): performs a textDocument/hover at the src
     location, and checks that the error matches the given stringMatcher.
@@ -374,6 +376,10 @@ parameter type pairs:
     position of the submatch.
 
   - name->location: the argument is replaced by the named location.
+
+  - nil->location: the argument is converted to the zero location,
+    denoting the absence of a location (for example, the result of
+    a hover request that returns nothing).
 
   - name->Golden: the argument is used to look up golden content prefixed by
     @<argument>.

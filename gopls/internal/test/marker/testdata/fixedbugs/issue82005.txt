@@ -1,0 +1,79 @@
+This test checks that bracketed text such as G[T] and map[K]V in
+comments is not treated as a doc link (golang/go#82005).
+
+Per https://go.dev/doc/comment#doclinks, a doc link must be both
+preceded and followed by punctuation, spaces, tabs, or the start or
+end of a line.
+
+Each feature that uses findDocLinkIndices is tested:
+semantic tokens, definition, hover over the link (resolveDocLink),
+and the doc links embedded in the hover of a declaration
+(formatDocComment).
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- go.mod --
+module mod.com
+
+go 1.20
+
+-- a.go --
+package p
+
+type G[_ any] struct{}
+
+type T int //@loc(Tdef, "T")
+
+type K int //@loc(Kdef, "K")
+
+// Not doc links: G[T] and map[K]T. //@token(re`G\[(T)\]`, "comment", ""),def(re`G\[(T)\]`),hover(re`G\[(T)\]`, nil, re"^$"),token(re`map\[(K)\]`, "comment", ""),def(re`map\[(K)\]`),hover(re`map\[(K)\]`, nil, re"^$")
+var _ = 0
+
+// Proper doc links still work: [T], ([K]). //@token(re`\[(T)\]`, "type", "number"),def(re`\[(T)\]`, Tdef),token(re`\(\[(K)\]`, "type", "number"),def(re`\(\[(K)\]`, Kdef)
+var _ = 0
+
+// F returns a G[T] value or a map[K]T.
+func F() {} //@hover("F", "F", F)
+
+// In H's doc, the real doc link to T causes formatDocComment to append
+// a link definition for "[T]", and go/doc/comment does not apply the
+// doc-link boundary rule to text links with definitions, so the
+// generic instantiation must not become a link through that route.
+// See https://go.dev/issue/82013.
+//
+// TODO(adonovan): the @H golden currently records the wrong behavior
+// (the generic instantiation is linked); fix it along with the TODO
+// in formatDocComment.
+
+// H is like [F]. See [T]. Returns G[T].
+func H() {} //@hover("H", "H", H)
+
+-- @F --
+```go
+func F()
+```
+
+---
+
+F returns a G\[T] value or a map\[K]T.
+
+
+---
+
+[`p.F` on pkg.go.dev](https://pkg.go.dev/mod.com#F)
+-- @H --
+```go
+func H()
+```
+
+---
+
+H is like [F](file://$WORKDIR/a.go#16,6). See [T](file://$WORKDIR/a.go#5,6). Returns G[T](file://$WORKDIR/a.go#5,6).
+
+
+---
+
+[`p.H` on pkg.go.dev](https://pkg.go.dev/mod.com#H)

@@ -1,0 +1,18 @@
+display the target's definition location, hover docs, and signature
+
+Usage:
+  gopls [flags] inspect [inspect-flags] <target>
+
+Example:
+	$ gopls inspect -pkg go/ast Decl
+	$ gopls inspect golang.org/x/tools/go/ast/inspector.Cursor
+
+inspect-flags:
+  -json
+    	emit output in JSON format
+  -markdown
+    	outputs documentation in formatted Markdown instead of plain text
+  -pkg=string
+    	scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains.
+  -pos=string
+    	targets a physical coordinate range (line and column are optional)

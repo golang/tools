@@ -169,7 +169,10 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			}
 			cutName := cond(obj.Name()[0] == 'L', "CutLast", "Cut")
 
-			var iIdent *ast.Ident // defining identifier of i var
+			var (
+				iIdent *ast.Ident // defining identifier of i var
+				iType  ast.Expr   // explicit type of i in "var i T = ...", if any
+			)
 			switch ek, idx := curCall.ParentEdge(); ek {
 			case edge.ValueSpec_Values:
 				// Have: var i = strings.Index(...)
@@ -180,6 +183,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 				}
 				curName := curCall.Parent().ChildAt(edge.ValueSpec_Names, idx)
 				iIdent = curName.Node().(*ast.Ident)
+				iType = spec.Type // may be nil
 			case edge.AssignStmt_Rhs:
 				// Have: i := strings.Index(...)
 				// (Must be i's definition.)
@@ -292,6 +296,16 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			}
 
 			var edits []analysis.TextEdit
+			if iType != nil {
+				// Delete the type of "var i int = strings.Index(...)",
+				// as the new variables are not ints. Delete only the
+				// type, not any comments before it; the formatter will
+				// remove the extra space.
+				edits = append(edits, analysis.TextEdit{
+					Pos: iType.Pos(),
+					End: iType.End(),
+				})
+			}
 			replace := func(exprs []ast.Expr, new string) {
 				for _, expr := range exprs {
 					edits = append(edits, analysis.TextEdit{
@@ -355,25 +369,27 @@ func stringscut(pass *analysis.Pass) (any, error) {
 					searchByteVal := info.Types[substr].Value
 					if searchByteVal == nil {
 						// substr is a variable, e.g. substr := byte('b')
-						// use string(substr)
+						// use string([]byte{substr}), not string(substr),
+						// which would UTF-8 encode a byte >= 0x80 as a
+						// two-byte string.
 						edits = append(edits, []analysis.TextEdit{
 							{
 								Pos:     substr.Pos(),
-								NewText: []byte("string("),
+								NewText: []byte("string([]byte{"),
 							},
 							{
 								Pos:     substr.End(),
-								NewText: []byte(")"),
+								NewText: []byte("})"),
 							},
 						}...)
 					} else {
 						// substr is a byte constant
 						val, _ := constant.Int64Val(searchByteVal) // inv: must be a valid byte
-						// strings.Cut/CutLast/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
+						// strings.Cut/CutLast/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7", 0xff -> "\xff"
 						edits = append(edits, analysis.TextEdit{
 							Pos:     substr.Pos(),
 							End:     substr.End(),
-							NewText: strconv.AppendQuote(nil, string(byte(val))),
+							NewText: strconv.AppendQuote(nil, string([]byte{byte(val)})),
 						})
 					}
 				case "bytes":

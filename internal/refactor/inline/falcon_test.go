@@ -22,7 +22,7 @@ func TestFalconStringIndex(t *testing.T) {
 			`func f(i int) byte { return s[i] }; var s string`,
 			`func _() { f(-1) }`,
 			`func _() {
-	var i int = -1
+	i := -1
 	_ = s[i]
 }`,
 		},
@@ -37,10 +37,7 @@ func TestFalconStringIndex(t *testing.T) {
 			`func f(s string, i int) byte { return s[i] }`,
 			`func _() { f("-", 1) }`,
 			`func _() {
-	var (
-		s string = "-"
-		i int    = 1
-	)
+	s, i := "-", 1
 	_ = s[i]
 }`,
 		},
@@ -55,7 +52,7 @@ func TestFalconStringIndex(t *testing.T) {
 			`func f(s, prefix string) string { return s[:len(prefix)] }`,
 			`func _() { f("", "pre") }`,
 			`func _() {
-	var s, prefix string = "", "pre"
+	s, prefix := "", "pre"
 	_ = s[:len(prefix)]
 }`,
 		},
@@ -75,7 +72,7 @@ func TestFalconSliceIndices(t *testing.T) {
 			`func f(i, j int) []int { return s[i:j] }; var s []int`,
 			`func _() { f(1, 0) }`,
 			`func _() {
-	var i, j int = 1, 0
+	i, j := 1, 0
 	_ = s[i:j]
 }`,
 		},
@@ -84,7 +81,7 @@ func TestFalconSliceIndices(t *testing.T) {
 			`func f(i, j int) []int { return s[i:j] }; var s []int`,
 			`func _() { f(-1, 1) }`,
 			`func _() {
-	var i, j int = -1, 1
+	i, j := -1, 1
 	_ = s[i:j]
 }`,
 		},
@@ -104,7 +101,7 @@ func TestFalconMapKeys(t *testing.T) {
 			`func f(x int) { _ = map[int]bool{1: true, x: true} }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	_ = map[int]bool{1: true, x: true}
 }`,
 		},
@@ -116,7 +113,7 @@ func TestFalconMapKeys(t *testing.T) {
 			`type Map map[int]bool; func f[M Map](x int) { _ = M{1: true, x: true} }`,
 			`func _() { f[Map](1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	_ = Map{1: true, x: true}
 }`,
 		},
@@ -167,10 +164,7 @@ func TestFalconMapKeys(t *testing.T) {
 			`func f(x myint, y int) { _ = map[any]bool{x: true, y: true} }; type myint = int`,
 			`func _() { f(1, 1) }`,
 			`func _() {
-	var (
-		x myint = 1
-		y int   = 1
-	)
+	x, y := 1, 1
 	_ = map[any]bool{x: true, y: true}
 }`,
 		},
@@ -195,7 +189,7 @@ func TestFalconSwitchCases(t *testing.T) {
 			`func f(x int) { switch 0 { case x: case 1: } }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	switch 0 {
 	case x:
 	case 1:
@@ -240,7 +234,7 @@ func TestFalconDivision(t *testing.T) {
 			`func f(x, y int) int { return x / y }`,
 			`func _() { f(1, 0) }`,
 			`func _() {
-	var x, y int = 1, 0
+	x, y := 1, 0
 	_ = x / y
 }`,
 		},
@@ -249,7 +243,7 @@ func TestFalconDivision(t *testing.T) {
 			`func f(x, y int) { x /= y }`,
 			`func _() { f(1, 2) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	x /= 2
 }`,
 		},
@@ -258,7 +252,7 @@ func TestFalconDivision(t *testing.T) {
 			`func f(x, y int) { x /= y }`,
 			`func _() { f(1, 0) }`,
 			`func _() {
-	var x, y int = 1, 0
+	x, y := 1, 0
 	x /= y
 }`,
 		},
@@ -328,7 +322,7 @@ func TestFalconArithmeticOverflow(t *testing.T) {
 			`func f(x int) int8 { return int8(x) }`,
 			`func _() { f(456) }`,
 			`func _() {
-	var x int = 456
+	x := 456
 	_ = int8(x)
 }`,
 		},
@@ -351,8 +345,8 @@ func TestFalconComplex(t *testing.T) {
 			`func _() { f(1, 3, 5+0i) }`,
 			`func _() {
 	var (
-		re, im float64    = 1, 3
-		z      complex128 = 5 + 0i
+		re, im float64 = 1, 3
+		z              = 5 + 0i
 	)
 	_ = "x"[int(real(complex(re, im)*complex(re, -im)-z))]
 }`,
@@ -372,10 +366,7 @@ func TestFalconMisc(t *testing.T) {
 			`func f(x, y string, i, j int) byte { return x[i*len(y)+j] }`,
 			`func _() { f("abc", "xy", 4, -3) }`,
 			`func _() {
-	var (
-		x, y string = "abc", "xy"
-		i, j int    = 4, -3
-	)
+	x, y, i, j := "abc", "xy", 4, -3
 	_ = x[i*len(y)+j]
 }`,
 		},
@@ -390,7 +381,7 @@ func TestFalconMisc(t *testing.T) {
 			`func f(x int) { _ = func() { _ = [1]int{}[x] } }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	_ = func() { _ = [1]int{}[x] }
 }`,
 		},
@@ -399,7 +390,7 @@ func TestFalconMisc(t *testing.T) {
 			`func f(x, y, z string) string { return x[:2] + y + z[:2] }; var b string`,
 			`func _() { f("a", b, "c") }`,
 			`func _() {
-	var x, z string = "a", "c"
+	x, z := "a", "c"
 	_ = x[:2] + b + z[:2]
 }`,
 		},

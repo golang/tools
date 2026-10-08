@@ -122,7 +122,7 @@ func TestIncrementalNope(t *testing.T) {
 	// build old index
 	for _, it := range idtests {
 		for i, d := range it.dirs {
-			if i == 0 {
+			if len(it.dirs) > 1 && i == 0 {
 				continue // wait for second pass
 			}
 			if err := addPkg(dir, d); err != nil {
@@ -135,6 +135,9 @@ func TestIncrementalNope(t *testing.T) {
 	}
 	// add new stuff to the module cache
 	for _, it := range idtests {
+		if len(it.dirs) <= 1 {
+			continue // already in old index; no worse version exists
+		}
 		for i, d := range it.dirs {
 			if i > 0 {
 				break // only add the new one

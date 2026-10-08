@@ -8,7 +8,7 @@ func f(x, y int) int { // want f:`goFixInline a.f`
 func g() {
 	_ = 2 + 1 // want `Call of a.f should be inlined`
 
-	var x int = h(1)
+	x := h(1)
 	_ = h(2) + x // want `Call of a.f should be inlined`
 }
 
