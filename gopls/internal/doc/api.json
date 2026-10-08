@@ -2281,20 +2281,6 @@
 				"DeprecationMessage": ""
 			},
 			{
-				"Name": "moveType",
-				"Type": "bool",
-				"Doc": "moveType enables producing Move Type codeactions. The implementation\nis unfinished so we use this setting to gate its use.\n",
-				"EnumKeys": {
-					"ValueType": "",
-					"Keys": null
-				},
-				"EnumValues": null,
-				"Default": "false",
-				"Status": "experimental",
-				"Hierarchy": "ui",
-				"DeprecationMessage": ""
-			},
-			{
 				"Name": "moveDeclaration",
 				"Type": "bool",
 				"Doc": "moveDeclaration enables producing Move Declaration codeactions. The implementation\nis unfinished so we use this setting to gate its use.\n",

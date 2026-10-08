@@ -117,7 +117,6 @@ const (
 	RefactorExtractToNewFile   protocol.CodeActionKind = "refactor.extract.toNewFile"
 
 	// refactor.move
-	RefactorMoveType        protocol.CodeActionKind = "refactor.move.moveType"
 	RefactorMoveDeclaration protocol.CodeActionKind = "refactor.move.moveDeclaration"
 
 	// Note: add new kinds to:

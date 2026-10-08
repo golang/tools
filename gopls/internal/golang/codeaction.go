@@ -255,7 +255,6 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractVariableAll, fn: refactorExtractVariableAll, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorInlineVariable, fn: refactorInlineVariable, needPkg: true},
-	{kind: settings.RefactorMoveType, fn: refactorMoveType, needPkg: true},
 	{kind: settings.RefactorMoveDeclaration, fn: refactorMoveDeclaration, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
@@ -1216,19 +1215,6 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 			cond(req.snapshot.WantCompilerOptDetails(dir), "Hide", "Show"),
 			dir.Base())
 		cmd := command.NewGCDetailsCommand(title, req.fh.URI())
-		req.addCommandAction(cmd, false)
-	}
-	return nil
-}
-
-func refactorMoveType(_ context.Context, req *codeActionsRequest) error {
-	if !req.snapshot.Options().MoveType {
-		return nil
-	}
-	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
-	if specCur, ok := selectionContainsTypeSpec(curSel); ok {
-		spec := specCur.Node().(*ast.TypeSpec)
-		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", spec.Name.Name), command.MoveTypeArgs{Location: req.loc})
 		req.addCommandAction(cmd, false)
 	}
 	return nil

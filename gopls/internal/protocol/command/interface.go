@@ -362,9 +362,6 @@ type Interface interface {
 	// ModifyTags: Add or remove struct tags on a given node.
 	ModifyTags(context.Context, ModifyTagsArgs, *protocol.InteractiveParams) (Action, error)
 
-	// MoveType: Move a type declaration to a different package.
-	MoveType(context.Context, MoveTypeArgs) error
-
 	// ImplementInterface: Add methods to a type to implement an interface.
 	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) (Action, error)
 
@@ -952,14 +949,6 @@ type ModifyTagsArgs struct {
 type LSPArgs struct {
 	Method string          `json:"method"`
 	Param  json.RawMessage `json:"param"`
-}
-
-// MoveTypeArgs specifies a "move type" refactoring to perform.
-type MoveTypeArgs struct {
-	// The location of the type to move.
-	Location protocol.Location
-	// TODO(mkalil): Determine format of the parameter that specifies where to
-	// move the type to.
 }
 
 // MoveDeclarationArgs specifies a "move declaration" refactoring to perform.

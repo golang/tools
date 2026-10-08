@@ -278,10 +278,6 @@ type UIOptions struct {
 	// move subdirectories of the target package.
 	RenameMovesSubpackages bool `status:"experimental"`
 
-	// MoveType enables producing Move Type codeactions. The implementation
-	// is unfinished so we use this setting to gate its use.
-	MoveType bool `status:"experimental"`
-
 	// MoveDeclaration enables producing Move Declaration codeactions. The implementation
 	// is unfinished so we use this setting to gate its use.
 	MoveDeclaration bool `status:"experimental"`
@@ -1474,9 +1470,6 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "fileWatcher":
 		return setEnum(&o.FileWatcher, value, FileWatcherOff, FileWatcherFSNotify, FileWatcherPoll)
-
-	case "moveType":
-		return setBool(&o.MoveType, value)
 
 	case "moveDeclaration":
 		return setBool(&o.MoveDeclaration, value)
