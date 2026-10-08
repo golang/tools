@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -464,6 +465,9 @@ func TestStress(t *testing.T) {
 				case "darwin", "linux", "windows":
 				default:
 					t.Skip("unsupported OS")
+				}
+				if strconv.IntSize < 64 {
+					t.Skipf("unsupported ARCH") // e.g. 386
 				}
 			}
 
