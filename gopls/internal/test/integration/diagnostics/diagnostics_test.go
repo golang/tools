@@ -784,6 +784,152 @@ func main() {
 	})
 }
 
+// Test for go.dev/issue/82027: go mod tidy diagnostics reflect unsaved
+// edits, and are unaffected by saving.
+//
+// Previously, go mod tidy read Go files from disk, so its results
+// depended on whether (and when) buffers were saved.
+func TestModTidyUnsavedEdits_Issue82027(t *testing.T) {
+	t.Parallel()
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- main.go --
+package main
+
+import "github.com/ardanlabs/conf"
+
+func main() {
+	_ = conf.ErrHelpWanted
+}
+`
+	WithOptions(
+		ProxyFiles(ardanLabsProxy),
+		CacheFiles(ardanLabsProxy),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		// Add the requirement (and go.sum) using the "go get" quick fix.
+		env.OpenFile("go.mod")
+		env.OpenFile("main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
+			ReadDiagnostics("main.go", &d),
+		)
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+		env.SaveBuffer("go.mod")
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+			NoDiagnostics(ForFile("go.mod")),
+		)
+
+		// Remove the import and its use in the buffer only.
+		// The requirement is reported as unused, even though
+		// the on-disk main.go still imports conf.
+		env.RegexpReplace("main.go", `import "github.com/ardanlabs/conf"`, "")
+		env.RegexpReplace("main.go", `_ = conf.ErrHelpWanted`, "")
+		unused := Diagnostics(
+			env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"),
+			WithMessage("not used in this module"))
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+			unused,
+		)
+
+		// Saving the buffer doesn't change anything.
+		env.SaveBufferWithoutActions("main.go")
+		env.AfterChange(unused)
+
+		// Restore the import and its use in the buffer only.
+		// The requirement is no longer reported as unused, even
+		// though the on-disk main.go doesn't import conf.
+		env.RegexpReplace("main.go", `package main`, `package main; import "github.com/ardanlabs/conf"`)
+		env.RegexpReplace("main.go", `func main\(\) {`, "func main() { _ = conf.ErrHelpWanted")
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+			NoDiagnostics(ForFile("go.mod")),
+		)
+	})
+}
+
+// Test that go mod tidy diagnostics reflect unsaved edits to the go.mod
+// file of a replaced module (go.dev/issue/82027, go.dev/issue/53881).
+//
+// The replaced module's package is in subdirectory a/sub so that no Go
+// file shares a directory with a/go.mod. Otherwise the same-directory
+// heuristic of invalidatedPackageIDs would invalidate package example.com/a
+// and trigger re-diagnosis even if invalidating the tidy result did not.
+func TestModTidyUnsavedReplacedGoMod(t *testing.T) {
+	t.Parallel()
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+
+require (
+	example.com/a v0.0.0
+	example.com/b v0.0.0
+)
+
+replace (
+	example.com/a => ./a
+	example.com/b => ./b
+)
+
+-- main.go --
+package main
+
+import _ "example.com/a/sub"
+
+func main() {}
+
+-- a/go.mod --
+module example.com/a
+
+go 1.14
+
+require example.com/b v0.0.0
+
+-- a/sub/a.go --
+package sub
+
+import _ "example.com/b"
+
+-- b/go.mod --
+module example.com/b
+
+go 1.14
+
+-- b/b.go --
+package b
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		// Module a requires b, so the main module's
+		// requirement on b is redundant.
+		env.OpenFile("go.mod")
+		unusedB := Diagnostics(
+			env.AtRegexp("go.mod", `example.com/b v0.0.0`),
+			WithMessage("not used in this module"))
+		env.AfterChange(unusedB)
+
+		// Remove a's requirement on b, in the buffer only.
+		// Now the main module must require b.
+		env.OpenFile("a/go.mod")
+		env.RegexpReplace("a/go.mod", `require example.com/b v0.0.0`, "")
+		env.AfterChange(
+			NoDiagnostics(ForFile("go.mod"), WithMessage("not used in this module")),
+		)
+
+		// Restore it, again in the buffer only.
+		env.RegexpReplace("a/go.mod", `go 1.14`, "go 1.14\n\nrequire example.com/b v0.0.0")
+		env.AfterChange(unusedB)
+	})
+}
+
 // Test for golang/go#38207.
 func TestNewModule_Issue38207(t *testing.T) {
 	t.Parallel()

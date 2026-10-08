@@ -1678,10 +1678,13 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		_, oldOpen := oldFH.(*overlay)
 		_, newOpen := newFH.(*overlay)
 
+		oldExists := oldFH != nil && fileExists(oldFH)
+		newExists := fileExists(newFH)
+
 		// TODO(rfindley): consolidate with 'metadataChanges' logic below, which
 		// also considers existential changes.
-		anyFileOpenedOrClosed = anyFileOpenedOrClosed || (oldOpen != newOpen)
-		anyPkgFileChanged = anyPkgFileChanged || (oldFH == nil || !fileExists(oldFH)) && fileExists(newFH)
+		anyFileOpenedOrClosed = anyFileOpenedOrClosed || oldOpen != newOpen
+		anyPkgFileChanged = anyPkgFileChanged || !oldExists && newExists
 
 		// If uri is a Go file, check if it has changed in a way that would
 		// invalidate metadata. Note that we can't use s.view.FileKind here,
@@ -1707,14 +1710,23 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			directIDs[id] = directIDs[id] || invalidateMetadata // may insert 'false'
 		}
 
-		// Invalidate the previous modTidyHandle if any of the files have been
-		// saved or if any of the metadata has been invalidated.
+		// contentChanged reports whether the content of
+		// the file changed, including by creation or deletion.
+		contentChanged := func() bool {
+			return oldExists != newExists || oldExists && oldFH.Identity() != newFH.Identity()
+		}
+
+		// Invalidate the previous modTidyHandle if any of the metadata has
+		// been invalidated, or if the content of a go.mod or go.sum file
+		// (such as that of a replaced module, or a new nested module) has
+		// changed. Other non-Go files (such as .s files) cannot affect
+		// the results.
 		//
-		// TODO(rfindley): this seems like too-aggressive invalidation of mod
-		// results. We should instead thread through overlays to the Go command
-		// invocation and only run this if invalidateMetadata (and perhaps then
-		// still do it less frequently).
-		if invalidateMetadata || fileWasSaved(oldFH, newFH) {
+		// The go mod tidy and go mod why commands are passed the snapshot's
+		// unsaved buffers using -overlay (see GoCommandInvocation), so their
+		// results depend only on the snapshot's file contents, not on
+		// whether those contents have been saved.
+		if invalidateMetadata || (isGoMod(uri) || uri.Base() == "go.sum") && contentChanged() {
 			// Only invalidate mod tidy results for the most relevant modfile in the
 			// workspace. This is a potentially lossy optimization for workspaces
 			// with many modules (such as google-cloud-go, which has 145 modules as
@@ -1727,18 +1739,29 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			// ignores GOWORK, so the two modules would have to be related by a chain
 			// of replace directives.
 			//
-			// We could improve accuracy by inspecting replace directives, using
-			// overlays in go mod tidy, and/or checking for metadata changes from the
-			// on-disk content.
+			// We could improve accuracy by inspecting replace directives.
 			//
 			// Note that we iterate the modTidyHandles map here, rather than e.g.
 			// using nearestModFile, because we don't have access to an accurate
 			// FileSource at this point in the snapshot clone.
+			//
+			// Invalidating a mod tidy result requires that the view be
+			// re-diagnosed, even if no package was invalidated: for example,
+			// a change to the go.mod file of a replaced module whose
+			// directory contains no Go files (go.dev/cl/847425).
+			//
+			// TODO(adonovan): this heuristic is incomplete and won't catch
+			// a change to a module replaced from outside the main module.
+			// A content-addressed cache of go.{mod,sum} files and the
+			// workspace import graph would make invalidation precise.
 			const onlyInvalidateMostRelevant = true
 			if onlyInvalidateMostRelevant {
-				deleteMostRelevantModFile(result.modTidyHandles, uri)
+				if deleteMostRelevantModFile(result.modTidyHandles, uri) {
+					needsDiagnosis = true
+				}
 			} else {
 				result.modTidyHandles.Clear()
+				needsDiagnosis = true
 			}
 
 			// TODO(rfindley): should we apply the above heuristic to mod vuln or mod
@@ -1914,7 +1937,9 @@ func cloneWith[K constraints.Ordered, V any](m *persistent.Map[K, V], changes ma
 // changed that happens not to be present in the map, but that's OK: the goal
 // of this function is to guarantee that IF the nearest mod file is present in
 // the map, it is invalidated.
-func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.Promise], changed protocol.DocumentURI) {
+//
+// It reports whether an entry was deleted.
+func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.Promise], changed protocol.DocumentURI) bool {
 	var mostRelevant protocol.DocumentURI
 	changedFile := changed.Path()
 
@@ -1925,9 +1950,7 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 			}
 		}
 	}
-	if mostRelevant != "" {
-		m.Delete(mostRelevant)
-	}
+	return mostRelevant != "" && m.Delete(mostRelevant)
 }
 
 // invalidatedPackageIDs returns all packages invalidated by a change to uri.
@@ -1990,32 +2013,6 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 		}
 	}
 	return invalidated
-}
-
-// fileWasSaved reports whether the FileHandle passed in has been saved. It
-// accomplishes this by checking to see if the original and current FileHandles
-// are both overlays, and if the current FileHandle is saved while the original
-// FileHandle was not saved.
-func fileWasSaved(originalFH, currentFH file.Handle) bool {
-	if originalFH == nil || currentFH == nil {
-		return true // should not happen for valid file handles
-	}
-
-	// If the file identity has not changed, the content has not changed.
-	// Therefore, the "saved" state (from the perspective of go mod tidy)
-	// has not changed.
-	if originalFH.Identity() == currentFH.Identity() {
-		return false
-	}
-	c, ok := currentFH.(*overlay)
-	if !ok || c == nil {
-		return true
-	}
-	o, ok := originalFH.(*overlay)
-	if !ok || o == nil {
-		return c.saved
-	}
-	return !o.saved && c.saved
 }
 
 // metadataChanges detects features of the change from oldFH->newFH that may

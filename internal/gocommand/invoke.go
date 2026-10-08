@@ -232,6 +232,7 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 		// mod needs the sub-verb before flags.
 		goArgs = append(goArgs, i.Args[0])
 		appendModFile()
+		appendOverlayFlag() // all 'go mod' subcommands accept -overlay
 		goArgs = append(goArgs, i.Args[1:]...)
 	case "get":
 		goArgs = append(goArgs, i.BuildFlags...)
