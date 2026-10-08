@@ -10,58 +10,99 @@ Test move declaration refactoring: extracting declarations to the destination fi
 	"moveDeclaration": true
 }
 
--- flags --
--ignore_extra_diags
-
 -- go.mod --
 module golang.org/lsptests/movedecledits
 
 go 1.20
 
--- src/func.go --
+-- func/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- func/src/src.go --
 package src
 
-func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_func)
+func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/func/dest/dest.go"}`, result=move_func)
 	return a + b
 }
 
--- @move_func/src/func.go --
+-- @move_func/func/src/src.go --
 package src
 
--- src/type.go --
+-- @move_func/func/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/func/dest/dest.go"}`, result=move_func)
+	return a + b
+}
+-- type/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- type/src/src.go --
 package src
 
-type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_type)
+type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/type/dest/dest.go"}`, result=move_type)
 	X int
 	Y int
 }
 
--- @move_type/src/type.go --
+-- @move_type/type/src/src.go --
 package src
 
--- src/newfile.go --
+-- @move_type/type/dest/dest.go --
+package dest
+
+func Existing() {}
+
+type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/type/dest/dest.go"}`, result=move_type)
+	X int
+	Y int
+}
+-- newfile/dest/other.go --
+package dest
+
+-- newfile/src/src.go --
 package src
 
-// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
-func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file)
+// Cross-package move to a new file: newfile/dest/dest.go does not exist yet and must be created.
+func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/newfile/dest/dest.go"}`, result=move_new_file)
 	return x * y
 }
 
--- @move_new_file/src/newfile.go --
+-- @move_new_file/newfile/src/src.go --
 package src
 
--- src/samepkg_new.go --
+-- @move_new_file/newfile/dest/dest.go --
+package dest
+
+// Cross-package move to a new file: newfile/dest/dest.go does not exist yet and must be created.
+func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/newfile/dest/dest.go"}`, result=move_new_file)
+	return x * y
+}
+-- samepkg_new/src/src.go --
 package src
 
 // Same-package move to a new file: src/created.go does not exist yet and must be created.
-func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/created.go"}`, result=move_samepkg_new_file)
+func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/samepkg_new/src/created.go"}`, result=move_samepkg_new_file)
 	return "same package new file"
 }
 
--- @move_samepkg_new_file/src/samepkg_new.go --
+-- @move_samepkg_new_file/samepkg_new/src/src.go --
 package src
 
--- src/header.go --
+-- @move_samepkg_new_file/samepkg_new/src/created.go --
+package src
+
+// Same-package move to a new file: src/created.go does not exist yet and must be created.
+func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/samepkg_new/src/created.go"}`, result=move_samepkg_new_file)
+	return "same package new file"
+}
+-- header/src/src.go --
 // Copyright 2026 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -70,12 +111,11 @@ package src
 
 package src
 
-func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/header_created.go"}`, result=move_samepkg_header)
+func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/header/src/header_created.go"}`, result=move_samepkg_header)
 	return "header"
 }
 
-
--- @move_samepkg_header/src/header.go --
+-- @move_samepkg_header/header/src/src.go --
 // Copyright 2026 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -84,246 +124,444 @@ func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDecl
 
 package src
 
--- src/spec.go --
+-- @move_samepkg_header/header/src/header_created.go --
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.20
+
+package src
+
+func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/header/src/header_created.go"}`, result=move_samepkg_header)
+	return "header"
+}
+-- spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- spec/src/src.go --
 package src
 
 type (
 	First int
 	// Second has a doc comment
 	// that spans multiple lines.
-	Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
+	Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec/dest/dest.go"}`, result=move_subset_spec)
 )
 
--- @move_subset_spec/src/spec.go --
+-- @move_subset_spec/spec/src/src.go --
 package src
 
 type (
 	First int
 	)
 
--- src/counter.go --
-package src
-
-type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_decl_with_method)
-	Count int
-}
-
-func (c *Counter) Inc() {
-	c.Count++
-}
-
--- @move_decl_with_method/src/counter.go --
-package src
-
--- src/iota.go --
-package src
-
-const (
-	Zero = iota
-	One
-	Two
-)
-
--- src/helper.go --
-package src
-
-func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/helper_test.go"}`, result=move_to_test_file)
-	return 42
-}
-
--- @move_to_test_file/src/helper.go --
-package src
-
--- src/helper_test.go --
-package src
-
-import "testing"
-
-func TestExisting(t *testing.T) {}
-
--- src/spec_group.go --
-package src
-
-// Moving Mover also moves its dependency mover: two of the four specs move.
-var (
-	Stay     = 1
-	Mover    = mover //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_spec_subset_multi)
-	mover    = 2
-	AlsoStay = 3
-)
-
--- @move_spec_subset_multi/dest/dest.go --
-package dest
-
-func Existing() {}
-
-var Mover    = mover //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_spec_subset_multi)
-
-var mover    = 2
--- @move_spec_subset_multi/src/spec_group.go --
-package src
-
-// Moving Mover also moves its dependency mover: two of the four specs move.
-var (
-	Stay     = 1
-	AlsoStay = 3
-)
-
--- src/whole_group.go --
-package src
-
-// Moving Whole also moves whole, so every spec in the group moves.
-var (
-	Whole = whole //@codeaction(re"Whole", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_whole_gendecl)
-	whole = 1
-)
-
--- @move_whole_gendecl/dest/dest.go --
-package dest
-
-func Existing() {}
-
-// Moving Whole also moves whole, so every spec in the group moves.
-var (
-	Whole = whole //@codeaction(re"Whole", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_whole_gendecl)
-	whole = 1
-)
--- @move_whole_gendecl/src/whole_group.go --
-package src
-
--- src/middle.go --
-package src
-
-// Only Middle is removed; its neighbors stay.
-func Above() {}
-
-func Middle() { //@codeaction(re"Middle", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_remove_middle)
-}
-
-func Below() {}
-
--- @move_remove_middle/dest/dest.go --
-package dest
-
-func Existing() {}
-
-func Middle() { //@codeaction(re"Middle", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_remove_middle)
-}
--- @move_remove_middle/src/middle.go --
-package src
-
-// Only Middle is removed; its neighbors stay.
-func Above() {}
-
-func Below() {}
-
--- src/split_type.go --
-package src
-
-// Split's method is in another file; both are removed from their own files.
-type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_remove_split)
-}
-
--- @move_remove_split/dest/dest.go --
-package dest
-
-func Existing() {}
-
-func (s Split) Method() {}
-
-// Split's method is in another file; both are removed from their own files.
-type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_remove_split)
-}
--- @move_remove_split/src/split_methods.go --
-package src
-
-func KeepMe() {}
-
--- @move_remove_split/src/split_type.go --
-package src
-
--- src/split_methods.go --
-package src
-
-func (s Split) Method() {}
-
-func KeepMe() {}
-
--- dest/dest.go --
-package dest
-
-func Existing() {}
-
--- @move_to_test_file/src/helper_test.go --
-package src
-
-import "testing"
-
-func TestExisting(t *testing.T) {}
-
-func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/helper_test.go"}`, result=move_to_test_file)
-	return 42
-}
--- @move_func/dest/dest.go --
-package dest
-
-func Existing() {}
-
-func Add(a, b int) int { //@codeaction(re"Add", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_func)
-	return a + b
-}
--- @move_type/dest/dest.go --
-package dest
-
-func Existing() {}
-
-type Point struct { //@codeaction(re"Point", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_type)
-	X int
-	Y int
-}
--- @move_new_file/dest/newfile.go --
-package dest
-
-// Cross-package move to a new file: dest/newfile.go does not exist yet and must be created.
-func Multiply(x, y int) int { //@codeaction(re"Multiply", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file)
-	return x * y
-}
--- @move_samepkg_new_file/src/created.go --
-package src
-
-// Same-package move to a new file: src/created.go does not exist yet and must be created.
-func Separate() string { //@codeaction(re"Separate", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/created.go"}`, result=move_samepkg_new_file)
-	return "same package new file"
-}
--- @move_samepkg_header/src/header_created.go --
-// Copyright 2026 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-//go:build go1.20
-
-package src
-
-func WithHeader() string { //@codeaction(re"WithHeader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/src/header_created.go"}`, result=move_samepkg_header)
-	return "header"
-}
--- @move_subset_spec/dest/dest.go --
+-- @move_subset_spec/spec/dest/dest.go --
 package dest
 
 func Existing() {}
 
 // Second has a doc comment
 	// that spans multiple lines.
-	type Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_subset_spec)
--- @move_decl_with_method/dest/dest.go --
+	type Second string //@codeaction(re"Second", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec/dest/dest.go"}`, result=move_subset_spec)
+-- counter/dest/dest.go --
 package dest
 
 func Existing() {}
 
-type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_decl_with_method)
+-- counter/src/src.go --
+package src
+
+// Move Counter and its method.
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/counter/dest/dest.go"}`, result=move_decl_with_method)
 	Count int
 }
 
 func (c *Counter) Inc() {
 	c.Count++
+}
+
+-- @move_decl_with_method/counter/src/src.go --
+package src
+
+-- @move_decl_with_method/counter/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Move Counter and its method.
+type Counter struct { //@codeaction(re"Counter", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/counter/dest/dest.go"}`, result=move_decl_with_method)
+	Count int
+}
+
+func (c *Counter) Inc() {
+	c.Count++
+}
+-- iota/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- iota/src/src.go --
+package src
+
+const (
+	Zero = iota
+	One // Moving One moves the whole iota group. //@codeaction(re"One", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/iota/dest/dest.go"}`, result=move_iota_group)
+	Two
+)
+
+-- @move_iota_group/iota/src/src.go --
+package src
+
+-- @move_iota_group/iota/dest/dest.go --
+package dest
+
+func Existing() {}
+
+const (
+	Zero = iota
+	One // Moving One moves the whole iota group. //@codeaction(re"One", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/iota/dest/dest.go"}`, result=move_iota_group)
+	Two
+)
+-- testfile/src/src.go --
+package src
+
+// Move to a test variant is considered a same package move.
+func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testfile/src/src_test.go"}`, result=move_to_test_file)
+	return 42
+}
+
+-- testfile/src/src_test.go --
+package src
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+-- @move_to_test_file/testfile/src/src.go --
+package src
+
+-- @move_to_test_file/testfile/src/src_test.go --
+package src
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+// Move to a test variant is considered a same package move.
+func HelperForTest() int { //@codeaction(re"HelperForTest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testfile/src/src_test.go"}`, result=move_to_test_file)
+	return 42
+}
+-- spec_group/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- spec_group/src/src.go --
+package src
+
+// Moving Mover also moves its dependency mover: two of the four specs move.
+var (
+	Stay     = 1
+	Mover    = mover //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec_group/dest/dest.go"}`, result=move_spec_subset_multi)
+	mover    = 2
+	AlsoStay = 3
+)
+
+-- @move_spec_subset_multi/spec_group/src/src.go --
+package src
+
+// Moving Mover also moves its dependency mover: two of the four specs move.
+var (
+	Stay     = 1
+	AlsoStay = 3
+)
+
+-- @move_spec_subset_multi/spec_group/dest/dest.go --
+package dest
+
+func Existing() {}
+
+var Mover    = mover //@codeaction(re"Mover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/spec_group/dest/dest.go"}`, result=move_spec_subset_multi)
+
+var mover    = 2
+-- whole_group/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- whole_group/src/src.go --
+package src
+
+// Moving Whole also moves whole, so every spec in the group moves.
+var (
+	Whole = whole //@codeaction(re"Whole", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/whole_group/dest/dest.go"}`, result=move_whole_gendecl)
+	whole = 1
+)
+
+-- @move_whole_gendecl/whole_group/src/src.go --
+package src
+
+-- @move_whole_gendecl/whole_group/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Moving Whole also moves whole, so every spec in the group moves.
+var (
+	Whole = whole //@codeaction(re"Whole", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/whole_group/dest/dest.go"}`, result=move_whole_gendecl)
+	whole = 1
+)
+-- middle/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- middle/src/src.go --
+package src
+
+// Only Middle is removed; its neighbors stay.
+func Above() {}
+
+func Middle() { //@codeaction(re"Middle", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/middle/dest/dest.go"}`, result=move_remove_middle)
+}
+
+func Below() {}
+
+-- @move_remove_middle/middle/src/src.go --
+package src
+
+// Only Middle is removed; its neighbors stay.
+func Above() {}
+
+func Below() {}
+
+-- @move_remove_middle/middle/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func Middle() { //@codeaction(re"Middle", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/middle/dest/dest.go"}`, result=move_remove_middle)
+}
+-- split/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- split/src/src.go --
+package src
+
+// Split's method is in another file; both are removed from their own files.
+type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_remove_split)
+}
+
+-- split/src/methods.go --
+package src
+
+// Moving Method also moves its receiver type Split, which is declared in another file.
+func (s Split) Method() {} //@codeaction(re"Method", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_method_moves_type)
+
+func KeepMe() {}
+
+-- @move_remove_split/split/src/src.go --
+package src
+
+-- @move_remove_split/split/src/methods.go --
+package src
+
+func KeepMe() {}
+
+-- @move_remove_split/split/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Moving Method also moves its receiver type Split, which is declared in another file.
+func (s Split) Method() {} //@codeaction(re"Method", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_method_moves_type)
+
+// Split's method is in another file; both are removed from their own files.
+type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_remove_split)
+}
+-- @move_method_moves_type/split/src/src.go --
+package src
+
+-- @move_method_moves_type/split/src/methods.go --
+package src
+
+func KeepMe() {}
+
+-- @move_method_moves_type/split/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Moving Method also moves its receiver type Split, which is declared in another file.
+func (s Split) Method() {} //@codeaction(re"Method", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_method_moves_type)
+
+// Split's method is in another file; both are removed from their own files.
+type Split struct { //@codeaction(re"Split", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/split/dest/dest.go"}`, result=move_remove_split)
+}
+-- chain/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- chain/src/src.go --
+package src
+
+// ChainA depends on chainB in another file, which depends on chainC.
+// All three move.
+func ChainA() int { //@codeaction(re"ChainA", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/chain/dest/dest.go"}`, result=move_transitive_chain)
+	return chainB()
+}
+
+-- chain/src/deps.go --
+package src
+
+func chainB() int { return chainC }
+
+var chainC = 3
+
+func StaysInChainFile() {}
+
+-- @move_transitive_chain/chain/src/src.go --
+package src
+
+-- @move_transitive_chain/chain/src/deps.go --
+package src
+
+func StaysInChainFile() {}
+
+-- @move_transitive_chain/chain/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func chainB() int { return chainC }
+
+var chainC = 3
+
+// ChainA depends on chainB in another file, which depends on chainC.
+// All three move.
+func ChainA() int { //@codeaction(re"ChainA", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/chain/dest/dest.go"}`, result=move_transitive_chain)
+	return chainB()
+}
+-- cycle/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- cycle/src/src.go --
+package src
+
+// CycleA and cycleB refer to each other; both move.
+func CycleA(n int) int { //@codeaction(re"CycleA", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/cycle/dest/dest.go"}`, result=move_ref_cycle)
+	if n == 0 {
+		return 0
+	}
+	return cycleB(n - 1)
+}
+
+func cycleB(n int) int { return CycleA(n) }
+
+-- @move_ref_cycle/cycle/src/src.go --
+package src
+
+-- @move_ref_cycle/cycle/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// CycleA and cycleB refer to each other; both move.
+func CycleA(n int) int { //@codeaction(re"CycleA", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/cycle/dest/dest.go"}`, result=move_ref_cycle)
+	if n == 0 {
+		return 0
+	}
+	return cycleB(n - 1)
+}
+
+func cycleB(n int) int { return CycleA(n) }
+-- generic/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- generic/src/src.go --
+package src
+
+// Box moves with its method; NewBox and the staying uses refer to dest.Box.
+type Box[T any] struct { //@codeaction(re"Box", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/generic/dest/dest.go"}`, result=move_generic_type)
+	V T
+}
+
+func (b Box[T]) Get() T { return b.V }
+
+func NewBox[T any](v T) Box[T] { return Box[T]{V: v} }
+
+var IntBox Box[int]
+
+func UseBox() int { return NewBox(1).Get() + IntBox.Get() }
+
+-- @move_generic_type/generic/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/generic/dest"
+
+func NewBox[T any](v T) dest.Box[T] { return dest.Box[T]{V: v} }
+
+var IntBox dest.Box[int]
+
+func UseBox() int { return NewBox(1).Get() + IntBox.Get() }
+
+-- @move_generic_type/generic/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Box moves with its method; NewBox and the staying uses refer to dest.Box.
+type Box[T any] struct { //@codeaction(re"Box", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/generic/dest/dest.go"}`, result=move_generic_type)
+	V T
+}
+
+func (b Box[T]) Get() T { return b.V }
+-- samepkg_existing/src/src.go --
+package src
+
+import "strings"
+
+// SameExisting moves to an existing file in the same package that already
+// imports "strings".
+func SameExisting(s string) string { //@codeaction(re"SameExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/samepkg_existing/src/dest.go"}`, result=move_samepkg_existing)
+	return strings.TrimSpace(s)
+}
+
+func StaysWithStrings(s string) string { return strings.ToUpper(s) }
+
+-- samepkg_existing/src/dest.go --
+package src
+
+import "strings"
+
+func AlreadyHere(s string) string { return strings.ToLower(s) }
+-- @move_samepkg_existing/samepkg_existing/src/src.go --
+package src
+
+import "strings"
+
+func StaysWithStrings(s string) string { return strings.ToUpper(s) }
+
+-- @move_samepkg_existing/samepkg_existing/src/dest.go --
+package src
+
+import "strings"
+
+func AlreadyHere(s string) string { return strings.ToLower(s) }
+
+// SameExisting moves to an existing file in the same package that already
+// imports "strings".
+func SameExisting(s string) string { //@codeaction(re"SameExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/samepkg_existing/src/dest.go"}`, result=move_samepkg_existing)
+	return strings.TrimSpace(s)
 }

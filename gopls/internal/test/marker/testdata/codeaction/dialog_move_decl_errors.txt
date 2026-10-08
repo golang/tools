@@ -1,0 +1,116 @@
+Test move declaration refactoring with dialogue support, focusing on cases where
+there is no code action provided or the move is rejected due to import cycles,
+illegal internal imports, or symbol or import conflicts.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"moveDeclaration": true,
+	"analyses": {"unusedfunc": false}
+}
+
+-- go.mod --
+module golang.org/lsptests/movedecl
+
+go 1.20
+
+-- availability/move.go --
+package move //@codeaction(re"m()ove", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+import "strings" //@codeaction(re"import()", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+func Foo(a, b int) int { //@codeaction(re"fu()nc", "refactor.move.moveDeclaration", title="Move declaration Foo")
+    type Bar strings.Builder //@codeaction(re"B()ar", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+    return 1 //@codeaction(re"return()", "refactor.move.moveDeclaration", title="Move declaration Foo")
+}
+
+var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", title="Move declaration a")
+
+var c, d int //@codeaction(re"va()r", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
+
+type A struct {} //@codeaction(re"A", "refactor.move.moveDeclaration", title="Move declaration A")
+
+-- illegal/src/src.go --
+package src
+
+// Package-level name conflict: illegal/dest/dest.go already declares type ExistingConflict.
+type ExistingConflict struct{} //@codeaction(re"ExistingConflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"already declared in package dest")
+
+// File-level import conflict: illegal/dest/dest.go imports "bytes", so bytes is in file scope.
+func bytes() {} //@codeaction(re"bytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"conflicts with symbol in the destination package")
+
+// Import cycle: package "src" must import package "cycledest", but "cycledest" already imports "src".
+func CycleTarget() {} //@codeaction(re"CycleTarget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/cycledest/dest.go"}`, err=re"import cycle")
+func useCycleTarget() {
+	CycleTarget()
+}
+
+// Package "src" must import package "secret", but this is an illegal internal import.
+func InternalTarget() {} //@codeaction(re"InternalTarget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/sub/internal/secret/secret.go"}`, err=re"illegal import")
+func useInternalTarget() {
+	InternalTarget()
+}
+
+// Renamed-import conflict: illegal/dest/imports.go imports "bytes" renamed as conflict,
+// so conflict is in that file's scope in package dest.
+var conflict string //@codeaction(re"conflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"conflicts with symbol in the destination package")
+
+// Dot-import conflict: illegal/dest/other.go dot-imports "strings", which brings strings.Reader into file scope in package dest.
+type Reader struct{} //@codeaction(re"Reader", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"conflicts with symbol in the destination package")
+
+func unexported() {}
+
+func CallsUnexported1() { //@codeaction(re"CallsUnexported1", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(unexported\)`)
+	unexported()
+}
+
+func CallsUnexported2() {
+	unexported()
+}
+
+-- illegal/dest/imports.go --
+package dest
+
+import (
+	conflict "bytes"
+)
+
+var buf conflict.Buffer
+
+-- illegal/dest/dest.go --
+package dest
+
+import "bytes"
+
+type ExistingConflict struct{}
+
+func _() {
+	_ = bytes.Buffer{}
+}
+
+-- illegal/dest/other.go --
+package dest
+
+import . "strings"
+
+func _() {
+	_ = Reader{}
+}
+
+-- illegal/cycledest/dest.go --
+package cycledest
+
+import "golang.org/lsptests/movedecl/illegal/src"
+
+func _() {
+	_ = src.ExistingConflict{}
+}
+
+-- sub/internal/secret/secret.go --
+package secret
+
+type Secret struct{}

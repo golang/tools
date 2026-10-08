@@ -7,11 +7,9 @@ Test move declaration refactoring: doc comments and trailing comments should mov
 
 -- settings.json --
 {
-	"moveDeclaration": true
+	"moveDeclaration": true,
+	"analyses": {"unusedfunc": false}
 }
-
--- flags --
--ignore_extra_diags
 
 -- go.mod --
 module golang.org/lsptests/movedeclcomments
@@ -158,6 +156,8 @@ var (
 ) // The whole group's trailing comment moves too.
 
 // Only partB moves, so this group doc comment stays with partA.
+// This also tests that unexported symbols are allowed to move if they
+// are not referenced in the source package.
 var (
 	partA = 1 // partA's trailing comment
 	partB = 2 // partB's trailing comment
@@ -182,6 +182,8 @@ var partB = 2 // partB's trailing comment
 package src
 
 // Only partB moves, so this group doc comment stays with partA.
+// This also tests that unexported symbols are allowed to move if they
+// are not referenced in the source package.
 var (
 	partA = 1 // partA's trailing comment
 	) // This group's trailing comment stays.

@@ -10,9 +10,6 @@ Test move declaration refactoring: updating references across source, destinatio
 	"moveDeclaration": true
 }
 
--- flags --
--ignore_extra_diags
-
 -- go.mod --
 module golang.org/lsptests/movedeclrefs
 
@@ -306,6 +303,34 @@ func Existing() {}
 
 func Target() { //@codeaction(re"Target", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_shadow)
 }
+-- src/pair.go --
+package src
+
+// Pair is instantiated in src and in ext; both instantiations are rewritten.
+type Pair[K comparable, V any] struct { //@codeaction(re"Pair", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_generic_instantiation)
+	Key K
+	Val V
+}
+
+func MakePair() Pair[string, int] { return Pair[string, int]{Key: "a", Val: 1} }
+
+-- ext/pair.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/src"
+
+func UsePair() src.Pair[string, int] { return src.Pair[string, int]{Key: "b"} }
+
+-- @ref_generic_instantiation/dest2/dest2.go --
+package dest2
+
+func Existing() {}
+
+// Pair is instantiated in src and in ext; both instantiations are rewritten.
+type Pair[K comparable, V any] struct { //@codeaction(re"Pair", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest2/dest2.go"}`, result=ref_generic_instantiation)
+	Key K
+	Val V
+}
 -- @ref_shadow/src/shadow.go --
 package src
 
@@ -320,3 +345,19 @@ func _() {
 func _() {
 	dest20.Target()
 }
+-- @ref_generic_instantiation/ext/pair.go --
+package ext
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+
+
+func UsePair() dest2.Pair[string, int] { return dest2.Pair[string, int]{Key: "b"} }
+
+-- @ref_generic_instantiation/src/pair.go --
+package src
+
+import "golang.org/lsptests/movedeclrefs/dest2"
+
+func MakePair() dest2.Pair[string, int] { return dest2.Pair[string, int]{Key: "a", Val: 1} }
+

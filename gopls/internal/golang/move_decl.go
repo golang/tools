@@ -153,18 +153,29 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	}
 
 	// Dest: determine file range to add moving declarations.
-	endRange := protocol.Range{}
+	var (
+		endRange protocol.Range
+		sep      string // separates the moving decls from the end of an existing dest file
+	)
 	if destPGF != nil {
-		// File exists - add to the end of the file.
+		// File exists - add to the end of the file, after one blank line.
 		endRange, err = destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
-		// Range where we add the moving declarations (two lines after the current
-		// file end to account for new lines)
+		switch src := destPGF.Src; {
+		case bytes.HasSuffix(src, []byte("\n\n")):
+			sep = ""
+		case bytes.HasSuffix(src, []byte("\n")):
+			sep = "\n"
+		default:
+			sep = "\n\n"
+		}
+		// Line where the moving declarations start. We'll redirect the editor view to here.
+		line := endRange.End.Line + uint32(strings.Count(sep, "\n"))
 		show = protocol.Range{
-			Start: protocol.Position{Line: endRange.End.Line + 2, Character: 0},
-			End:   protocol.Position{Line: endRange.End.Line + 2, Character: 0},
+			Start: protocol.Position{Line: line, Character: 0},
+			End:   protocol.Position{Line: line, Character: 0},
 		}
 	}
 	// Dest: write the declarations at the bottom of the file.
@@ -183,7 +194,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	declsText.WriteString("\n")
 	edits[destFH.URI()] = append(edits[destFH.URI()], protocol.TextEdit{
 		Range:   endRange,
-		NewText: strings.TrimRight(declsText.String(), "\n") + "\n", // ensure decl text ends with one newline
+		NewText: sep + strings.TrimRight(declsText.String(), "\n") + "\n", // ensure decl text ends with one newline
 	})
 
 	// Source: remove the moving decls. Moving decls may be in any file of srcPkg,
