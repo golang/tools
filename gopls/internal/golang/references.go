@@ -34,7 +34,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/asm"
-	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/internal/cursorutil"
 
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 

@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
-	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -131,7 +131,7 @@ next:
 		// isModifyingUseOfZeroVal returns true if use could potentially modify
 		// the zero value stored in the variable referenced by use.
 		isModifyingUseOfZeroVal := func(use inspector.Cursor) bool {
-			use = astutil.UnparenEnclosingCursor(use)
+			use = cursorutil.UnparenEnclosing(use)
 
 			// The function is intentionally conservative as it is only used when
 			// analyzing results of AsType[T] within if/else chains.
@@ -152,7 +152,7 @@ next:
 			for {
 				switch use.ParentEdgeKind() {
 				case edge.TypeAssertExpr_X, edge.SelectorExpr_X, edge.IndexExpr_X:
-					use = astutil.UnparenEnclosingCursor(use.Parent())
+					use = cursorutil.UnparenEnclosing(use.Parent())
 					continue
 				}
 				break

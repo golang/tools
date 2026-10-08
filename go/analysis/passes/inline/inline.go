@@ -325,7 +325,6 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	}
 	rhs := alias.Rhs()
 	curPath := a.pass.Pkg.Path()
-	curFile := astutil.EnclosingFile(curId)
 	id := curId.Node().(*ast.Ident)
 
 	// Find the complete identifier, which may take any of these forms:
@@ -386,6 +385,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	var (
 		importPrefixes = map[string]string{curPath: ""} // from pkg path to prefix
 		edits          []analysis.TextEdit
+		file           = astutil.EnclosingFile(curId)
 	)
 	for _, tn := range typenames(rhs) {
 		// Ignore the type parameters of the alias: they won't appear in the result.
@@ -401,8 +401,8 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 			// The name is in the current package or the universe scope, so no import
 			// is required. Check that it is not shadowed (that is, that the type
 			// it refers to in rhs is the same one it refers to at n).
-			scope := a.pass.TypesInfo.Scopes[curFile].Innermost(id.Pos()) // n's scope
-			_, obj := scope.LookupParent(tn.Name(), id.Pos())             // what qn.name means in n's scope
+			scope := a.pass.TypesInfo.Scopes[file].Innermost(id.Pos()) // n's scope
+			_, obj := scope.LookupParent(tn.Name(), id.Pos())          // what qn.name means in n's scope
 			if obj != tn {
 				return
 			}
@@ -414,7 +414,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 			// with the prefix it assigns
 			// with the package path for use by the TypeString qualifier below.
 			prefix, eds := refactor.AddImport(
-				a.pass.TypesInfo, curFile, pkgName, pkgPath, tn.Name(), id.Pos())
+				a.pass.TypesInfo, file, pkgName, pkgPath, tn.Name(), id.Pos())
 			importPrefixes[pkgPath] = strings.TrimSuffix(prefix, ".")
 			edits = append(edits, eds...)
 		}
@@ -525,7 +525,6 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 	}
 
 	// If n is qualified by a package identifier, we'll need the full selector expression.
-	curFile := astutil.EnclosingFile(cur)
 	n := cur.Node().(*ast.Ident)
 
 	// We have an identifier A here (n), possibly qualified by a package identifier (sel.X,
@@ -537,10 +536,11 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 	// If the RHS is not in the current package, AddImport will handle
 	// shadowing, so we only need to worry about when both expressions
 	// are in the current package.
+	file := astutil.EnclosingFile(cur)
 	if a.pass.Pkg.Path() == incon.RHSPkgPath {
 		// incon.rhsObj is the object referred to by B in the definition of A.
-		scope := a.pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
-		_, obj := scope.LookupParent(incon.RHSName, n.Pos())         // what "B" means in n's scope
+		scope := a.pass.TypesInfo.Scopes[file].Innermost(n.Pos()) // n's scope
+		_, obj := scope.LookupParent(incon.RHSName, n.Pos())      // what "B" means in n's scope
 		if obj == nil {
 			// Should be impossible: if code at n can refer to the LHS,
 			// it can refer to the RHS.
@@ -560,7 +560,7 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 	)
 	if incon.RHSPkgPath != a.pass.Pkg.Path() {
 		importPrefix, edits = refactor.AddImport(
-			a.pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
+			a.pass.TypesInfo, file, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.
 	var expr ast.Expr = n

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/cursorutil"
 )
 
 // NodeContains reports whether the Pos/End range of node n encloses
@@ -39,11 +39,8 @@ func NodeContainsPos(n ast.Node, pos token.Pos) bool {
 }
 
 // EnclosingFile returns the syntax tree for the file enclosing c.
-//
-// TODO(adonovan): promote this to a method of Cursor.
 func EnclosingFile(c inspector.Cursor) *ast.File {
-	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
-	return c.Node().(*ast.File)
+	return cursorutil.EnclosingFile(c).Node().(*ast.File)
 }
 
 // DocComment returns the doc comment for a node, if any.

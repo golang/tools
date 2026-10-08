@@ -10,7 +10,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 

@@ -25,7 +25,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/astutil/free"
-	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
@@ -352,8 +352,7 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 		}
 	}
 
-	curFile, _ := moreiters.First(caller.Call.Enclosing((*ast.File)(nil)))
-	for curSpec := range curFile.Preorder((*ast.ImportSpec)(nil)) {
+	for curSpec := range cursorutil.EnclosingFile(caller.Call).Preorder((*ast.ImportSpec)(nil)) {
 		imp := curSpec.Node().(*ast.ImportSpec)
 		if pkgName, ok := importedPkgName(caller.Info, imp); ok &&
 			pkgName.Name() != "." &&
@@ -923,7 +922,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		len(calleeDecl.Body.List[0].(*ast.ReturnStmt).Results) > 0 { // not a bare return
 		results := calleeDecl.Body.List[0].(*ast.ReturnStmt).Results
 
-		curParent := internalastutil.UnparenEnclosingCursor(caller.Call).Parent()
+		curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
 		parent := curParent.Node()
 
 		// statement context
@@ -1098,7 +1097,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	//
 	// The body may use defer, arbitrary control flow, and
 	// multiple returns.
-	curParent := internalastutil.UnparenEnclosingCursor(caller.Call).Parent()
+	curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
 	if ret, ok := curParent.Node().(*ast.ReturnStmt); ok &&
 		len(ret.Results) == 1 &&
 		tailCallSafeReturn(caller, calleeSymbol, callee) &&
@@ -3022,7 +3021,7 @@ func unlabel(stmt ast.Stmt) ast.Stmt {
 // appears in a restricted context (such as "if f(); cond {") where it
 // cannot be replaced by an arbitrary statement. (See "statement theory".)
 func callStmt(curCall inspector.Cursor, unrestricted bool) inspector.Cursor {
-	curStmt := internalastutil.UnparenEnclosingCursor(curCall).Parent()
+	curStmt := cursorutil.UnparenEnclosing(curCall).Parent()
 	if !is[*ast.ExprStmt](curStmt.Node()) {
 		return inspector.Cursor{}
 	}

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -64,9 +65,9 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 		// Special cases for TypeOf((*T)(nil)).Elem(), and
 		// TypeOf([]T(nil)).Elem(), needed when T is an interface type.
 		if curCall.ParentEdgeKind() == edge.SelectorExpr_X {
-			curSel := astutil.UnparenEnclosingCursor(curCall).Parent()
+			curSel := cursorutil.UnparenEnclosing(curCall).Parent()
 			if curSel.ParentEdgeKind() == edge.CallExpr_Fun {
-				call2 := astutil.UnparenEnclosingCursor(curSel).Parent().Node().(*ast.CallExpr) // potentially .Elem()
+				call2 := cursorutil.UnparenEnclosing(curSel).Parent().Node().(*ast.CallExpr) // potentially .Elem()
 				obj := typeutil.Callee(info, call2)
 				if typesinternal.IsMethodNamed(obj, "reflect", "Type", "Elem") {
 					// reflect.TypeOf(expr).Elem()

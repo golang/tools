@@ -18,8 +18,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
 	"golang.org/x/tools/internal/moreiters"
@@ -89,8 +89,7 @@ func highlightPath(info *types.Info, cur inspector.Cursor, start, end token.Pos)
 
 			// ...and all references to it in the file.
 			if pkgname := info.PkgNameOf(imp); pkgname != nil {
-				_, curFile := cursorutil.FirstEnclosing[*ast.File](cur)
-				for c := range curFile.Preorder((*ast.Ident)(nil)) {
+				for c := range cursorutil.EnclosingFile(cur).Preorder((*ast.Ident)(nil)) {
 					if id := c.Node().(*ast.Ident); info.Uses[id] == pkgname {
 						highlight(id)
 					}
@@ -647,8 +646,7 @@ func highlightIdentifier(cur inspector.Cursor, info *types.Info, result map[astu
 		}
 	}
 
-	_, curFile := cursorutil.FirstEnclosing[*ast.File](cur)
-	curFile.Inspect(nil, func(c inspector.Cursor) bool {
+	cursorutil.EnclosingFile(cur).Inspect(nil, func(c inspector.Cursor) bool {
 		switch n := c.Node().(type) {
 		case *ast.AssignStmt:
 			for _, s := range n.Lhs {
