@@ -48,10 +48,11 @@ func TestCapabilities(t *testing.T) {
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(tmpDir)
 	params.Capabilities.Workspace.Configuration = true
-	if err := client.initialize(ctx, server, params); err != nil {
+	cli, err := client.initialize(ctx, server, params)
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	if err := validateCapabilities(client.initializeResult); err != nil {
 		t.Error(err)

@@ -108,7 +108,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 
 // callItemPrintString returns a protocol.CallHierarchyItem object represented as a string.
 // item and call ranges (protocol.Range) are converted to user friendly spans (1-indexed).
-func callItemPrintString(ctx context.Context, cli *client, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
+func callItemPrintString(ctx context.Context, cli *cli, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
 	itemFile, err := cli.openFile(ctx, item.URI)
 	if err != nil {
 		return "", err

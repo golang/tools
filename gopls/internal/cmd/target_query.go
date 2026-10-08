@@ -28,7 +28,7 @@ func (t *target) qualifiedName() string {
 	return fmt.Sprintf("%s.%s", t.pkg, t.name)
 }
 
-func (t *target) span(ctx context.Context, cli *client) (span, error) {
+func (t *target) span(ctx context.Context, cli *cli) (span, error) {
 	file, err := cli.openFile(ctx, t.loc.URI)
 	if err != nil {
 		return span{}, err
@@ -37,7 +37,7 @@ func (t *target) span(ctx context.Context, cli *client) (span, error) {
 }
 
 // resolveSingleTarget calls gopls.resolve_target and validates that only a single target was found.
-func resolveSingleTarget(ctx context.Context, cli *client, flags TargetQueryFlags, dir, targetQuery string) (target, error) {
+func resolveSingleTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, targetQuery string) (target, error) {
 	targets, err := resolveTarget(ctx, cli, flags, dir, targetQuery)
 	if err != nil {
 		return target{}, err
@@ -53,7 +53,7 @@ func resolveSingleTarget(ctx context.Context, cli *client, flags TargetQueryFlag
 }
 
 // resolveTarget calls gopls.resolve_target
-func resolveTarget(ctx context.Context, cli *client, flags TargetQueryFlags, dir, targetQuery string) ([]target, error) {
+func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, targetQuery string) ([]target, error) {
 
 	var (
 		searchScope = protocol.URIFromPath(dir) // default to the passed in directory

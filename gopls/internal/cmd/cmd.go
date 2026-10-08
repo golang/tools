@@ -324,8 +324,7 @@ func (app *application) featureCommands() []command {
 }
 
 // connect creates and initializes a new in-process gopls LSP session.
-func (app *application) connect(ctx context.Context) (*client, *cache.Session, error) {
-
+func (app *application) connect(ctx context.Context) (*cli, *cache.Session, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, nil, fmt.Errorf("finding workdir: %v", err)
@@ -368,17 +367,16 @@ func (app *application) connect(ctx context.Context) (*client, *cache.Session, e
 		//
 		// TODO(hakim): implement pull-based diagnostics instead.
 		//
-		// This is safe only because no method of client sends a request to
-		// the server: such a request could not receive its response, because
-		// the loop that reads it is the loop that waits for the method.
+		// This is safe only because the client has no direct access to the server.
 		jsonConn.Go(ctx,
 			jsonrpc2.MustReplyHandler(
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
-	if err := client.initialize(ctx, svr, initParams(root, options)); err != nil {
+	cli, err := client.initialize(ctx, svr, initParams(root, options))
+	if err != nil {
 		return nil, nil, err
 	}
-	return client, sess, nil
+	return cli, sess, nil
 }
 
 func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitialize {
@@ -433,17 +431,16 @@ func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitializ
 }
 
 // initialize performs LSP's two-call client/server handshake.
-func (cli *client) initialize(ctx context.Context, server protocol.Server, params *protocol.ParamInitialize) error {
+func (client *client) initialize(ctx context.Context, server protocol.Server, params *protocol.ParamInitialize) (*cli, error) {
 	result, err := server.Initialize(ctx, params)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
-		return err
+		return nil, err
 	}
-	cli.server = server
-	cli.initializeResult = result
-	return nil
+	client.initializeResult = result
+	return &cli{client, server}, nil
 }
 
 // client implements [protocol.Client] and defines the LSP client
@@ -455,7 +452,6 @@ func (cli *client) initialize(ctx context.Context, server protocol.Server, param
 type client struct {
 	app *application
 
-	server           protocol.Server
 	initializeResult *protocol.InitializeResult // includes server capabilities
 
 	progressMu sync.Mutex
@@ -464,6 +460,13 @@ type client struct {
 
 	filesMu sync.Mutex // guards files map
 	files   map[protocol.DocumentURI]*cmdFile
+}
+
+// cli handles the small amount of coordination the client and
+// server share.
+type cli struct {
+	*client
+	server protocol.Server
 }
 
 // cmdFile represents an open file in the gopls command LSP client.
@@ -832,8 +835,10 @@ func (cli *client) getFile(uri protocol.DocumentURI) *cmdFile {
 }
 
 // openFile returns the specified file, adding it to the client state
-// if needed, and notifying the server that it was opened.
-func (cli *client) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
+// if needed, and notifying the server that it was opened. This method
+// in on `cli` instead of `client`, as it needs to call the server on
+// newly opened files.
+func (cli *cli) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
 	file := cli.getFile(uri)
 	if file.err != nil {
 		return nil, file.err
@@ -878,7 +883,7 @@ func diagnoseFiles(ctx context.Context, server protocol.Server, files []protocol
 	return err
 }
 
-func (cli *client) terminate(ctx context.Context) {
+func (cli *cli) terminate(ctx context.Context) {
 	if err := cli.server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown failed: %v", err)
 	}

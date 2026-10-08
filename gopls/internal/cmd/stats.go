@@ -99,7 +99,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 		return d, nil
 	}
 
-	var cli *client
+	var cli *cli
 	iwlDuration, err := do("Initializing workspace", func() (err error) {
 		cli, _, err = s.app.connect(ctx)
 		if err != nil {
