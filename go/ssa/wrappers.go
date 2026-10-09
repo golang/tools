@@ -44,9 +44,20 @@ import (
 //   - optional method type arguments
 //   - meth.Obj() may denote a concrete or an interface method
 //   - the result may be a thunk or a wrapper.
+//
+// TODO(golang/go#81708): reduce the one-off fixes for receivers, method type args, etc.
 func createWrapper(prog *Program, sel *selection, targs []types.Type) *Function {
-	obj := sel.obj.(*types.Func) // the declared function
-	name, sig := maybeInstance(prog, obj.Name(), sel.typ.(*types.Signature), targs)
+	method := sel.obj.(*types.Func) // the declared method
+	// Instantiate the declared method's type parameters (if any)
+	// before adapting the receiver, since changeRecv and
+	// recvAsFirstArg discard type parameters.
+	declSig := method.Signature()
+	name, sig := maybeInstance(prog, method.Name(), declSig, targs)
+	// Replace the declared receiver with the selected receiver.
+	sig = changeRecv(sig, newVar(declSig.Recv().Name(), sel.recv))
+	if sel.kind == types.MethodExpr {
+		sig = recvAsFirstArg(sig)
+	}
 
 	var recv *types.Var // wrapper's receiver or thunk's params[0]
 	var description string
@@ -59,7 +70,7 @@ func createWrapper(prog *Program, sel *selection, targs []types.Type) *Function 
 		recv = sig.Recv()
 	}
 
-	description = fmt.Sprintf("%s for %s", description, obj)
+	description = fmt.Sprintf("%s for %s", description, method)
 	if prog.mode&LogSource != 0 {
 		defer logStack("create %s to (%s)", description, recv.Type())()
 	}
@@ -67,11 +78,11 @@ func createWrapper(prog *Program, sel *selection, targs []types.Type) *Function 
 	return &Function{
 		name:      name,
 		method:    sel,
-		object:    obj,
+		object:    method,
 		Signature: sig,
 		Synthetic: description,
 		Prog:      prog,
-		pos:       obj.Pos(),
+		pos:       method.Pos(),
 		typeargs:  targs,
 		// wrappers have no syntax
 		build:     (*builder).buildWrapper,
