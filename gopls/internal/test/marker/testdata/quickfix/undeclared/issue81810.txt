@@ -1,0 +1,136 @@
+This test checks the "Create function" quick fix for arguments whose
+derived parameter name is not a valid Go identifier.
+
+The generated declarations must use valid Go identifiers.
+See golang/go#81810.
+
+-- funclit.go --
+package a
+
+func _() {
+	undefinedFuncLit(func() (int, int) { return 0, 0 }) //@quickfix("undefinedFuncLit", re"(undeclared|undefined)", funclit)
+}
+-- @funclit/funclit.go --
+@@ -6 +6,4 @@
++
++func undefinedFuncLit(fn func() (int, int)) {
++	panic("unimplemented")
++}
+-- funcresult.go --
+package a
+
+type T struct{}
+
+func (T) M() (T, error) { return T{}, nil }
+
+func _() {
+	undefinedFuncResult(T{}.M) //@quickfix("undefinedFuncResult", re"(undeclared|undefined)", funcresult)
+}
+-- @funcresult/funcresult.go --
+@@ -10 +10,4 @@
++
++func undefinedFuncResult(fn func() (T, error)) {
++	panic("unimplemented")
++}
+-- keyword.go --
+package a
+
+type Range struct{}
+
+func _() {
+	undefinedKeyword([]Range{}) //@quickfix("undefinedKeyword", re"(undeclared|undefined)", keyword)
+}
+-- @keyword/keyword.go --
+@@ -8 +8,4 @@
++
++func undefinedKeyword(range_ []Range) {
++	panic("unimplemented")
++}
+-- map.go --
+package a
+
+func _() {
+	undefinedMap(map[string]int{}) //@quickfix("undefinedMap", re"(undeclared|undefined)", map)
+}
+-- @map/map.go --
+@@ -6 +6,4 @@
++
++func undefinedMap(m map[string]int) {
++	panic("unimplemented")
++}
+-- struct.go --
+package a
+
+func _() {
+	undefinedStruct(struct{}{}) //@quickfix("undefinedStruct", re"(undeclared|undefined)", struct)
+}
+-- @struct/struct.go --
+@@ -6 +6,4 @@
++
++func undefinedStruct(s struct{}) {
++	panic("unimplemented")
++}
+-- interface.go --
+package a
+
+func _() {
+	undefinedInterface(interface{}(nil)) //@quickfix("undefinedInterface", re"(undeclared|undefined)", interface)
+}
+-- @interface/interface.go --
+@@ -6 +6,4 @@
++
++func undefinedInterface(i interface{}) {
++	panic("unimplemented")
++}
+-- predeclared.go --
+package a
+
+func _() {
+	undefinedPredeclared(true) //@quickfix("undefinedPredeclared", re"(undeclared|undefined)", predeclared)
+}
+-- @predeclared/predeclared.go --
+@@ -6 +6,4 @@
++
++func undefinedPredeclared(b bool) {
++	panic("unimplemented")
++}
+-- pointer.go --
+package a
+
+func _() {
+	var callback func() int
+	undefinedPointer(&callback) //@quickfix("undefinedPointer", re"(undeclared|undefined)", pointer)
+}
+-- @pointer/pointer.go --
+@@ -7 +7,4 @@
++
++func undefinedPointer(fn *func() int) {
++	panic("unimplemented")
++}
+-- generic.go --
+package a
+
+type Box[T any] struct{ Value T }
+type Alias = Box[int]
+
+func _() {
+	undefinedGeneric(Box[int]{}, Alias{}) //@quickfix("undefinedGeneric", re"(undeclared|undefined)", generic)
+}
+-- @generic/generic.go --
+@@ -9 +9,4 @@
++
++func undefinedGeneric(box Box[int], alias Alias) {
++	panic("unimplemented")
++}
+-- array.go --
+package a
+
+func _() {
+	undefinedArray([1]Range{}) //@quickfix("undefinedArray", re"(undeclared|undefined)", array)
+}
+-- @array/array.go --
+@@ -6 +6,4 @@
++
++func undefinedArray(range_ [1]Range) {
++	panic("unimplemented")
++}
