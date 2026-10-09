@@ -190,3 +190,33 @@ func _() {
 		}
 	}
 }
+
+// TestIsAssignedOrAddressTaken_IllTyped checks that IsAssignedOrAddressTaken
+// conservatively returns true, rather than crashing, for each use of x
+// in ill-typed code lacking type information (golang/go#82058).
+func TestIsAssignedOrAddressTaken_IllTyped(t *testing.T) {
+	for _, src := range []string{
+		`package p; func _() { _ = x[0] }`, // x undefined
+		`package p; type S struct{}; func _() { var x S; _ = x.nofield[0] }`,
+		`package p; func _() { var x int; _ = x.f[1:2] }`,
+	} {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "p.go", src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conf := types.Config{Error: func(error) {}} // ignore type errors
+		info := NewTypesInfo()
+		conf.Check("p", fset, []*ast.File{file}, info)
+
+		for cur := range inspector.New([]*ast.File{file}).Root().Preorder((*ast.Ident)(nil)) {
+			id := cur.Node().(*ast.Ident)
+			if id.Name != "x" || info.Defs[id] != nil {
+				continue // not a use of x
+			}
+			if !IsAssignedOrAddressTaken(info, cur) {
+				t.Errorf("%s: IsAssignedOrAddressTaken(x) = false, want true", src)
+			}
+		}
+	}
+}

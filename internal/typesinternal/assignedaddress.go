@@ -44,6 +44,8 @@ import (
 //	var x int     => IsAssignedOrAddressTaken(x) = false
 //	x := 1        => IsAssignedOrAddressTaken(x) = false
 //
+// In the absence of type information, we conservatively return true.
+//
 // TODO(adonovan): revisit the surprising behavior for declarations.
 func IsAssignedOrAddressTaken(info *types.Info, cur inspector.Cursor) bool {
 	// Unfortunately we can't simply use info.Types[e].Assignable()
@@ -89,7 +91,11 @@ outer:
 		case edge.IndexExpr_X, edge.SliceExpr_X:
 			// If x[i] or x[i:j] is an lvalue,
 			// then x is an lvalue iff x is an array.
-			if !is[*types.Array](info.TypeOf(cur.Node().(ast.Expr)).Underlying()) {
+			t := info.TypeOf(cur.Node().(ast.Expr))
+			if t == nil {
+				return true // no type information (ill-typed code); be conservative
+			}
+			if !is[*types.Array](t.Underlying()) {
 				return false
 			}
 		default:
