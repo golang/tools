@@ -153,3 +153,15 @@ func inferFromAssign() {
 +func assign() int {
 +	panic("unimplemented")
 +}
+-- return.go --
+package missingfunction
+
+func inferFromReturn() int {
+	return foo(1, "") //@quickfix("foo", re"(undeclared|undefined)", infer_return)
+}
+-- @infer_return/return.go --
+@@ -6 +6,4 @@
++
++func foo(i int, s string) int {
++	panic("unimplemented")
++}
