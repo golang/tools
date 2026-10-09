@@ -33,19 +33,19 @@ var _ = Hello
 `
 
 // TestRemoteAuto tests that -remote=auto starts a daemon if none is running,
-// and that a subsequent command reuses it.
+// that subsequent commands reuse it, and that subcommands run against the
+// daemon exchange data with the client in both directions.
 func TestRemoteAuto(t *testing.T) {
-	t.Parallel()
 	needsAutoRemote(t)
 
 	tree := writeTree(t, remoteFiles)
 	xdg := runtimeDir(t)
 	env := []string{"XDG_RUNTIME_DIR=" + xdg}
 
-	// Each test uses its own daemon, so that it shares neither with
-	// concurrent tests nor with the daemon of the user running the test.
+	// Use a dedicated daemon id so that this test shares neither with
+	// other tests nor with the daemon of the user running the test.
 	// (Keep the id short: it is a component of a unix socket name.)
-	remote := "-remote=auto;t1"
+	const remote = "-remote=auto;t1"
 
 	// 'gopls remote' must not start a daemon.
 	{
@@ -106,6 +106,54 @@ func TestRemoteAuto(t *testing.T) {
 	)
 	sessions.checkExit(true)
 	sessions.checkStdout(`"goplsPath"`)
+
+	// Subcommands run against the daemon still exchange data with the
+	// client in both directions.
+	tree = writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a.go --
+package a
+import  "fmt"
+var _ =  fmt.Sprintf("%d","123")
+`)
+	remoteArgs := func(args ...string) []string {
+		return append([]string{remote, "-remote.listen.timeout=" + listenTimeout}, args...)
+	}
+
+	// check: a diagnostic computed by the daemon reaches the client.
+	t.Run("check", func(t *testing.T) {
+		res := goplsWithEnv(t, tree, env, remoteArgs("check", "./a.go")...)
+		res.checkExit(true)
+		res.checkStdout(`a.go:.* fmt.Sprintf format %d has arg "123" of wrong type string`)
+	})
+
+	// execute: the daemon sends the client a workspace/applyEdit request
+	// while the client is waiting for the response to its own
+	// workspace/executeCommand request.
+	t.Run("execute", func(t *testing.T) {
+		uri := "file://" + filepath.ToSlash(tree) + "/a.go"
+		res := goplsWithEnv(t, tree, env, remoteArgs("execute", "-d", "gopls.add_import",
+			`{"ImportPath": "os", "URI": "`+uri+`"}`)...)
+		res.checkExit(true)
+		res.checkStdout(`[+].*"os"`)
+	})
+
+	// format -w: edits computed by the daemon are written to the client's
+	// files. (This case comes last because it rewrites a.go, which the cases
+	// above expect to be unformatted.)
+	t.Run("format", func(t *testing.T) {
+		res := goplsWithEnv(t, tree, env, remoteArgs("format", "-w", "./a.go")...)
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a.go"), `package a
+
+import "fmt"
+
+var _ = fmt.Sprintf("%d", "123")
+`)
+	})
 }
 
 // TestRemoteExplicitAddress tests that only an automatic address starts a
@@ -122,61 +170,6 @@ func TestRemoteExplicitAddress(t *testing.T) {
 	res.checkExit(false)
 	res.checkStderr("failed to dial remote")
 	checkEmptyDir(t, dir) // no daemon bound the socket
-}
-
-// TestRemoteAutoFeatures tests that a subcommand run against a daemon still
-// exchanges data with the client in both directions.
-func TestRemoteAutoFeatures(t *testing.T) {
-	t.Parallel()
-	needsAutoRemote(t)
-
-	tree := writeTree(t, `
--- go.mod --
-module example.com
-go 1.18
-
--- a.go --
-package a
-import  "fmt"
-var _ =  fmt.Sprintf("%d","123")
-`)
-	xdg := runtimeDir(t)
-	env := []string{"XDG_RUNTIME_DIR=" + xdg}
-	remote := func(args ...string) []string {
-		return append([]string{"-remote=auto;t2", "-remote.listen.timeout=" + listenTimeout}, args...)
-	}
-
-	// check: a diagnostic computed by the daemon reaches the client.
-	t.Run("check", func(t *testing.T) {
-		res := goplsWithEnv(t, tree, env, remote("check", "./a.go")...)
-		res.checkExit(true)
-		res.checkStdout(`a.go:.* fmt.Sprintf format %d has arg "123" of wrong type string`)
-	})
-
-	// execute: the daemon sends the client a workspace/applyEdit request
-	// while the client is waiting for the response to its own
-	// workspace/executeCommand request.
-	t.Run("execute", func(t *testing.T) {
-		uri := "file://" + filepath.ToSlash(tree) + "/a.go"
-		res := goplsWithEnv(t, tree, env, remote("execute", "-d", "gopls.add_import",
-			`{"ImportPath": "os", "URI": "`+uri+`"}`)...)
-		res.checkExit(true)
-		res.checkStdout(`[+].*"os"`)
-	})
-
-	// format -w: edits computed by the daemon are written to the client's
-	// files. (This case comes last because it rewrites a.go, which the cases
-	// above expect to be unformatted.)
-	t.Run("format", func(t *testing.T) {
-		res := goplsWithEnv(t, tree, env, remote("format", "-w", "./a.go")...)
-		res.checkExit(true)
-		checkContent(t, filepath.Join(tree, "a.go"), `package a
-
-import "fmt"
-
-var _ = fmt.Sprintf("%d", "123")
-`)
-	})
 }
 
 // listenTimeout is the -remote.listen.timeout of the daemons started by these
