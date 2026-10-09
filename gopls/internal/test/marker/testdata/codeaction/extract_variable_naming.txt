@@ -1,0 +1,188 @@
+This test checks the 'extract variable' code action naming heuristics
+and edge cases (keywords, acronyms, prefixes, tuples, indexing custom & builtin types).
+
+-- go.mod --
+module example.com/extract
+
+go 1.21
+
+-- structs.go --
+package extract
+
+type MyItem struct{}
+
+type Struct struct {
+	MyField error
+	len     int
+}
+
+-- indexing.go --
+package extract
+
+func _() {
+	items := []MyItem{{}}
+	_ = items[0] //@codeaction("items[0]", "refactor.extract.variable", edit=array_item)
+
+	numbers := []int{1}
+	_ = numbers[0] //@codeaction("numbers[0]", "refactor.extract.variable", edit=array_item_fallback)
+}
+
+-- @array_item/indexing.go --
+@@ -5 +5,2 @@
+-	_ = items[0] //@codeaction("items[0]", "refactor.extract.variable", edit=array_item)
++	myItem := items[0]
++	_ = myItem //@codeaction("items[0]", "refactor.extract.variable", edit=array_item)
+-- @array_item_fallback/indexing.go --
+@@ -8 +8,2 @@
+-	_ = numbers[0] //@codeaction("numbers[0]", "refactor.extract.variable", edit=array_item_fallback)
++	newVar := numbers[0]
++	_ = newVar //@codeaction("numbers[0]", "refactor.extract.variable", edit=array_item_fallback)
+-- keywords.go --
+package extract
+
+func _() {
+	_ = Struct{} //@codeaction("Struct{}", "refactor.extract.variable", edit=keyword)
+}
+
+-- @keyword/keywords.go --
+@@ -4 +4,2 @@
+-	_ = Struct{} //@codeaction("Struct{}", "refactor.extract.variable", edit=keyword)
++	struct1 := Struct{}
++	_ = struct1 //@codeaction("Struct{}", "refactor.extract.variable", edit=keyword)
+-- prefixes.go --
+package extract
+
+func parseConfig() string { return "" }
+
+func GetURL() string { return "" }
+
+func GetMySpecialError() error { return nil }
+
+func FetchURLConfigHelloWorld() string { return "" }
+
+func NoPrefix() string { return "" }
+
+func _() {
+	_ = parseConfig() //@codeaction("parseConfig()", "refactor.extract.variable", edit=strip_prefix)
+
+	_ = GetURL() //@codeaction("GetURL()", "refactor.extract.variable", edit=all_upper)
+
+	_ = GetMySpecialError() //@codeaction("GetMySpecialError()", "refactor.extract.variable", edit=prefix_prority)
+
+	_ = FetchURLConfigHelloWorld() //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable", edit=upper)
+
+	_ = NoPrefix() //@codeaction("NoPrefix()", "refactor.extract.variable", edit=no_prefix)
+}
+
+-- @all_upper/prefixes.go --
+@@ -16 +16,2 @@
+-	_ = GetURL() //@codeaction("GetURL()", "refactor.extract.variable", edit=all_upper)
++	url := GetURL()
++	_ = url //@codeaction("GetURL()", "refactor.extract.variable", edit=all_upper)
+-- @no_prefix/prefixes.go --
+@@ -22 +22,2 @@
+-	_ = NoPrefix() //@codeaction("NoPrefix()", "refactor.extract.variable", edit=no_prefix)
++	newVar := NoPrefix()
++	_ = newVar //@codeaction("NoPrefix()", "refactor.extract.variable", edit=no_prefix)
+-- @prefix_prority/prefixes.go --
+@@ -18 +18,2 @@
+-	_ = GetMySpecialError() //@codeaction("GetMySpecialError()", "refactor.extract.variable", edit=prefix_prority)
++	mySpecialError := GetMySpecialError()
++	_ = mySpecialError //@codeaction("GetMySpecialError()", "refactor.extract.variable", edit=prefix_prority)
+-- @strip_prefix/prefixes.go --
+@@ -14 +14,2 @@
+-	_ = parseConfig() //@codeaction("parseConfig()", "refactor.extract.variable", edit=strip_prefix)
++	config := parseConfig()
++	_ = config //@codeaction("parseConfig()", "refactor.extract.variable", edit=strip_prefix)
+-- @upper/prefixes.go --
+@@ -20 +20,2 @@
+-	_ = FetchURLConfigHelloWorld() //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable", edit=upper)
++	urlConfigHelloWorld := FetchURLConfigHelloWorld()
++	_ = urlConfigHelloWorld //@codeaction("FetchURLConfigHelloWorld()", "refactor.extract.variable", edit=upper)
+-- tuples.go --
+package extract
+
+func multiReturn() (Struct, MyItem) { return Struct{}, MyItem{} }
+
+func GetFirstReturn() (error, string) { return nil, "" }
+
+func GetUsername() (string, string) { return "", "" }
+
+func multiPrimitive() (string, string) { return "", "" }
+
+func multiErrors() (error, error) { return nil, nil }
+
+func _() {
+	_, _ = multiReturn() //@codeaction("multiReturn()", "refactor.extract.variable", edit=multi)
+
+	_, _ = GetFirstReturn() //@codeaction("GetFirstReturn()", "refactor.extract.variable", edit=first_return)
+
+	_, _ = GetUsername() //@codeaction("GetUsername()", "refactor.extract.variable", edit=strip_prefix_on_multi)
+
+	_, _ = multiPrimitive() //@codeaction("multiPrimitive()", "refactor.extract.variable", edit=multi_primitive)
+
+	_, _ = multiErrors() //@codeaction("multiErrors()", "refactor.extract.variable", edit=multi_errors)
+}
+-- @first_return/tuples.go --
+@@ -16 +16,2 @@
+-	_, _ = GetFirstReturn() //@codeaction("GetFirstReturn()", "refactor.extract.variable", edit=first_return)
++	firstReturn, newVar := GetFirstReturn()
++	_, _ = firstReturn, newVar //@codeaction("GetFirstReturn()", "refactor.extract.variable", edit=first_return)
+-- @multi/tuples.go --
+@@ -14 +14,2 @@
+-	_, _ = multiReturn() //@codeaction("multiReturn()", "refactor.extract.variable", edit=multi)
++	struct1, myItem := multiReturn()
++	_, _ = struct1, myItem //@codeaction("multiReturn()", "refactor.extract.variable", edit=multi)
+-- @multi_errors/tuples.go --
+@@ -22 +22,2 @@
+-	_, _ = multiErrors() //@codeaction("multiErrors()", "refactor.extract.variable", edit=multi_errors)
++	err, err1 := multiErrors()
++	_, _ = err, err1 //@codeaction("multiErrors()", "refactor.extract.variable", edit=multi_errors)
+-- @multi_primitive/tuples.go --
+@@ -20 +20,2 @@
+-	_, _ = multiPrimitive() //@codeaction("multiPrimitive()", "refactor.extract.variable", edit=multi_primitive)
++	newVar, newVar1 := multiPrimitive()
++	_, _ = newVar, newVar1 //@codeaction("multiPrimitive()", "refactor.extract.variable", edit=multi_primitive)
+-- @strip_prefix_on_multi/tuples.go --
+@@ -18 +18,2 @@
+-	_, _ = GetUsername() //@codeaction("GetUsername()", "refactor.extract.variable", edit=strip_prefix_on_multi)
++	username, newVar := GetUsername()
++	_, _ = username, newVar //@codeaction("GetUsername()", "refactor.extract.variable", edit=strip_prefix_on_multi)
+-- fields.go --
+package extract
+
+func (s Struct) GetName() string { return "" }
+func (s Struct) Process() error { return nil }
+
+func _() {
+	s := Struct{}
+
+	_ = s.MyField //@codeaction("s.MyField", "refactor.extract.variable", edit=field_priority)
+
+	_ = s.len //@codeaction("s.len", "refactor.extract.variable", edit=field_builtin)
+
+	_ = s.GetName() //@codeaction("s.GetName()", "refactor.extract.variable", edit=method)
+
+	_ = s.Process() //@codeaction("s.Process()", "refactor.extract.variable", edit=method_priority)
+}
+
+-- @field_builtin/fields.go --
+@@ -11 +11,2 @@
+-	_ = s.len //@codeaction("s.len", "refactor.extract.variable", edit=field_builtin)
++	len1 := s.len
++	_ = len1 //@codeaction("s.len", "refactor.extract.variable", edit=field_builtin)
+-- @field_priority/fields.go --
+@@ -9 +9,2 @@
+-	_ = s.MyField //@codeaction("s.MyField", "refactor.extract.variable", edit=field_priority)
++	myField := s.MyField
++	_ = myField //@codeaction("s.MyField", "refactor.extract.variable", edit=field_priority)
+-- @method/fields.go --
+@@ -13 +13,2 @@
+-	_ = s.GetName() //@codeaction("s.GetName()", "refactor.extract.variable", edit=method)
++	name := s.GetName()
++	_ = name //@codeaction("s.GetName()", "refactor.extract.variable", edit=method)
+-- @method_priority/fields.go --
+@@ -15 +15,2 @@
+-	_ = s.Process() //@codeaction("s.Process()", "refactor.extract.variable", edit=method_priority)
++	err := s.Process()
++	_ = err //@codeaction("s.Process()", "refactor.extract.variable", edit=method_priority)

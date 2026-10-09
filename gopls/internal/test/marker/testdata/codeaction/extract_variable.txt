@@ -51,8 +51,8 @@ func _() {
 -- @func_call2/func_call.go --
 @@ -8 +8,2 @@
 -	b, err := strconv.Atoi(str) //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
-+	newVar, newVar1 := strconv.Atoi(str)
-+	b, err := newVar, newVar1 //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
++	newVar, err1 := strconv.Atoi(str)
++	b, err := newVar, err1 //@codeaction("strconv.Atoi(str)", "refactor.extract.variable", edit=func_call2)
 -- scope.go --
 package extract
 
@@ -71,8 +71,8 @@ func _() {
 -- @scope1/scope.go --
 @@ -8 +8,2 @@
 -		y := ast.CompositeLit{} //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
-+		newVar := ast.CompositeLit{}
-+		y := newVar //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
++		compositeLit := ast.CompositeLit{}
++		y := compositeLit //@codeaction("ast.CompositeLit{}", "refactor.extract.variable", edit=scope1)
 -- @scope2/scope.go --
 @@ -11 +11,2 @@
 -		x := !false //@codeaction("!false", "refactor.extract.constant", edit=scope2)
