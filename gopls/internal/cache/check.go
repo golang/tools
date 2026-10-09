@@ -1173,7 +1173,7 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 		// See the "cycle detected" bug report above.
 		trefs.refs[sym.Name] = nil
 
-		pkgs := b.s.view.pkgIndex.NewSet()
+		pkgs = b.s.view.pkgIndex.NewSet()
 		for _, sym2 := range n.ph.refs[sym.Name] {
 			if b.nodes[sym2.Package] != nil {
 				pkgs.Add(sym2.Package)

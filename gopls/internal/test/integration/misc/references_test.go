@@ -570,3 +570,60 @@ func fileLocations(env *integration.Env, locs []protocol.Location) []string {
 	sort.Strings(got)
 	return got
 }
+
+// TestTransitiveRefShadowing is a regression test for a careless
+// shadowing mistake in packageHandleBuilder.getOneTransitiveRefLocked.
+func TestTransitiveRefShadowing(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+go 1.18
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+var _ = b.B{X: 1}
+-- b/b.go --
+package b
+
+import "example.com/c"
+
+type B = c.C
+-- c/c.go --
+package c
+
+import "example.com/d"
+
+type C = d.D
+-- d/d.go --
+package d
+
+type D struct{ X int }
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.OpenFile("d/d.go")
+		env.AfterChange(NoDiagnostics())
+
+		// Edit a/a.go while b, c, d are already in state validKey.
+		// Without the fix for shadowing in getOneTransitiveRefLocked,
+		// a's package key is computed without d's localKey, and 0 diagnostics
+		// are cached under H(a_edited, b, c).
+		env.RegexpReplace("a/a.go", "X: 1", "X: 2")
+		env.AfterChange(NoDiagnostics())
+
+		// Revert a/a.go and make an incompatible change to d/d.go.
+		env.RegexpReplace("a/a.go", "X: 2", "X: 1")
+		env.RegexpReplace("d/d.go", "X int", "Y int")
+		env.AfterChange(Diagnostics(env.AtRegexp("a/a.go", "X")))
+
+		// Re-apply the edit to a/a.go. Only a/a.go changed in this step,
+		// so b, c, d are again already in state validKey.
+		// Without the fix, a's key is again H(a_edited, b, c) (omitting d),
+		// hitting the stale cached 0-diagnostics entry from the first edit.
+		env.RegexpReplace("a/a.go", "X: 1", "X: 2")
+		env.AfterChange(Diagnostics(env.AtRegexp("a/a.go", "X")))
+	})
+}
