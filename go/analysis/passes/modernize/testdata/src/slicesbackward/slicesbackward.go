@@ -64,6 +64,143 @@ func keywordSingular(vars []int) {
 	}
 }
 
+// Slice name singular form is the same as the index var ("i").
+// freshName should return "i0" for the slice var name.
+func indexNameSingular(is []int) {
+	for i := len(is) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i, is[i])
+	}
+}
+
+// Slice name singular form is a predeclared identifier ("string").
+// Should fall back to first letter ("s"), not "string" or "string0".
+func universeSingular(strings []string) {
+	for i := len(strings) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(strings[i])
+	}
+}
+
+// Slice name singular form is the same as the index var ("i"), but the index
+// var is dropped, so "i" can be used for the value var without renaming to "i0".
+func indexNameSingularDropped(is []int) {
+	for i := len(is) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(is[i])
+	}
+}
+
+// An inner declaration shadows the slice variable "s"; the second s[i]
+// indexes the inner slice, so it must not be replaced and i must be kept.
+func innerDeclShadowsSlice(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s[i])
+		s := []string{"a", "b", "c"}
+		println(s[i])
+	}
+}
+
+// The first statement "v := s[i]" cannot be adopted if "v" is modified
+// and s[i] is evaluated again later in the body.
+func firstAssignMutated(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		v := s[i]
+		v++
+		println(v, s[i])
+	}
+}
+
+// The first statement "v := s[i]" cannot be adopted if a later short variable
+// declaration in the body block reassigns "v": lifting "v" to the range scope
+// would turn the reassignment into a redeclaration of an unused inner "v".
+func firstAssignRedeclaredInBody(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		v := s[i]
+		println(v)
+		v, extra := s[i]+1, 2
+		println(extra)
+	}
+}
+
+// Don't choose the blank identifier for the slice var name.
+func indexNameBlank(_s []int) {
+	for i := len(_s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(_s[i])
+	}
+}
+
+// A declaration within the body shadows the preferred name ("v") at the
+// second s[i], so a fresh name ("v0") must be chosen.
+func innerDeclShadowsLater(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s[i])
+		v := "str"
+		println(s[i], v)
+	}
+}
+
+// Same, but the shadowing declaration is in a nested block.
+func innerDeclShadowsNested(s []int, cond bool) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		if cond {
+			v := "str"
+			println(s[i], v)
+		}
+	}
+}
+
+// A declaration within the body that does not shadow the preferred name at
+// any s[i] is fine; the range variable may be shadowed after its last use.
+func innerDeclAfterLastUse(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s[i])
+		v := "str"
+		println(v)
+	}
+}
+
+// The outer "v" is used in the body, so "v0" would be chosen, but "v0" is
+// itself declared within the body; must fall through to "v1".
+func freshNameCollidesInner(s []int) {
+	v := 1
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		v0 := "str"
+		println(s[i], v, v0)
+	}
+}
+
+// The adopted name "s" is the same as the slice variable. It must not be
+// renamed, since the body refers to it. The range expression is evaluated
+// before the range variables are in scope, so this is valid.
+func firstAssignShadowsSlice(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		s := s[i]
+		println(s + 1)
+	}
+}
+
+// The adopted name "i" is the same as the index variable. It must not be
+// renamed, since the body refers to it. The index is dropped, since the
+// element variable shadows it for the rest of the body.
+func firstAssignShadowsIndex(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		i := s[i]
+		println(i + 1)
+	}
+}
+
+// The adopted name "v" is shadowed by a nested declaration at the second
+// s[i], so it cannot be adopted; keep the declaration and choose a fresh
+// name ("v0") for the range variable.
+func firstAssignShadowedLater(s []int, cond bool) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		v := s[i]
+		if cond {
+			v := "str"
+			println(s[i], v)
+		}
+		println(v)
+	}
+}
+
 // Index used for something other than s[i] — keep both i and v.
 func indexUsedElsewhere(s []int) {
 	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
