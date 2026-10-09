@@ -701,7 +701,7 @@ func (an *analysisNode) typeCheck(ctx context.Context) (*analysisPackage, error)
 
 	// The fact decoder needs a means to look up a Package by path.
 	pkgLookup := typesLookup(ppkg.Types())
-	factsDecoder := facts.NewDecoderFunc(ppkg.Types(), func(path string) *types.Package {
+	factsDecoder := facts.NewDecoder(ppkg.Types(), func(path string) *types.Package {
 		// Note: Decode is called concurrently, and thus so is this function.
 
 		// Does the fact relate to a package reachable through imports?

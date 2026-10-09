@@ -398,7 +398,10 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	}
 
 	// Read facts from imported packages.
-	facts, err := facts.NewDecoder(pkg).Decode(readFacts)
+	// The importer's map contains every package (perhaps indirect)
+	// that could own an object about which facts may be queried.
+	getPackage := func(path string) *types.Package { return imports[path] }
+	facts, err := facts.NewDecoder(pkg, getPackage).Decode(readFacts)
 	if err != nil {
 		return nil, err
 	}

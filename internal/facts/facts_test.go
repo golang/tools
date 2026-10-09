@@ -332,7 +332,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 		}
 
 		// decode
-		facts, err := facts.NewDecoder(pkg).Decode(read)
+		facts, err := newDecoder(pkg).Decode(read)
 		if err != nil {
 			t.Fatalf("Decode failed: %v", err)
 		}
@@ -426,6 +426,27 @@ func load(t *testing.T, dir string, path string) (*types.Package, error) {
 	return pkgs[0].Types, nil
 }
 
+// newDecoder returns a facts decoder for pkg whose package lookup
+// function consults the transitive closure of pkg.Imports().
+//
+// This is equivalent to the importer's package map, because
+// gcimporter records all packages referenced by a package's export
+// data as its imports.
+func newDecoder(pkg *types.Package) *facts.Decoder {
+	m := make(map[string]*types.Package)
+	var visit func(pkgs []*types.Package)
+	visit = func(pkgs []*types.Package) {
+		for _, p := range pkgs {
+			if _, ok := m[p.Path()]; !ok {
+				m[p.Path()] = p
+				visit(p.Imports())
+			}
+		}
+	}
+	visit(pkg.Imports())
+	return facts.NewDecoder(pkg, func(path string) *types.Package { return m[path] })
+}
+
 type otherFact struct {
 	S string
 }
@@ -449,7 +470,7 @@ func TestFactFilter(t *testing.T) {
 	}
 
 	obj := pkg.Scope().Lookup("A")
-	s, err := facts.NewDecoder(pkg).Decode(func(pkgPath string) ([]byte, error) { return nil, nil })
+	s, err := newDecoder(pkg).Decode(func(pkgPath string) ([]byte, error) { return nil, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,7 +582,7 @@ func TestMalformed(t *testing.T) {
 				packages[pkg.Path()] = pkg
 
 				// decode facts
-				facts, err := facts.NewDecoder(pkg).Decode(read)
+				facts, err := facts.NewDecoder(pkg, func(path string) *types.Package { return packages[path] }).Decode(read)
 				if err != nil {
 					t.Fatalf("Decode failed: %v", err)
 				}
