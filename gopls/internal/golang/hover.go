@@ -329,7 +329,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		// fall through to rest of function
 	case ast.Expr:
 		tv, ok := pkg.TypesInfo().Types[node]
-		if !ok {
+		if !ok || tv.Type == types.Typ[types.Invalid] {
 			return protocol.Range{}, nil, nil
 		}
 		if tv.Value != nil {

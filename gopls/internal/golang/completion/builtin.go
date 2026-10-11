@@ -86,7 +86,7 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 		if len(call.Args) > 0 {
 			inf.objType = c.pkg.TypesInfo().TypeOf(call.Args[0])
 		}
-		if inf.objType == nil {
+		if inf.objType == nil || inf.objType == types.Typ[types.Invalid] {
 			inf.objType = parentInf.objType
 		}
 		if inf.objType == nil {

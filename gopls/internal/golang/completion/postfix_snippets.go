@@ -524,7 +524,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 	}
 
 	selType := c.pkg.TypesInfo().TypeOf(sel.X)
-	if selType == nil {
+	if selType == nil || selType == types.Typ[types.Invalid] {
 		return
 	}
 
