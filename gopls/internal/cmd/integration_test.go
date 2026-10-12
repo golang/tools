@@ -1087,14 +1087,39 @@ go 1.18
 -- a/a.go --
 package a
 
-// Doc for someFunctionName
-func someFunctionName()
+// Doc for someFunctionName.
+//
+// Doc link to [someTypeName]
+func someFunctionName() {
+  var a int
+  if a != 0 {
+    panic(a)
+  }
+}
+
+// Doc for someTypeName.
+//
+// More details are here.
+type someTypeName struct {
+	field int
+}
+
+func (someTypeName) helper() {}
+
+// Doc comment for top level type group
+type ( A int; B string )
+
+// Doc comment for top level const group
+const (
+	// Doc for C
+	C string = ""
+)
 `)
 
 	{ // no files
 		res := gopls(t, tree, "inspect")
 		res.checkExit(false)
-		res.checkStderr(`inspect expects 1 argument \(target\)`)
+		res.checkStderr(regexp.QuoteMeta(`inspect expects 1 argument (target)`))
 	}
 	{ // gopls resolve target error
 		res := gopls(t, tree, "inspect", "example.com/b.someFunctionName")
@@ -1104,32 +1129,115 @@ func someFunctionName()
 	{ // success
 		res := gopls(t, tree, "inspect", "example.com/a.someFunctionName")
 		res.checkExit(true)
-		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdoutOmits("Doc link to [someTypeName]")           // Doesn't print full docs
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
 	{ // gopls resolve relative target
 		res := gopls(t, tree+"/a/", "inspect", "a.someFunctionName")
 		res.checkExit(true)
-		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22")) // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22")) // Prints definition location
 	}
 	{ // success with pkg flag
 		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)
-		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
-	{ // testing json and markdown
-		res := gopls(t, tree, "inspect", "-json", "-markdown", "-pkg=example.com/a", "someFunctionName")
+	{ // success with -src on function
+		res := gopls(t, tree, "inspect", "-src", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+		res.checkStdout(regexp.QuoteMeta("panic(a)"))                // Prints body
+	}
+	{
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someTypeName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:16:6-18")) // Prints definition location
+		res.checkStdout("Doc for someTypeName.")
+		res.checkStdoutOmits("More details are here.")                // Doesn't include further paragraphs.
+		res.checkStdout(regexp.QuoteMeta("type someTypeName struct")) // Prints signature
+		// Signature of a type still includes its fields and methods
+		res.checkStdout(regexp.QuoteMeta("field int"))
+		res.checkStdout(regexp.QuoteMeta("func (someTypeName) helper()"))
+	}
+	{ // success with -src on struct (doesn't change output)
+		res := gopls(t, tree, "inspect", "-src", "-pkg=example.com/a", "someTypeName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:16:6-18")) // Prints definition location
+		res.checkStdout("Doc for someTypeName")
+		// Prints full code, but -src will not print methods
+		res.checkStdout(regexp.QuoteMeta("type someTypeName struct {\n\tfield int\n}"))
+		// TODO: We might want -src to print full src code of all methods as well.
+		res.checkStdoutOmits("func (someTypeName) helper()")
+	}
+	{ // testing -full without markdown
+		res := gopls(t, tree, "inspect", "-full", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22")) // Prints definition location
+		// Documentation doesn't use markdown but contains extra paragraphs.
+		res.checkStdout(regexp.QuoteMeta("Doc link to [someTypeName]\n"))
+	}
+	{ // testing -full and -markdown
+		res := gopls(t, tree, "inspect", "-full", "-markdown", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))                         // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("[someTypeName]("))                     // Documentation uses markdown
+		res.checkStdout(regexp.QuoteMeta("```go\nfunc someFunctionName()\n```")) // Prints signature
+	}
+	{ // testing json, markdown and full
+		res := gopls(t, tree, "inspect", "-json", "-markdown", "-full", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)
 		var insp cmd.InspectJSON
 		if !res.toJSON(&insp) {
 			t.Error("res.toJSON failed")
 		}
-		if !strings.Contains(insp.Hover, "```go\nfunc someFunctionName()") {
-			t.Errorf("Hover does not contain a markdown code block. Got: %s", insp.Hover)
+		if !strings.Contains(insp.Docs, "[someTypeName](") {
+			t.Errorf(`Docs is not right. Expected: "[someTypeName](" (markdown) Got: "%s"`, insp.Docs)
 		}
+		if !strings.Contains(insp.Signature, "func someFunctionName()") {
+			t.Errorf(`Signature is not right. Expected "func someFunctionName()" Got: "%s"`, insp.Signature)
+		}
+		if strings.Contains(insp.Signature, "```") {
+			t.Errorf(`Signature isn't expected in markdown form, only Docs. Got: %s`, insp.Signature)
+		}
+	}
+	// Testing grouped types
+	{
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "B")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:23:15-16")) // Prints definition location
+		// Prints top level type group doc comment, since there is no comment for the type itself.
+		res.checkStdout("Doc comment for top level type group")
+		// Without -src, signature print a type definition (includes "type" here).
+		// This is different than w/ -src which prints the exact code, which omits "type".
+		res.checkStdout(regexp.QuoteMeta("type B string"))
+	}
+	{
+		// testing all extra flags
+		res := gopls(t, tree, "inspect", "-src", "-markdown", "-pkg=example.com/a", "B")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:23:15-16")) // Prints definition location
+		// Prints top level type group doc comment, since there is no comment for the type itself.
+		res.checkStdout("Doc comment for top level type group")
+		// Src prints just the type declaration being targeted, not whole decl.
+		res.checkStdout(regexp.QuoteMeta("```go\nB string\n```"))
+	}
+	{
+		// testing all extra flags
+		res := gopls(t, tree, "inspect", "-src", "-markdown", "-pkg=example.com/a", "C")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:28:2-3")) // Prints definition location
+		// Prints doc comment for C.
+		res.checkStdout("Doc for C")
+		// Make sure the top level const group doc comment isn't printed, since we do have a doc comment.
+		res.checkStdoutOmits("Doc comment for top level const group")
+		// Src prints just the const declaration being targeted, not whole decl.
+		res.checkStdout(regexp.QuoteMeta("```go\nC string = \"\"\n```"))
 	}
 }
 
@@ -1335,6 +1443,14 @@ func (res *result) checkExit(success bool) {
 func (res *result) checkStdout(pattern string) {
 	res.t.Helper()
 	res.checkOutput(pattern, "stdout", res.stdout)
+}
+
+// checkStdoutOmits asserts that the gopls standard output doesn't contain the string.
+func (res *result) checkStdoutOmits(s string) {
+	res.t.Helper()
+	if strings.Contains(res.stdout, s) {
+		res.t.Errorf("%s: stdout contains unwanted %q; got <<%s>>", res.command, s, res.stdout)
+	}
 }
 
 // checkStderr asserts that the gopls standard error matches the pattern.

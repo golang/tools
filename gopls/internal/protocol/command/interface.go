@@ -346,6 +346,14 @@ type Interface interface {
 	// called on a path that has not already been loaded.
 	Modules(context.Context, ModulesArgs) (ModulesResult, error)
 
+	// Inspect: Return structured data about a definition location
+	//
+	// This command is similar to Go's hover result but instead returns
+	// the info in a structured form.
+	//
+	// This command is experimental and intended for internal use only.
+	Inspect(context.Context, InspectArgs) (InspectResult, error)
+
 	// ResolveTarget: Resolve a target query to it's definition.
 	//
 	// This command will resolve targets for the closest & longest matching
@@ -991,4 +999,54 @@ type TargetMatch struct {
 	// is an internal utility command to map the target symbol position to
 	// LSP protocol locations.
 	Location protocol.Location `json:"location"`
+}
+
+// InspectArgs are the arguments for the Inspect command.
+type InspectArgs struct {
+	// Location of the identifier to inspect. It may be the declaring
+	// identifier or a reference to it.
+	//
+	// TODO: non-identifier locations (literals, import paths, package
+	// clause, doc links) return partial results; define behavior.
+	Location protocol.Location `json:"location"`
+
+	// IncludeSource determines if various src code fields are returned.
+	IncludeSource bool `json:"includeSource"`
+
+	// Markdown determines whether the output `FullDocumentation` is in markdown.
+	Markdown bool `json:"markdown"`
+}
+
+// InspectResult is the result of the Inspect command.
+type InspectResult struct {
+	// Synopsis is a single sentence Synopsis of the symbol's documentation.
+	Synopsis string `json:"synopsis"`
+
+	// FullDocumentation is the symbol's full documentation.
+	FullDocumentation string `json:"fullDocumentation"`
+
+	// Signature is the symbol's Signature.
+	//
+	// This is typically the "code" used when `IncludeSource == false`.
+	Signature string `json:"signature"`
+
+	// Declaration contains a version of the declaration node for the target.
+	//
+	// Only set if `IncludeSource == true`, this contains the full code
+	// (without doc comments) for the definition of the target.
+	Declaration string `json:"declaration"`
+
+	// Methods is the list of descriptions of methods of a type,
+	// omitting any that are obvious from typeDecl.
+	// It is "" for a non-type.
+	//
+	// Requires `IncludeSource == true`
+	Methods string `json:"methods"`
+
+	// PromotedFields is the list of descriptions of accessible
+	// fields of a (struct) type that were promoted through an
+	// embedded field.
+	//
+	// Requires `IncludeSource == true`
+	PromotedFields string `json:"promotedFields"`
 }

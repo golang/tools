@@ -123,7 +123,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	ctx, done := event.Start(ctx, "golang.Hover")
 	defer done()
 
-	rng, h, err := hover(ctx, snapshot, fh, rng)
+	rng, h, err := hover(ctx, snapshot, fh, rng, true)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 // hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (protocol.Range, *hoverResult, error) {
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, sizeInfo bool) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
 	// whether this is a GOROOT view, but even if it does succeed the resulting
@@ -489,7 +489,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	//
 	var sizeOffset string
 
-	if ident.Pos() == obj.Pos() {
+	if sizeInfo && ident.Pos() == obj.Pos() {
 		// This is the declaring identifier.
 
 		// format returns the decimal and hex representation of x.

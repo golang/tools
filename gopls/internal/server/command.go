@@ -2128,3 +2128,18 @@ func (c *commandHandler) ResolveTarget(ctx context.Context, args command.Resolve
 
 	return result, err
 }
+
+func (c *commandHandler) Inspect(ctx context.Context, args command.InspectArgs) (command.InspectResult, error) {
+	var result command.InspectResult
+	err := c.run(ctx, commandConfig{
+		forURI: args.Location.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		res, err := golang.Inspect(ctx, deps.snapshot, deps.fh, args)
+		if err != nil {
+			return err
+		}
+		result = res
+		return nil
+	})
+	return result, err
+}
