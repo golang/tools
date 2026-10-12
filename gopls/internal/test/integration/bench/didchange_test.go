@@ -6,6 +6,10 @@ package bench
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -101,8 +105,6 @@ func BenchmarkDiagnoseChange(b *testing.B) {
 	}
 }
 
-// TODO(rfindley): add a benchmark for with a metadata-affecting change, when
-// this matters.
 func BenchmarkDiagnoseSave(b *testing.B) {
 	for _, test := range didChangeTests {
 		runChangeDiagnosticsBenchmark(b, test, true, "diagnoseSave")
@@ -116,36 +118,14 @@ func runChangeDiagnosticsBenchmark(b *testing.B, test changeTest, save bool, ope
 		if !test.canSave {
 			b.Skipf("skipping as %s cannot be saved", test.file)
 		}
-		sharedEnv := getRepo(b, test.repo).sharedEnv(b)
-		config := fake.EditorConfig{
-			Env: map[string]string{
-				"GOPATH": sharedEnv.Sandbox.GOPATH(),
-			},
-			Settings: map[string]any{
-				"diagnosticsDelay": "0s",
-			},
-		}
-		// Use a new env to avoid the diagnostic delay: we want to measure how
-		// long it takes to produce the diagnostics.
-		env, close := getRepo(b, test.repo).newEnv(b, config, operation, false)
-		defer close()
-		env.OpenFile(test.file)
-		// Insert the text we'll be modifying at the top of the file.
-		env.EditBuffer(test.file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})
-		if save {
-			env.SaveBuffer(test.file)
-		}
-		env.AfterChange()
-		b.ResetTimer()
-
-		// We must use an extra subtest layer here, so that we only set up the
-		// shared env once (otherwise we pay additional overhead and the profiling
-		// flags don't work).
-		b.Run("diagnose", func(b *testing.B) {
-			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, operation)); stopAndRecord != nil {
-				defer stopAndRecord()
+		runDiagnosticsBenchmark(b, test, operation, func(env *Env) func() {
+			// Insert the text we'll be modifying at the top of the file.
+			env.EditBuffer(test.file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})
+			if save {
+				env.SaveBuffer(test.file)
 			}
-			for b.Loop() {
+			env.AfterChange()
+			return func() {
 				edits := atomic.AddInt64(&editID, 1)
 				env.EditBuffer(test.file, protocol.TextEdit{
 					Range: protocol.Range{
@@ -158,8 +138,136 @@ func runChangeDiagnosticsBenchmark(b *testing.B, test changeTest, save bool, ope
 				if save {
 					env.SaveBuffer(test.file)
 				}
-				env.AfterChange()
 			}
 		})
 	})
+}
+
+// runDiagnosticsBenchmark opens test.file in a fresh environment and runs a
+// subtest that repeatedly applies an edit and awaits the resulting diagnostics.
+// makeEdit prepares the file for incremental editing and returns the function to
+// run for each iteration.
+func runDiagnosticsBenchmark(b *testing.B, test changeTest, operation string, makeEdit func(*Env) func()) {
+	repo := getRepo(b, test.repo)
+	config := fake.EditorConfig{
+		Env: map[string]string{
+			"GOPATH": repo.sharedEnv(b).Sandbox.GOPATH(),
+		},
+		Settings: map[string]any{
+			"diagnosticsDelay": "0s",
+		},
+	}
+	// Use a new env to avoid the diagnostic delay: we want to measure how
+	// long it takes to produce the diagnostics.
+	env, close := repo.newEnv(b, config, operation, false)
+	defer close()
+	env.OpenFile(test.file)
+	edit := makeEdit(env)
+	b.ResetTimer()
+
+	// We must use an extra subtest layer here, so that we only set up the
+	// shared env once (otherwise we pay additional overhead and the profiling
+	// flags don't work).
+	b.Run("diagnose", func(b *testing.B) {
+		if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, operation)); stopAndRecord != nil {
+			defer stopAndRecord()
+		}
+		for b.Loop() {
+			edit()
+			env.AfterChange()
+		}
+	})
+}
+
+// BenchmarkImportChange measures an unsaved import-path edit and the resulting
+// metadata reload and diagnostics, excluding the diagnostics delay. The edits
+// toggle a standard-library import that the file does not otherwise use, so each
+// edit changes the set of import paths, both by adding and by removing one; as
+// Go reports the mean time per iteration, the two edits are averaged. They vary
+// file contents to avoid type-checking result cache hits. This does not measure
+// formatting, saving, or downloading modules.
+func BenchmarkImportChange(b *testing.B) {
+	for _, test := range didChangeTests {
+		b.Run(test.repo, func(b *testing.B) {
+			// Unlike the diagnose benchmarks, no canSave check is needed here:
+			// the import edit is not saved.
+			runDiagnosticsBenchmark(b, test, "importChange", func(env *Env) func() {
+				return makeImportEditFunc(env, test.file)
+			})
+		})
+	}
+}
+
+// makeImportEditFunc inserts a blank import after the package clause, and
+// returns a function that toggles that import on and off, alternating between
+// two otherwise unused standard-library paths. Toggling covers both adding and
+// removing an import path. Each edit also changes a comment on the import's line
+// to avoid hitting content-addressed caches for type-checking results. Both
+// changes use a single didChange. The edited line always exists, so the edit
+// range never needs to be recomputed.
+func makeImportEditFunc(env *Env, file string) func() {
+	text := env.BufferText(file)
+	fset := token.NewFileSet()
+	header, err := parser.ParseFile(fset, file, text, parser.ImportsOnly)
+	if err != nil {
+		env.TB.Fatal(err)
+	}
+	used := make(map[string]bool)
+	for _, imp := range header.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			env.TB.Fatal(err)
+		}
+		used[path] = true
+	}
+	var paths []string
+	for _, path := range []string{"math", "math/cmplx", "math/bits", "container/list", "container/heap"} {
+		if !used[path] {
+			paths = append(paths, path)
+			if len(paths) == 2 {
+				break
+			}
+		}
+	}
+	if len(paths) != 2 {
+		env.TB.Fatalf("no unused import paths for %s", file)
+	}
+
+	// Insert after the physical package-clause line, including any trailing
+	// comment or semicolon. Preserve the original text after that line.
+	offset := fset.File(header.Name.Pos()).Offset(header.Name.End())
+	prefix := ""
+	if newline := strings.IndexByte(text[offset:], '\n'); newline >= 0 {
+		offset += newline + 1
+	} else {
+		offset = len(text)
+		prefix = "\n"
+	}
+	m := protocol.NewMapper("", []byte(text))
+	at, err := m.OffsetRange(offset, offset)
+	if err != nil {
+		env.TB.Fatal(err)
+	}
+	env.EditBuffer(file, protocol.TextEdit{
+		Range:   at,
+		NewText: prefix + fmt.Sprintf("import _ %q // __TEST_PLACEHOLDER_0__\n", paths[0]),
+	})
+	env.AfterChange()
+	importStart := env.RegexpSearch(file, "import _ "+strconv.Quote(paths[0])).Range.Start
+	importRange := protocol.Range{Start: importStart, End: protocol.Position{Line: importStart.Line + 1}}
+
+	next := 1
+	present := true
+	return func() {
+		comment := fmt.Sprintf("// __TEST_PLACEHOLDER_%d__", atomic.AddInt64(&editID, 1))
+		newText := comment + "\n"
+		if present {
+			present = false
+		} else {
+			newText = fmt.Sprintf("import _ %q %s\n", paths[next], comment)
+			next = 1 - next
+			present = true
+		}
+		env.EditBuffer(file, protocol.TextEdit{Range: importRange, NewText: newText})
+	}
 }
