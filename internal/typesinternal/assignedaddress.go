@@ -92,7 +92,7 @@ outer:
 			// If x[i] or x[i:j] is an lvalue,
 			// then x is an lvalue iff x is an array.
 			t := info.TypeOf(cur.Node().(ast.Expr))
-			if t == nil {
+			if t == nil || t == types.Typ[types.Invalid] {
 				return true // no type information (ill-typed code); be conservative
 			}
 			if !is[*types.Array](t.Underlying()) {
