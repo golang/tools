@@ -1056,16 +1056,14 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 		case constant.Int:
 			switch lit.Kind {
 			case token.CHAR:
-				s, err := strconv.Unquote(lit.Value)
-				if err != nil {
-					// If the conversion fails, it's because of an invalid syntax, therefore
-					// there is no rune to be found.
+				// Use strconv.UnquoteChar because strconv.Unquote does not decode
+				// non-ASCII byte escapes as UTF-8 (https://go.dev/issue/82205).
+				rr, _, tail, err := strconv.UnquoteChar(lit.Value[1:], '\'')
+				if err != nil || tail != "'" {
 					return protocol.Range{}, nil, nil
 				}
-				r, _ = utf8.DecodeRuneInString(s)
-				if r == utf8.RuneError {
-					return protocol.Range{}, nil, fmt.Errorf("rune error")
-				}
+
+				r = rr
 				start, end = lit.Pos(), lit.End()
 			case token.INT:
 				// Short literals (e.g. 99 decimal, 07 octal) are uninteresting.

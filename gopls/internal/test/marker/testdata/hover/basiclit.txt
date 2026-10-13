@@ -29,6 +29,9 @@ func _() {
 	_ = "foo \x7E bar" //@hover("\\x7E", "\\x7E", tilde)
 	_ = "foo \a bar" //@hover("\\a", "\\a", control)
 
+	_ = '\xc6' //@hover("'\\xc6'", "'\\xc6'", latinAE)
+	_ = '\306' //@hover("'\\306'", "'\\306'", latinAE)
+
 	_ = '\173' //@hover("'\\173'", "'\\173'", leftCurly)
 	_ = "foo \173 bar" //@hover("\\173","\\173", leftCurly)
 	_ = "foo \173 bar \u2211 baz" //@hover("\\173","\\173", leftCurly)
@@ -73,6 +76,8 @@ U+0007, control
 78187493520
 -- @latinA --
 'a', U+0061, LATIN SMALL LETTER A
+-- @latinAE --
+'Æ', U+00C6, LATIN CAPITAL LETTER AE
 -- @latinAHex --
 97, 'a', U+0061, LATIN SMALL LETTER A
 -- @leftCurly --
