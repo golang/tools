@@ -9,4 +9,4 @@ package gcimporter
 
 var IExportCommon = iexportCommon
 
-const IExportVersion = iexportVersionGenericMethods
+const IExportVersion = iexportVersion

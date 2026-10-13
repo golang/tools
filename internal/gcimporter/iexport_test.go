@@ -530,3 +530,59 @@ const C3 Generic[struct{}] = 3
 		t.Fatalf("IImportData: %v", err)
 	}
 }
+
+// TestIExportData_exactFloats checks that, as of iexportVersionRationalFloats,
+// floating point constants round-trip without loss (go.dev/issue/82186).
+func TestIExportData_exactFloats(t *testing.T) {
+	const src = `package p
+
+const (
+	Third                = 1.0 / 3
+	NegSeventh           = -1.0 / 7
+	Zero                 = 0.0
+	Int                  = 42.0
+	NegInt               = -2.0
+	BigInt               = 1e100       // integer; fits untyped mpint
+	MaxMpint             = 0x1p512 - 1 // largest integer encoded as mpint
+	TooBigInt            = 0x1p512     // too large for mpint; encoded as rational
+	HugeInt              = -1e300      // too large for mpint; encoded as rational
+	Huge                 = 1e10000 / 3 // not representable as a rational by go/constant
+	Tiny                 = 1e-10000
+	Complex              = 1.0/3 + (2.0/7)*1i
+	F32       float32    = 1.0 / 3
+	F64       float64    = 1.0 / 3
+	F64Int    float64    = 1e20
+	C128      complex128 = 1.0/3 + 1i
+)
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conf types.Config
+	pkg, err := conf.Check("p", fset, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := iexport(fset, gcimporter.IExportVersion, pkg)
+	if err != nil {
+		t.Fatalf("iexport: %v", err)
+	}
+	pkg2, err := gcimporter.IImportData(token.NewFileSet(), make(map[string]*types.Package), data, pkg.Path())
+	if err != nil {
+		t.Fatalf("IImportData: %v", err)
+	}
+
+	for _, name := range pkg.Scope().Names() {
+		want := pkg.Scope().Lookup(name).(*types.Const).Val()
+		got := pkg2.Scope().Lookup(name).(*types.Const).Val()
+		// Compare exact representations: constant.Compare considers
+		// 1/3 equal to its 512-bit float approximation.
+		if got.ExactString() != want.ExactString() {
+			t.Errorf("%s: got %s, want %s (exact: got %s, want %s)",
+				name, got, want, got.ExactString(), want.ExactString())
+		}
+	}
+}
