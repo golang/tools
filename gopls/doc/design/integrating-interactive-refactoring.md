@@ -128,7 +128,7 @@ export interface FormField {
 	required: boolean;
 
 	// Default specifies an optional initial value for the answer.
-	// If Type is FormFieldTypeEnum, this value must be present in the enum's values array.
+	// If Type is FormFieldTypeEnum, this value must match one of the enum's entries.
 	default?: any;
 
 	// Error provides a validation message from the language server.
@@ -230,9 +230,6 @@ export interface FormEnumEntry {
 export interface FormFieldTypeEnum {
 	kind: 'enum';
 
-	// Name is an optional identifier for the enum type.
-	name?: string;
-
 	// Entries is the list of allowable options.
 	entries: FormEnumEntry[];
 }
@@ -251,6 +248,8 @@ export interface FormFieldTypeLazyEnum {
 	kind: 'lazyEnum';
 
 	// Source identifies the data source on the server.
+	// The client treats this as opaque data and echoes it back in the
+	// 'interactive/listEnum' request.
 	//
 	// Examples: "workspace/symbol", "database/schema", "git/tags".
 	source: string;
@@ -298,6 +297,7 @@ Request:
 ```typescript
 export interface InteractiveListEnumParams {
 	// Identifies the data source on the server (e.g., "workspace/symbol").
+	// The client treats this as opaque data and echoes it back from the form field.
 	source: string;
 
 	// Opaque configuration data provided by the server in the form field,
@@ -310,7 +310,7 @@ export interface InteractiveListEnumParams {
 ```
 
 Response:
-- Result: `FormFieldTypeEnum` containing the matching `entries` for the query.
+- Result: `FormEnumEntry[]` containing the matching entries for the query.
 - error: code and message set in case an exception happens during interactive enum fetching.
 
 ## Interaction Example
@@ -343,15 +343,15 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
      "arguments": [{ "Modification": "add" }],
      "formFields": [
        {
-         "id": "tags",
-         "description": "comma-separated list of tags to add",
+         "id": "addTags",
+         "description": "comma-separated list of tags to add; e.g.. \"json,xml\"",
          "type": { "kind": "string" },
          "required": true,
          "default": "json"
        },
        {
          "id": "transform",
-         "description": "transform rule for added tags",
+         "description": "transform rule for added tags, e.g., \"camelcase' or 'snakecase\"",
          "type": { "kind": "enum", "entries": [...] },
          "required": true,
          "default": "camelcase"
@@ -368,7 +368,7 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
      "command": "gopls.modify_tags",
      "arguments": [{ "Modification": "add" }],
      "formAnswers": [
-       { "id": "tags", "value": "json,foo" },
+       { "id": "addTags", "value": "json,foo" },
        { "id": "transform", "value": "camelcase" }
      ]
    }
@@ -384,23 +384,23 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
          "arguments": [{ "Modification": "add" }],
          "formFields": [
            {
-             "id": "tags",
-             "description": "comma-separated list of tags to add",
+             "id": "addTags",
+             "description": "comma-separated list of tags to add; e.g.. \"json,xml\"",
              "type": { "kind": "string" },
              "required": true,
              "default": "json",
-             "error": "cannot contain spaces, quotes, colons, or control characters"
+             "error": "illegal tag \"fo o\": cannot contain spaces, quotes, colons, or control characters"
            },
            {
              "id": "transform",
-             "description": "transform rule for added tags",
+             "description": "transform rule for added tags, e.g., \"camelcase' or 'snakecase\"",
              "type": { "kind": "enum", "entries": [...] },
              "required": true,
              "default": "camelcase"
            }
          ],
          "formAnswers": [
-           { "id": "tags", "value": "json,fo o" },
+           { "id": "addTags", "value": "json,fo o" },
            { "id": "transform", "value": "camelcase" }
          ]
        }
@@ -413,7 +413,7 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
          "command": "gopls.modify_tags",
          "arguments": [{ "Modification": "add" }],
          "formAnswers": [
-           { "id": "tags", "value": "json,foo" },
+           { "id": "addTags", "value": "json,foo" },
            { "id": "transform", "value": "camelcase" }
          ]
        }
@@ -424,7 +424,7 @@ Here is a concrete example of the interaction flow for `gopls.modify_tags` (addi
          "command": "gopls.modify_tags",
          "arguments": [{ "Modification": "add" }],
          "formAnswers": [
-           { "id": "tags", "value": "json,foo" },
+           { "id": "addTags", "value": "json,foo" },
            { "id": "transform", "value": "camelcase" }
          ]
        }

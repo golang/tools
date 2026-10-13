@@ -210,7 +210,7 @@ type FormField struct {
 	// Default specifies an optional initial value for the answer.
 	//
 	// If Type is FormFieldTypeEnum, this value must be present in the enum's
-	// Values slice.
+	// Entries slice.
 	Default any `json:"default,omitempty"`
 
 	// Error provides a validation message from the language server.
