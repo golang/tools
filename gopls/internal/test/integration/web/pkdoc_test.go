@@ -270,6 +270,88 @@ func Constructor() Type
 	})
 }
 
+// TestPkgDocDeprecated tests that deprecated symbols are marked
+// with a "deprecated" tag, as in pkg.go.dev.
+func TestPkgDocDeprecated(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+// Deprecated: use G.
+func F() {}
+
+func G() {}
+
+// T is a type.
+//
+// Deprecated: use U.
+type T int
+
+// NewT returns a T.
+//
+// Deprecated: don't.
+func NewT() T
+
+// Deprecated: use N.
+func (T) M() {}
+
+func (T) N() {}
+
+type U int
+
+type (
+	// Deprecated: use U.
+	V int
+
+	W int
+)
+
+// X does nothing. Deprecated: use G.
+func X() {}
+
+// Deprecated: use D.
+const C = 1
+
+const D = 2
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a.go"))
+		doc := get(t, uri1)
+
+		q := regexp.QuoteMeta
+		const tag = ` <span class='deprecation'>deprecated</span>`
+
+		// index
+		checkMatch(t, true, doc, q(`<li><a href='#F'>func F()</a>`+tag+`</li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#G'>func G()</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#T'>type T</a>`+tag+`</li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#NewT'>func NewT() T</a>`+tag+`</li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#T.M'>func (T) M()</a>`+tag+`</li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#T.N'>func (T) N()</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#U'>type U</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#V'>type V</a>`+tag+`</li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#W'>type W</a></li>`))
+		checkMatch(t, true, doc, q(`<li><a href='#X'>func X()</a>`+tag+`</li>`))
+
+		// headings
+		checkMatch(t, true, doc, `<h3 id='F'>func <a [^>]*>F</a>`+q(tag))
+		checkMatch(t, false, doc, `<h3 id='G'>func <a [^>]*>G</a>`+q(tag))
+		checkMatch(t, true, doc, `<h3 id='T'>type <a [^>]*>T</a>`+q(tag))
+		checkMatch(t, true, doc, `<h3 id='NewT'>func <a [^>]*>NewT</a>`+q(tag))
+		checkMatch(t, true, doc, `<h4 id='T.M'>func \(T\) <a [^>]*>M</a>`+q(tag))
+		checkMatch(t, false, doc, `<h4 id='T.N'>func \(T\) <a [^>]*>N</a>`+q(tag))
+		checkMatch(t, false, doc, `<h3 id='U'>type <a [^>]*>U</a>`+q(tag))
+
+		// values
+		checkMatch(t, true, doc, `<a id='C'></a>\n<div>`+q(strings.TrimSpace(tag))+`</div>`)
+		checkMatch(t, false, doc, `<a id='D'></a>\n<div>`)
+	})
+}
+
 // TestPkgDocContext tests that the gopls.doc command title and /pkg
 // URL are appropriate for the current selection. It is effectively a
 // test of golang.DocFragment.
