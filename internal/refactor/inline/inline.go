@@ -967,6 +967,26 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 				// callee body is not suitable as a standalone statement
 				// (f() or <-ch), explicitly discard the results:
 				// Reduces to: _, _ = exprs
+
+				// Make any inferred composite literals {...} explicit,
+				// as blank identifiers supply no type.
+				if len(results) == callee.NumResults {
+					var (
+						fieldIdx int // index in func return fields
+						nameIdx  int // index in func return fields' names
+					)
+					for i, expr := range results {
+						field := calleeDecl.Type.Results.List[fieldIdx]
+						if isInferredCompLit(expr) {
+							isPtr := callee.Returns[0][i]&pointerResult != 0
+							results[i] = explicitType(field.Type, isPtr, expr)
+						}
+						if nameIdx++; nameIdx >= len(field.Names) {
+							fieldIdx++
+							nameIdx = 0
+						}
+					}
+				}
 				discard := &ast.AssignStmt{
 					Lhs: blanks[ast.Expr](callee.NumResults),
 					Tok: token.ASSIGN,

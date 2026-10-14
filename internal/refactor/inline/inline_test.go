@@ -2041,6 +2041,12 @@ func TestInferredCompLits(t *testing.T) {
 			`func _() int { return T{1, 2}.x }`,
 		},
 		{
+			"Result discarded in statement context.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() { f() }`,
+			`func _() { _ = T{1, 2} }`,
+		},
+		{
 			"Result of pointer type assigned to new var.",
 			`type T struct{ x, y int }; func f() *T { return {1, 2} }`,
 			`func _() { x := f(); _ = x }`,
