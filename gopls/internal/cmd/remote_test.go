@@ -241,8 +241,11 @@ var _ = Arch
 	// Second command reuses the running daemon, but sets GOARCH to altArch in
 	// its environment. The daemon must evaluate the query using the client's
 	// GOARCH, not the daemon's host GOARCH.
+	//
+	// GOOS is also set so that the GOOS/GOARCH pair is valid regardless of
+	// the host OS (e.g. solaris/arm64 is unsupported; see golang/go#82199).
 	{
-		clientEnv := append([]string{"GOARCH=" + altArch}, baseEnv...)
+		clientEnv := append([]string{"GOOS=linux", "GOARCH=" + altArch}, baseEnv...)
 		res := goplsWithEnv(t, tree, clientEnv, append(remote, "definition", "a.go:3:9")...)
 		res.checkExit(true)
 		res.checkStdout(fmt.Sprintf(`arch_%s\.go:5:7-11: defined here as const Arch`, altArch))

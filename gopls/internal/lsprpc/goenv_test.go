@@ -111,11 +111,16 @@ func TestAddGoEnv(t *testing.T) {
 	if runtime.GOARCH == "arm64" {
 		altArch = "amd64"
 	}
+	// Also override GOOS so that the GOOS/GOARCH pair is valid
+	// regardless of the host OS (e.g. solaris/arm64 is unsupported,
+	// causing 'go env' to fail; see golang/go#82201).
+	const altOS = "linux"
 
 	t.Run("preserves existing overrides", func(t *testing.T) {
 		params := &protocol.ParamInitialize{
 			InitializationOptions: map[string]any{
 				"env": map[string]any{
+					"GOOS":   altOS,
 					"GOARCH": altArch,
 				},
 			},
@@ -140,6 +145,7 @@ func TestAddGoEnv(t *testing.T) {
 		params := &protocol.ParamInitialize{
 			InitializationOptions: map[string]any{
 				"env": map[string]string{
+					"GOOS":   altOS,
 					"GOARCH": altArch,
 				},
 			},
