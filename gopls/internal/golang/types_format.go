@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -318,7 +319,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 			if e, ok := rtype.(*ast.StarExpr); ok {
 				rtype = e.X
 			}
-			if x, _, _, _ := typeparams.UnpackIndexExpr(rtype); x != nil {
+			if x, _, _, _ := astutil.UnpackIndexExpr(rtype); x != nil {
 				return typeString, nil // in method of generic type
 			}
 		}
