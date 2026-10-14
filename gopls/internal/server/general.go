@@ -878,6 +878,9 @@ func recordClientInfo(clientName string) {
 		{"Jetski", "gopls/client:antigravity"},
 		{"Windsurf", "gopls/client:windsurf"},
 
+		// https://github.com/unstablebuild/rune/blob/22d6a52611c6f7a18d5948724a06616e3b345f19/internal/ide/idelsp/server.go#L44
+		{"rune", "gopls/client:rune"},
+
 		// TODO: add 'gopls-cli' once telemetry proposal is approved.
 	} {
 		if strings.HasPrefix(clientName, cli.clientNamePrefix) {
