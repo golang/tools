@@ -311,8 +311,6 @@ package src
 
 import dest20 "golang.org/lsptests/movedeclrefs/dest2"
 
-
-
 func _() {
 	var dest2 int
 	_ = dest2
