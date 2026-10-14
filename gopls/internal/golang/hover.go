@@ -1038,9 +1038,9 @@ func hoverPackageName(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 // the value of the rune under the cursor.
 func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, posRange astutil.Range) (protocol.Range, *hoverResult, error) {
 	var (
-		value      string    // if non-empty, a constant value to format in hover
-		r          rune      // if non-zero, format a description of this rune in hover
-		start, end token.Pos // hover span
+		value      string         // if non-empty, a constant value to format in hover
+		r          rune      = -1 // if >= 0, format a description of this rune in hover
+		start, end token.Pos      // hover span
 	)
 	if lit, ok := expr.(*ast.BasicLit); ok {
 		switch tv.Value.Kind() {
@@ -1137,7 +1137,7 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 		start, end = expr.Pos(), expr.End()
 	}
 
-	if value == "" && r == 0 { // nothing to format
+	if value == "" && r < 0 { // nothing to format
 		return protocol.Range{}, nil, nil
 	}
 
@@ -1150,7 +1150,7 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 	if value != "" {
 		b.WriteString(value)
 	}
-	if r != 0 {
+	if r >= 0 {
 		runeName := runenames.Name(r)
 		if len(runeName) > 0 && runeName[0] == '<' {
 			// Check if the rune looks like an HTML tag. If so, trim the surrounding <>

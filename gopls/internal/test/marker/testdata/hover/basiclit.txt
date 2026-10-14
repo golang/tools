@@ -32,6 +32,11 @@ func _() {
 	_ = '\xc6' //@hover("'\\xc6'", "'\\xc6'", latinAE)
 	_ = '\306' //@hover("'\\306'", "'\\306'", latinAE)
 
+	_ = '\x00' //@hover("'\\x00'", "'\\x00'", nullChar)
+	_ = '\000' //@hover("'\\000'", "'\\000'", nullChar)
+	_ = '\u0000' //@hover("'\\u0000'", "'\\u0000'", nullChar)
+	_ = "foo \x00 bar" //@hover("\\x00", "\\x00", nullChar)
+
 	_ = '\173' //@hover("'\\173'", "'\\173'", leftCurly)
 	_ = "foo \173 bar" //@hover("\\173","\\173", leftCurly)
 	_ = "foo \173 bar \u2211 baz" //@hover("\\173","\\173", leftCurly)
@@ -82,6 +87,8 @@ U+0007, control
 97, 'a', U+0061, LATIN SMALL LETTER A
 -- @leftCurly --
 '{', U+007B, LEFT CURLY BRACKET
+-- @nullChar --
+U+0000, control
 -- @octalNumber --
 63
 -- @summation --
