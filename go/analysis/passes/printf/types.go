@@ -78,12 +78,12 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 			return true
 		}
 		m.seen[typ] = true
-		terms, err := typeparams.StructuralTerms(typ)
-		if err != nil {
-			return true // invalid type (possibly an empty type set)
+		ts := typeparams.TypeSetOf(typ)
+		if ts.Empty() {
+			return true // empty type set: vacuously matches
 		}
 
-		if len(terms) == 0 {
+		if ts.Unrestricted() {
 			// No restrictions on the underlying of typ. Type parameters implementing
 			// error, fmt.Formatter, or fmt.Stringer were handled above, and %v and
 			// %T was handled in matchType. We're about to check restrictions the
@@ -103,7 +103,7 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		// parameters.
 		reportReason := len(m.seen) == 1
 
-		for _, term := range terms {
+		for term := range ts.Terms() {
 			if !m.match(term.Type(), topLevel) {
 				if reportReason {
 					if term.Tilde() {

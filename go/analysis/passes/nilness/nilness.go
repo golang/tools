@@ -317,7 +317,7 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		// A MakeInterface of a type parameter is non-nil if
 		// the type parameter cannot be instantiated as an
 		// interface type (#66835).
-		if terms, err := typeparams.NormalTerms(tparam.Constraint()); err == nil && len(terms) > 0 {
+		if typeparams.TypeSetOf(tparam).Len() > 0 {
 			return isnonnil
 		}
 

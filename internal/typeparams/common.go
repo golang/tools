@@ -4,12 +4,15 @@
 
 // Package typeparams contains common utilities for writing tools that
 // interact with generic Go code, as introduced with Go 1.18. It
-// supplements the standard library APIs. Notably, the StructuralTerms
-// API computes a minimal representation of the structural
-// restrictions on a type parameter.
+// supplements the standard library APIs. Notably, [TypeSetOf]
+// computes a minimal representation of the type set of a type
+// parameter.
 //
-// An external version of these APIs is available in the
-// golang.org/x/exp/typeparams module.
+// TODO(adonovan): This package should be melted down or moved
+// elsewhere (such as go/types, x/tools/go/types/typeutil, or
+// x/tools/internal/typesinternal). Some of these APIs are available
+// externally in the golang.org/x/exp/typeparams module, though the
+// implementations may be stale.
 package typeparams
 
 import (

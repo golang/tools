@@ -1612,10 +1612,8 @@ func (c *completer) lexical(ctx context.Context) error {
 		// This ensures we suggest "[]int" and "[]float64" for a constraint
 		// with type union "[]int | []float64".
 		if t, ok := c.inference.objType.(*types.Interface); ok {
-			if terms, err := typeparams.InterfaceTermSet(t); err == nil {
-				for _, term := range terms {
-					c.injectType(ctx, term.Type())
-				}
+			for term := range typeparams.TypeSetOf(t).Terms() {
+				c.injectType(ctx, term.Type())
 			}
 		}
 	} else {

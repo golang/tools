@@ -108,14 +108,11 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 
 	// First, find a type T0 in T that has an underlying type of string.
 	T := tname.Type()
-	ttypes, err := structuralTypes(T)
-	if err != nil {
-		return // invalid type
-	}
-
 	var T0 types.Type // string type in the type set of T
 
-	for _, tt := range ttypes {
+	ttypes := typeparams.TypeSetOf(T)
+	for term := range ttypes.Terms() {
+		tt := term.Type()
 		u, _ := tt.Underlying().(*types.Basic)
 		if u != nil && u.Kind() == types.String {
 			T0 = tt
@@ -131,14 +128,12 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 	// Next, find a type V0 in V that has an underlying integral type that is
 	// not byte or rune.
 	V := info.TypeOf(arg)
-	vtypes, err := structuralTypes(V)
-	if err != nil {
-		return // invalid type
-	}
+	vtypes := typeparams.TypeSetOf(V)
 
 	var V0 types.Type // integral type in the type set of V
 
-	for _, vt := range vtypes {
+	for term := range vtypes.Terms() {
+		vt := term.Type()
 		u, _ := vt.Underlying().(*types.Basic)
 		if u != nil && u.Info()&types.IsInteger != 0 {
 			switch u.Kind() {
@@ -156,8 +151,8 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 	}
 
 	convertibleToRune := true // if true, we can suggest a fix
-	for _, t := range vtypes {
-		if !types.ConvertibleTo(t, types.Typ[types.Rune]) {
+	for term := range vtypes.Terms() {
+		if !types.ConvertibleTo(term.Type(), types.Typ[types.Rune]) {
 			convertibleToRune = false
 			break
 		}
@@ -214,7 +209,7 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 	// and fix differs. Similarly, don't use it if the type
 	// has methods, as a Format method may change the behavior
 	// of fmt.Sprintf.
-	sprintfOK := len(ttypes) == 1 && len(vtypes) == 1 && types.NewMethodSet(V0).Len() == 0
+	sprintfOK := ttypes.Len() == 1 && vtypes.Len() == 1 && types.NewMethodSet(V0).Len() == 0
 
 	// The first fix must preserve the existing behavior,
 	// since it is the one applied by "go fix". (This lets
@@ -271,7 +266,7 @@ func Check(info *types.Info, curCall inspector.Cursor) (_ analysis.Diagnostic, o
 
 // runeIsExact reports whether string(rune(x)) is equivalent to
 // string(x) for the argument x, whose type set is vtypes.
-func runeIsExact(info *types.Info, x ast.Expr, vtypes []types.Type) bool {
+func runeIsExact(info *types.Info, x ast.Expr, vtypes typeparams.TypeSet) bool {
 	// Constant that fits in 32 bits?
 	if tv := info.Types[x]; tv.Value != nil {
 		v, exact := constant.Int64Val(constant.ToInt(tv.Value))
@@ -279,8 +274,8 @@ func runeIsExact(info *types.Info, x ast.Expr, vtypes []types.Type) bool {
 	}
 
 	// All types in the type set at most 32 bits wide?
-	for _, t := range vtypes {
-		u, ok := t.Underlying().(*types.Basic)
+	for under := range vtypes.UnderlyingTypes() {
+		u, ok := under.(*types.Basic)
 		if !ok {
 			return false
 		}
@@ -307,20 +302,4 @@ func isUntypedConst(info *types.Info, x ast.Expr) bool {
 func is[T any](x any) bool {
 	_, ok := x.(T)
 	return ok
-}
-
-func structuralTypes(t types.Type) ([]types.Type, error) {
-	var structuralTypes []types.Type
-	if tp, ok := types.Unalias(t).(*types.TypeParam); ok {
-		terms, err := typeparams.StructuralTerms(tp)
-		if err != nil {
-			return nil, err
-		}
-		for _, term := range terms {
-			structuralTypes = append(structuralTypes, term.Type())
-		}
-	} else {
-		structuralTypes = append(structuralTypes, t)
-	}
-	return structuralTypes, nil
 }

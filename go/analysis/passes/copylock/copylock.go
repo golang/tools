@@ -290,11 +290,7 @@ func lockPath(tpkg *types.Package, typ types.Type, seen map[types.Type]bool) typ
 	seen[typ] = true
 
 	if tpar, ok := types.Unalias(typ).(*types.TypeParam); ok {
-		terms, err := typeparams.StructuralTerms(tpar)
-		if err != nil {
-			return nil // invalid type
-		}
-		for _, term := range terms {
+		for term := range typeparams.TypeSetOf(tpar).Terms() {
 			subpath := lockPath(tpkg, term.Type(), seen)
 			if len(subpath) > 0 {
 				if term.Tilde() {

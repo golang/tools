@@ -45,7 +45,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"iter"
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
@@ -379,8 +378,8 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 		f.sig = saved
 
 	case *ast.CompositeLit:
-		for term := range terms(typeparams.Deref(tv.Type)) {
-			switch T := term.Underlying().(type) {
+		for under := range typeparams.TypeSetOf(typeparams.Deref(tv.Type)).UnderlyingTypes() {
+			switch T := under.(type) {
 			case *types.Struct:
 				for i, elem := range e.Elts {
 					if kv, ok := elem.(*ast.KeyValueExpr); ok {
@@ -727,8 +726,8 @@ func (f *Finder) stmt(s ast.Stmt) {
 				k := f.expr(s.Key)
 				// Keys of array, *array, slice, string aren't interesting
 				// since the RHS key type is just an int.
-				for term := range terms(x) {
-					switch term := term.Underlying().(type) {
+				for under := range typeparams.TypeSetOf(x).UnderlyingTypes() {
+					switch term := under.(type) {
 					case *types.Chan:
 						f.assign(k, term.Elem())
 					case *types.Map:
@@ -740,11 +739,11 @@ func (f *Finder) stmt(s ast.Stmt) {
 				val := f.expr(s.Value)
 				// Values of type strings aren't interesting because
 				// the RHS value type is just a rune.
-				for term := range terms(x) {
-					switch term := term.Underlying().(type) {
+				for under := range typeparams.TypeSetOf(x).UnderlyingTypes() {
+					switch term := under.(type) {
 					case *types.Pointer:
-						for term := range terms(term.Elem()) {
-							if array, ok := term.Underlying().(*types.Array); ok {
+						for under := range typeparams.TypeSetOf(term.Elem()).UnderlyingTypes() {
+							if array, ok := under.(*types.Array); ok {
 								f.assign(val, array.Elem())
 							}
 						}
@@ -783,7 +782,7 @@ func instance(info *types.Info, expr ast.Expr) bool {
 
 // -- type-set helpers --
 
-// hasUnderlyingTermOf reports whether terms(t) contains a
+// hasUnderlyingTermOf reports whether the type set of t contains a
 // term whose underlying type has top-level type constructor T
 // (e.g. *types.Map for a map).
 // If so, it returns an arbitrary one.
@@ -795,25 +794,10 @@ func instance(info *types.Info, expr ast.Expr) bool {
 // component types to be identical across all terms in the operand's
 // type set.
 func hasUnderlyingTermOf[T types.Type](t types.Type) T {
-	for term := range terms(t) {
-		if under, ok := term.Underlying().(T); ok {
+	for under := range typeparams.TypeSetOf(t).UnderlyingTypes() {
+		if under, ok := under.(T); ok {
 			return under
 		}
 	}
 	return *new(T) // e.g. (*types.Map)(nil)
-}
-
-// terms returns the sequence of terms in the type set of t.
-// The boolean reports whether the term has a tilde.
-// TODO(adonovan): replace with solution to go.dev/issue/61013.
-func terms(t types.Type) iter.Seq2[types.Type, bool] {
-	return func(yield func(types.Type, bool) bool) {
-		if terms, err := typeparams.NormalTerms(t); err == nil {
-			for _, term := range terms {
-				if !yield(term.Type(), term.Tilde()) {
-					break
-				}
-			}
-		}
-	}
 }

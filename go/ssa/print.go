@@ -180,12 +180,13 @@ func (v *MultiConvert) String() string {
 	var b strings.Builder
 	b.WriteString(printConv("multiconvert", v, v.X))
 	b.WriteString(" [")
-	for i, s := range termListOf(v.from) {
-		for j, d := range termListOf(v.to) {
+	srcs, dsts := typeparams.TypeSetOf(v.from), typeparams.TypeSetOf(v.to)
+	for i := range srcs.Len() {
+		for j := range dsts.Len() {
 			if i != 0 || j != 0 {
 				b.WriteString(" | ")
 			}
-			fmt.Fprintf(&b, "%s <- %s", relTerm(d, from), relTerm(s, from))
+			fmt.Fprintf(&b, "%s <- %s", relTerm(dsts.Term(j), from), relTerm(srcs.Term(i), from))
 		}
 	}
 	b.WriteString("]")

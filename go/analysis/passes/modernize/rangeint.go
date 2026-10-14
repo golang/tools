@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"log"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -219,28 +219,19 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						// by non-integer types. Transforming such instances to a range loop
 						// would result in a compiler error.
 						// See golang/go#78571.
-						terms, err := typeparams.NormalTerms(v.Type()) // NormalTerms works for any type
-						if err != nil {
-							log.Fatalf("internal error: cannot compute type set of loop var %v: %v", v, err)
-						}
-						if len(terms) != 0 {
+						if ts := typeparams.TypeSetOf(v.Type()); ts.Len() != 0 {
 							// From the spec (https://go.dev/ref/spec#For_range):
 							// "If the type of the range expression is a type parameter, all
 							// types in its type set must have the same underlying type and the
 							// range expression must be valid for that type."
 							//
-							// Check if all terms have the same underlying type by comparing
-							// them to the first term.
-							u := terms[0].Type().Underlying()
-							// If the constraint has any non-integer terms, skip. (Range over
-							// float is not allowed.)
-							if !isInteger(u) {
+							// Check that all terms have the same underlying type, and that it
+							// is an integer. (Range over float is not allowed.)
+							u := ts.Term(0).Type().Underlying()
+							if !isInteger(u) || !moreiters.Every(ts.UnderlyingTypes(), func(t types.Type) bool {
+								return types.Identical(u, t)
+							}) {
 								continue nextLoop
-							}
-							for _, term := range terms[1:] {
-								if !types.Identical(u, term.Type().Underlying()) {
-									continue nextLoop
-								}
 							}
 						}
 

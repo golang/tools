@@ -23,12 +23,12 @@ const debug = false
 func typeset(typ types.Type, yield func(t, u types.Type) bool) {
 	switch typ := types.Unalias(typ).(type) {
 	case *types.TypeParam, *types.Interface:
-		terms := termListOf(typ)
-		if len(terms) == 0 {
+		ts := typeparams.TypeSetOf(typ)
+		if ts.Len() == 0 {
 			yield(nil, nil)
 			return
 		}
-		for _, term := range terms {
+		for term := range ts.Terms() {
 			u := types.Unalias(term.Type())
 			if !term.Tilde() {
 				u = u.Underlying()
@@ -44,15 +44,6 @@ func typeset(typ types.Type, yield func(t, u types.Type) bool) {
 	default:
 		yield(typ, typ.Underlying())
 	}
-}
-
-// termListOf returns the type set of typ as a normalized term set. Returns an empty set on an error.
-func termListOf(typ types.Type) []*types.Term {
-	terms, err := typeparams.NormalTerms(typ)
-	if err != nil {
-		return nil
-	}
-	return terms
 }
 
 // typeSetIsEmpty returns true if a typeset is empty.
