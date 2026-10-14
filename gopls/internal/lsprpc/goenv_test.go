@@ -179,6 +179,7 @@ func TestAddGoEnv(t *testing.T) {
 }
 
 func TestAddGoEnv_GOWORK(t *testing.T) {
+	testenv.NeedsTool(t, "go")
 	if orig, ok := os.LookupEnv("GOWORK"); ok {
 		os.Unsetenv("GOWORK")
 		t.Cleanup(func() { os.Setenv("GOWORK", orig) })
@@ -205,4 +206,3 @@ func TestAddGoEnv_GOWORK(t *testing.T) {
 		t.Errorf("env[GOWORK] = %v, want %v", got, want)
 	}
 }
-
