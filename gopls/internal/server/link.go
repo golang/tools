@@ -257,17 +257,14 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		start, end := index[0], index[1]
 		link := src[start:end]
 		linkURL, err := url.Parse(link)
-		// Fallback: Linkify IP addresses as suggested in golang/go#18824.
-		if err != nil {
-			linkURL, err = url.Parse("//" + link)
+		// Dotted text without a scheme, such as "p.name", is rarely a URL
+		// (golang/go#70033), so only linkify it for go.dev and golang.org.
+		if err != nil || linkURL.Scheme == "" {
+			linkURL, err = url.Parse("https://" + link)
 			// Not all potential links will be valid, so don't return this error.
-			if err != nil {
+			if err != nil || !isGoHost(linkURL.Hostname()) {
 				continue
 			}
-		}
-		// If the URL has no scheme, use https.
-		if linkURL.Scheme == "" {
-			linkURL.Scheme = "https"
 		}
 		if !acceptedSchemes[linkURL.Scheme] {
 			continue
@@ -296,6 +293,16 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		links = append(links, l)
 	}
 	return links, nil
+}
+
+// isGoHost reports whether host is go.dev or golang.org, or a subdomain.
+func isGoHost(host string) bool {
+	for _, domain := range []string{"go.dev", "golang.org"} {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func getIssueRegexp() *regexp.Regexp {
