@@ -1,5 +1,5 @@
-This test verifies that dotted text without a scheme is only linkified
-for go.dev and golang.org (golang/go#70033).
+This test verifies that dotted text without a scheme is not linkified
+(golang/go#70033).
 
 -- go.mod --
 module example.com
@@ -11,14 +11,10 @@ package a //@documentlink(links)
 var _ = []string{
 	"p.name is %q",
 	"go.dev is my favorite site!",
-	"see pkg.go.dev/fmt and golang.org/x/tools",
 	"https://p.name is not a real site!",
 }
 
-// See example.com/doc or tip.golang.org/doc.
+// See example.com/doc or https://go.dev/doc.
 -- @links --
-a/a.go:5:3-9 https://go.dev
-a/a.go:6:7-21 https://pkg.go.dev/fmt
-a/a.go:6:26-44 https://golang.org/x/tools
-a/a.go:7:3-17 https://p.name
-a/a.go:10:27-45 https://tip.golang.org/doc
+a/a.go:6:3-17 https://p.name
+a/a.go:9:27-45 https://go.dev/doc
