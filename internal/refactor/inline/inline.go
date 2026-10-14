@@ -872,6 +872,18 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					nargs = nspread
 				}
 
+				// Make any inferred composite literals {...} explicit,
+				// as blank identifiers supply no type.
+				j := 0
+				for i, arg := range args {
+					if arg != nil {
+						if isInferredCompLit(arg.expr) {
+							remainingArgs[j] = explicitType(params[i].fieldType, isPointer(params[i].obj.Type()), arg.expr)
+						}
+						j++
+					}
+				}
+
 				res.new = &ast.AssignStmt{
 					Lhs: blanks[ast.Expr](nargs),
 					Tok: token.ASSIGN,
