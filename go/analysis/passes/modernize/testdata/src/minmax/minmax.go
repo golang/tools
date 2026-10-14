@@ -180,3 +180,22 @@ func selectComm(ch chan int) int {
 		return n
 	}
 }
+
+// A type parameter whose type set contains only integer types
+// is not subject to NaN, even without a core type.
+func mixedInts[T ~int | ~int64](a, b T) T {
+	x := a
+	if b < x { // want "if statement can be modernized using min"
+		x = b
+	}
+	return x
+}
+
+// A type parameter whose type set contains a floating-point type may be NaN.
+func nopeMixedFloat[T ~int | ~float64](a, b T) T {
+	x := a
+	if b < x {
+		x = b
+	}
+	return x
+}

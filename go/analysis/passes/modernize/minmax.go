@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -283,18 +284,17 @@ func isSimpleAssign(n ast.Node) bool {
 }
 
 // maybeNaN reports whether t is (or may be) a floating-point type.
+// For a type parameter, it reports whether any type in its type set
+// is a floating-point type.
 func maybeNaN(t types.Type) bool {
-	// For now, we rely on core types.
-	// TODO(adonovan): In the post-core-types future,
-	// follow the approach of types.Checker.applyTypeFunc.
-	t = typeparams.CoreType(t)
-	if t == nil {
+	ts := typeparams.TypeSetOf(t)
+	if ts.Unrestricted() {
 		return true // fail safe
 	}
-	if basic, ok := t.(*types.Basic); ok && basic.Info()&types.IsFloat != 0 {
-		return true
-	}
-	return false
+	return moreiters.Any(ts.UnderlyingTypes(), func(u types.Type) bool {
+		basic, ok := u.(*types.Basic)
+		return ok && basic.Info()&types.IsFloat != 0
+	})
 }
 
 // checkUserDefinedMinMax looks for user-defined min/max functions that are
