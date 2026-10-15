@@ -4,6 +4,19 @@
 
 //go:build ignore
 
+// The resolver_gen command copies go/parser/resolver.go into this
+// package.
+//
+// The source is taken from a pinned Go release, not from the current
+// toolchain, so that the output does not depend on which version of
+// Go the developer happens to be using. The pinned version should be
+// that of the oldest Go release supported by gopls (see the go
+// directive in gopls/go.mod), since that is the parser whose behavior
+// the copy must match. The first run downloads the pinned toolchain
+// into the module cache.
+//
+// TODO(adonovan): once gopls requires go1.28, delete this fork
+// and use [go/parser.ResolveFile] (#79802) instead.
 package main
 
 import (
@@ -15,10 +28,15 @@ import (
 	"strings"
 )
 
+// goVersion is the Go release from which resolver.go is copied.
+const goVersion = "go1.27.0"
+
 func main() {
-	output, err := exec.Command("go", "env", "GOROOT").Output()
+	cmd := exec.Command("go", "env", "GOROOT")
+	cmd.Env = append(os.Environ(), "GOTOOLCHAIN="+goVersion)
+	output, err := cmd.Output()
 	if err != nil {
-		log.Fatalf("resolving GOROOT: %v", err)
+		log.Fatalf("resolving GOROOT of %s: %v", goVersion, err)
 	}
 	goroot := strings.TrimSpace(string(output))
 	data, err := os.ReadFile(filepath.Join(goroot, "src/go/parser/resolver.go"))
