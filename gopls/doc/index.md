@@ -75,27 +75,18 @@ Learn more in the
 
 ## Releases
 
-Gopls [releases](release/) follow [semantic versioning](http://semver.org), with
-major changes and new features introduced only in new minor versions
-(i.e. versions of the form `v*.N.0` for some N). Subsequent patch
-releases contain only cherry-picked fixes or superficial updates.
+Gopls [releases](release/) occur about 4 times per year.
 
-In order to align with the
-[Go release timeline](https://github.com/golang/go/wiki/Go-Release-Cycle#timeline),
-we aim to release a new minor version of Gopls approximately every three
-months, with patch releases approximately every month, according to the
-following table:
+To ensure support for the features of each [Go toolchain
+release](https://github.com/golang/go/wiki/Go-Release-Cycle#timeline),
+we aim to release a new version of Gopls approximately every three
+months, aligned slightly in advance of each toolchain release.
 
-| Month   | Version(s)   |
-| ----    | -------      |
-| Jan     | `v*.<N+0>.0` |
-| Jan-Mar | `v*.<N+0>.*` |
-| Apr     | `v*.<N+1>.0` |
-| Apr-Jun | `v*.<N+1>.*` |
-| Jul     | `v*.<N+2>.0` |
-| Jul-Sep | `v*.<N+2>.*` |
-| Oct     | `v*.<N+3>.0` |
-| Oct-Dec | `v*.<N+3>.*` |
+For historical reasons, we use major version zero and each release
+increments the minor version number; for example [v0.24.0](release/v0.24.0).
+Patch releases (such as v0.24.1), which include only cherry-picked
+fixes or superficial updates and documentation changes, follow as
+needed.
 
 For more background on this policy, see https://go.dev/issue/55267.
 

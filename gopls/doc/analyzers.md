@@ -4587,6 +4587,8 @@ The unusedfunc algorithm is not as precise as the golang.org/x/tools/cmd/deadcod
 
 The unusedfunc analyzer also reports unused types, vars, and constants. Enums--constants defined with iota--are ignored since even the unused values must remain present to preserve the logical ordering.
 
+It also reports unexported fields of named struct types that are never referenced. Fields of anonymous struct types, embedded fields, and fields implicitly used by unkeyed struct literals such as T{1, 2} are not reported. Nor are fields whose names suggest padding, such as "pad" or "pad0".
+
 
 Default: on.
 

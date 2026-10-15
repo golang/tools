@@ -1,5 +1,8 @@
 This test verifies the behavior of textDocument/prepareRename.
 
+-- flags --
+-ignore_extra_diags
+
 -- settings.json --
 {
 	"deepCompletion": false

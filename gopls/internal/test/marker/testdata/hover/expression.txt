@@ -1,5 +1,8 @@
 This test checks that hovering over a range reveals the expression type.
 
+-- flags --
+-ignore_extra_diags
+
 -- a.go --
 package a
 

@@ -1013,8 +1013,7 @@ func TestGolden(t *testing.T) {
 			}
 
 			g := Generator{
-				pkg:  pkgs[0],
-				logf: t.Logf,
+				pkg: pkgs[0],
 			}
 			g.generate(tokens[1], findValues(tokens[1], pkgs[0]))
 			got := string(g.format())

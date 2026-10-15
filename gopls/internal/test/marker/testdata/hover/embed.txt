@@ -1,6 +1,9 @@
 This test checks that hover reports accessible embedded fields
 (after the doc comment  and before the accessible methods).
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module example.com
 

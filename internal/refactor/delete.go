@@ -640,6 +640,72 @@ func DeleteUnusedVars(index *typeindex.Index, info *types.Info, tokFile *token.F
 	return edits
 }
 
+// DeleteStructField returns edits to delete the struct field whose
+// name is identified by curId. If the field declares other names too
+// (struct { a, b T }), only the specified name is deleted.
+//
+// It panics if curId is not the name of a struct field.
+func DeleteStructField(curId inspector.Cursor) []Edit {
+	ek, nameIndex := curId.ParentEdge()
+	if ek != edge.Field_Names {
+		panic("not a field name")
+	}
+	curField := curId.Parent()
+	_, fieldIndex := curField.ParentEdge() // FieldList.List[i]
+	curList := curField.Parent()
+	if curList.ParentEdgeKind() != edge.StructType_Fields {
+		panic("not a struct field")
+	}
+
+	var (
+		fields = curList.Node().(*ast.FieldList).List
+		field  = fields[fieldIndex]
+		pos    token.Pos
+		end    token.Pos
+	)
+	switch {
+	case len(field.Names) > 1 && nameIndex == 0:
+		// struct { a, b T }
+		//          ---
+		pos, end = field.Names[0].Pos(), field.Names[1].Pos()
+
+	case len(field.Names) > 1:
+		// struct { a, b T }
+		//           ---
+		pos, end = field.Names[nameIndex-1].End(), field.Names[nameIndex].End()
+
+	default:
+		// Delete the entire field and its comments.
+		pos, end = field.Pos(), field.End()
+		if field.Doc != nil {
+			pos = field.Doc.Pos()
+		}
+		if fieldIndex < len(fields)-1 {
+			// Delete non-final field.
+			//   struct { a T; b T }
+			//            -----
+			next := fields[fieldIndex+1]
+			end = next.Pos()
+			if next.Doc != nil {
+				end = next.Doc.Pos()
+			}
+		} else if field.Comment != nil {
+			// struct { a T // comment \n}
+			end = field.Comment.End()
+		}
+		// TODO(adonovan): when deleting the final field of a
+		// multi-line struct, this leaves a blank line before
+		// the closing brace. Starting the edit at the end of
+		// the previous field (or of any comments after it)
+		// would avoid that, but would overlap with the edit
+		// to delete the previous field, if both are deleted
+		// in the same batch. A fix probably requires
+		// line-based deletion for both final and non-final
+		// fields.
+	}
+	return []Edit{{Pos: pos, End: end}}
+}
+
 func eolComment(n ast.Node) *ast.CommentGroup {
 	// TODO(adonovan): support:
 	//    func f() {...} // comment

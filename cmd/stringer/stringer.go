@@ -247,8 +247,6 @@ func isDirectory(name string) bool {
 type Generator struct {
 	buf bytes.Buffer // Accumulated output.
 	pkg *Package     // Package we are scanning.
-
-	logf func(format string, args ...any) // test logging hook; nil when not testing
 }
 
 func (g *Generator) Printf(format string, args ...any) {

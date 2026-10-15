@@ -1,0 +1,139 @@
+Test of unused struct fields.
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- f/f.go --
+package f
+
+type T struct {
+	Exported int
+	used     int
+	unused   int // want `field "unused" is unused`
+	// doc comment
+	unused2 int // want `field "unused2" is unused`
+	x, unused3, y int // want `field "unused3" is unused`
+	unused4, z int // want `field "unused4" is unused`
+	w, unused5 int // want `field "unused5" is unused`
+	_     int
+	embedded
+	last int // want `field "last" is unused`
+}
+
+type embedded struct{}
+
+// Fields conventionally used for padding are exempt.
+type P struct {
+	pad     [4]byte
+	pad0    int
+	pad_x   int
+	padX    int
+	pad世   int
+	padding int // want `field "padding" is unused`
+	paddle  int // want `field "paddle" is unused`
+}
+
+type U struct {
+	a, b int // used by unkeyed literal
+}
+
+type G[T any] struct {
+	used   T
+	unused T // want `field "unused" is unused`
+}
+
+func _() {
+	var t T
+	print(t.used, t.x, t.y, t.z, t.w)
+	_ = U{1, 2}
+	print(G[int]{}.used)
+
+	// Anonymous struct types are not checked.
+	var anon struct {
+		used   int
+		unused int
+	}
+	print(anon.used)
+
+	// Local named types are checked.
+	type local struct {
+		used   int
+		unused int // want `field "unused" is unused`
+	}
+	print(local{}.used)
+}
+
+// Aliases of anonymous struct types are not checked.
+type A = struct{ unused int }
+
+// Nested anonymous struct types are not checked.
+type N struct {
+	used struct{ unused int }
+}
+
+var _ = N{}.used
+
+-- f/f.go.golden --
+package f
+
+type T struct {
+	Exported int
+	used     int
+	x, y     int // want `field "unused3" is unused`
+	z        int // want `field "unused4" is unused`
+	w        int // want `field "unused5" is unused`
+	_        int
+	embedded
+}
+
+type embedded struct{}
+
+// Fields conventionally used for padding are exempt.
+type P struct {
+	pad   [4]byte
+	pad0  int
+	pad_x int
+	padX  int
+	pad世  int
+}
+
+type U struct {
+	a, b int // used by unkeyed literal
+}
+
+type G[T any] struct {
+	used T
+}
+
+func _() {
+	var t T
+	print(t.used, t.x, t.y, t.z, t.w)
+	_ = U{1, 2}
+	print(G[int]{}.used)
+
+	// Anonymous struct types are not checked.
+	var anon struct {
+		used   int
+		unused int
+	}
+	print(anon.used)
+
+	// Local named types are checked.
+	type local struct {
+		used int
+	}
+	print(local{}.used)
+}
+
+// Aliases of anonymous struct types are not checked.
+type A = struct{ unused int }
+
+// Nested anonymous struct types are not checked.
+type N struct {
+	used struct{ unused int }
+}
+
+var _ = N{}.used
+

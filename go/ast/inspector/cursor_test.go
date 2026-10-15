@@ -403,7 +403,6 @@ func TestCursor_FindByPos_Boundary(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name string
 		pos  token.Pos
 		want ast.Node
 	}{
