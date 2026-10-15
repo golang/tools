@@ -11,12 +11,12 @@ require (
 	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.61.0
 	golang.org/x/sync v0.24.0
-	golang.org/x/telemetry v0.0.0-20261009151841-97e8ea77aa2a
+	golang.org/x/telemetry v0.0.0-20261013142427-f87725b73f11
 	golang.org/x/text v0.43.0
-	golang.org/x/tools v0.51.0
-	golang.org/x/vuln v1.8.0
+	golang.org/x/tools v0.52.0
+	golang.org/x/vuln v1.9.0
 	gopkg.in/yaml.v3 v3.0.1
-	honnef.co/go/tools v0.8.1
+	honnef.co/go/tools v0.8.2
 	mvdan.cc/gofumpt v0.12.0
 	mvdan.cc/xurls/v2 v2.6.0
 )
@@ -30,7 +30,7 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20261009195045-ca0d7ba23607 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
