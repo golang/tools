@@ -88,7 +88,25 @@ var allInlayHints = map[settings.InlayHint]inlayHintFunc{
 	settings.CompositeLiteralTypes:      compositeLiteralTypes,
 	settings.CompositeLiteralFieldNames: compositeLiteralFields,
 	settings.FunctionTypeParameters:     funcTypeParams,
+	settings.FunctionEndNames:           functionEndNames,
 	settings.IgnoredError:               ignoredError,
+}
+
+func functionEndNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
+	for curFunc := range cur.Preorder((*ast.FuncDecl)(nil)) {
+		decl := curFunc.Node().(*ast.FuncDecl)
+		if decl.Body == nil {
+			continue
+		}
+		pos, err := pgf.PosPosition(decl.Body.End())
+		if err != nil {
+			continue
+		}
+		add(protocol.InlayHint{
+			Position: pos,
+			Label:    labelPart(" // " + decl.Name.Name),
+		})
+	}
 }
 
 func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
