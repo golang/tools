@@ -1108,6 +1108,11 @@ func someFunctionName()
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
+	{ // gopls resolve relative target
+		res := gopls(t, tree+"/a/", "inspect", "a.someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22")) // Prints definition location
+	}
 	{ // success with pkg flag
 		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)

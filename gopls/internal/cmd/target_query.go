@@ -7,6 +7,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
@@ -54,9 +55,8 @@ func resolveSingleTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, 
 
 // resolveTarget calls gopls.resolve_target
 func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, targetQuery string) ([]target, error) {
-
 	var (
-		searchScope = protocol.URIFromPath(dir) // default to the passed in directory
+		searchScope = dirURI(dir) // default to the passed in directory
 		searchRange protocol.Range
 	)
 	if len(flags.Pos) > 0 {
@@ -98,4 +98,11 @@ func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, t
 		}
 	}
 	return targets, nil
+}
+
+// dirURI returns a DocumentUri ending with a '/'. This is to help
+// resolve_target know that we are sending it a directory.
+func dirURI(dir string) protocol.DocumentURI {
+	uri := protocol.URIFromPath(dir)
+	return protocol.DocumentURI(strings.TrimSuffix(string(uri), "/") + "/")
 }
