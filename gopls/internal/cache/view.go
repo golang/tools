@@ -871,6 +871,8 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 							}
 							def.envOverlay["GOOS"] = p.GOOS
 							def.envOverlay["GOARCH"] = p.GOARCH
+							// A C toolchain for p is unlikely to be available.
+							def.envOverlay["CGO_ENABLED"] = "0"
 							break
 						}
 					}
