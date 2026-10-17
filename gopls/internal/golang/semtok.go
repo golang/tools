@@ -571,10 +571,7 @@ func (tv *tokenVisitor) formatString(lit *ast.BasicLit) bool {
 		if op.Verb.Verb == '%' {
 			continue
 		}
-		rng, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
-		if err != nil {
-			return false
-		}
+		rng := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
 		// Report literal substring.
 		tv.token(pos, int(rng.Start-pos), semtok.TokString)
 		// Report formatting directive.

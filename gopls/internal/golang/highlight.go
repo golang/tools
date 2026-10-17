@@ -212,16 +212,10 @@ func highlightPrintf(call *ast.CallExpr, idx int, start, end token.Pos, lit *ast
 
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		var (
-			rng       astutil.Range
-			withinRng bool
-		)
-		rng, err = astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
-		if err != nil {
-			return
-		}
+		rng := astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
 		visited[rng] = argIndex
 
+		var withinRng bool
 		if start == end {
 			// End pos can't equal to range's end, otherwise the two neighborhood
 			// such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).

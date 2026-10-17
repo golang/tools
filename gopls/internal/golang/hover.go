@@ -1094,32 +1094,9 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 				}
 			}
 		case constant.String:
-			index, err := astutil.OffsetInStringLiteral(lit, posRange.Pos())
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-			// pos is the point in the literal where the current rune starts.
-			pos, err := astutil.PosInStringLiteral(lit, index)
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-
-			rest, err := pgf.PosText(pos, lit.End())
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-
 			// Is the selected character denoted by an escape sequence?
-			if bytes.HasPrefix(rest, []byte(`\`)) {
-				rr, _, tail, err := strconv.UnquoteChar(string(rest), lit.Value[0])
-				if err != nil {
-					return protocol.Range{}, nil, err
-				}
-
-				rawSize := len(rest) - len(tail)
-
-				start, end = pos, pos+token.Pos(rawSize)
-				r = rr
+			if s, e, rr, ok := escapeAt(lit, posRange.Pos()); ok {
+				start, end, r = s, e, rr
 			}
 		default:
 			panic("unexpected constant.Kind")
@@ -1171,6 +1148,33 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 		Synopsis:          hover,
 		FullDocumentation: hover,
 	}, nil
+}
+
+// escapeAt returns the source extent and value of the escape sequence
+// containing pos in the string literal lit, if any.
+// A position on the opening quote is treated as the first character.
+func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, ok bool) {
+	if len(lit.Value) < 2 || lit.Value[0] != '"' {
+		return // raw string literals have no escape sequences
+	}
+	// The scanner strips carriage returns only from raw string
+	// literals, so lit.Value is exactly the source text.
+	s := lit.Value[1 : len(lit.Value)-1]
+	for i := lit.Pos() + 1; s != ""; {
+		rr, _, rest, err := strconv.UnquoteChar(s, '"')
+		if err != nil {
+			break // malformed
+		}
+		j := i + token.Pos(len(s)-len(rest)) // i:j is Pos range of what UnquoteChar ate
+		if pos < j {
+			if s[0] != '\\' {
+				break // pos is not within an escape
+			}
+			return i, j, rr, true
+		}
+		i, s = j, rest
+	}
+	return
 }
 
 func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protocol.Range, *hoverResult, error) {
