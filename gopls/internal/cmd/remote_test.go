@@ -306,10 +306,12 @@ const listenTimeout = "1m"
 // needsAutoRemote skips the test if it cannot start a daemon with
 // -remote=auto.
 func needsAutoRemote(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// On Windows, "auto" resolves to a fixed TCP port shared by the whole
-		// machine, and "auto;<id>" panics; see lsprpc.autoNetworkAddressDefault.
-		t.Skip("-remote=auto is not isolated on windows")
+	switch runtime.GOOS {
+	case "windows", "plan9":
+		// On these systems, "auto" resolves to a fixed TCP port shared by the
+		// whole machine, and "auto;<id>" panics; see
+		// lsprpc.autoNetworkAddressDefault.
+		t.Skipf("-remote=auto is not isolated on %s", runtime.GOOS)
 	}
 }
 
