@@ -163,3 +163,56 @@ func _() {
 -- @void/void.go --
 @@ -6 +6 @@
 +	var x any
+-- funclit.go --
+package undeclared_var
+
+// The undeclared name is used in a function literal that is not
+// within a function declaration.
+
+var _ = func(args []string) {
+	verbose = len(args) > 0 //@quickfix("verbose", re"(undeclared name|undefined): verbose", funclit)
+	println(verbose)
+}
+
+var _ = func() int {
+	return count + 1 //@quickfix("count", re"(undeclared name|undefined): count", funclit_first)
+}
+
+// The undefined ident is assigned in a sibling function literal, which
+// is a different scope: declaring it there would not fix the error at
+// the cursor.
+
+func siblingScope() {
+	g1 := func() {
+		x = "hello"
+	}
+	g2 := func() {
+		var y int = x //@quickfix("x", re"(undeclared name|undefined): x", closure)
+		_ = y
+	}
+	_, _ = g1, g2
+}
+
+// The assignment in the outer block dominates the use in the inner
+// one, so it gets the missing colon.
+
+func outerBlock(cond bool) {
+	x = 1
+	if cond {
+		println(x) //@quickfix("x", re"(undeclared name|undefined): x", outer_block)
+	}
+}
+-- @closure/funclit.go --
+@@ -24 +24 @@
++		var x int
+-- @funclit/funclit.go --
+@@ -7 +7 @@
+-	verbose = len(args) > 0 //@quickfix("verbose", re"(undeclared name|undefined): verbose", funclit)
++	verbose := len(args) > 0 //@quickfix("verbose", re"(undeclared name|undefined): verbose", funclit)
+-- @funclit_first/funclit.go --
+@@ -12 +12 @@
++	var count int
+-- @outer_block/funclit.go --
+@@ -34 +34 @@
+-	x = 1
++	x := 1
