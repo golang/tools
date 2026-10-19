@@ -89,16 +89,18 @@ func isRuneSlice(t types.Type) bool {
 // - At least 1 is basic.
 // - At most 1 is []byte or []rune.
 func isBasicConvTypes(typ types.Type) bool {
-	basics, cnt := 0, 0
-	ok := underIs(typ, func(t types.Type) bool {
-		cnt++
-		if isBasic(t) {
+	basics, slices := 0, 0
+	for u := range typeparams.TypeSetOf(typ).UnderlyingTypes() {
+		switch {
+		case isBasic(u):
 			basics++
-			return true
+		case isByteSlice(u) || isRuneSlice(u):
+			slices++
+		default:
+			return false
 		}
-		return isByteSlice(t) || isRuneSlice(t)
-	})
-	return ok && basics >= 1 && cnt-basics <= 1
+	}
+	return basics >= 1 && slices <= 1
 }
 
 // isPointer reports whether t's underlying type is a pointer.

@@ -733,6 +733,26 @@ func TestInstructionString(t *testing.T) {
 		p := PT(&t)
 		return p.Set
 	}
+
+	// Indexing a type parameter whose type set mixes arrays and
+	// slices requires the address of the operand (ixArrVar).
+	//@ instrs("f16", "*ssa.Alloc", "local T (x)")
+	//@ instrs("f16", "*ssa.IndexAddr", "&t0[1:int]")
+	func f16[T ~[2]byte | ~[]byte](x T) byte { return x[1] }
+
+	// Strings are not addressable (ixValue), even mixed with slices.
+	//@ instrs("f17", "*ssa.IndexAddr")
+	//@ instrs("f17", "*ssa.Index", "x[1:int]")
+	func f17[T ~string | ~[]byte](x T) byte { return x[1] }
+
+	//@ instrs("f18", "*ssa.Alloc", "local T (x)")
+	//@ instrs("f18", "*ssa.IndexAddr", "&t0[1:int]")
+	func f18[T ~[]byte | ~[2]byte](x T) { x[1] = 0 }
+
+	// Pointers to arrays and slices are both addressable (ixVar).
+	//@ instrs("f19", "*ssa.Alloc")
+	//@ instrs("f19", "*ssa.IndexAddr", "&x[1:int]")
+	func f19[T ~[]byte | ~*[2]byte](x T) { x[1] = 0 }
 	`
 
 	// Parse

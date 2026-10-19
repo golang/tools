@@ -952,7 +952,7 @@ type Field struct {
 //	t2 = &t0[t1]
 type IndexAddr struct {
 	register
-	X     Value // *array, slice or type parameter with types array, *array, or slice.
+	X     Value // indexable operand
 	Index Value // numeric index
 }
 
