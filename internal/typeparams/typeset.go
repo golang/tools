@@ -11,26 +11,20 @@ import (
 )
 
 // A TypeSet is the type set of a type, represented as a normalized
-// list of specific terms (types T or ~T).
+// list of specific terms (types T or ~T). It is immutable.
 //
-// A TypeSet has one of three forms:
+// If [TypeSet.Unrestricted], the set is constrained only by methods,
+// if at all (e.g. any, comparable, interface{ M() }), and has no terms.
+// This is the zero value.
 //
-//   - [TypeSet.Unrestricted]: there are no specific terms, so the type
-//     set is constrained only by methods, if at all (e.g. any, comparable,
-//     interface{ M() }). This is the zero value.
-//   - [TypeSet.Empty]: the type set contains no types
-//     (e.g. interface{ int; string }).
-//   - specific: the type set is the union of [TypeSet.Len]() > 0 disjoint terms.
-//
-// In both the Unrestricted and Empty forms, Len is zero and the
-// iterators yield nothing, despite their opposite meanings.
+// Otherwise, the set is exactly the union of its [TypeSet.Len] disjoint
+// terms. Zero terms denotes the empty set (e.g. interface{ int; string }).
 //
 // Terms are reported in a deterministic but otherwise unspecified order.
 //
 // TODO(adonovan): promote to go/types (go.dev/issue/61013).
 type TypeSet struct {
-	terms termlist // normalized specific terms
-	empty bool     // the set contains no types
+	terms termlist // normalized specific terms; nil => unrestricted
 }
 
 // TypeSetOf returns the type set of t:
@@ -55,24 +49,20 @@ type TypeSet struct {
 // ~string|~[]byte|int|string, which reduces to ~string|~[]byte|int,
 // which when intersected with C (~string|~int) yields ~string|int.
 //
-// TypeSetOf never fails. If the type set cannot be computed because t
-// is ill-formed (e.g. it has an invalid embedded type or cyclic
-// declaration) or exceeds complexity bounds, the result is Unrestricted.
-// This is a deliberate choice: none of these conditions can arise in
-// well-typed code, and for ill-typed code, Unrestricted is the
-// conservative answer for both kinds of question clients typically ask.
-// "Does every type in the set satisfy P?" yields false (whereas the empty
-// set would vacuously yield true, licensing unsound transformations),
-// and "does some type in the set satisfy P?" finds no witness (so no
+// TypeSetOf never fails. If t is ill-formed (e.g. it has an invalid
+// embedded type or cyclic declaration) or exceeds complexity bounds,
+// the result is Unrestricted. This cannot happen in well-typed code,
+// and for ill-typed code it is the conservative answer: "does every
+// type in the set satisfy P?" yields false (whereas the empty set
+// would vacuously yield true, licensing unsound transformations), and
+// "does some type in the set satisfy P?" finds no witness (so no
 // spurious diagnostic is reported).
 //
 // Performance notes (non-normative): the singleton case {t} allocates
-// a [types.Term]. Performance-critical callers may avoid this by
-// first checking !types.IsInterface(t), which holds exactly when the
-// type set of t is {t}. (Note that IsInterface reports true for type
-// parameters.) Interfaces and type parameters whose constraints have
-// no type terms (e.g. error, any) do not allocate; only those with
-// type terms do.
+// a [types.Term]; callers may avoid this by first checking
+// !types.IsInterface(t), which holds exactly when the type set of t
+// is {t}. (IsInterface reports true for type parameters.) Interfaces
+// and type parameters allocate only if they have type terms.
 func TypeSetOf(t types.Type) TypeSet {
 	// typeSetOf(T) == typeSetOf(Unalias(T))
 	typ := types.Unalias(t)
@@ -121,28 +111,19 @@ func termSetOf(typ types.Type) TypeSet {
 	case tset.terms.isAll():
 		return TypeSet{}
 	case tset.terms.isEmpty():
-		return TypeSet{empty: true}
+		return TypeSet{terms: termlist{}} // non-nil
 	default:
 		return TypeSet{terms: tset.terms}
 	}
 }
 
-// Unrestricted reports whether the type set has no specific terms,
-// for example any, comparable, or interface{ M() }.
+// Unrestricted reports whether the type set is not restricted by
+// specific terms, for example any, comparable, or interface{ M() }.
 // It also reports true for ill-formed types; see [TypeSetOf].
-func (s TypeSet) Unrestricted() bool { return s.terms == nil && !s.empty }
-
-// Empty reports whether the type set contains no types,
-// for example interface{ int; string }.
-//
-// Empty is not equivalent to Len() == 0: an Unrestricted set
-// also has no specific terms, yet it contains every type.
-func (s TypeSet) Empty() bool { return s.empty }
+func (s TypeSet) Unrestricted() bool { return s.terms == nil }
 
 // Len returns the number of specific terms.
-//
-// Zero has two opposite meanings: the set is either Unrestricted
-// (all types) or Empty (no types). Use those methods to distinguish.
+// Zero means either Unrestricted (all types) or empty (no types).
 func (s TypeSet) Len() int { return len(s.terms) }
 
 // Term returns the ith specific term.
@@ -150,8 +131,7 @@ func (s TypeSet) Len() int { return len(s.terms) }
 func (s TypeSet) Term(i int) *types.Term { return asTypesTerm(s.terms[i]) }
 
 // Terms returns an iterator over the specific terms.
-// It yields nothing if the set is Unrestricted or Empty;
-// check for those cases first if the distinction matters.
+// It yields nothing if the set is Unrestricted or empty.
 func (s TypeSet) Terms() iter.Seq[*types.Term] {
 	return func(yield func(*types.Term) bool) {
 		for _, t := range s.terms {
@@ -164,11 +144,10 @@ func (s TypeSet) Terms() iter.Seq[*types.Term] {
 
 // UnderlyingTypes returns an iterator over the underlying types of the
 // specific terms. (For a term ~T, this is T itself.) It yields nothing
-// if the set is Unrestricted or Empty.
+// if the set is Unrestricted or empty.
 //
-// Duplicates are not eliminated: for example, if MyInt1 and MyInt2 are
-// distinct named types whose underlying type is int, the set
-// MyInt1|MyInt2 yields int twice.
+// Duplicates are not eliminated: for example, MyInt1|MyInt2
+// yields int twice if both have underlying type int.
 func (s TypeSet) UnderlyingTypes() iter.Seq[types.Type] {
 	return func(yield func(types.Type) bool) {
 		for _, t := range s.terms {
@@ -183,10 +162,10 @@ func (s TypeSet) UnderlyingTypes() iter.Seq[types.Type] {
 // "𝓤" if unrestricted, "∅" if empty, or a union of terms.
 func (s TypeSet) String() string {
 	switch {
-	case s.empty:
-		return "∅"
 	case s.terms == nil:
 		return "𝓤"
+	case len(s.terms) == 0:
+		return "∅"
 	default:
 		return s.terms.String()
 	}

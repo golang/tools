@@ -113,7 +113,7 @@ var x MyInt
 	// summary returns a string summarizing all observable aspects of the type set.
 	summary := func(ts TypeSet) string {
 		var b strings.Builder
-		fmt.Fprintf(&b, "unrestricted=%t empty=%t len=%d terms=[", ts.Unrestricted(), ts.Empty(), ts.Len())
+		fmt.Fprintf(&b, "%s unrestricted=%t len=%d terms=[", ts, ts.Unrestricted(), ts.Len())
 		sep := ""
 		for term := range ts.Terms() {
 			b.WriteString(sep)
@@ -138,11 +138,11 @@ var x MyInt
 		T    types.Type
 		want string
 	}{
-		{tparams.At(0), "unrestricted=true empty=false len=0 terms=[] under=[]"},
-		{tparams.At(1), "unrestricted=false empty=true len=0 terms=[] under=[]"},
-		{tparams.At(2), "unrestricted=false empty=false len=2 terms=[~string, p.MyInt] under=[string, int]"},
-		{pkg.Scope().Lookup("x").Type(), "unrestricted=false empty=false len=1 terms=[p.MyInt] under=[int]"},
-		{types.NewInterfaceType(nil, nil), "unrestricted=true empty=false len=0 terms=[] under=[]"},
+		{tparams.At(0), "𝓤 unrestricted=true len=0 terms=[] under=[]"},
+		{tparams.At(1), "∅ unrestricted=false len=0 terms=[] under=[]"},
+		{tparams.At(2), "~string | p.MyInt unrestricted=false len=2 terms=[~string, p.MyInt] under=[string, int]"},
+		{pkg.Scope().Lookup("x").Type(), "p.MyInt unrestricted=false len=1 terms=[p.MyInt] under=[int]"},
+		{types.NewInterfaceType(nil, nil), "𝓤 unrestricted=true len=0 terms=[] under=[]"},
 	} {
 		if got := summary(TypeSetOf(test.T)); got != test.want {
 			t.Errorf("TypeSetOf(%s):\ngot  %s\nwant %s", test.T, got, test.want)
