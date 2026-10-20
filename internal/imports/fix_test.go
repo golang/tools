@@ -3289,3 +3289,101 @@ func BenchmarkMatchesPath(b *testing.B) {
 		})
 	}
 }
+
+// TestFixImportsNoGoEnv verifies that fixing a file that needs no GOROOT
+// lookup does not invoke `go env`. (getFixes used to call env.goEnv
+// unconditionally, spawning a `go env` subprocess per call even on the happy
+// path where GOROOT is never needed.)
+//
+// If goEnv were called, init would run `go env` and populate env.Env with the
+// requiredGoEnvVars, so an empty env.Env afterwards proves no subprocess ran.
+func TestFixImportsNoGoEnv(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		src   string
+		fixes int
+	}{
+		{
+			name: "usedImport",
+			src: `package p
+
+import "fmt"
+
+func f() {
+	fmt.Println()
+}
+`,
+		},
+		{
+			name: "unusedImport",
+			src: `package p
+
+import "fmt"
+
+func f() {
+}
+`,
+			fixes: 1, // the unused import must be deleted
+		},
+		{
+			name: "blankImport",
+			src: `package p
+
+import _ "embed"
+
+func f() {
+}
+`,
+			// Blank imports are never removed, even if unused.
+		},
+		{
+			name: "embed",
+			src: `package p
+
+import _ "embed"
+
+//go:embed a.txt
+var content string
+
+func f() {
+}
+`,
+		},
+		{
+			name: "noImports",
+			src: `package p
+
+func f() {
+}
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Use a temporary directory so that the file's siblings and the
+			// enclosing module cannot influence the result.
+			dir := t.TempDir()
+			filename := filepath.Join(dir, "a.go")
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, filename, test.src, parser.ParseComments|parser.AllErrors)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := &ProcessEnv{
+				// Deliberately leave Env unset: if goEnv is called, init
+				// runs a real `go env` subprocess and populates Env.
+				GocmdRunner: &gocommand.Runner{},
+				WorkingDir:  dir,
+			}
+			fixes, err := getFixes(t.Context(), fset, file, filename, env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(fixes) != test.fixes {
+				t.Errorf("got %d fixes, want %d", len(fixes), test.fixes)
+			}
+			if len(env.Env) != 0 {
+				t.Errorf("goEnv ran for a file that needs no GOROOT lookup (Env populated with %d vars), want 0", len(env.Env))
+			}
+		})
+	}
+}
