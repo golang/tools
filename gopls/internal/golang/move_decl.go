@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -21,6 +22,7 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -29,6 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
@@ -36,10 +39,10 @@ import (
 
 var (
 	// MoveDeclarationFileQuestion asks for the destination file for a moved declaration,
-	// preferring the client's native file picker and falling back to a plain string URI input.
+	// preferring the client's native file picker and falling back to a plain string input.
 	MoveDeclarationFileQuestion = formQuestion[string, protocol.DocumentURI]{
 		ID:          "file",
-		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
+		Description: "destination file uri or absolute path for the moved declaration, e.g. file:///path/to/file.go or /path/to/file.go",
 		Required:    true,
 		Types: []any{
 			protocol.FormFieldTypeFile{
@@ -51,10 +54,19 @@ var (
 			},
 		},
 		convert: func(dest string) (protocol.DocumentURI, error) {
-			destURI, err := protocol.ParseDocumentURI(dest)
-			if err != nil {
-				destURI = protocol.URIFromPath(dest)
+			path := dest
+			if strings.HasPrefix(dest, "file:") {
+				uri, err := protocol.ParseDocumentURI(dest)
+				if err != nil {
+					return "", err
+				}
+				path = uri.Path()
 			}
+			if !filepath.IsAbs(path) {
+				return "", fmt.Errorf("destination must be a file URI or an absolute path: %q", dest)
+			}
+			// Clean the path (e.g. remove ".." elements) explicitly.
+			destURI := protocol.URIFromPath(filepath.Clean(path))
 			if filepath.Ext(destURI.Path()) != ".go" {
 				return "", fmt.Errorf("destination file must be a go file")
 			}
@@ -65,14 +77,30 @@ var (
 	moveDeclarationQuestions = []question{MoveDeclarationFileQuestion}
 )
 
+// moveDest is the destination package of a move. pkg is nil if the package
+// does not exist yet, in which case the move creates it.
+type moveDest struct {
+	pkg     *cache.Package
+	pkgPath metadata.PackagePath
+	pkgName metadata.PackageName
+}
+
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
 func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {
 	srcPkg, srcPGF, err := NarrowestPackageForFile(ctx, snapshot, srcFH.URI())
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
+	// Reject destinations that the go command ignores (directories starting
+	// with ".", "_", or containing "testdata"), since the moved declarations
+	// would not belong to any package. Also reject vendor directories and src
+	// packages that do not have a module.
+	srcMod := srcPkg.Metadata().Module
+	if srcMod == nil || snapshot.IgnoredFile(destURI) || inVendorDir(srcMod, destURI) {
+		return nil, protocol.Location{}, fmt.Errorf("cannot move declaration into %s: location is ignored by the go command or vendored", destURI.Path())
+	}
 	var (
-		destPkg *cache.Package
+		dest    moveDest
 		destFH  file.Handle
 		destPGF *parsego.File
 	)
@@ -82,21 +110,30 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 			return nil, protocol.Location{}, err
 		}
 		if _, err := destFH.Content(); err == nil { // destination file exists
-			destPkg, destPGF, err = NarrowestPackageForFile(ctx, snapshot, destURI)
+			dest.pkg, destPGF, err = NarrowestPackageForFile(ctx, snapshot, destURI)
 			if err != nil {
 				return nil, protocol.Location{}, err
+			}
+			if !destPGF.File.Package.IsValid() {
+				// NarrowestPackageForFile succeeds (err == nil) even if the
+				// file has a missing or malformed package clause. The
+				// destination file can have type errors that don't effect the
+				// move, but it must have a package clause.
+				return nil, protocol.Location{}, fmt.Errorf("destination file %s has no package clause", destURI.Path())
 			}
 		} else if errors.Is(err, os.ErrNotExist) { // destination file does not exist
 			// TODO(mkalil): narrowestPackageForDir always returns the non-test
 			// package, but if the dest URI is ".../_test.go", we should consider
 			// asking the user whether to use package "dest_test" or package
 			// "dest" through dynamic questions.
-			destPkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath())
-			if destPkg == nil {
-				// TODO: support destination file in a new package (new directory created, destPkg == nil).
-				return nil, protocol.Location{}, fmt.Errorf("could not resolve destination package")
-			}
+			dest.pkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath()) // if nil, will create a new package below
 		} else { // unknown error
+			return nil, protocol.Location{}, err
+		}
+
+		if dest.pkg != nil {
+			dest.pkgPath, dest.pkgName = dest.pkg.Metadata().PkgPath, dest.pkg.Metadata().Name
+		} else if dest.pkgPath, dest.pkgName, err = newPackage(srcMod, destURI); err != nil { // create package if it doesn't exist
 			return nil, protocol.Location{}, err
 		}
 	}
@@ -116,8 +153,8 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		return nil, protocol.Location{}, fmt.Errorf("could not resolve target declaration")
 	}
 	graph := buildSymbolRefGraph(srcPkg)
-	moving := computeMovingSet(srcPkg, destPkg, graph, targetObj)
-	if err := canMove(snapshot, srcPkg, destPkg, destURI, graph, moving, targetObj); err != nil {
+	moving := computeMovingSet(srcPkg, dest.pkg, graph, targetObj)
+	if err := canMove(snapshot, srcPkg, dest, destURI, graph, moving); err != nil {
 		return nil, protocol.Location{}, err
 	}
 	// Generate protocol.DocumentChanges necessary for moving the declarations.
@@ -138,7 +175,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	// Dest: create the file and write header if the file does not exist.
 	if destPGF == nil {
 		changes = append(changes, protocol.DocumentChangeCreate(destFH.URI()))
-		newFileEdits, err := writeNewDestFile(srcPkg, destPkg, srcPGF)
+		newFileEdits, err := writeNewDestFile(srcPkg, srcPGF, dest)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
@@ -148,7 +185,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	// Source and dest: update imports based on packages referenced within the
 	// moving decls. This must come after the new file header edit, since both
 	// insert at the start of a new dest file and are applied in order.
-	if err := updateSrcDestImports(srcPkg, destPkg, destPGF, destFH.URI(), movingRanges, edits); err != nil {
+	if err := updateSrcDestImports(srcPkg, dest, destPGF, destFH, movingRanges, edits); err != nil {
 		return nil, protocol.Location{}, err
 	}
 
@@ -180,7 +217,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	}
 	// Dest: write the declarations at the bottom of the file.
 	var declsText strings.Builder
-	destPkgPath := string(destPkg.Metadata().PkgPath)
+	destPkgPath := string(dest.pkgPath)
 	for i, r := range movingRanges {
 		text, err := r.text(srcInfo, destPkgPath)
 		if err != nil {
@@ -220,7 +257,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 
 	// Rewrite references to moving decls in all packages and update imports as
 	// necessary.
-	if err := updateRefsToMoving(ctx, snapshot, srcPkg, destPkg, srcPGF, moving, declRanges, edits); err != nil {
+	if err := updateRefsToMoving(ctx, snapshot, srcPkg, dest, srcPGF, moving, declRanges, edits); err != nil {
 		return nil, protocol.Location{}, err
 	}
 	docChanges, err := editsToDocChanges(ctx, snapshot, edits)
@@ -259,6 +296,39 @@ func narrowestPackageForDir(ctx context.Context, snapshot *cache.Snapshot, dir s
 		}
 	}
 	return nil
+}
+
+// newPackage returns the path and name of a new package in the directory
+// of destURI, which must be within the module mod.
+func newPackage(mod *packages.Module, destURI protocol.DocumentURI) (metadata.PackagePath, metadata.PackageName, error) {
+	if mod == nil {
+		return "", "", fmt.Errorf("cannot create a new package: source package is not in a module")
+	}
+	rel, err := filepath.Rel(mod.Dir, destURI.DirPath())
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", "", fmt.Errorf("cannot create a new package: %s is not in module %s", destURI.DirPath(), mod.Path)
+	}
+	pkgPath := path.Join(mod.Path, filepath.ToSlash(rel))
+	// Use the pkgName that importers would assume based on the package path.
+	pkgName := imports.ImportPathToAssumedName(pkgPath)
+	if !token.IsIdentifier(pkgName) {
+		return "", "", fmt.Errorf("cannot create a new package: no valid package name for %s", pkgPath)
+	}
+	return metadata.PackagePath(pkgPath), metadata.PackageName(pkgName), nil
+}
+
+// inVendorDir reports whether destURI is within a vendor directory of the
+// module mod. We don't allow moving into a vendor directory.
+// TODO(mkalil): consolidate with other functions in cache/snapshot.go?
+func inVendorDir(mod *packages.Module, destURI protocol.DocumentURI) bool {
+	if mod == nil {
+		return false
+	}
+	rel, err := filepath.Rel(mod.Dir, destURI.DirPath())
+	if err != nil || !filepath.IsLocal(rel) {
+		return false
+	}
+	return slices.Contains(strings.Split(filepath.ToSlash(rel), "/"), "vendor")
 }
 
 // moveDeclTarget returns the cursor of the declaration to be moved, based on
@@ -632,24 +702,24 @@ func remainingReferencesMoving(graph *declGraph, moving map[types.Object]bool) (
 //   - import cycles
 //   - illegal imports (i.e. internal imports)
 //   - shadowing and name conflicts in the destination package
-func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool, moveTarget types.Object) error {
+func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool) error {
 	var (
 		srcMeta    = srcPkg.Metadata()
-		destMeta   = destPkg.Metadata()
+		destPkg    = dest.pkg // nil if dest is a new package
 		srcPkgPath = srcMeta.PkgPath
 		srcName    = srcMeta.Name
-		destName   = destMeta.Name
+		destName   = dest.pkgName
 		// Test variants have different IDs but share the same package path.
 		// A move from a normal package to a test variant is considered
 		// a same package move.
-		isCrossPkg = srcMeta.PkgPath != destMeta.PkgPath
+		isCrossPkg = srcMeta.PkgPath != dest.pkgPath
 	)
 	// We don't need to check for import cycles or package-level symbols conflicts
 	// if the move is in the same package.
 	if isCrossPkg {
 		if unexported, referencesMoving := remainingReferencesMoving(graph, moving); referencesMoving {
 			// Check for internal import rule violations.
-			if !metadata.IsValidImport(srcPkgPath, destMeta.PkgPath, true) {
+			if !metadata.IsValidImport(srcPkgPath, dest.pkgPath, true) {
 				return fmt.Errorf("illegal import: the move requires source package %s to import destination package %s, which violates internal import rules", srcName, destName)
 			}
 			if len(unexported) > 0 {
@@ -658,9 +728,12 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 			}
 			// Src must import dest. To avoid an import cycle, we must check that
 			// dest does not already directly or transitively import src.
-			if pkgTransitivelyImports(snapshot.MetadataGraph(), destMeta, srcMeta) {
+			if destPkg != nil && pkgTransitivelyImports(snapshot.MetadataGraph(), destPkg.Metadata(), srcMeta) {
 				return fmt.Errorf("import cycle: the move requires source package %s to import destination package %s, which already imports %s", srcName, destName, srcName)
 			}
+		}
+		if destPkg == nil {
+			return nil // a new package has no existing declarations to conflict with
 		}
 		// Check destPkg's package block for conflicts, since the moving
 		// declarations become package-level declarations.
@@ -837,13 +910,13 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 
 // writeNewDestFile reports edits needed to write a header with copyright, build
 // constraints, and package declaration to a new file.
-func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]protocol.TextEdit, error) {
+func writeNewDestFile(srcPkg *cache.Package, srcPGF *parsego.File, dest moveDest) ([]protocol.TextEdit, error) {
 	var (
 		edits     []protocol.TextEdit
 		headerBuf bytes.Buffer
 	)
 	// Add copyright and build constraints if same package move.
-	if srcPkg.Metadata().ID == destPkg.Metadata().ID {
+	if dest.pkg != nil && srcPkg.Metadata().ID == dest.pkg.Metadata().ID {
 		if c := CopyrightComment(srcPGF.File); c != nil {
 			text, err := srcPGF.NodeText(c)
 			if err != nil {
@@ -863,7 +936,7 @@ func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]p
 		}
 	}
 	// Add package clause
-	fmt.Fprintf(&headerBuf, "package %s\n\n", destPkg.Types().Name())
+	fmt.Fprintf(&headerBuf, "package %s\n\n", dest.pkgName)
 	edits = append(edits, protocol.TextEdit{
 		Range:   protocol.Range{},
 		NewText: headerBuf.String(),
@@ -876,9 +949,10 @@ func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]p
 // declarations to the destination file, destURI.
 // It only handles packages that are used by the moving declarations.
 // Note: destPGF may be nil if the target destination file is a new file.
-func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File, destURI protocol.DocumentURI, movingRanges []movingRange, edits map[protocol.DocumentURI][]protocol.TextEdit) error {
+func updateSrcDestImports(srcPkg *cache.Package, dest moveDest, destPGF *parsego.File, destFH file.Handle, movingRanges []movingRange, edits map[protocol.DocumentURI][]protocol.TextEdit) error {
 	// Imports belong to a file, so find the import changes separately for each
 	// source file that has moving declarations.
+	destURI := destFH.URI()
 	var adds []*ast.ImportSpec
 	type importKey struct{ name, path string }
 	seen := make(map[importKey]bool) // imports already in adds
@@ -912,7 +986,7 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File,
 				// (findImportChanges may return a dest import if the dest package is referenced
 				// as part of some moving declaration.)
 				if pkgName := srcPkg.TypesInfo().PkgNameOf(spec); pkgName != nil &&
-					pkgName.Imported().Path() == string(destPkg.Metadata().PkgPath) {
+					pkgName.Imported().Path() == string(dest.pkgPath) {
 					continue
 				}
 				adds = append(adds, spec)
@@ -931,7 +1005,7 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File,
 			if spec.Name != nil {
 				name = spec.Name.Name
 			}
-			_, impEdits, err := addImport(destPkg.TypesInfo(), destPGF, name, path, "", destPGF.File.FileEnd-1)
+			_, impEdits, err := addImport(dest.pkg.TypesInfo(), destPGF, name, path, "", destPGF.File.FileEnd-1)
 			if err != nil {
 				return err
 			}
@@ -977,12 +1051,12 @@ func addImport(info *types.Info, pgf *parsego.File, preferredName, pkgPath, memb
 // It also adds imports for the dest package in files that reference a moving
 // decl and removes imports for the source package in files whose only
 // reference to the source package is a reference to a moving decl.
-func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, srcPGF *parsego.File, moving map[types.Object]bool, movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
+func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, srcPGF *parsego.File, moving map[types.Object]bool, movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
 ) error {
 	var (
 		srcPkgPath  = string(srcPkg.Metadata().PkgPath)
-		destPkgPath = string(destPkg.Metadata().PkgPath)
-		destPkgName = string(destPkg.Metadata().Name)
+		destPkgPath = string(dest.pkgPath)
+		destPkgName = string(dest.pkgName)
 	)
 	// For a same-package move, we don't need to update any references.
 	if srcPkgPath == destPkgPath {

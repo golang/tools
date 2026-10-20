@@ -71,6 +71,21 @@ func CallsUnexported2() {
 	unexported()
 }
 
+// Tests for when the move is not allowed because the dest file is in a different module,
+// or in testdata, a vendor directory, or a directory beginning with "." or "_".
+
+func Outside() {} //@codeaction(re"Outside", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/../x/x.go"}`, err=re"is not in module")
+
+func Vendored() {} //@codeaction(re"Vendored", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/vendor/example.com/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func NestedVendored() {} //@codeaction(re"NestedVendored", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/a/vendor/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InTestdata() {} //@codeaction(re"InTestdata", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testdata/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InUnderscoreDir() {} //@codeaction(re"InUnderscoreDir", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/_x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InDotDir() {} //@codeaction(re"InDotDir", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/.x/x.go"}`, err=re"ignored by the go command or vendored")
+
 -- illegal/dest/imports.go --
 package dest
 
