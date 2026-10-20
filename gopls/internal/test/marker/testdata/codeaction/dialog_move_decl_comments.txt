@@ -7,7 +7,6 @@ Test move declaration refactoring: doc comments and trailing comments should mov
 
 -- settings.json --
 {
-	"moveDeclaration": true,
 	"analyses": {"unusedfunc": false}
 }
 

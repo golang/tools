@@ -9,7 +9,6 @@ illegal internal imports, or symbol or import conflicts.
 
 -- settings.json --
 {
-	"moveDeclaration": true,
 	"analyses": {"unusedfunc": false}
 }
 

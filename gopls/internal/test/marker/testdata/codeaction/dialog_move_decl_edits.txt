@@ -5,11 +5,6 @@ Test move declaration refactoring: extracting declarations to the destination fi
 	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
 }
 
--- settings.json --
-{
-	"moveDeclaration": true
-}
-
 -- go.mod --
 module golang.org/lsptests/movedecledits
 

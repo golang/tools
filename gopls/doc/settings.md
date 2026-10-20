@@ -291,16 +291,6 @@ move subdirectories of the target package.
 
 Default: `false`.
 
-<a id='moveDeclaration'></a>
-### `moveDeclaration bool`
-
-**This setting is experimental and may be deleted.**
-
-moveDeclaration enables producing Move Declaration codeactions. The implementation
-is unfinished so we use this setting to gate its use.
-
-Default: `false`.
-
 <a id='completion'></a>
 ## Completion
 

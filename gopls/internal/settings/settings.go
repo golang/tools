@@ -277,10 +277,6 @@ type UIOptions struct {
 	// RenameMovesSubpackages enables Rename operations on packages to
 	// move subdirectories of the target package.
 	RenameMovesSubpackages bool `status:"experimental"`
-
-	// MoveDeclaration enables producing Move Declaration codeactions. The implementation
-	// is unfinished so we use this setting to gate its use.
-	MoveDeclaration bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -1470,9 +1466,6 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "fileWatcher":
 		return setEnum(&o.FileWatcher, value, FileWatcherOff, FileWatcherFSNotify, FileWatcherPoll)
-
-	case "moveDeclaration":
-		return setBool(&o.MoveDeclaration, value)
 
 	// deprecated and renamed settings
 	//
