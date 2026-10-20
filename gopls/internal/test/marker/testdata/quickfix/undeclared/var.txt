@@ -151,3 +151,15 @@ func _() {
 -- @struct/struct.go --
 @@ -8 +8 @@
 +	var g S
+-- void.go --
+package undeclared_var
+
+func voidFunc() {}
+
+func _() {
+	_ = voidFunc() + x //@quickfix("x", re"(undeclared name|undefined): x", void)
+}
+
+-- @void/void.go --
+@@ -6 +6 @@
++	var x any
