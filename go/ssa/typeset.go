@@ -8,6 +8,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Utilities for dealing with type sets.
@@ -34,6 +35,22 @@ func isBytestring(T types.Type) bool {
 		}
 	}
 	return hasBytes && hasString
+}
+
+// arrayLen reports the common length n of the array and
+// pointer-to-array types in the type set of t, if every type in the
+// (non-empty) set is such a type and all have the same length.
+// In that case, len(x) and cap(x) for x of type t are n
+// (though not a constant expression if t is a type parameter).
+func arrayLen(t types.Type) (n int64, ok bool) {
+	for u := range typeparams.TypeSetOf(t).UnderlyingTypes() {
+		arr, isArr := typesinternal.Unpointer(u).Underlying().(*types.Array)
+		if !isArr || ok && arr.Len() != n {
+			return 0, false
+		}
+		n, ok = arr.Len(), true
+	}
+	return n, ok
 }
 
 // indexType returns the element type and index mode of a IndexExpr over a type.

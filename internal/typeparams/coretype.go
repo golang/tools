@@ -13,9 +13,17 @@ import (
 
 // CoreType returns the core type of T or nil if T does not have a core type.
 //
-// Deprecated: as of Go 1.25, the notion of a core type has been
-// removed from the language spec. See https://go.dev/blog/coretypes
-// for more details. Use [TypeSetOf] instead.
+// As of Go 1.25, the notion of a core type has been removed from the
+// language spec; see https://go.dev/blog/coretypes for details.
+//
+// The spec now expresses the semantics of some operations (with
+// perhaps more in future) terms of computations over type sets, which
+// may permit them to use operands that do not have a CoreType; use
+// [TypeSetOf] in such cases.
+//
+// However, the spec continues to define other operations in a way
+// that is equivalent to the old core-type concept. This function is
+// provided for such cases.
 func CoreType(T types.Type) types.Type {
 	U := T.Underlying()
 	if _, ok := U.(*types.Interface); !ok {

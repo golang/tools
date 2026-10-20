@@ -139,8 +139,6 @@ func isPkgName(obj types.Object) bool  { return is[*types.PkgName](obj) }
 
 // isPointer reports whether T is a Pointer, or an alias of one.
 // It returns false for a Named type whose Underlying is a Pointer.
-//
-// TODO(adonovan): shouldn't this use CoreType(T)?
 func isPointer(T types.Type) bool { return is[*types.Pointer](types.Unalias(T)) }
 
 // isEmptyInterface whether T is a (possibly Named or Alias) empty interface
