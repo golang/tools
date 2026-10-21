@@ -51,7 +51,12 @@ var anyType = types.Universe.Lookup("any").Type()
 //
 // It returns nil on failure.
 func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
+	// validType returns the type of a single-value hole.
 	validType := func(t types.Type) types.Type {
+		if _, ok := t.(*types.Tuple); ok {
+			// e.g. the nil tuple of a call to a void function
+			return anyType
+		}
 		if t != nil && !containsInvalid(t) {
 			return types.Default(t)
 		} else {

@@ -276,3 +276,20 @@ func _() (x int, y, z string, k int64) {
 +	panic("unimplemented")
 +}
 +
+-- void_operand.go --
+package fromcallreturns
+
+type VoidOperand struct{}
+
+func voidFunc() {}
+
+func inferReturnFromVoidOperand() {
+	v := VoidOperand{}
+	_ = voidFunc() + v.void_operand() //@diag("voidFunc", re"used as value"), quickfix("void_operand", re"has no field or method", void_operand)
+}
+-- @void_operand/void_operand.go --
+@@ -5 +5,4 @@
++func (v VoidOperand) void_operand() any {
++	panic("unimplemented")
++}
++

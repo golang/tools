@@ -114,6 +114,11 @@ func TestFromContext(t *testing.T) {
 		{`func _(x nonesuch) { x = «x» }`, "any"}, // invalid type fallback to any
 		{`func _() { switch «x» {} }`, "nothing"}, // unhandled context
 		{`var _ = «x»`, "any"},                    // outside function
+
+		// void call in single-value context
+		{`func f() {}; func _() { «x» = f() }`, "any"},     // assign
+		{`func f() {}; func _() { var «x» = f() }`, "any"}, // value spec
+		{`func f() {}; func _() { _ = f() + «x» }`, "any"}, // binary
 	}
 
 	for _, tt := range tests {
