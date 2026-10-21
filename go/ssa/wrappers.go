@@ -300,7 +300,6 @@ func changeRecv(s *types.Signature, recv *types.Var) *types.Signature {
 type selection struct {
 	kind     types.SelectionKind
 	recv     types.Type
-	typ      types.Type
 	obj      types.Object
 	index    []int
 	indirect bool
@@ -310,7 +309,6 @@ func toSelection(sel *types.Selection) *selection {
 	return &selection{
 		kind:     sel.Kind(),
 		recv:     sel.Recv(),
-		typ:      sel.Type(),
 		obj:      sel.Obj(),
 		index:    sel.Index(),
 		indirect: sel.Indirect(),
