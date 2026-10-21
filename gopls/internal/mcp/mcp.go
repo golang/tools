@@ -252,6 +252,7 @@ func addToolByName(mcpServer *mcp.Server, h handler, name string) {
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_context",
 			Description: "Provide context for a region within a Go file",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.contextHandler)
 	case "go_diagnostics":
 		mcp.AddTool(mcpServer, &mcp.Tool{
@@ -262,31 +263,37 @@ Checks for parse and build errors across the entire Go workspace. If provided,
 "files" holds absolute paths for active files, on which additional linting is
 performed.
 `,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.workspaceDiagnosticsHandler)
 	case "go_file_context":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_file_context",
 			Description: "Summarizes a file's cross-file dependencies",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.fileContextHandler)
 	case "go_file_diagnostics":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_file_diagnostics",
 			Description: "Provides diagnostics for a Go file",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.fileDiagnosticsHandler)
 	case "go_file_metadata":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_file_metadata",
 			Description: "Provides metadata about the Go package containing the file",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.fileMetadataHandler)
 	case "go_package_api":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_package_api",
 			Description: "Provides a summary of a Go package API",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.outlineHandler)
 	case "go_references":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_references",
 			Description: "Provide the locations of references to a given object",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.referencesHandler)
 	case "go_rename_symbol":
 		mcp.AddTool(mcpServer, &mcp.Tool{
@@ -296,6 +303,7 @@ performed.
 For example, given arguments {"file": "/path/to/foo.go", "symbol": "Foo", "new_name": "Bar"},
 go_rename_symbol returns the edits necessary to rename the symbol "Foo" (located in the file foo.go) to
 "Bar" across the Go workspace.`,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.renameSymbolHandler)
 	case "go_search":
 		mcp.AddTool(mcpServer, &mcp.Tool{
@@ -308,6 +316,7 @@ Go symbols 'Foo', 'fooBar', 'futils.Oboe', 'github.com/foo/bar.Baz'.
 
 Results are limited to 100 symbols.
 `,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.searchHandler)
 	case "go_symbol_references":
 		mcp.AddTool(mcpServer, &mcp.Tool{
@@ -327,11 +336,13 @@ Finally, symbol references supporting querying fields and methods: symbol
 "T.M" selects the "M" field or method of the "T" type (or value), and "lib.T.M"
 does the same for a symbol in the imported package "lib".
 `,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.symbolReferencesHandler)
 	case "go_workspace":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name:        "go_workspace",
 			Description: "Summarize the Go programming language workspace",
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.workspaceHandler)
 	case "go_vulncheck":
 		mcp.AddTool(mcpServer, &mcp.Tool{
@@ -341,6 +352,7 @@ does the same for a symbol in the imported package "lib".
 	The check is performed on a given package pattern within a specified directory.
 	If no directory is provided, it defaults to the workspace root.
 	If no pattern is provided, it defaults to "./...".`,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 		}, h.vulncheckHandler)
 	}
 }
