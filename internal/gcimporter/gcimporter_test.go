@@ -432,6 +432,26 @@ func TestImportedConsts(t *testing.T) {
 	}
 }
 
+func TestImportedVarKinds(t *testing.T) {
+	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+
+	check := func(name string, v *types.Var, want types.VarKind) {
+		if got := v.Kind(); got != want {
+			t.Errorf("%s: imported as %v, want %v", name, got, want)
+		}
+	}
+
+	sig := importObject(t, "bufio.NewReader").(*types.Func).Signature()
+	check("bufio.NewReader param", sig.Params().At(0), types.ParamVar)
+	check("bufio.NewReader result", sig.Results().At(0), types.ResultVar)
+
+	read, _, _ := types.LookupFieldOrMethod(importObject(t, "bufio.Reader").Type(), true, nil, "Read")
+	check("bufio.Reader.Read receiver", read.(*types.Func).Signature().Recv(), types.RecvVar)
+
+	iface := importObject(t, "io.Reader").Type().Underlying().(*types.Interface)
+	check("io.Reader.Read receiver", iface.ExplicitMethod(0).Signature().Recv(), types.RecvVar)
+}
+
 // importObject imports the object specified by a name of the form
 // <import path>.<object name>, e.g. go/types.Type.
 //

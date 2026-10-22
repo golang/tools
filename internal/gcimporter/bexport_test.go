@@ -136,6 +136,9 @@ func equalType(x, y types.Type) error {
 			return fmt.Errorf("unequal receivers: %s vs %s", x.Recv(), y.Recv())
 		}
 		if x.Recv() != nil {
+			if xk, yk := x.Recv().Kind(), y.Recv().Kind(); xk != yk {
+				return fmt.Errorf("receiver: unequal var kinds: %v vs %v", xk, yk)
+			}
 			// TODO(adonovan): fix: this assertion fires for interface methods.
 			// The type of the receiver of an interface method is a named type
 			// if the Package was loaded from export data, or an unnamed (interface)
@@ -183,6 +186,9 @@ func equalType(x, y types.Type) error {
 		for i := 0; i < x.Len(); i++ {
 			if err := equalType(x.At(i).Type(), y.At(i).Type()); err != nil {
 				return fmt.Errorf("tuple element %d: %s", i, err)
+			}
+			if xk, yk := x.At(i).Kind(), y.At(i).Kind(); xk != yk {
+				return fmt.Errorf("tuple element %d: unequal var kinds: %v vs %v", i, xk, yk)
 			}
 		}
 	case *types.TypeParam:

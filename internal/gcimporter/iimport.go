@@ -599,7 +599,7 @@ func (r *importReader) obj(pkg *types.Package, name string) {
 				if r.p.version >= iexportVersionGenericMethods && r.bool() {
 					tpars = r.tparamList()
 				}
-				recv := r.param(pkg)
+				recv := r.param(pkg, types.RecvVar)
 
 				// If the receiver has any targs, set those as the
 				// rparams of the method (since those are the
@@ -989,6 +989,7 @@ func (r *importReader) doType(base *types.Named) (res types.Type) {
 			var recv *types.Var
 			if base != nil {
 				recv = types.NewVar(token.NoPos, methodPkg, "", base)
+				recv.SetKind(types.RecvVar)
 			}
 			msig := r.signature(methodPkg, recv, nil, nil)
 
@@ -1075,8 +1076,8 @@ func (r *importReader) objectPathObject() types.Object {
 }
 
 func (r *importReader) signature(paramPkg *types.Package, recv *types.Var, rparams []*types.TypeParam, tparams []*types.TypeParam) *types.Signature {
-	params := r.paramList(paramPkg)
-	results := r.paramList(paramPkg)
+	params := r.paramList(paramPkg, types.ParamVar)
+	results := r.paramList(paramPkg, types.ResultVar)
 	variadic := params.Len() > 0 && r.bool()
 	return types.NewSignatureType(recv, rparams, tparams, params, results, variadic)
 }
@@ -1095,19 +1096,21 @@ func (r *importReader) tparamList() []*types.TypeParam {
 	return xs
 }
 
-func (r *importReader) paramList(pkg *types.Package) *types.Tuple {
+func (r *importReader) paramList(pkg *types.Package, kind types.VarKind) *types.Tuple {
 	xs := make([]*types.Var, r.uint64())
 	for i := range xs {
-		xs[i] = r.param(pkg)
+		xs[i] = r.param(pkg, kind)
 	}
 	return types.NewTuple(xs...)
 }
 
-func (r *importReader) param(pkg *types.Package) *types.Var {
+func (r *importReader) param(pkg *types.Package, kind types.VarKind) *types.Var {
 	pos := r.pos()
 	name := r.ident()
 	typ := r.typ()
-	return types.NewParam(pos, pkg, name, typ)
+	param := types.NewParam(pos, pkg, name, typ)
+	param.SetKind(kind) // ∈ {Recv,Param,Result}Var
+	return param
 }
 
 func (r *importReader) bool() bool {
