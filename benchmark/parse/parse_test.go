@@ -70,11 +70,26 @@ func TestParseLine(t *testing.T) {
 			want: &Benchmark{
 				Name: "BenchmarkBridge",
 				N:    100000000,
+				OtherMetrics: map[string]float64{
+					"smoots": 19.6,
+				},
 			},
 		},
 		{
 			line: "PASS",
 			err:  true,
+		},
+		{
+			line: "BenchmarkSort/num_elems=20-4             3542373               340 ns/op                46.0 compares/op",
+			want: &Benchmark{
+				Name:     "BenchmarkSort/num_elems=20-4",
+				N:        3542373,
+				NsPerOp:  340,
+				Measured: NsPerOp,
+				OtherMetrics: map[string]float64{
+					"compares/op": 46.0,
+				},
+			},
 		},
 	}
 
@@ -194,6 +209,17 @@ func TestString(t *testing.T) {
 				Measured: AllocsPerOp,
 			},
 			wanted: "BenchmarkTest 100000000 5 allocs/op",
+		},
+		{
+			name: "otherMetricsTest",
+			input: &Benchmark{
+				Name: "BenchmarkSort/num_elems=20-4",
+				N:    3542373,
+				OtherMetrics: map[string]float64{
+					"compares/op": 46.0,
+				},
+			},
+			wanted: "BenchmarkSort/num_elems=20-4 3542373 46.00 compares/op",
 		},
 	}
 
