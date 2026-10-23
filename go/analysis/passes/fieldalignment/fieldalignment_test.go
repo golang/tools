@@ -13,5 +13,5 @@ import (
 
 func TestTest(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, fieldalignment.Analyzer, "a")
+	analysistest.RunWithSuggestedFixes(t, testdata, fieldalignment.Analyzer, "a", "unkeyed")
 }
