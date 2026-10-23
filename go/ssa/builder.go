@@ -715,6 +715,12 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			}
 			v.setPos(e.OpPos)
 			v.setType(fn.typ(tv.Type))
+			// Untyped shift counts may include unary operations too.
+			// Use the concrete operand type (see the BinaryExpr case below).
+			switch tv.Type {
+			case types.Typ[types.UntypedInt], types.Typ[types.UntypedRune]:
+				v.setType(v.X.Type())
+			}
 			return fn.emit(v)
 		default:
 			panic(e.Op)
@@ -727,6 +733,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		case token.SHL, token.SHR:
 			fallthrough
 		case token.ADD, token.SUB, token.MUL, token.QUO, token.REM, token.AND, token.OR, token.XOR, token.AND_NOT:
+			// Pre-1.28 go/types leaves non-constant shift counts untyped.
+			// Evaluate them, including intermediate arithmetic, as uint
+			// (go.dev/issue/77117).
+			switch tv.Type {
+			case types.Typ[types.UntypedInt], types.Typ[types.UntypedRune]:
+				tv.Type = types.Typ[types.Uint]
+			}
 			return emitArith(fn, e.Op, b.expr(fn, e.X), b.expr(fn, e.Y), fn.typ(tv.Type), e.OpPos)
 
 		case token.EQL, token.NEQ, token.GTR, token.LSS, token.LEQ, token.GEQ:
