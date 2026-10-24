@@ -27,6 +27,7 @@ type A = int
 type B = *map[chan int][]func() [2]bool
 
 type C = T
+type C2 = C
 
 type T struct{ x int }
 func (T) method() uint
@@ -100,6 +101,7 @@ type Hf64 = H[float64]
 		// (This follows the Go toolchain behavior, and finesses the need
 		// to create wrapper methods for that struct type.)
 		{"C", []string{"T", "*T", "int", "uint", "complex128", "!complex64", "!struct{x int}"}},
+		{"C2", []string{"T", "*T", "int", "uint", "complex128", "!complex64", "!struct{x int}"}},
 
 		// alias type
 		{"D", []string{"int"}},
@@ -128,7 +130,9 @@ type Hf64 = H[float64]
 			t.Errorf("no such type %q", test.name)
 			continue
 		}
-		T := types.Unalias(tname.Type())
+		// Unwrap only the outer alias used by the test table so that
+		// aliases in the RHS (such as C2 and D) are preserved.
+		T := tname.Type().(*types.Alias).Rhs()
 
 		toStr := func(T types.Type) string {
 			return types.TypeString(T, func(*types.Package) string { return "" })
