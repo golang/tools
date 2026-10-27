@@ -426,6 +426,13 @@ func propagate(pass *analysis.Pass, w *wrapper, call *ast.CallExpr, kind Kind, r
 		return
 	}
 
+	// A wrapper that forwards to both Printf and Errorf is
+	// Errorf-like, regardless of the order of the calls.
+	// (Errorf-like functions additionally accept the %w verb.)
+	if kind == KindPrintf && res.funcs[w.obj] == KindErrorf {
+		kind = KindErrorf
+	}
+
 	// If the candidate's print{,f} status becomes known,
 	// propagate it back to all its so-far known callers.
 	if res.funcs[w.obj] != kind {
