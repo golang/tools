@@ -80,6 +80,9 @@ func equalType(x, y types.Type) error {
 				return fmt.Errorf("mismatched %s method: %s", xm.Name(), err)
 			}
 		}
+		if x.IsComparable() != y.IsComparable() {
+			return fmt.Errorf("unequal comparability: %t vs %t", x.IsComparable(), y.IsComparable())
+		}
 		// Constraints are handled explicitly in the *TypeParam case below, so we
 		// don't yet need to consider embeddeds here.
 		// TODO(rfindley): consider the type set here.

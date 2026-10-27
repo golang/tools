@@ -775,6 +775,13 @@ func (p *iexporter) doDecl(obj types.Object) {
 		}
 
 		underlying := named.Underlying()
+		if comparable := types.Universe.Lookup("comparable").Type(); underlying == comparable.Underlying() {
+			// The underlying interface of comparable has no methods or
+			// embedded types and would otherwise be exported as any.
+			// Export comparable itself; the importer calls Underlying()
+			// on it.
+			underlying = comparable
+		}
 		w.typ(underlying, obj.Pkg())
 
 		if types.IsInterface(t) {
@@ -1089,20 +1096,6 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 	case *types.Interface:
 		w.startType(interfaceType)
 		w.pkg(pkg) // qualifies unexported method funcs
-
-		// If t has no embedded types but it's not a basic interface,
-		// the encoding below would describe it as interface{}.
-		// Currently, this can only happen for the underlying interface
-		// of comparable, which is needed to handle type declarations
-		// like "type C comparable". Export it as interface{comparable},
-		// as the compiler does.
-		if t.NumEmbeddeds() == 0 && !t.IsMethodSet() {
-			w.uint64(1) // NumEmbeddeds
-			w.pos(token.NoPos)
-			w.typ(types.Universe.Lookup("comparable").Type(), pkg)
-			w.uint64(0) // NumExplicitMethods
-			return
-		}
 
 		n := t.NumEmbeddeds()
 		w.uint64(uint64(n))
