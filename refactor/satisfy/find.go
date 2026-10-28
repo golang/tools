@@ -135,7 +135,7 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 	case *ast.CallExpr:
 		// x, err := f(args)
 		if sig := hasUnderlyingTermOf[*types.Signature](f.expr(e.Fun)); sig != nil {
-			f.call(sig, e.Args)
+			f.call(sig, e.Args, e.Ellipsis.IsValid())
 		}
 
 	case *ast.IndexExpr:
@@ -166,13 +166,16 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 	return tInvalid
 }
 
-func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
+// call visits the arguments of a call to a function with signature sig.
+// dots indicates a "spread" call f(x, y...), whose final argument
+// provides the entire variadic slice.
+func (f *Finder) call(sig *types.Signature, args []ast.Expr, dots bool) {
 	if len(args) == 0 {
 		return
 	}
 
 	// Ellipsis call?  e.g. f(x, y, z...)
-	if _, ok := args[len(args)-1].(*ast.Ellipsis); ok {
+	if dots {
 		for i, arg := range args {
 			// The final arg is a slice, and so is the final param.
 			f.assign(sig.Params().At(i).Type(), f.expr(arg))
@@ -180,21 +183,8 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 		return
 	}
 
-	var argtypes []types.Type
-
 	// Gather the effective actual parameter types.
-	if tuple, ok := f.info.Types[args[0]].Type.(*types.Tuple); ok {
-		// f(g()) call where g has multiple results?
-		f.expr(args[0])
-		// unpack the tuple
-		for v := range tuple.Variables() {
-			argtypes = append(argtypes, v.Type())
-		}
-	} else {
-		for _, arg := range args {
-			argtypes = append(argtypes, f.expr(arg))
-		}
-	}
+	argtypes := f.argTypes(args)
 
 	// Assign the actuals to the formals.
 	if !sig.Variadic() {
@@ -216,7 +206,8 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 }
 
 // builtin visits the arguments of a builtin type with signature sig.
-func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr) {
+// dots indicates a "spread" call such as append(x, y...).
+func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr, dots bool) {
 	switch obj.Name() {
 	case "make", "new":
 		for i, arg := range args {
@@ -227,30 +218,57 @@ func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Ex
 		}
 
 	case "append":
-		s := f.expr(args[0])
-		if _, ok := args[len(args)-1].(*ast.Ellipsis); ok && len(args) == 2 {
+		if dots {
 			// append(x, y...)   including append([]byte, "foo"...)
+			f.expr(args[0])
 			f.expr(args[1])
 		} else {
 			// append(x, y, z)
-			if s := hasUnderlyingTermOf[*types.Slice](s); s != nil {
-				for _, arg := range args[1:] {
-					f.assign(s.Elem(), f.expr(arg))
+			// append(f()) where f has multiple results
+			argtypes := f.argTypes(args)
+			if s := hasUnderlyingTermOf[*types.Slice](argtypes[0]); s != nil {
+				for _, argtype := range argtypes[1:] {
+					f.assign(s.Elem(), argtype)
 				}
 			}
 		}
 
 	case "delete":
-		m := f.expr(args[0])
-		k := f.expr(args[1])
-		if m := hasUnderlyingTermOf[*types.Map](m); m != nil {
-			f.assign(m.Key(), k)
+		// delete(m, k)
+		// delete(f()) where f has multiple results
+		argtypes := f.argTypes(args)
+		if len(argtypes) == 2 {
+			if m := hasUnderlyingTermOf[*types.Map](argtypes[0]); m != nil {
+				f.assign(m.Key(), argtypes[1])
+			}
 		}
 
 	default:
 		// ordinary call
-		f.call(sig, args)
+		f.call(sig, args, dots)
 	}
+}
+
+// argTypes visits the arguments of a call and returns their effective
+// types. A single multi-valued argument, as in f(g()), is unpacked
+// into the types of its results.
+func (f *Finder) argTypes(args []ast.Expr) []types.Type {
+	var argtypes []types.Type
+	if len(args) == 1 {
+		if tuple, ok := f.info.Types[args[0]].Type.(*types.Tuple); ok {
+			// f(g()) call where g has multiple results?
+			f.expr(args[0])
+			// unpack the tuple
+			for v := range tuple.Variables() {
+				argtypes = append(argtypes, v.Type())
+			}
+			return argtypes
+		}
+	}
+	for _, arg := range args {
+		argtypes = append(argtypes, f.expr(arg))
+	}
+	return argtypes
 }
 
 func (f *Finder) extract(tuple types.Type, i int) types.Type {
@@ -492,7 +510,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			if s, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
 				if obj, ok := f.info.Uses[s.Sel].(*types.Builtin); ok && obj.Pkg().Path() == "unsafe" {
 					sig := f.info.Types[e.Fun].Type.(*types.Signature)
-					f.call(sig, e.Args)
+					f.call(sig, e.Args, e.Ellipsis.IsValid())
 					return tv.Type
 				}
 			}
@@ -501,14 +519,14 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			if id, ok := ast.Unparen(e.Fun).(*ast.Ident); ok {
 				if obj, ok := f.info.Uses[id].(*types.Builtin); ok {
 					sig := f.info.Types[id].Type.(*types.Signature)
-					f.builtin(obj, sig, e.Args)
+					f.builtin(obj, sig, e.Args, e.Ellipsis.IsValid())
 					return tv.Type
 				}
 			}
 
 			// ordinary call
 			if sig := hasUnderlyingTermOf[*types.Signature](f.expr(e.Fun)); sig != nil {
-				f.call(sig, e.Args)
+				f.call(sig, e.Args, e.Ellipsis.IsValid())
 			}
 		}
 
