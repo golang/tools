@@ -409,7 +409,8 @@ func (gb *graphBuilder) collect(from types.Object, root ast.Node) {
 	if from == nil || root == nil {
 		return
 	}
-	// All references to symbols are either a plain ident or a dotted selection.
+	// All references to symbols are a plain ident, a dotted selection, or
+	// use of a field in an unkeyed struct literal.
 	var visit func(n ast.Node) bool
 	visit = func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -423,6 +424,17 @@ func (gb *graphBuilder) collect(from types.Object, root ast.Node) {
 			}
 		case *ast.Ident:
 			gb.addExplicit(from, gb.info.Uses[n])
+		case *ast.CompositeLit:
+			// An unkeyed struct literal (e.g. T{1, 2}) refers to every field.
+			if t := gb.info.TypeOf(n); t != nil && len(n.Elts) > 0 {
+				if _, keyed := n.Elts[0].(*ast.KeyValueExpr); !keyed {
+					if st, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct); ok {
+						for f := range st.Fields() {
+							gb.addExplicit(from, f)
+						}
+					}
+				}
+			}
 		}
 		return true
 	}
@@ -437,9 +449,12 @@ func (gb *graphBuilder) addExplicit(from, to types.Object) {
 	if to.Pkg() != gb.pkg {
 		return // cross-package reference
 	}
-	// Un-instantiate methods if necessary (e.g. F[int].M -> F[T].M).
-	if fn, ok := to.(*types.Func); ok {
-		to = fn.Origin()
+	// Un-instantiate methods and fields if necessary (e.g. F[int].M -> F[T].M).
+	switch obj := to.(type) {
+	case *types.Func:
+		to = obj.Origin()
+	case *types.Var:
+		to = obj.Origin()
 	}
 	explicit := gb.graph.explicit
 	if explicit[to] == nil {
@@ -476,6 +491,42 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 	}
 	explicit := gb.graph.explicit
 
+	// addMembers records every struct field and interface method declared
+	// within the syntax of owner's declaration (in a named, nested, or
+	// anonymous type) as a symbol that moves with owner. This lets canMove
+	// reject remaining references to unexported members (e.g. x.f, T{f: 1},
+	// x.m()).
+	addMembers := func(owner types.Object, decl ast.Node) {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				obj := gb.info.Defs[id]
+				switch o := obj.(type) {
+				case *types.Var:
+					if !o.IsField() {
+						return true
+					}
+				case *types.Func:
+					// Skip everything besides abstract (interface) methods. (recv == nil means it's a plain function)
+					if recv := o.Signature().Recv(); recv == nil || !types.IsInterface(recv.Type()) {
+						return true
+					}
+				default:
+					return true
+				}
+				explicit[obj] = make(map[types.Object]bool)
+				// Link owner and member in both directions, so that one never
+				// moves without the other. Code that reaches a member already
+				// reaches its owner through some other edge (it must obtain a
+				// value of the owner's type somehow), so the reverse edge is a
+				// safety net: it makes the invariant explicit in the graph
+				// instead of relying on that indirect reasoning.
+				gb.addImplicit(owner, obj)
+				gb.addImplicit(obj, owner)
+			}
+			return true
+		})
+	}
+
 	// First pass: collect all top-level symbols in the source package.
 	for _, pgf := range src.CompiledGoFiles() {
 		for _, decl := range pgf.File.Decls {
@@ -483,6 +534,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 			case *ast.FuncDecl:
 				if fn, ok := gb.info.Defs[decl.Name].(*types.Func); ok {
 					explicit[fn] = make(map[types.Object]bool)
+					addMembers(fn, decl)
 				}
 			case *ast.GenDecl:
 				switch decl.Tok {
@@ -491,6 +543,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 						for _, id := range spec.(*ast.ValueSpec).Names {
 							if obj := gb.info.Defs[id]; obj != nil {
 								explicit[obj] = make(map[types.Object]bool)
+								addMembers(obj, spec)
 							}
 						}
 					}
@@ -498,6 +551,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 					for _, spec := range decl.Specs {
 						if obj := gb.info.Defs[spec.(*ast.TypeSpec).Name]; obj != nil {
 							explicit[obj] = make(map[types.Object]bool)
+							addMembers(obj, spec)
 						}
 					}
 				}
@@ -736,9 +790,11 @@ func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, des
 			return nil // a new package has no existing declarations to conflict with
 		}
 		// Check destPkg's package block for conflicts, since the moving
-		// declarations become package-level declarations.
+		// declarations become package-level declarations. Fields and methods
+		// in the moving set are skipped: they are scoped to their type, not
+		// the package block.
 		for obj := range moving {
-			if destPkg.Types().Scope().Lookup(obj.Name()) != nil {
+			if typesinternal.IsPackageLevel(obj) && destPkg.Types().Scope().Lookup(obj.Name()) != nil {
 				return fmt.Errorf("cannot move %s: %s is already declared in package %s",
 					obj.Name(), obj.Name(), destName)
 			}
@@ -748,7 +804,7 @@ func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, des
 		for _, file := range destPkg.Syntax() {
 			if fileScope := destPkg.TypesInfo().Scopes[file]; fileScope != nil {
 				for obj := range moving {
-					if fileScope.Lookup(obj.Name()) != nil {
+					if typesinternal.IsPackageLevel(obj) && fileScope.Lookup(obj.Name()) != nil {
 						return fmt.Errorf("cannot move %s: conflicts with symbol in the destination package",
 							obj.Name())
 					}
@@ -757,13 +813,15 @@ func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, des
 			}
 		}
 
+		// TODO(mkalil): block moves that would separate an interface type from its methods' implementations.
+
 	} else {
 		// Check the destination file block for conflicts, since package-level
 		// declarations cannot share a name with a file-level import in the same file.
 		if destPGF, err := destPkg.File(destURI); err == nil {
 			if fileScope := destPkg.TypesInfo().Scopes[destPGF.File]; fileScope != nil {
 				for obj := range moving {
-					if fileScope.Lookup(obj.Name()) != nil {
+					if typesinternal.IsPackageLevel(obj) && fileScope.Lookup(obj.Name()) != nil {
 						return fmt.Errorf("cannot move %s: conflicts with symbol in destination file",
 							obj.Name())
 					}

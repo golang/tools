@@ -86,6 +86,54 @@ func InUnderscoreDir() {} //@codeaction(re"InUnderscoreDir", "refactor.move.move
 
 func InDotDir() {} //@codeaction(re"InDotDir", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/.x/x.go"}`, err=re"ignored by the go command or vendored")
 
+// Unexported fields of a moving type are referenced by remaining code, through
+// a selector, a keyed literal, or an unkeyed literal.
+type HasField struct{ n int } //@codeaction(re"HasField", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(n\)`)
+
+func ReadField(h HasField) int { return h.n }
+
+type Keyed struct{ k int } //@codeaction(re"Keyed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(k\)`)
+
+var K = Keyed{k: 1}
+
+type Unkeyed struct{ u int } //@codeaction(re"Unkeyed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(u\)`)
+
+var U = []*Unkeyed{{1}}
+
+// Unexported fields of anonymous struct types are referenced by remaining code.
+// Moving AnonMover also moves its dependencies, which declare anonymous struct
+// fields in a nested type (x), a var (name), and a function result (px).
+func AnonMover() { //@codeaction(re"AnonMover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(name, px, x\)`)
+	_, _, _ = Nested{}, AnonConfig, AnonPos
+}
+
+type Nested struct{ In struct{ x int } }
+
+var AnonConfig = struct{ name string }{"x"}
+
+func AnonPos() struct{ px, py int } { return struct{ px, py int }{1, 2} }
+
+func useAnon(n Nested) int { return n.In.x + len(AnonConfig.name) + AnonPos().px }
+
+// Unexported fields of an anonymous struct are reached through a slice, map,
+// channel, or pointer returned by a moving function.
+func SliceZ() []struct{ sliceF string } { return nil } //@codeaction(re"SliceZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(sliceF\)`)
+
+func MapZ() map[string]struct{ mapF string } { return nil } //@codeaction(re"MapZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(mapF\)`)
+
+func ChanZ() chan struct{ chanF string } { return nil } //@codeaction(re"ChanZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(chanF\)`)
+
+func PtrZ() *struct{ ptrF string } { return nil } //@codeaction(re"PtrZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(ptrF\)`)
+
+func useContainers() string {
+	return SliceZ()[0].sliceF + MapZ()["foo"].mapF + (<-ChanZ()).chanF + (*PtrZ()).ptrF
+}
+
+// An unexported method of a moving interface is called by remaining code.
+type Hidden interface{ peek() } //@codeaction(re"Hidden", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(peek\)`)
+
+func usePeek(h Hidden) { h.peek() }
+
 -- illegal/dest/imports.go --
 package dest
 

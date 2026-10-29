@@ -560,3 +560,255 @@ func AlreadyHere(s string) string { return strings.ToLower(s) }
 func SameExisting(s string) string { //@codeaction(re"SameExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/samepkg_existing/src/dest.go"}`, result=move_samepkg_existing)
 	return strings.TrimSpace(s)
 }
+-- membernames/src/src.go --
+package src
+
+// Buffer's field Data and method Reset do not conflict with dest's
+// package-level Data and Reset, so it's okay to move.
+type Buffer struct{ Data []byte } //@codeaction(re"Buffer", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/membernames/dest/dest.go"}`, result=move_member_names)
+
+func (b *Buffer) Reset() { b.Data = b.Data[:0] }
+
+func UseBuffer(b *Buffer) int { return len(b.Data) }
+-- membernames/dest/dest.go --
+package dest
+
+func Reset() {}
+
+var Data int
+
+-- @move_member_names/membernames/dest/dest.go --
+package dest
+
+func Reset() {}
+
+var Data int
+
+// Buffer's field Data and method Reset do not conflict with dest's
+// package-level Data and Reset, so it's okay to move.
+type Buffer struct{ Data []byte } //@codeaction(re"Buffer", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/membernames/dest/dest.go"}`, result=move_member_names)
+
+func (b *Buffer) Reset() { b.Data = b.Data[:0] }
+-- @move_member_names/membernames/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/membernames/dest"
+
+func UseBuffer(b *dest.Buffer) int { return len(b.Data) }
+-- anonexported/src/src.go --
+package src
+
+// Opts has an anonymous struct type with only exported fields, so remaining
+// references to its fields do not prevent the move.
+var Opts = struct{ Name string }{"x"} //@codeaction(re"Opts", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/anonexported/dest/dest.go"}`, result=move_anon_exported)
+
+func OptsName() string { return Opts.Name }
+-- anonexported/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- @move_anon_exported/anonexported/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Opts has an anonymous struct type with only exported fields, so remaining
+// references to its fields do not prevent the move.
+var Opts = struct{ Name string }{"x"} //@codeaction(re"Opts", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/anonexported/dest/dest.go"}`, result=move_anon_exported)
+-- @move_anon_exported/anonexported/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/anonexported/dest"
+
+func OptsName() string { return dest.Opts.Name }
+-- unexportedok/src/src.go --
+package src
+
+// Server has unexported fields, but remaining code refers only to the type,
+// its exported field, and its methods, so the move is allowed.
+type Server struct { //@codeaction(re"Server", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/unexportedok/dest/dest.go"}`, result=move_unexported_unreferenced)
+	Addr  string
+	port  int
+	inner struct{ debug bool }
+}
+
+func (s *Server) Port() int { return s.port }
+
+func (s *Server) SetDebug() { s.inner.debug = true }
+
+func Use(s *Server) (string, int) { s.SetDebug(); return s.Addr, s.Port() }
+
+func New() Server { return Server{Addr: "x"} }
+
+-- unexportedok/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- @move_unexported_unreferenced/unexportedok/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Server has unexported fields, but remaining code refers only to the type,
+// its exported field, and its methods, so the move is allowed.
+type Server struct { //@codeaction(re"Server", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/unexportedok/dest/dest.go"}`, result=move_unexported_unreferenced)
+	Addr  string
+	port  int
+	inner struct{ debug bool }
+}
+
+func (s *Server) Port() int { return s.port }
+
+func (s *Server) SetDebug() { s.inner.debug = true }
+-- @move_unexported_unreferenced/unexportedok/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/unexportedok/dest"
+
+func Use(s *dest.Server) (string, int) { s.SetDebug(); return s.Addr, s.Port() }
+
+func New() dest.Server { return dest.Server{Addr: "x"} }
+
+-- ifaceexported/src/src.go --
+package src
+
+// Runner's methods are exported, so remaining code may call and implement
+// them after the move.
+type Runner interface { //@codeaction(re"Runner", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifaceexported/dest/dest.go"}`, result=move_iface_exported_methods)
+	Run()
+}
+
+type job struct{}
+
+func (job) Run() {}
+
+var _ Runner = job{}
+
+func Start(r Runner) { r.Run() }
+
+-- ifaceexported/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- @move_iface_exported_methods/ifaceexported/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// Runner's methods are exported, so remaining code may call and implement
+// them after the move.
+type Runner interface { //@codeaction(re"Runner", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifaceexported/dest/dest.go"}`, result=move_iface_exported_methods)
+	Run()
+}
+-- @move_iface_exported_methods/ifaceexported/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/ifaceexported/dest"
+
+type job struct{}
+
+func (job) Run() {}
+
+var _ dest.Runner = job{}
+
+func Start(r dest.Runner) { r.Run() }
+
+-- ifaceembedded/src/src.go --
+package src
+
+import "testing"
+
+// TB's only unexported method is testing.TB's, which belongs to package
+// testing, so moving TB does not affect myT's implementation of it.
+type TB interface { //@codeaction(re"TB", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifaceembedded/dest/dest.go"}`, result=move_iface_embedded_unexported)
+	testing.TB
+	Extra()
+}
+
+type myT struct{ testing.TB }
+
+func (myT) Extra() {}
+
+var _ TB = myT{}
+
+-- ifaceembedded/dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- @move_iface_embedded_unexported/ifaceembedded/dest/dest.go --
+package dest
+
+import "testing"
+
+func Existing() {}
+
+// TB's only unexported method is testing.TB's, which belongs to package
+// testing, so moving TB does not affect myT's implementation of it.
+type TB interface { //@codeaction(re"TB", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifaceembedded/dest/dest.go"}`, result=move_iface_embedded_unexported)
+	testing.TB
+	Extra()
+}
+-- @move_iface_embedded_unexported/ifaceembedded/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/ifaceembedded/dest"
+
+import "testing"
+
+type myT struct{ testing.TB }
+
+func (myT) Extra() {}
+
+var _ dest.TB = myT{}
+
+-- ifacewithimpl/src/src.go --
+package src
+
+// Moving NewShape also moves Shape and circle, which implements Shape's
+// unexported method, so they remain in the same package. Shape's method area
+// does not conflict with dest's package-level func area.
+func NewShape() Shape { return circle{} } //@codeaction(re"NewShape", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifacewithimpl/dest/dest.go"}`, result=move_iface_with_impl)
+
+type Shape interface{ area() float64 }
+
+type circle struct{}
+
+func (circle) area() float64 { return 1 }
+
+var DefaultShape = NewShape()
+
+-- ifacewithimpl/dest/dest.go --
+package dest
+
+func area() {}
+
+var _ = area
+
+-- @move_iface_with_impl/ifacewithimpl/dest/dest.go --
+package dest
+
+func area() {}
+
+var _ = area
+
+// Moving NewShape also moves Shape and circle, which implements Shape's
+// unexported method, so they remain in the same package. Shape's method area
+// does not conflict with dest's package-level func area.
+func NewShape() Shape { return circle{} } //@codeaction(re"NewShape", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/ifacewithimpl/dest/dest.go"}`, result=move_iface_with_impl)
+
+type Shape interface{ area() float64 }
+
+type circle struct{}
+
+func (circle) area() float64 { return 1 }
+-- @move_iface_with_impl/ifacewithimpl/src/src.go --
+package src
+
+import "golang.org/lsptests/movedecledits/ifacewithimpl/dest"
+
+var DefaultShape = dest.NewShape()
+
