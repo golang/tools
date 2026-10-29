@@ -378,6 +378,21 @@ func f2() {
 	fmt0.Print
 }`,
 		},
+		{
+			descr: descr("position at EOF in unclosed switch block (issue 82678)"),
+			src: `package a
+
+func _(fmt int) {
+	switch {
+	«fmt fmt Print»`,
+			want: `package a
+
+import fmt0 "fmt"
+
+func _(fmt int) {
+	switch {
+	fmt0.Print`,
+		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
 			// splice marker(s) (name pkgpath member)
@@ -398,7 +413,11 @@ func f2() {
 				}
 				name, path, member = fields[0], fields[1], fields[2]
 				offsets = append(offsets, len(before))
-				src = before + "/*!*/" + after
+				if after == "" {
+					src = before
+				} else {
+					src = before + "/*!*/" + after
+				}
 			}
 			if len(offsets) == 0 {
 				t.Fatal("no «name path member» marker")
@@ -446,7 +465,11 @@ func f2() {
 			start := fset.Position(edit.Pos)
 			end := fset.Position(edit.End)
 			output := src[:start.Offset] + string(edit.NewText) + src[end.Offset:]
-			output = strings.ReplaceAll(output, "/*!*/", prefix+member)
+			if strings.Contains(output, "/*!*/") {
+				output = strings.ReplaceAll(output, "/*!*/", prefix+member)
+			} else {
+				output += prefix + member
+			}
 			if output != test.want {
 				t.Errorf("\n--got--\n%s\n--want--\n%s\n--diff--\n%s",
 					output, test.want, cmp.Diff(test.want, output))

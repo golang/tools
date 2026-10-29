@@ -45,6 +45,13 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 
 	scopes := make([]*types.Scope, len(poses))
 	for i, pos := range poses {
+		// fileScope is a half-open interval [FileStart, FileEnd), so
+		// fileScope.Contains(FileEnd) is false. If pos is at EOF
+		// (e.g. a parser-synthesized Rbrace or insertion at FileEnd),
+		// look up the innermost scope at FileEnd-1 (golang/go#82678).
+		if pos == fileScope.End() && pos > fileScope.Pos() {
+			pos--
+		}
 		scopes[i] = fileScope.Innermost(pos)
 		if scopes[i] == nil {
 			panic("no enclosing lexical block")

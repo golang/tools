@@ -52,7 +52,15 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 	return diags
 }
 
+func hasMissingSyntheticBrace(f *ast.File, body *ast.BlockStmt) bool {
+	return !body.Lbrace.IsValid() || !body.Rbrace.IsValid() ||
+		body.Lbrace >= body.Rbrace || body.Rbrace >= f.FileEnd
+}
+
 func suggestedFixTypeSwitch(f *ast.File, stmt *ast.TypeSwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
+	if hasMissingSyntheticBrace(f, stmt.Body) {
+		return nil // missing or synthetic brace (golang/go#82678)
+	}
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
@@ -142,6 +150,9 @@ func suggestedFixTypeSwitch(f *ast.File, stmt *ast.TypeSwitchStmt, pkg *types.Pa
 }
 
 func suggestedFixSwitch(f *ast.File, stmt *ast.SwitchStmt, pkg *types.Package, info *types.Info, qual types.Qualifier) *analysis.SuggestedFix {
+	if hasMissingSyntheticBrace(f, stmt.Body) {
+		return nil // missing or synthetic brace (golang/go#82678)
+	}
 	if hasDefaultCase(stmt.Body) {
 		return nil
 	}
