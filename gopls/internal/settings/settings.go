@@ -550,6 +550,25 @@ type DiagnosticOptions struct {
 	// DiagnosticsTrigger controls when to run diagnostics.
 	DiagnosticsTrigger DiagnosticsTrigger `status:"experimental"`
 
+	// DiagnosticsScope controls which packages gopls type-checks in
+	// order to report their compilation errors.
+	//
+	// By default, gopls reports compilation errors for every package in
+	// the workspace, so that an edit that breaks a package is reported
+	// even if none of that package's files is open. In a very large
+	// workspace, this means that gopls type-checks thousands of packages
+	// after it starts, and it may publish diagnostics for many files
+	// that the user never opened.
+	//
+	// When this setting is `"openPackages"`, gopls reports compilation
+	// errors and compiler optimization details only for packages that
+	// contain an open file. When the last open file of a package is
+	// closed, gopls clears the diagnostics of that package. Analysis
+	// diagnostics are always limited to packages that contain an open
+	// file, and diagnostics for go.mod, go.work, and template files do
+	// not depend on this setting.
+	DiagnosticsScope DiagnosticsScope `status:"experimental"`
+
 	// AnalysisProgressReporting controls whether gopls sends progress
 	// notifications when construction of its index of analysis facts is taking a
 	// long time. Cancelling these notifications will cancel the indexing task,
@@ -1010,6 +1029,17 @@ const (
 	// TODO: support "Manual"?
 )
 
+// A DiagnosticsScope controls the set of packages for which gopls
+// reports compilation errors.
+type DiagnosticsScope string
+
+const (
+	// Report compilation errors for all workspace packages. (default)
+	WorkspaceDiagnosticsScope DiagnosticsScope = "workspace"
+	// Report compilation errors only for packages that contain an open file.
+	OpenPackagesDiagnosticsScope DiagnosticsScope = "openPackages"
+)
+
 type CounterPath = telemetry.CounterPath
 
 // Set updates *Options based on the provided JSON value:
@@ -1433,6 +1463,11 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 		return setEnum(&o.DiagnosticsTrigger, value,
 			DiagnosticsOnEdit,
 			DiagnosticsOnSave)
+
+	case "diagnosticsScope":
+		return setEnum(&o.DiagnosticsScope, value,
+			WorkspaceDiagnosticsScope,
+			OpenPackagesDiagnosticsScope)
 
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)
