@@ -150,6 +150,40 @@ func Hello() {}
 	})
 }
 
+func TestDirectoryFilters_NestedModuleViews(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com/foo
+
+go 1.20
+-- main.go --
+package main
+
+func main() {}
+-- other/go.mod --
+module example.com/foo
+
+go 1.20
+-- other/main.go --
+package main
+
+func main() {}
+`
+	WithOptions(
+		Settings{"directoryFilters": []string{"-other"}},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("other/main.go")
+		env.AfterChange()
+		got := env.Views()
+		if len(got) != 1 {
+			t.Fatalf("Views() = %v, want 1", got)
+		}
+		if got[0].Root != env.Sandbox.Workdir.URI(".") {
+			t.Errorf("Root = %s, want workspace root", got[0].Root)
+		}
+	})
+}
+
 // Test for golang/go#52993: non-wildcard directoryFilters should still be
 // applied relative to the workspace folder, not the module root.
 func TestDirectoryFilters_MultiRootImportScanning(t *testing.T) {

@@ -54,6 +54,15 @@ type Folder struct {
 	Env     GoEnv
 }
 
+// excludes reports whether uri is excluded by the folder's directoryFilters.
+func (f *Folder) excludes(uri protocol.DocumentURI) bool {
+	folderDir := f.Dir.Path()
+	if !pathutil.InDir(folderDir, uri.Path()) {
+		return false
+	}
+	return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), PathIncludeFunc(f.Options.DirectoryFilters))
+}
+
 // GoEnv holds the environment variables and data from the Go command that is
 // required for operating on a workspace folder.
 type GoEnv struct {
