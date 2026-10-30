@@ -17,6 +17,8 @@ const (
 	// MaxPatternSize is the maximum size of the pattern used to construct the fuzzy matcher. Longer
 	// inputs are truncated to this size.
 	MaxPatternSize = 63
+
+	shortPatternSize = 3
 )
 
 type scoreVal int
@@ -88,7 +90,7 @@ func NewMatcher(pattern string) *Matcher {
 		}
 	}
 
-	if len(pattern) > 3 {
+	if len(pattern) > shortPatternSize {
 		m.patternShort = m.patternLower[:3]
 	} else {
 		m.patternShort = m.patternLower
@@ -123,12 +125,12 @@ func (m *Matcher) ScoreChunks(chunks []string) float32 {
 		// Empty patterns perfectly match candidates.
 		return 1
 	}
-
-	if m.match(candidate, lower) {
-		sc := m.computeScore(candidate, lower)
+	ok, l := m.match(candidate, lower)
+	if ok {
+		sc := m.computeScore(candidate, lower, l)
 		if sc > minScore/2 && !m.poorMatch() {
 			m.lastCandidateMatched = true
-			if len(m.pattern) == len(candidate) {
+			if l == len(candidate) {
 				// Perfect match.
 				return 1
 			}
@@ -182,25 +184,26 @@ func (m *Matcher) MatchedRanges() []int {
 	return ret
 }
 
-func (m *Matcher) match(candidate []byte, candidateLower []byte) bool {
+func (m *Matcher) match(candidate []byte, candidateLower []byte) (bool, int) {
 	i, j := 0, 0
 	for ; i < len(candidateLower) && j < len(m.patternLower); i++ {
 		if candidateLower[i] == m.patternLower[j] {
 			j++
 		}
 	}
-	if j != len(m.patternLower) {
-		return false
+	// if the candidate is short the characters have to match completely.
+	if len(candidate) <= shortPatternSize && j != len(m.patternLower) {
+		return false, 0
 	}
 
 	// The input passes the simple test against pattern, so it is time to classify its characters.
 	// Character roles are used below to find the last segment.
 	m.roles = RuneRoles(candidate, m.rolesBuf[:])
 
-	return true
+	return true, j
 }
 
-func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
+func (m *Matcher) computeScore(candidate []byte, candidateLower []byte, matchPatterLen int) int {
 	pattLen, candLen := len(m.pattern), len(candidate)
 
 	for j := 0; j <= len(m.pattern); j++ {
@@ -328,8 +331,7 @@ func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
 			}
 		}
 	}
-
-	result := m.scores[len(candidate)][len(m.pattern)][m.bestK(len(candidate), len(m.pattern))].val()
+	result := m.scores[len(candidate)][matchPatterLen][m.bestK(len(candidate), matchPatterLen)].val()
 
 	return result
 }
