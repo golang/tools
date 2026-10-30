@@ -3289,3 +3289,41 @@ func BenchmarkMatchesPath(b *testing.B) {
 		})
 	}
 }
+
+// TestFixImportsNoGoEnvForCompleteImports verifies that fixing a file whose
+// imports are already complete does not invoke `go env`. (getFixes used to
+// call env.goEnv unconditionally, spawning a `go env` subprocess per call even
+// on the happy path where GOROOT is never needed.)
+//
+// If goEnv were called, init would run `go env` and populate env.Env with the
+// requiredGoEnvVars, so an empty env.Env afterwards proves no subprocess ran.
+func TestFixImportsNoGoEnvForCompleteImports(t *testing.T) {
+	src := `package p
+
+import "fmt"
+
+func f() {
+	fmt.Println()
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "a.go", src, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &ProcessEnv{
+		// Deliberately leave Env unset: if goEnv is called, init runs
+		// a real `go env` subprocess and populates Env.
+		GocmdRunner: &gocommand.Runner{},
+	}
+	fixes, err := getFixes(context.Background(), fset, file, "a.go", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixes) != 0 {
+		t.Errorf("got %d fixes for a file with complete imports, want 0", len(fixes))
+	}
+	if len(env.Env) != 0 {
+		t.Errorf("goEnv ran for a file with complete imports (Env populated with %d vars), want 0", len(env.Env))
+	}
+}
