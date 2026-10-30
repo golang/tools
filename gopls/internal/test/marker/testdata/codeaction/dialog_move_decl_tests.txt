@@ -1,0 +1,300 @@
+Test move declaration refactoring: moves between non-test and test files, and
+between test files, for both in-package tests (package src) and external tests
+(package src_test).
+
+The test directories are named so as to specify the type of src/dest in the move:
+
+n: a normal, non-test file (package a, a.go)
+i: an internal test file (package a, a_test.go)
+x: an external test file (package a_test, a_test.go)
+
+e.g. n2x is a move from package src, src.go -> package src_test, src_test.go.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"analyses": {"unusedfunc": false}
+}
+
+-- go.mod --
+module golang.org/lsptests/movedecltests
+
+go 1.20
+
+-- n2x/src/src.go --
+package src
+
+// Helper is used only by the external test, so it can move there.
+func Helper() int { return 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/n2x/src/src_test.go"}`, result=n2x)
+
+// Used is used by non-test code (User() in this file), which cannot import the external test package.
+func Used() int { return 2 } //@codeaction(re"Used", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/n2x/src/src_test.go"}`, err=re"import cycle")
+
+func User() int { return Used() }
+
+-- n2x/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedecltests/n2x/src"
+)
+
+func TestHelper(t *testing.T) { _ = src.Helper() }
+
+-- @n2x/n2x/src/src.go --
+package src
+
+// Used is used by non-test code (User() in this file), which cannot import the external test package.
+func Used() int { return 2 } //@codeaction(re"Used", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/n2x/src/src_test.go"}`, err=re"import cycle")
+
+func User() int { return Used() }
+
+-- @n2x/n2x/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	
+)
+
+func TestHelper(t *testing.T) { _ = Helper() }
+
+// Helper is used only by the external test, so it can move there.
+func Helper() int { return 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/n2x/src/src_test.go"}`, result=n2x)
+-- x2n/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedecltests/x2n/src"
+)
+
+// Helper moves from the external test package into package src.
+func Helper() int { return src.Base() + 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2n/src/src.go"}`, result=x2n)
+
+func TestHelper(t *testing.T) { _ = Helper() + src.Base() }
+
+-- x2n/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+-- @x2n/x2n/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+// Helper moves from the external test package into package src.
+func Helper() int { return Base() + 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2n/src/src.go"}`, result=x2n)
+-- @x2n/x2n/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedecltests/x2n/src"
+)
+
+func TestHelper(t *testing.T) { _ = src.Helper() + src.Base() }
+
+-- i2n/src/src_test.go --
+package src
+
+import "testing"
+
+// helper moves from an in-package test file into a non-test file. Its
+// dependency helper2 is declared in a test file, which non-test code cannot
+// see, so it moves too.
+func helper() int { return helper2() + Base() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/i2n/src/src.go"}`, result=i2n)
+
+func helper2() int { return 1 }
+
+func TestHelper(t *testing.T) { _ = helper() + helper2() }
+
+-- i2n/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+-- @i2n/i2n/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+// helper moves from an in-package test file into a non-test file. Its
+// dependency helper2 is declared in a test file, which non-test code cannot
+// see, so it moves too.
+func helper() int { return helper2() + Base() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/i2n/src/src.go"}`, result=i2n)
+
+func helper2() int { return 1 }
+-- @i2n/i2n/src/src_test.go --
+package src
+
+import "testing"
+
+func TestHelper(t *testing.T) { _ = helper() + helper2() }
+
+-- x2i/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+-- x2i/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedecltests/x2i/src"
+)
+
+// Helper moves from the external test package into an in-package test file.
+// The external test can still use it, as src.Helper.
+func Helper() int { return src.Base() + 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2i/src/dest_test.go"}`, result=x2i)
+
+func TestHelper(t *testing.T) { _ = Helper() + src.Base() }
+
+-- x2i/src/dest_test.go --
+package src
+
+import "testing"
+
+func TestDest(t *testing.T) {}
+
+-- @x2i/x2i/src/dest_test.go --
+package src
+
+import "testing"
+
+func TestDest(t *testing.T) {}
+
+// Helper moves from the external test package into an in-package test file.
+// The external test can still use it, as src.Helper.
+func Helper() int { return Base() + 1 } //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2i/src/dest_test.go"}`, result=x2i)
+-- @x2i/x2i/src/src_test.go --
+package src_test
+
+import (
+	"testing"
+
+	"golang.org/lsptests/movedecltests/x2i/src"
+)
+
+func TestHelper(t *testing.T) { _ = src.Helper() + src.Base() }
+
+-- x2x/src/src.go --
+package src
+
+func Base() int { return 1 }
+
+-- x2x/src/src_test.go --
+package src_test
+
+import "testing"
+
+// helper moves between files of the external test package: a same-package
+// move, so helper2 does not move with it.
+func helper() int { return helper2() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2x/src/dest_test.go"}`, result=x2x)
+
+func helper2() int { return 1 }
+
+func TestHelper(t *testing.T) { _ = helper() + helper2() }
+
+-- x2x/src/dest_test.go --
+package src_test
+
+import "testing"
+
+func TestDest(t *testing.T) {}
+
+-- @x2x/x2x/src/dest_test.go --
+package src_test
+
+import "testing"
+
+func TestDest(t *testing.T) {}
+
+// helper moves between files of the external test package: a same-package
+// move, so helper2 does not move with it.
+func helper() int { return helper2() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/x2x/src/dest_test.go"}`, result=x2x)
+-- @x2x/x2x/src/src_test.go --
+package src_test
+
+import "testing"
+
+func helper2() int { return 1 }
+
+func TestHelper(t *testing.T) { _ = helper() + helper2() }
+
+-- testonly/src_test.go --
+package testonly
+
+import "testing"
+
+// helper is declared in a directory that contains only _test.go files, so
+// there is no non-test package for the new destination file to join. Moving
+// it to a new test or non-test file in the same directory is a same-package move.
+func helper() int { return 1 } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest_test.go"}`, result=testonly_new_test_file), codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest.go"}`, result=testonly_new_nontest_file)
+
+func TestHelper(t *testing.T) { _ = helper() }
+
+-- @testonly_new_nontest_file/testonly/dest.go --
+package testonly
+
+// helper is declared in a directory that contains only _test.go files, so
+// there is no non-test package for the new destination file to join. Moving
+// it to a new test or non-test file in the same directory is a same-package move.
+func helper() int { return 1 } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest_test.go"}`, result=testonly_new_test_file), codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest.go"}`, result=testonly_new_nontest_file)
+-- @testonly_new_nontest_file/testonly/src_test.go --
+package testonly
+
+import "testing"
+
+func TestHelper(t *testing.T) { _ = helper() }
+
+-- @testonly_new_test_file/testonly/dest_test.go --
+package testonly
+
+// helper is declared in a directory that contains only _test.go files, so
+// there is no non-test package for the new destination file to join. Moving
+// it to a new test or non-test file in the same directory is a same-package move.
+func helper() int { return 1 } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest_test.go"}`, result=testonly_new_test_file), codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly/dest.go"}`, result=testonly_new_nontest_file)
+-- @testonly_new_test_file/testonly/src_test.go --
+package testonly
+
+import "testing"
+
+func TestHelper(t *testing.T) { _ = helper() }
+
+-- testonly_deps/src_test.go --
+package testonly
+
+import "testing"
+
+// As above, but helper depends on helper2, which is declared in a test file.
+func helper() int { return helper2() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly_deps/dest_test.go"}`, result=testonly_deps_test_file)
+
+func helper2() int { return 1 }
+
+func TestHelper(t *testing.T) { _ = helper() }
+-- @testonly_deps_test_file/testonly_deps/dest_test.go --
+package testonly
+
+// As above, but helper depends on helper2, which is declared in a test file.
+func helper() int { return helper2() } //@codeaction(re"helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testonly_deps/dest_test.go"}`, result=testonly_deps_test_file)
+-- @testonly_deps_test_file/testonly_deps/src_test.go --
+package testonly
+
+import "testing"
+
+func helper2() int { return 1 }
+
+func TestHelper(t *testing.T) { _ = helper() }

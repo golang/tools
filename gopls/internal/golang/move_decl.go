@@ -135,6 +135,11 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 			dest.pkgPath, dest.pkgName = dest.pkg.Metadata().PkgPath, dest.pkg.Metadata().Name
 		} else if dest.pkgPath, dest.pkgName, err = newPackage(srcMod, destURI); err != nil { // create package if it doesn't exist
 			return nil, protocol.Location{}, err
+		} else if dest.pkgPath == srcPkg.Metadata().PkgPath {
+			// The destination directory has no non-test package, but it is the
+			// source package's own directory (e.g. a directory containing only
+			// _test.go files). This is a same-package move.
+			dest.pkg, dest.pkgName = srcPkg, srcPkg.Metadata().Name
 		}
 	}
 
@@ -672,6 +677,12 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // For each of these symbols, we also include their coupled symbols, recursively.
 // For each symbol's dependencies (as specified by edges in the declGraph), we add
 // the symbol to the moving set.
+//
+// TODO(mkalil): handle same-package moves between test and non-test files. A
+// package and its test variant are distinct *cache.Packages with the same path,
+// so the srcPkg == destPkg check below treats them as different packages.
+// (Currently, dialog_move_decl_tests.txt lacks complete tests for moves
+// involving internal test files).
 func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetObj types.Object) map[types.Object]bool {
 	visited := map[types.Object]bool{targetObj: true}
 	if srcPkg == destPkg {
