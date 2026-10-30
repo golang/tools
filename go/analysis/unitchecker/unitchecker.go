@@ -80,7 +80,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/internal/analysis/driverutil"
@@ -648,25 +647,27 @@ type vetxEntry struct {
 
 func readVetxFiles(packageVetx map[string]string) (map[string]*vetxEntry, error) {
 	var (
-		entriesMu sync.Mutex
-		entries   = make(map[string]*vetxEntry, len(packageVetx))
-		g         errgroup.Group
+		mu       sync.Mutex // guards entries and firstErr
+		entries  = make(map[string]*vetxEntry, len(packageVetx))
+		firstErr error
+		wg       sync.WaitGroup // (not errgroup, since unitchecker is vendored into std)
 	)
 	for pkgPath, file := range packageVetx {
-		g.Go(func() error {
+		wg.Go(func() {
 			entry, err := readVetxFile(file)
+			mu.Lock()
+			defer mu.Unlock()
 			if err != nil {
-				return fmt.Errorf("invalid vetx file for %q: %v", pkgPath, err)
+				if firstErr == nil {
+					firstErr = fmt.Errorf("invalid vetx file for %q: %v", pkgPath, err)
+				}
+				return
 			}
-			entriesMu.Lock()
 			entries[pkgPath] = entry
-			entriesMu.Unlock()
-
-			return nil
 		})
 	}
-	err := g.Wait()
-	return entries, err
+	wg.Wait()
+	return entries, firstErr
 }
 
 func readVetxFile(filename string) (*vetxEntry, error) {

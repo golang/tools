@@ -73,6 +73,20 @@ var rules = [...]struct {
 		},
 	},
 	{
+		rationale: "the analysis packages vendored into cmd (and, prospectively, std) must not depend on x/sync, so that std need not vendor it",
+		from: []string{
+			"golang.org/x/tools/go/analysis/suite/fix",
+			"golang.org/x/tools/go/analysis/suite/vet",
+			"golang.org/x/tools/go/analysis/unitchecker",
+		},
+		deny: []string{
+			"golang.org/x/sync/errgroup",
+			"golang.org/x/sync/semaphore",
+			"golang.org/x/sync/singleflight",
+			"golang.org/x/sync/syncmap",
+		},
+	},
+	{
 		rationale: "only go/ssa/ssautil may connect go/ssa and go/packages",
 		from:      []string{"golang.org/x/tools/go/ssa"},
 		deny:      []string{"golang.org/x/tools/go/packages"},
