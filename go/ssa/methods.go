@@ -60,8 +60,8 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		defer prog.methodsMu.Unlock()
 
 		// Get or create SSA method set.
-		mset, ok := prog.methodSets.At(T).(*methodSet)
-		if !ok {
+		mset := prog.methodSetOf(T)
+		if mset == nil {
 			mset = &methodSet{mapping: make(map[methodKey]*Function)}
 			prog.methodSets.Set(T, mset)
 		}
@@ -175,12 +175,32 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 func (prog *Program) existingMethod(T types.Type, key methodKey) *Function {
 	prog.methodsMu.Lock()
 	defer prog.methodsMu.Unlock()
-	if mset, ok := prog.methodSets.At(T).(*methodSet); ok {
+	if mset := prog.methodSetOf(T); mset != nil {
 		if fn := mset.mapping[key]; fn != nil && fn.buildshared.isTransitivelyDone() {
 			return fn
 		}
 	}
 	return nil
+}
+
+// methodSetOf returns the method set recorded for T, or nil.
+// Clients tend to pass the same types.Type values again and again,
+// so methodSetsPtr maps each one directly to its method set, which
+// avoids hashing T's structure on every call.
+//
+// Requires prog.methodsMu.
+func (prog *Program) methodSetOf(T types.Type) *methodSet {
+	if mset, ok := prog.methodSetsPtr[T]; ok {
+		return mset
+	}
+	mset, _ := prog.methodSets.At(T).(*methodSet)
+	if mset != nil {
+		if prog.methodSetsPtr == nil {
+			prog.methodSetsPtr = make(map[types.Type]*methodSet)
+		}
+		prog.methodSetsPtr[T] = mset
+	}
+	return mset
 }
 
 // methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
