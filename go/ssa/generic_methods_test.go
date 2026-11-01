@@ -340,7 +340,7 @@ func TestGenericMethods(t *testing.T) {
 type G[P any] struct { x P }
 func (g G[P]) M[Q any](q Q) (P, Q) { return g.x, q }
 func (g *G[P]) N[Q any](q Q) (P, Q) { return g.x, q }
-func same[P, Q any](q Q) (P, Q) { var p P; return p, q }
+func bound[P, Q any](g G[P]) func(Q) (P, Q) { return g.M[Q] }
 func value[P, Q any]() func(G[P], Q) (P, Q) { return G[P].M[Q] }
 func pointer[P, Q any]() func(*G[P], Q) (P, Q) { return (*G[P]).N[Q] }
 type Outer[P any] struct { G[P] }
@@ -356,9 +356,10 @@ func f() {
 		// Value and pointer receivers on generic and non-generic types.
 		{g, "_ = g.M[bool]; _ = g.N[bool]"},
 		{n, "_ = n.M[bool]; _ = n.N[bool]"},
-		// An ordinary function has the same signature as M without its receiver.
-		// It must not cause the method's instantiated signature to lose its receiver.
-		{receiverCases, `_, _ = same[int, string]("ordinary function"); value[int, string]()(G[int]{42}, "value")`},
+		// Value receiver.
+		{receiverCases, `value[int, string]()(G[int]{42}, "value")`},
+		// Bound method value.
+		{receiverCases, `bound[int, string](G[int]{42})("bound")`},
 		// Pointer receiver.
 		{receiverCases, `g := G[int]{42}; pointer[int, string]()(&g, "pointer")`},
 		// Promoted method.
