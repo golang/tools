@@ -188,16 +188,14 @@ var codeTemplate = template.Must(template.New("code").Funcs(template.FuncMap{
 	"leadingSpace": leadingSpaceRE.FindString,
 }).Parse(codeTemplateHTML))
 
-const codeTemplateHTML = `
-{{with .Prefix}}<pre style="display: none"><span>{{printf "%s" .}}</span></pre>{{end -}}
+const codeTemplateHTML = `{{with .Prefix}}<pre style="display: none"><span>{{printf "%s" .}}</span></pre>{{end -}}
 
-<pre{{if .Edit}} contenteditable="true" spellcheck="false"{{end}}{{if .Numbers}} class="numbers"{{end}}>{{/*
+<pre{{if .Edit}} contenteditable="plaintext-only" spellcheck="false"{{end}}{{if .Numbers}} class="numbers"{{end}}>{{/*
 	*/}}{{range .Lines}}<span num="{{.N}}">{{/*
 	*/}}{{if .HL}}{{leadingSpace .L}}<b>{{trimSpace .L}}</b>{{/*
 	*/}}{{else}}{{.L}}{{end}}{{/*
 */}}</span>
-{{end}}</pre>
-{{with .Suffix}}<pre style="display: none"><span>{{printf "%s" .}}</span></pre>{{end -}}
+{{end}}</pre>{{with .Suffix}}<pre style="display: none"><span>{{printf "%s" .}}</span></pre>{{end -}}
 `
 
 // codeLine represents a line of code extracted from a source file.
