@@ -511,6 +511,9 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	if addr == "" {
 		return "", nil
 	}
+	if strings.HasPrefix(addr, ":") {
+		return "", fmt.Errorf("debug address %s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", addr)
+	}
 	i.serveMu.Lock()
 	defer i.serveMu.Unlock()
 

@@ -73,7 +73,9 @@ func (s *serve) Run(ctx context.Context, args ...string) error {
 		}
 		defer closeLog()
 		di.ServerAddress = s.Address
-		di.Serve(ctx, s.Debug)
+		if _, err := di.Serve(ctx, s.Debug); err != nil {
+			return err
+		}
 	}
 
 	var (
