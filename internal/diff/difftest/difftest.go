@@ -15,7 +15,10 @@ package difftest
 // changes.
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"golang.org/x/tools/internal/diff"
 )
@@ -316,8 +319,7 @@ func DiffTest(t *testing.T, compute func(before, after string) []diff.Edit) {
 					got, unified, test.Out)
 			}
 			if !test.NoDiff && unified != test.Unified {
-				t.Errorf("Unified: got diff:\n%q\nexpected:\n%q diffs:%v",
-					unified, test.Unified, edits)
+				t.Errorf("unified diff (-want +got):\n%s", cmp.Diff(strings.Split(test.Unified, "\n"), strings.Split(unified, "\n")))
 			}
 		})
 	}
