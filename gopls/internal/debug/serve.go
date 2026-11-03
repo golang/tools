@@ -504,12 +504,15 @@ func (i *Instance) SetLogFile(logfile string, isDaemon bool) (func(), error) {
 }
 
 // Serve starts and runs a debug server in the background on the given addr.
-// It also logs the port the server starts on, to allow for :0 auto assigned
-// ports.
+// It also logs the port the server starts on, to allow for localhost:0 auto
+// assigned ports.
 func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	stdlog.SetFlags(stdlog.Lshortfile)
 	if addr == "" {
 		return "", nil
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "", fmt.Errorf("debug address %s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", addr)
 	}
 	i.serveMu.Lock()
 	defer i.serveMu.Unlock()

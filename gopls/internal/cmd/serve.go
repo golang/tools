@@ -64,6 +64,10 @@ func (s *serve) Run(ctx context.Context, args ...string) error {
 		return commandLineErrorf("server does not take arguments, got %v", args)
 	}
 
+	if strings.HasPrefix(s.Debug, ":") {
+		return fmt.Errorf("-debug=%s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", s.Debug)
+	}
+
 	di := debug.GetInstance(ctx)
 	isDaemon := s.Address != ""
 	if di != nil {

@@ -518,7 +518,7 @@ type DebuggingArgs struct {
 	// If Addr specifies a port, only the daemon will be able to bind to that
 	// port, and each intermediate gopls instance will fail to start debugging.
 	// For this reason it is recommended not to specify a port (or equivalently,
-	// to specify ":0").
+	// to specify "localhost:0").
 	//
 	// If the server was already debugging this field has no effect, and the
 	// result will contain the previously configured debug URL(s).
