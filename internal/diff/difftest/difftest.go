@@ -243,6 +243,32 @@ A
 		LineEdits: []diff.Edit{{Start: 2, End: 4, New: "C\n\n"}},
 	},
 	{
+		Name: "multiple_hunks",
+		In:   "1a\n2\n3a\n4\n5\n6\n7\n8\n9\n10\n11a\n",
+		Out:  "1b\n2\n3b\n4\n5\n6\n7\n8\n9\n10\n11b\n",
+		Unified: UnifiedPrefix + `@@ -1,6 +1,6 @@
+-1a
++1b
+ 2
+-3a
++3b
+ 4
+ 5
+ 6
+@@ -8,4 +8,4 @@
+ 8
+ 9
+ 10
+-11a
++11b
+`,
+		Edits: []diff.Edit{
+			{Start: 0, End: 3, New: "1b\n"},
+			{Start: 5, End: 8, New: "3b\n"},
+			{Start: 23, End: 27, New: "11b\n"},
+		},
+	},
+	{
 		Name: "multiple_replace",
 		In:   "A\nB\nC\nD\nE\nF\nG\n",
 		Out:  "A\nH\nI\nJ\nE\nF\nK\n",
