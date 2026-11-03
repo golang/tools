@@ -44,7 +44,8 @@ import (
 //	var x int     => IsAssignedOrAddressTaken(x) = false
 //	x := 1        => IsAssignedOrAddressTaken(x) = false
 //
-// In the absence of type information, we conservatively return true.
+// For some ill-formed code, such as a non-identifier on the LHS of :=, or when
+// the type of x in x[i] or x[i:j] is unknown, we conservatively return true.
 //
 // TODO(adonovan): revisit the surprising behavior for declarations.
 func IsAssignedOrAddressTaken(info *types.Info, cur inspector.Cursor) bool {
@@ -108,7 +109,10 @@ outer:
 		if assign.Tok != token.DEFINE {
 			return true // x = j or x += j
 		}
-		id := cur.Node().(*ast.Ident)
+		id, ok := cur.Node().(*ast.Ident)
+		if !ok {
+			return true // ill-formed, e.g. (x) := 1; be conservative
+		}
 		// Re-assigned identifiers are recorded in the Uses map.
 		if _, ok := info.Uses[id]; ok {
 			return true // reassignment of x (x, y := 1, 2)

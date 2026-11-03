@@ -199,6 +199,7 @@ func TestIsAssignedOrAddressTaken_IllTyped(t *testing.T) {
 		`package p; func _() { _ = x[0] }`, // x undefined
 		`package p; type S struct{}; func _() { var x S; _ = x.nofield[0] }`,
 		`package p; func _() { var x int; _ = x.f[1:2] }`,
+		`package p; func _() { var x int; (x) := 1 }`, // non-identifier on LHS of := (golang/go#82781)
 	} {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, "p.go", src, 0)
