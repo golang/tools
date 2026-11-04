@@ -711,3 +711,52 @@ func iterlen[T any](seq iter.Seq[T]) (len int) {
 	}
 	return
 }
+
+func TestCursor_Unparen(t *testing.T) {
+	const src = `package p; var _ = (((x)))+y`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := inspector.New([]*ast.File{f}).Root()
+
+	var outer, x, y inspector.Cursor
+	for cur := range root.Preorder((*ast.ParenExpr)(nil), (*ast.Ident)(nil)) {
+		switch n := cur.Node().(type) {
+		case *ast.ParenExpr:
+			if !outer.Valid() {
+				outer = cur
+			}
+		case *ast.Ident:
+			switch n.Name {
+			case "x":
+				x = cur
+			case "y":
+				y = cur
+			}
+		}
+	}
+
+	// Unparen
+	if got := outer.Unparen(); got != x {
+		t.Errorf("outer.Unparen() = %v, want %v", got, x)
+	}
+	if got := x.Unparen(); got != x {
+		t.Errorf("x.Unparen() = %v, want %v", got, x)
+	}
+
+	// UnparenEnclosing
+	if got := x.UnparenEnclosing(); got != outer {
+		t.Errorf("x.UnparenEnclosing() = %v, want %v", got, outer)
+	}
+	if got := outer.UnparenEnclosing(); got != outer {
+		t.Errorf("outer.UnparenEnclosing() = %v, want %v", got, outer)
+	}
+	if got := y.UnparenEnclosing(); got != y {
+		t.Errorf("y.UnparenEnclosing() = %v, want %v", got, y)
+	}
+	if got, want := x.UnparenEnclosing().ParentEdgeKind(), edge.BinaryExpr_X; got != want {
+		t.Errorf("x.UnparenEnclosing().ParentEdgeKind() = %v, want %v", got, want)
+	}
+}

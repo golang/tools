@@ -934,7 +934,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		len(calleeDecl.Body.List[0].(*ast.ReturnStmt).Results) > 0 { // not a bare return
 		results := calleeDecl.Body.List[0].(*ast.ReturnStmt).Results
 
-		curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
+		curParent := caller.Call.UnparenEnclosing().Parent()
 		parent := curParent.Node()
 
 		// statement context
@@ -1132,7 +1132,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	//
 	// The body may use defer, arbitrary control flow, and
 	// multiple returns.
-	curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
+	curParent := caller.Call.UnparenEnclosing().Parent()
 	if ret, ok := curParent.Node().(*ast.ReturnStmt); ok &&
 		len(ret.Results) == 1 &&
 		tailCallSafeReturn(caller, calleeSymbol, callee) &&
@@ -3076,7 +3076,7 @@ func unlabel(stmt ast.Stmt) ast.Stmt {
 // appears in a restricted context (such as "if f(); cond {") where it
 // cannot be replaced by an arbitrary statement. (See "statement theory".)
 func callStmt(curCall inspector.Cursor, unrestricted bool) inspector.Cursor {
-	curStmt := cursorutil.UnparenEnclosing(curCall).Parent()
+	curStmt := curCall.UnparenEnclosing().Parent()
 	if !is[*ast.ExprStmt](curStmt.Node()) {
 		return inspector.Cursor{}
 	}

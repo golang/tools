@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -64,7 +63,7 @@ func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
 		}
 	}
 
-	cur = cursorutil.UnparenEnclosing(cur)
+	cur = cur.UnparenEnclosing()
 	ek, idx := cur.ParentEdge()
 	switch ek {
 	case edge.AssignStmt_Lhs:
