@@ -27,7 +27,7 @@ func Foo(a, b int) int { //@codeaction(re"fu()nc", "refactor.move.moveDeclaratio
     return 1 //@codeaction(re"return()", "refactor.move.moveDeclaration", title="Move declaration Foo")
 }
 
-var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", title="Move declaration a")
+var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
 
 var c, d int //@codeaction(re"va()r", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
 
@@ -114,6 +114,15 @@ var AnonConfig = struct{ name string }{"x"}
 func AnonPos() struct{ px, py int } { return struct{ px, py int }{1, 2} }
 
 func useAnon(n Nested) int { return n.In.x + len(AnonConfig.name) + AnonPos().px }
+
+// Moving only some of the names declared by a single spec is not supported.
+// (No code action is offered on a name in a multi-name spec; see
+// availability/move.go.) Here PairP is pulled in as a dependency.
+func UsesPairP() int { return PairP } //@codeaction(re"UsesPairP", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`cannot move PairP: it is declared together with PairQ`)
+
+func PairF() (int, int) { return 1, 2 }
+
+var PairP, PairQ = PairF()
 
 // Unexported fields of an anonymous struct are reached through a slice, map,
 // channel, or pointer returned by a moving function.
