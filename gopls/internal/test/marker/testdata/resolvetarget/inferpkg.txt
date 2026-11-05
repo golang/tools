@@ -96,12 +96,8 @@ var XYZ = "b" //@target(b_v2_XYZ, "mod.test/resolvetarget/b/v2", "XYZ", "XYZ")
 //@resolvetarget("XYZ", "", b_XYZ)
 //@resolvetarget("v2.XYZ", "", b_v2_XYZ)
 
--- t/t.go --
-// only exists to test directory calls from `q/t/`
-package t
-
 -- t/ --
-// TODO(aputman): get working if the directory doesn't have any go files too (no package).
+// Directory without any go files (no package).
 
 // FIX? This should go to the v2 version of package b?
 //@resolvetarget("b.XYZ", "", b_XYZ)
@@ -123,8 +119,8 @@ package t
 //@resolvetarget("./resolvetarget/b.XYZ", "", err="package not found: ./resolvetarget/b")
 //@resolvetarget("../resolvetarget/b.XYZ", "", err="package not found: ../resolvetarget/b")
 
-// And finally, in a completely unrelated package, it returns an error
-//@resolvetarget("XYZ", "", err="target XYZ not found in mod.test/resolvetarget")
+// In a directory without a package, an unqualified symbol returns an error.
+//@resolvetarget("XYZ", "", err="no package metadata for directory")
 
 -- x/y/z/b/b.go --
 package b
@@ -134,9 +130,23 @@ var SubTarget = "sub" //@target(SubTarget, "mod.test/resolvetarget/x/y/z/b", "Su
 
 //@resolvetarget("SubTarget", "./", SubTarget)
 
--- x/y/z/ --
+// In a completely unrelated package, it returns an error.
+//@resolvetarget("XYZ", "", err="target XYZ not found in mod.test/resolvetarget/x/y/z/b")
 
+-- x/y/z/ --
+// There is no go package in this directory, but should still work with
+// relative package paths relative to the current directory.
+
+//@resolvetarget("f/a.XYZ", "", f_a_XYZ)
+//@resolvetarget("XYZ", "f/a", f_a_XYZ)
+//@resolvetarget("b.SubTarget", "", SubTarget)
 //@resolvetarget("./b.SubTarget", "", SubTarget)
+//@resolvetarget("SubTarget", "b", SubTarget)
 //@resolvetarget("SubTarget", "./b", SubTarget)
 //@resolvetarget("../../y/z/b.SubTarget", "", SubTarget)
 //@resolvetarget("SubTarget", "../../y/z/b", SubTarget)
+
+-- x/ --
+
+//@resolvetarget("y/z/b.SubTarget", "", SubTarget)
+//@resolvetarget("SubTarget", "y/z/b", SubTarget)

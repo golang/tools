@@ -34,7 +34,6 @@ import (
 //
 // TODO(aputman): Add additional package path resolution logic:
 //   - Support standard library packages (e.g. `fmt` in `fmt.Println`, etc.)
-//   - Some relative paths don't work if the CWD doesn't contain any go files.
 //   - (Stretch) If regular resolution doesn't find a package, and the pkgPath that is given
 //     is only a pkg name (no directory info given), we could look across the workspace
 //     for all pkgs of that name.
@@ -129,21 +128,21 @@ func getPackagesAndTarget(ctx context.Context, snapshot *cache.Snapshot, params 
 		return pkgs, target, err
 	}
 
-	// The first index of `parts` that can be considered part of the target (as opposed to the pkg path).
-	firstPossibleTargetIndex := 1
-	if dir == "" {
-		// If dir is empty, that means that parts[0] can be a local target query.
-		// If dir is not empty, parts[0] has to be part of the pkg path.
-		firstPossibleTargetIndex = 0
-	}
 	// TODO(aputman): test prefixes against the standard library packages.
 	var lastErr error
-	for i := len(parts) - 1; i >= firstPossibleTargetIndex; i-- {
+	for i := len(parts) - 1; i >= 1; i-- {
 		pkgs, err := resolvePkgPath(ctx, snapshot, uri, dir+strings.Join(parts[:i], "."))
 		if err == nil {
 			return pkgs, strings.Join(parts[i:], "."), nil
 		}
 		lastErr = err
+	}
+	if dir == "" {
+		// If dir is empty, that means that parts[0] can be a local target query.
+		if mps, err := packagesAt(ctx, snapshot, uri); err == nil {
+			pkgs, err := typecheckedPkgs(ctx, snapshot, mps)
+			return pkgs, target, err
+		}
 	}
 	return nil, "", lastErr // the error for the shortest prefix
 }
@@ -155,9 +154,11 @@ func getPackagesAndTarget(ctx context.Context, snapshot *cache.Snapshot, params 
 //     uri. No other rule applies to such paths.
 //  2. A package path, such as "example.com/m/a".
 //  3. The name of a package in the directory of uri, such as "a" or "a_test".
-//  4. A package path relative to the package at uri, then relative to the
-//     root of its module: from package "example.com/m/a" in module
-//     "example.com/m", "b" denotes "example.com/m/a/b" or "example.com/m/b".
+//  4. A package path relative to the directory of uri, then relative to the
+//     root of its module: from directory "a" in module "example.com/m", "b"
+//     denotes "example.com/m/a/b" or "example.com/m/b".
+//  5. A subdirectory relative to the directory of uri (for package-less
+//     directories in GOPATH, GOPACKAGESDRIVER, and go.work roots).
 func resolvePkgPath(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pkgPath string) ([]*cache.Package, error) {
 	if filepath.IsAbs(pkgPath) {
 		return nil, fmt.Errorf("absolute pkg path not allowed: %s", pkgPath)
@@ -181,24 +182,60 @@ func resolvePkgPath(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	if mps := packagesNamed(graph, uriDir(uri), PackageName(pkgPath)); len(mps) > 0 {
 		return typecheckedPkgs(ctx, snapshot, mps)
 	}
-	// 4. A package path relative to the package at uri, then to its module.
+	// 4. A package path relative to the directory of uri, then to its module.
 	for _, base := range relativeBases(ctx, snapshot, uri) {
 		if mps := graph.ForPackagePath[PackagePath(path.Join(base, pkgPath))]; len(mps) > 0 {
 			return typecheckedPkgs(ctx, snapshot, mps)
 		}
 	}
+	// 5. Fallback to a subdirectory relative to uri (covers package-less
+	// directories in GOPATH, GOPACKAGESDRIVER, and go.work roots).
+	if mps := packagesInDir(graph, filepath.Join(uriDir(uri), filepath.FromSlash(pkgPath))); len(mps) > 0 {
+		return typecheckedPkgs(ctx, snapshot, mps)
+	}
 	return nil, fmt.Errorf("package not found: %s", pkgPath)
 }
 
 // relativeBases returns the paths against which [resolvePkgPath] resolves a
-// relative package path: the path of the package at uri, then that of its
-// module.
+// relative package path: the path of the package (or directory) at uri, then
+// that of its module.
 func relativeBases(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) []string {
-	mps, err := packagesAt(ctx, snapshot, uri)
-	if err != nil || mps[0].Module == nil {
+	// Skip standalone command-line-arguments packages (e.g. //go:build ignore
+	// files) so they fall through to the GoModForFile fallback below rather than
+	// using "command-line-arguments" as the base.
+	if mps, err := packagesAt(ctx, snapshot, uri); err == nil && !metadata.IsCommandLineArguments(mps[0].ID) {
+		pkgPath := mps[0].PkgPath
+		if mps[0].ForTest != "" {
+			// External test files and xtest-only directories have a _test suffix
+			// on PkgPath; ForTest holds the directory's base package path.
+			pkgPath = mps[0].ForTest
+		}
+		bases := []string{string(pkgPath)}
+		if mps[0].Module != nil {
+			bases = append(bases, mps[0].Module.Path)
+		}
+		return bases
+	}
+	// Fallback for directories without Go files or standalone ignored files:
+	// infer the package path from the enclosing go.mod file.
+	modURI := snapshot.GoModForFile(uri)
+	if modURI == "" {
 		return nil
 	}
-	return []string{string(mps[0].PkgPath), mps[0].Module.Path}
+	fh, err := snapshot.ReadFile(ctx, modURI)
+	if err != nil {
+		return nil
+	}
+	pm, err := snapshot.ParseMod(ctx, fh)
+	if err != nil || pm.File == nil || pm.File.Module == nil {
+		return nil
+	}
+	modPath := pm.File.Module.Mod.Path
+	rel, err := filepath.Rel(modURI.DirPath(), uriDir(uri))
+	if err != nil {
+		return nil
+	}
+	return []string{path.Join(modPath, filepath.ToSlash(rel)), modPath}
 }
 
 // packagesAt returns the packages at uri: for a file, the widest package

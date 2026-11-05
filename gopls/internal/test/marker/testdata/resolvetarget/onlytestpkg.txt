@@ -1,0 +1,34 @@
+Tests for relative pkg path queries with only xtest pkgs.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- f/a/sub/sub.go --
+package sub
+
+var Sub = "sub" //@target(f_a_sub_Sub, "mod.test/resolvetarget/f/a/sub", "Sub", "Sub")
+
+-- f/a/a_test.go --
+// IMPORTANT: The only package in this directory is a test package.
+package a_test
+
+var ABC = "a" //@target(f_a_test_ABC, "mod.test/resolvetarget/f/a_test", "ABC", "ABC")
+
+// External test file: relative subpackage lookup should use ForTest (f/a) rather than PkgPath (f/a_test).
+//@resolvetarget("sub.Sub", "", f_a_sub_Sub)
+//@resolvetarget("Sub", "sub", f_a_sub_Sub)
+
+-- f/a/ --
+
+// Directory with only xtest files: relative subpackage lookup should use ForTest (f/a) rather than PkgPath (f/a_test).
+//@resolvetarget("sub.Sub", "", f_a_sub_Sub)
+//@resolvetarget("Sub", "sub", f_a_sub_Sub)
+
+-- f/ --
+
+//@resolvetarget("a_test.ABC", "", f_a_test_ABC)

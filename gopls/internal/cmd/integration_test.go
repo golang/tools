@@ -708,7 +708,7 @@ func g() {
 	}
 	// relative target query
 	{
-		res := gopls(t, tree+"/a/", "references", "Foo")
+		res := gopls(t, tree, "references", "a.Foo")
 		res.checkExit(true)
 		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
 	}
@@ -1250,7 +1250,7 @@ const (
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
 	{ // gopls resolve relative target
-		res := gopls(t, tree+"/a/", "inspect", "a.someFunctionName")
+		res := gopls(t, tree, "inspect", "a.someFunctionName")
 		res.checkExit(true)
 		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22")) // Prints definition location
 	}

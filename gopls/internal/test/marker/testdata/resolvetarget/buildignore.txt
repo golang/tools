@@ -1,0 +1,65 @@
+Tests for relative pkg path queries with ignored files.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- m/m.go --
+package m
+
+var M = "m" //@target(m_M, "mod.test/resolvetarget/m", "M", "M")
+
+-- g/sub/sub.go --
+package sub
+
+var Sub = "sub" //@target(g_sub_Sub, "mod.test/resolvetarget/g/sub", "Sub", "Sub")
+
+-- g/ignored.go --
+//go:build ignore
+
+// IMPORTANT: No other non-ignored file in this directory (g/)
+package g
+
+// Standalone ignored file (command-line-arguments): should fall back to GoModForFile
+// for both directory-relative (g/sub) and module-relative (m) lookups.
+//@resolvetarget("sub.Sub", "", g_sub_Sub)
+//@resolvetarget("Sub", "sub", g_sub_Sub)
+//@resolvetarget("m.M", "", m_M)
+
+-- h/sub/sub.go --
+package sub
+
+var Sub = "sub" //@target(h_sub_Sub, "mod.test/resolvetarget/h/sub", "Sub", "Sub")
+
+-- h/h.go --
+package h
+
+var XYZ = "xyz" //@target(h_XYZ, "mod.test/resolvetarget/h", "XYZ", "XYZ")
+
+-- h/ignored.go --
+//go:build ignore
+
+// IMPORTANT: This ignored file is in a directory with a non-ignored file (h/h.go)
+package h
+
+var XYZ = "xyz" // This shouldn't be found, as this file isn't built.
+
+// Ignored file alongside a real package (h/h.go): MetadataForFile returns no
+// metadata, so unqualified lookup fails and relative lookups fall back to GoModForFile
+// for same directory (h/), directory-relative (h/sub) and module-relative (m) lookups.
+//@resolvetarget("XYZ", "", err="no package metadata for file")
+//@resolvetarget("h.XYZ", "", h_XYZ)
+//@resolvetarget("XYZ", "h", h_XYZ)
+//@resolvetarget("sub.Sub", "", h_sub_Sub)
+//@resolvetarget("Sub", "sub", h_sub_Sub)
+//@resolvetarget("m.M", "", m_M)
+
+-- h/ --
+// The directory only considers build files
+//@resolvetarget("XYZ", "", h_XYZ)
+//@resolvetarget("h.XYZ", "", h_XYZ)
+//@resolvetarget("XYZ", "h", h_XYZ)

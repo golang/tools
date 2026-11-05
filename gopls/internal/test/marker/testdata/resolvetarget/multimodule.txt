@@ -10,6 +10,11 @@ use ./x
 use ./y
 use ./z
 
+-- ./ --
+// Workspace root (go.work): unprefixed relative package paths into workspace modules.
+//@resolvetarget("y/a.T", "", y_T)
+//@resolvetarget("T", "y/a", y_T)
+
 -- x/go.mod --
 
 module x.mod.test/resolvetarget
