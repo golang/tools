@@ -36,3 +36,9 @@ func max(a, b int) int { // want "user-defined max function is equivalent to bui
 	}
 	return b
 }
+
+// Ordinary and parenthesized calls remain valid after removing the functions.
+func calls() (int, int) { return min(3, 2), (max)(3, 2) }
+
+// A function value referring to another object does not prevent removal.
+func methodValue(m MyType) func(int, int) int { return m.min }

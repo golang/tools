@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -303,8 +304,24 @@ func checkUserDefinedMinMax(pass *analysis.Pass) {
 	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 
 	// Look up min and max functions by name in package scope
+nextFunc:
 	for _, funcName := range []string{"min", "max"} {
 		if fn, ok := pass.Pkg.Scope().Lookup(funcName).(*types.Func); ok {
+			// Built-ins cannot be used as function values or explicitly
+			// instantiated. Require every reference to be a direct call,
+			// allowing parentheses around the callee.
+			for use := range index.Uses(fn) {
+				callee := cursorutil.UnparenEnclosing(use)
+				if callee.ParentEdgeKind() != edge.CallExpr_Fun {
+					continue nextFunc
+				}
+				// Built-in min/max calls cannot discard their results.
+				switch cursorutil.UnparenEnclosing(callee.Parent()).ParentEdgeKind() {
+				case edge.ExprStmt_X, edge.DeferStmt_Call, edge.GoStmt_Call:
+					continue nextFunc
+				}
+			}
+
 			// Use typeindex to get the FuncDecl directly
 			if def, ok := index.Def(fn); ok {
 				decl := def.Parent().Node().(*ast.FuncDecl)
