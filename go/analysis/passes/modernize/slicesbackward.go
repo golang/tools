@@ -232,6 +232,30 @@ func slicesbackward(pass *analysis.Pass) (any, error) {
 				continue nextLoop
 			}
 
+			// The iterator captures the slice at the start of the loop.
+			// Replacing s[i] is unsafe if a variable in the slice expression
+			// is assigned or address-taken in the body: subsequent accesses
+			// may refer to a different slice.
+			// This check does not cover all ways to alias and mutate the slice.
+			// Checking every such case would be excessively conservative.
+			if sliceIdxs > 0 {
+				curSlice, _ := curLoop.FindNode(sliceExpr)
+				for curIdent := range curSlice.Preorder((*ast.Ident)(nil)) {
+					if v, ok := info.Uses[curIdent.Node().(*ast.Ident)].(*types.Var); ok {
+						for curUse := range index.Uses(v) {
+							// For a field use, check the selector itself: assigning
+							// ptr.items does not assign to the pointer ptr.
+							if curUse.ParentEdgeKind() == edge.SelectorExpr_Sel {
+								curUse = curUse.Parent()
+							}
+							if bodyCur.Contains(curUse) && typesinternal.IsAssignedOrAddressTaken(info, curUse) {
+								continue nextLoop
+							}
+						}
+					}
+				}
+			}
+
 			// The body reads neither i nor s[i], so the loop direction is not
 			// observable and there is nothing for slices.Backward to express.
 			if otherUses == 0 && sliceIdxs == 0 {

@@ -552,3 +552,98 @@ func sliceExprWithSideEffectsNotIndexed() {
 		println(i)
 	}
 }
+
+// Should NOT fire: s[i] reads the new slice, whereas slices.Backward
+// would still yield elements from the original slice.
+func sliceReassigned() {
+	s := []int{1, 2}
+	for i := len(s) - 1; i >= 0; i-- {
+		s = []int{10, 20}
+		println(s[i])
+	}
+}
+
+type sliceHolder struct {
+	items []int
+}
+
+// Should NOT fire: assigning ptr.items leaves ptr unchanged but replaces
+// the slice read by ptr.items[i].
+func sliceFieldReassigned(ptr *sliceHolder) {
+	for i := len(ptr.items) - 1; i >= 0; i-- {
+		ptr.items = []int{1, 2}
+		println(ptr.items[i])
+	}
+}
+
+// Should NOT fire: taking the field's address permits reassigning the slice
+// without assigning to ptr or taking its address.
+func sliceFieldAddressTaken(ptr *sliceHolder, replace func(*[]int)) {
+	for i := len(ptr.items) - 1; i >= 0; i-- {
+		replace(&ptr.items)
+		println(ptr.items[i])
+	}
+}
+
+// SHOULD fire: reading a slice field through a pointer is safe.
+func sliceFieldReadOnly(ptr *sliceHolder) {
+	for i := len(ptr.items) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(ptr.items[i])
+	}
+}
+
+// Should NOT fire even when the first element access precedes the assignment:
+// the next iteration must read the new slice.
+func sliceReassignedAfterRead(s, other []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		v := s[i]
+		println(v)
+		s = other
+	}
+}
+
+// Should NOT fire: reslicing changes which element s[i] denotes.
+func sliceResliced(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		println(s[i])
+		s = s[1:]
+	}
+}
+
+// Should NOT fire: the slice can be reassigned through its address.
+func sliceAddressTaken(s []int, replace func(*[]int)) {
+	for i := len(s) - 1; i >= 0; i-- {
+		replace(&s)
+		println(s[i])
+	}
+}
+
+// Should NOT fire: changing an operand changes the slice being indexed.
+func sliceIndexChanged(s [][]int, j int) {
+	for i := len(s[j]) - 1; i >= 0; i-- {
+		j++
+		println(s[j][i])
+	}
+}
+
+// SHOULD fire: the body only reads i, so changing s does not affect
+// the fixed iteration count established by len(s) in the original loop.
+func sliceReassignedNotIndexed(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		s = nil
+		println(i)
+	}
+}
+
+// SHOULD fire: assignments to a shadowing variable do not change the
+// slice used by the loop.
+func shadowedSliceReassigned(s []int) {
+	for i := len(s) - 1; i >= 0; i-- { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s[i])
+		{
+			s := []int{10, 20}
+			s = nil
+			println(s)
+		}
+	}
+}
