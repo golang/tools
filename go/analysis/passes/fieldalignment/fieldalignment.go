@@ -25,7 +25,9 @@ import (
 const Doc = `find structs that would use less memory if their fields were sorted
 
 This analyzer finds structs that can be rearranged to use less memory, and provides
-a suggested edit with the most compact order.
+a suggested edit with the most compact order. It does not report a struct that has
+an unkeyed composite literal in the same package, because the suggested edit reorders
+the fields without updating those literals.
 
 Note that there are two different diagnostics reported. One checks struct size,
 and the other reports "pointer bytes" used. Pointer bytes is how many bytes of the
@@ -69,8 +71,40 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
+	// Collect the structs that have unkeyed composite literals in this package.
+	// (An unkeyed literal in another package is already a mistake,
+	// since reordering fields is a compatible change.)
+	unkeyed := make(map[*types.Struct]bool)
+	for lit := range inspect.Root().Preorder((*ast.CompositeLit)(nil)) {
+		lit := lit.Node().(*ast.CompositeLit)
+		if len(lit.Elts) == 0 {
+			continue
+		}
+		// Checking the first element is enough: a literal cannot mix keyed and unkeyed elements.
+		if _, ok := lit.Elts[0].(*ast.KeyValueExpr); ok {
+			continue
+		}
+		t := types.Unalias(pass.TypesInfo.TypeOf(lit))
+		if ptr, ok := t.(*types.Pointer); ok { // elided &T in {...}
+			t = types.Unalias(ptr.Elem())
+		}
+		if named, ok := t.(*types.Named); ok {
+			t = named.Origin().Underlying() // generic instances share the origin's struct
+		}
+		if st, ok := t.(*types.Struct); ok {
+			unkeyed[st] = true
+		}
+	}
+
 	for curStruct := range inspect.Root().Preorder((*ast.StructType)(nil)) {
 		s := curStruct.Node().(*ast.StructType)
+		// Reordering the fields of a struct changes the meaning of its unkeyed
+		// composite literals, which the fix does not update, so we do not
+		// report such structs.
+		if st, ok := pass.TypesInfo.TypeOf(s).(*types.Struct); ok && unkeyed[st] {
+			continue
+		}
 		// For every named struct defined as "type Name struct { ... }",
 		// the *ast.StructType node has a parent *ast.TypeSpec,
 		// which contains the struct's name in its Name field.
