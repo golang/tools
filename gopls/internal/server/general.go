@@ -95,7 +95,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			}}
 		}
 	}
+	s.stateMu.Lock()
 	s.pendingFolders = append(s.pendingFolders, folders...)
+	s.stateMu.Unlock()
 
 	var codeActionProvider any = true
 	if ca := params.Capabilities.TextDocument.CodeAction; len(ca.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
@@ -298,16 +300,17 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 		return fmt.Errorf("%w: initialized called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
 	}
 	s.state = serverInitialized
+	notifications := s.notifications
+	s.notifications = nil
+	pendingFolders := s.pendingFolders
+	s.pendingFolders = nil
 	s.stateMu.Unlock()
 
-	for _, not := range s.notifications {
+	for _, not := range notifications {
 		s.client.ShowMessage(ctx, not) // ignore error
 	}
-	s.notifications = nil
 
-	s.addFolders(ctx, s.pendingFolders)
-
-	s.pendingFolders = nil
+	s.addFolders(ctx, pendingFolders)
 	s.checkViewGoVersions()
 
 	var registrations []protocol.Registration
@@ -719,11 +722,13 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
 	if s.state == serverInitialized {
+		s.stateMu.Unlock()
 		_ = s.client.ShowMessage(ctx, msg) // ignore error
+		return
 	}
 	s.notifications = append(s.notifications, msg)
+	s.stateMu.Unlock()
 }
 
 func (s *server) handleOptionResult(ctx context.Context, applied []telemetry.CounterPath, optionErrors []error) {
@@ -785,7 +790,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 		event.Log(ctx, "server shutdown without initialization")
 	}
 	if s.state != serverShutDown {
-		// Wait for the webserver (if any) to finish.
+		// Wait for the webserver (if any) to finish, and prevent future [server.getWeb]
+		// calls from starting a new webserver after shutdown.
+		s.webOnce.Do(func() {
+			s.webErr = errors.New("server is shut down")
+		})
 		if s.web != nil {
 			s.web.server.Shutdown(ctx) // ignore error
 		}

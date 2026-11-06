@@ -129,6 +129,7 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 	if s.Options().Vulncheck != settings.ModeVulncheckPrompt {
 		return
 	}
+	ctx = context.WithoutCancel(ctx)
 	ctx, done := event.Start(ctx, "server.checkDependencyChanges")
 	defer done()
 
@@ -215,13 +216,13 @@ func recordVulncheckupgradeAction(action vulnupgradeAction) {
 }
 
 func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) {
+	ctx = context.WithoutCancel(ctx)
 	_, snapshot, release, err := s.session.FileOf(ctx, uri)
 	if err != nil {
 		event.Error(ctx, "getting file snapshot failed", err)
 		return
 	}
 	defer release()
-	ctx = context.WithoutCancel(ctx)
 
 	work := s.progress.Start(ctx, GoVulncheckCommandTitle, "Running govulncheck...", nil, nil)
 	defer work.End(ctx, "Done.")

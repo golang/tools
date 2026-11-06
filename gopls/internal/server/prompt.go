@@ -97,6 +97,7 @@ func (s *server) setTelemetryMode(mode string) error {
 // If enabled is false, this will not prompt the user in any condition,
 // but will send work progress reports to help testing.
 func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
+	ctx = context.WithoutCancel(ctx)
 	if s.Options().VerboseWorkDoneProgress {
 		work := s.progress.Start(ctx, TelemetryPromptWorkTitle, "Checking if gopls should prompt about telemetry...", nil, nil)
 		defer work.End(ctx, "Done.")

@@ -301,7 +301,7 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 func (h *commandHandler) MaybePromptForTelemetry(ctx context.Context) error {
 	// if the server's TelemetryPrompt is true, it's likely the server already
 	// handled prompting for it. Don't try to prompt again.
-	if !h.s.options.TelemetryPrompt {
+	if !h.s.Options().TelemetryPrompt {
 		go h.s.maybePromptForTelemetry(ctx, true)
 	}
 	return nil
@@ -339,7 +339,7 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 		}
 
 		if show != nil {
-			showDocumentImpl(ctx, c.s.client, protocol.URI(show.URI), &show.Range, c.s.options)
+			showDocumentImpl(ctx, c.s.client, protocol.URI(show.URI), &show.Range, c.s.Options())
 		}
 		return nil
 	})
@@ -432,7 +432,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	if cfg.progress != "" {
 		header := ""
-		if c.s.options.SupportedWorkDoneProgressFormats.Contains(cfg.progressStyle) && cfg.progressStyle != "" {
+		if c.s.Options().SupportedWorkDoneProgressFormats.Contains(cfg.progressStyle) && cfg.progressStyle != "" {
 			header = fmt.Sprintf("style: %s\n\n", cfg.progressStyle)
 		}
 		deps.work = c.s.progress.Start(ctx, cfg.progress, header+"Running...", c.params.WorkDoneToken, cancel)
@@ -1347,6 +1347,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 // TODO(golang/vscode-go#3572)
 // TODO(hxjiang): deprecate gopls.run_govulncheck.
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
+	if args.URI == "" {
+		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
+	}
+
 	// Deduplicate the RunGovulncheck command so only one is running at a time.
 	if !c.s.runGovulncheckInProgress.CompareAndSwap(false, true) {
 		c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
@@ -1354,12 +1358,6 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			Message: "A govulncheck scan is already in progress.",
 		})
 		return command.RunVulncheckResult{}, nil
-	}
-
-	defer c.s.runGovulncheckInProgress.Store(false)
-
-	if args.URI == "" {
-		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
 	}
 
 	// Return the workdone token so that clients can identify when this
@@ -1373,6 +1371,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		requireSave: true, // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		defer c.s.runGovulncheckInProgress.Store(false)
 		tokenChan <- deps.work.Token()
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
@@ -1401,6 +1400,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		return nil
 	})
 	if err != nil {
+		c.s.runGovulncheckInProgress.Store(false)
 		return command.RunVulncheckResult{}, err
 	}
 	select {
@@ -1882,7 +1882,7 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 	}, func(ctx context.Context, deps commandDeps) error {
 		// TODO(hxjiang): consider passing ctx and snapshot to convert functions during
 		// initialization (e.g. via NewDialog), as question conversion often needs file info.
-		d := golang.NewDialog(c.s.options.ClientOptions, params)
+		d := golang.NewDialog(c.s.Options().ClientOptions, params)
 		iface := d.Ask(golang.InterfaceQuestion.WithConvert(golang.ConvertInterface(ctx, deps.snapshot)))
 		if err := d.Check(); err != nil {
 			return err
@@ -1929,7 +1929,7 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		switch args.Modification {
 		case "add":
 			if args.Add == "" && args.AddOptions == "" { // not sure what to add
-				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				d := golang.NewDialog(c.s.Options().ClientOptions, params)
 				tags := d.Ask(golang.AddTagsQuestion)
 				transform := d.Ask(golang.TransformQuestion)
 				if err := d.Check(); err != nil {
@@ -1942,7 +1942,7 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 			}
 		case "remove":
 			if args.Remove == "" && args.RemoveOptions == "" && !args.Clear { // not sure what to remove
-				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				d := golang.NewDialog(c.s.Options().ClientOptions, params)
 				tags := d.Ask(golang.RemoveTagsQuestion)
 				if err := d.Check(); err != nil {
 					return err
@@ -2079,7 +2079,7 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		d := golang.NewDialog(c.s.options.ClientOptions, params)
+		d := golang.NewDialog(c.s.Options().ClientOptions, params)
 		destURI := d.Ask(golang.MoveDeclarationFileQuestion)
 		if err := d.Check(); err != nil {
 			return err
@@ -2091,7 +2091,7 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 		}
 		movingLoc = loc
 		action = applyEdits{c.s.client, changes}
-		showDocumentImpl(ctx, c.s.client, protocol.URI(movingLoc.URI), &movingLoc.Range, c.s.options)
+		showDocumentImpl(ctx, c.s.client, protocol.URI(movingLoc.URI), &movingLoc.Range, c.s.Options())
 		// Open the file where the declaration was moved to. TODO(hxjiang): This
 		// only works for moves to existing files. For a new file, the edits haven't
 		// been applied yet so the file hasn't been created. How to fix this?

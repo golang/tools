@@ -145,15 +145,58 @@ func TestProgressTracker_Reporting(t *testing.T) {
 
 func TestProgressTracker_Cancellation(t *testing.T) {
 	for _, token := range []protocol.ProgressToken{nil, 1, "a"} {
-		tracker, _ := setup()
-		var canceled bool
-		cancel := func() { canceled = true }
-		work := tracker.Start(t.Context(), "work", "message", token, cancel)
+		tracker, client := setup()
+		var cancels int
+		cancel := func() { cancels++ }
+		ctx := t.Context()
+		work := tracker.Start(ctx, "work", "message", token, cancel)
 		if err := tracker.Cancel(work.Token()); err != nil {
 			t.Fatal(err)
 		}
-		if !canceled {
-			t.Errorf("tracker.cancel(...): cancel not called")
+		if err := tracker.Cancel(work.Token()); err != nil {
+			t.Fatal(err)
 		}
+		if cancels != 1 {
+			t.Errorf("tracker.Cancel(%v): cancel called %d times, want 1", work.Token(), cancels)
+		}
+		work.Report(ctx, "after cancel", 0.5)
+		// Lock client.mu for consistency with TestProgressTracker_Reporting above
+		// (fakeClient.mu guards client.reported), even though this test is single-threaded.
+		client.mu.Lock()
+		gotReported := client.reported
+		client.mu.Unlock()
+		if gotReported != 0 {
+			t.Errorf("work.Report after Cancel: client.reported = %d, want 0", gotReported)
+		}
+		work.End(ctx, "done")
 	}
+}
+
+// TestProgressTracker_ConcurrentSupportsWorkDoneProgress exercises concurrent
+// reads and writes of supportsWorkDoneProgress for the race detector (-race).
+func TestProgressTracker_ConcurrentSupportsWorkDoneProgress(t *testing.T) {
+	tracker, _ := setup()
+	ctx := t.Context()
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		for i := range 100 {
+			tracker.SetSupportsWorkDoneProgress(i%2 == 0)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 100 {
+			_ = tracker.SupportsWorkDoneProgress()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 100 {
+			wd := tracker.Start(ctx, "work", "msg", nil, nil)
+			wd.End(ctx, "done")
+		}
+	}()
+	wg.Wait()
 }
