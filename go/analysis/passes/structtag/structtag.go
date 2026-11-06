@@ -26,7 +26,13 @@ import (
 
 const Doc = `check that struct field tags conform to reflect.StructTag.Get
 
-Also report certain struct tags (json, xml) used with unexported fields.`
+Also report certain struct tags (json, xml) used with unexported fields.
+
+Also report json tags that set the name of a field when they were
+almost certainly meant to do something else: a tag such as "-,omitempty",
+which gives the field the name "-" instead of omitting it, and the tag
+"omitempty", which gives the field the name "omitempty" instead of
+setting that option.`
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "structtag",
@@ -109,6 +115,8 @@ func checkCanonicalFieldTag(pass *analysis.Pass, field *types.Var, tag string, s
 		})
 	}
 
+	checkJSONTagName(pass, field, tag)
+
 	// Check for use of json or xml tags with unexported fields.
 
 	// Embedded struct. Nothing to do for now, but that
@@ -136,6 +144,69 @@ func checkCanonicalFieldTag(pass *analysis.Pass, field *types.Var, tag string, s
 			return
 		}
 	}
+}
+
+// checkJSONTagName reports a json tag whose name component is almost
+// certainly a mistake, because it sets the JSON object key of the field
+// when its author meant to do something else:
+//
+//   - A tag such as `json:"-,omitempty"` does not omit the field.
+//     Only the tag "-" by itself does that; "-" followed by options
+//     names the field "-", so the field is encoded and, more
+//     dangerously, can be set by decoding an object with that key.
+//
+//   - The tag `json:"omitempty"` does not set the omitempty option.
+//     Options must follow a comma, as in `json:",omitempty"`;
+//     without one, the field is named "omitempty".
+//
+// A tag whose name is followed by a comma and nothing else, as in
+// `json:"-,"`, is not reported. The comma serves no purpose but to say
+// that what precedes it is the name, and encoding/json documents that
+// form as the way to name a field "-". Nor is the name "omitempty"
+// reported if the tag also sets that option, or if it is the name
+// of the Go field as well, since then it is evidently meant as a name.
+//
+// See go.dev/issue/74376.
+func checkJSONTagName(pass *analysis.Pass, field *types.Var, tag string) {
+	val, ok := reflect.StructTag(tag).Lookup("json")
+	if !ok || !jsonEncoded(field) {
+		return
+	}
+	name, opts, _ := strings.Cut(val, ",")
+	var msg string
+	switch {
+	case name == "-" && opts != "":
+		msg = fmt.Sprintf("struct field %s has json tag %#q, which names the field \"-\" rather than omitting it (did you mean `-`?)", field.Name(), val)
+	case name == "omitempty" && (opts != "" || val == name) &&
+		!slices.Contains(strings.Split(opts, ","), name) &&
+		!strings.EqualFold(strings.ReplaceAll(field.Name(), "_", ""), name):
+		msg = fmt.Sprintf("struct field %s has json tag %#q, which names the field \"omitempty\" rather than setting the option (did you mean %#q?)", field.Name(), val, ","+val)
+	default:
+		return
+	}
+	pass.Report(analysis.Diagnostic{
+		Pos:     field.Pos(),
+		End:     field.Pos() + token.Pos(len(field.Name())),
+		Message: msg,
+	})
+}
+
+// jsonEncoded reports whether encoding/json considers the field at all,
+// leaving its tag aside. It ignores unexported fields, other than
+// embedded fields of struct type, whose exported fields it promotes.
+func jsonEncoded(field *types.Var) bool {
+	if field.Exported() {
+		return true
+	}
+	if !field.Anonymous() {
+		return false
+	}
+	typ := field.Type()
+	if ptr, ok := typ.Underlying().(*types.Pointer); ok {
+		typ = ptr.Elem()
+	}
+	_, ok := typ.Underlying().(*types.Struct)
+	return ok
 }
 
 // checkTagDuplicates checks a single struct field tag to see if any tags are
