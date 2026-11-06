@@ -81,6 +81,12 @@ func _() {
 	ptr(&(a[0]/*true*/)) // targets "a[0]"
 	ptr(&(a[0])/*false*/) // targets "&(a[0])"
 
+	// Slicing an array implicitly takes its address: the resulting slice
+	// aliases the array, so writes through it modify the array.
+	_ = a/*true*/ [:]
+	_ = a/*true*/ [1:2]
+	_ = a[:]/*false*/ // targets the slice value, which is merely copied
+
 	// A slice descriptor contains a pointer to the start of its underlying array.
 	var s []int
 	s/*false*/ [0] = 1 // a load of the pointer in the slice "s", not a direct assignment of "s"
@@ -89,6 +95,7 @@ func _() {
 	ptr(&s/*false*/ [0])
 	ptr(&(s[0]/*true*/))
 	ptr(&(s[0])/*false*/)
+	_ = s/*false*/ [:] // slicing a slice copies the descriptor; s itself is not address-taken
 
 	var st S
 	st/*true*/ .f = 1
@@ -126,6 +133,8 @@ func _() {
 	var sa StructWithArray
 	sa.arr/*true*/ [0] = 1
 	_ = sa.arr/*false*/ [0] // rvalue
+	_ = sa.arr/*true*/ [:] // slicing an array field takes its address
+	_ = sa/*true*/ .arr[:]
 
 	var mp map[int]int
 	mp/*false*/ [0] = 1 // targets "mp", which is a pointer to the map header and itself is not modified

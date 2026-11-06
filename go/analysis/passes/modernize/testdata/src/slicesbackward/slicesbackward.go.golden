@@ -108,6 +108,16 @@ func firstAssignMutated(s []int) {
 	}
 }
 
+// The first statement "v := s[i]" cannot be adopted if the array "v" is
+// modified through a slice and s[i] is evaluated again later in the body.
+func firstAssignMutatedViaSlice(s [][1]int) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v := v0
+		v[:][0]++
+		println(v[0], v0[0])
+	}
+}
+
 // The first statement "v := s[i]" cannot be adopted if a later short variable
 // declaration in the body block reassigns "v": lifting "v" to the range scope
 // would turn the reassignment into a redeclaration of an unused inner "v".
@@ -434,6 +444,14 @@ func indexExprPointerSlice(s []*item) {
 func indexExprSliceOfArrays(s [][3]int) {
 	for i := len(s) - 1; i >= 0; i-- {
 		s[i][0]++
+	}
+}
+
+// Should NOT fire: slicing an array element takes its address, so the
+// array may be mutated through the resulting slice.
+func indexExprSliceOfArraysSliced(s [][3]int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i][:][0]++
 	}
 }
 
