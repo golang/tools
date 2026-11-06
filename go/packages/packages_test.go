@@ -3843,3 +3843,32 @@ import _ "errors"
 		t.Errorf("packages checked = %v, want a and errors", checked)
 	}
 }
+
+func TestCgoExportDataPosition(t *testing.T) {
+	testAllOrModulesParallel(t, func(t *testing.T, exporter packagestest.Exporter) {
+		testenv.NeedsTool(t, "cgo")
+		exported := packagestest.Export(t, exporter, []packagestest.Module{{
+			Name: "golang.org/fake",
+			Files: map[string]any{
+				"c/c.go": "package c\nimport \"C\"\n\nfunc F() {}\n",
+				"p/p.go": "package p\nimport \"golang.org/fake/c\"\nvar _ = c.F\n",
+			},
+		}})
+		exported.Config.Env = append(exported.Config.Env, "CGO_ENABLED=1")
+		exported.Config.Mode = packages.LoadSyntax
+		pkgs, err := packages.Load(exported.Config, "golang.org/fake/p")
+		if err != nil || len(pkgs) != 1 || len(pkgs[0].Errors) != 0 {
+			t.Fatalf("Load: %v, %v", pkgs, err)
+		}
+		for id, obj := range pkgs[0].TypesInfo.Uses {
+			if id.Name == "F" {
+				pos := pkgs[0].Fset.Position(obj.Pos())
+				if filepath.Base(pos.Filename) != "c.go" || pos.Line != 4 {
+					t.Errorf("position = %v, want c.go:4", pos)
+				}
+				return
+			}
+		}
+		t.Fatal("missing use of c.F")
+	})
+}

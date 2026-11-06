@@ -29,7 +29,7 @@ type pkgReader struct {
 
 	// lazily initialized arrays corresponding to the unified IR
 	// PosBase, Pkg, and Type sections, respectively.
-	posBases []string // position bases (i.e., file names)
+	posBases []positionBase
 	pkgs     []*types.Package
 	typs     []types.Type
 
@@ -102,7 +102,7 @@ func readUnifiedPackage(fset *token.FileSet, ctxt *types.Context, imports map[st
 		ctxt:    ctxt,
 		imports: imports,
 
-		posBases: make([]string, input.NumElems(pkgbits.RelocPosBase)),
+		posBases: make([]positionBase, input.NumElems(pkgbits.RelocPosBase)),
 		pkgs:     make([]*types.Package, input.NumElems(pkgbits.RelocPkg)),
 		typs:     make([]types.Type, input.NumElems(pkgbits.RelocType)),
 	}
@@ -194,6 +194,11 @@ func (pr *pkgReader) retireReader(r *reader) {
 
 // @@@ Positions
 
+type positionBase struct {
+	filename   string
+	lineOffset int
+}
+
 func (r *reader) pos() token.Pos {
 	r.Sync(pkgbits.SyncPos)
 	if !r.Bool() {
@@ -201,45 +206,31 @@ func (r *reader) pos() token.Pos {
 	}
 
 	// TODO(mdempsky): Delta encoding.
-	posBase := r.posBase()
-	line := r.Uint()
-	col := r.Uint()
-	return r.p.fake.pos(posBase, int(line), int(col))
+	base := r.p.posBaseIdx(r.Reloc(pkgbits.RelocPosBase))
+	line := int(r.Uint()) + base.lineOffset
+	col := int(r.Uint())
+	return r.p.fake.pos(base.filename, line, col)
 }
 
-func (r *reader) posBase() string {
-	return r.p.posBaseIdx(r.Reloc(pkgbits.RelocPosBase))
-}
-
-func (pr *pkgReader) posBaseIdx(idx pkgbits.Index) string {
-	if b := pr.posBases[idx]; b != "" {
+func (pr *pkgReader) posBaseIdx(idx pkgbits.Index) positionBase {
+	if b := pr.posBases[idx]; b.filename != "" {
 		return b
 	}
 
-	var filename string
-	{
-		r := pr.tempReader(pkgbits.RelocPosBase, idx, pkgbits.SyncPosBase)
-
-		// Within types2, position bases have a lot more details (e.g.,
-		// keeping track of where //line directives appeared exactly).
-		//
-		// For go/types, we just track the file name.
-
-		filename = r.String()
-
-		if r.Bool() { // file base
-			// Was: "b = token.NewTrimmedFileBase(filename, true)"
-		} else { // line base
-			pos := r.pos()
-			line := r.Uint()
-			col := r.Uint()
-
-			// Was: "b = token.NewLineBase(pos, filename, true, line, col)"
-			_, _, _ = pos, line, col
+	r := pr.tempReader(pkgbits.RelocPosBase, idx, pkgbits.SyncPosBase)
+	b := positionBase{filename: r.String()}
+	if !r.Bool() { // line directive
+		r.Sync(pkgbits.SyncPos)
+		var physicalLine int
+		if r.Bool() {
+			r.Reloc(pkgbits.RelocPosBase)
+			physicalLine = int(r.Uint())
+			r.Uint() // physical column
 		}
-		pr.retireReader(r)
+		b.lineOffset = int(r.Uint()) - physicalLine
+		r.Uint() // directive column
 	}
-	b := filename
+	pr.retireReader(r)
 	pr.posBases[idx] = b
 	return b
 }
