@@ -186,6 +186,7 @@ func main() {
 		for _, typeName := range types {
 			values := findValues(typeName, pkg)
 			if len(values) > 0 {
+				g.Printf("\n")
 				g.generate(typeName, values)
 				foundTypes = append(foundTypes, typeName)
 			} else {
