@@ -223,7 +223,7 @@ func iimportCommon(fset *token.FileSet, getPackages GetPackagesFunc, data []byte
 
 		fake: fakeFileSet{
 			fset:  fset,
-			files: make(map[string]*fileInfo),
+			files: make(map[fileKey]*fileInfo),
 		},
 	}
 	defer p.fake.setLines() // set lines for files in fset
