@@ -3850,8 +3850,8 @@ func TestCgoExportDataPosition(t *testing.T) {
 		exported := packagestest.Export(t, exporter, []packagestest.Module{{
 			Name: "golang.org/fake",
 			Files: map[string]any{
-				"c/c.go": "package c\nimport \"C\"\n\nfunc F() {}\n",
-				"p/p.go": "package p\nimport \"golang.org/fake/c\"\nvar _ = c.F\n",
+				"c/c.go": "package c\nimport \"C\"\n\nfunc F() {}\n\n//line c.go:70000\nfunc G() {}\nfunc H() {}\n",
+				"p/p.go": "package p\nimport \"golang.org/fake/c\"\nvar _, _, _ = c.F, c.G, c.H\n",
 			},
 		}})
 		exported.Config.Env = append(exported.Config.Env, "CGO_ENABLED=1")
@@ -3860,15 +3860,18 @@ func TestCgoExportDataPosition(t *testing.T) {
 		if err != nil || len(pkgs) != 1 || len(pkgs[0].Errors) != 0 {
 			t.Fatalf("Load: %v, %v", pkgs, err)
 		}
+		wantLines := map[string]int{"F": 4, "G": 70000, "H": 70001}
 		for id, obj := range pkgs[0].TypesInfo.Uses {
-			if id.Name == "F" {
+			if want, ok := wantLines[id.Name]; ok {
 				pos := pkgs[0].Fset.Position(obj.Pos())
-				if filepath.Base(pos.Filename) != "c.go" || pos.Line != 4 {
-					t.Errorf("position = %v, want c.go:4", pos)
+				if filepath.Base(pos.Filename) != "c.go" || pos.Line != want {
+					t.Errorf("position of c.%s = %v, want c.go:%d", id.Name, pos, want)
 				}
-				return
+				delete(wantLines, id.Name)
 			}
 		}
-		t.Fatal("missing use of c.F")
+		for name := range wantLines {
+			t.Errorf("missing use of c.%s", name)
+		}
 	})
 }

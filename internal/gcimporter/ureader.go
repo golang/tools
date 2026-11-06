@@ -96,7 +96,7 @@ func readUnifiedPackage(fset *token.FileSet, ctxt *types.Context, imports map[st
 
 		fake: fakeFileSet{
 			fset:  fset,
-			files: make(map[string]*fileInfo),
+			files: make(map[fileKey]*fileInfo),
 		},
 
 		ctxt:    ctxt,
