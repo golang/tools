@@ -261,7 +261,14 @@ func uriDir(uri protocol.DocumentURI) string {
 	return uri.DirPath()
 }
 
-// At this point, the target should no longer have any pkg information.
+// resolveTarget looks up a symbol path (without a package prefix) in pkgType.
+//
+// Only symbols declared at package level in pkgType (pkgType.Scope()) are
+// matched; symbols imported by pkgType's files are in each file's scope rather
+// than the package scope and are not matched here.
+// TODO(golang/go#82877): consider how file-scoped queries in external test
+// files (package foo_test) should resolve symbols imported from the package
+// under test.
 func resolveTarget(pkgType *types.Package, target string) (types.Object, error) {
 	scope := pkgType.Scope()
 	parts := strings.Split(target, ".")

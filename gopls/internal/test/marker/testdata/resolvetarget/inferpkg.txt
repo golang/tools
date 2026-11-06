@@ -22,15 +22,19 @@ var ABC = "a" //@target(f_a_ABC, "mod.test/resolvetarget/f/a", "ABC", "ABC")
 -- f/a/a_test.go --
 package a_test
 
-var XYZ = "a_test" //@target(f_a_test_XYZ, "mod.test/resolvetarget/f/a_test", "XYZ", "XYZ")
+import "mod.test/resolvetarget/f/a"
+
+var XYZ = a.ABC //@target(f_a_test_XYZ, "mod.test/resolvetarget/f/a_test", "XYZ", "XYZ")
 
 var XYZ_TEST = "a_test" //@target(f_a_test_XYZ_TEST, "mod.test/resolvetarget/f/a_test", "XYZ_TEST", "XYZ_TEST")
 
 // prefers the XYZ in the current package (a_test)
 //@resolvetarget("XYZ", "", f_a_test_XYZ)
 
-// can't access anything in non-test package.
-// TODO: maybe change this to be resolved correctly
+// Symbols that a_test imports from a (like a.ABC) are not in a_test's package
+// scope, so an unqualified query scoped to a_test.go does not find ABC.
+// TODO(golang/go#82877): consider whether file-scoped queries in an external
+// test should also resolve symbols from the package under test.
 //@resolvetarget("ABC", "", err="target ABC not found in mod.test/resolvetarget/f/a_test")
 
 -- f/a/ --
@@ -46,9 +50,17 @@ var XYZ_TEST = "a_test" //@target(f_a_test_XYZ_TEST, "mod.test/resolvetarget/f/a
 // This can only be done using local directory resolution (as in relying on the current directory).
 //@resolvetarget("f/a.XYZ_TEST", "", err="target XYZ_TEST not found in mod.test/resolvetarget/f/a")
 
-// Returns both matching targets in this directory
+// Searching from the directory itself searches all packages in it (a and a_test):
+// - XYZ is declared in both a and a_test, so it returns two matches. (Querying
+//   f/a.XYZ from another directory or via a package path only searches the
+//   non-test package a; see above and -- t/ -- below.)
 //@resolvetarget("XYZ", "", f_a_XYZ, f_a_test_XYZ)
 
+// - ABC is declared only in a, so it returns one match even though a_test
+//   imports and uses a.ABC.
+//@resolvetarget("ABC", "", f_a_ABC)
+
+// - XYZ_TEST is declared only in a_test, so it returns one match.
 //@resolvetarget("XYZ_TEST", "", f_a_test_XYZ_TEST)
 
 -- b/b.go --
@@ -96,6 +108,11 @@ package t
 //@resolvetarget("b/v2.XYZ", "", b_v2_XYZ)
 //@resolvetarget("XYZ", "b", b_XYZ)
 //@resolvetarget("b.XYZ_test", "", b_XYZ_test)
+
+// Querying a package with an external test from another directory only searches
+// the non-test package, returning a single match for XYZ and not finding XYZ_TEST.
+//@resolvetarget("f/a.XYZ", "", f_a_XYZ)
+//@resolvetarget("f/a.XYZ_TEST", "", err="target XYZ_TEST not found in mod.test/resolvetarget/f/a")
 
 // TODO(aputman): Consider what will be best for pkg name != directory name. (e.g. b/v2/b.go above)
 
