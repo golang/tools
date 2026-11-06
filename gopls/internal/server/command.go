@@ -698,7 +698,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		// without checking if the module is tidy.
 		if args.OnlyDiagnostic {
 			return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
-				if err := runGoGetModule(invoke, false, []string{args.ModulePath + "@none"}); err != nil {
+				if err := runGoGetModule(invoke, false, []string{"--", args.ModulePath + "@none"}); err != nil {
 					return err
 				}
 				_, err := invoke("mod", "tidy")
@@ -914,7 +914,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		defer cleanupModDir()
 
 		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NetworkOK, modURI.DirPath(), "list",
-			[]string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
+			[]string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), "--", args.Pkg},
 			"GOWORK=off",
 		)
 		if err != nil {
@@ -932,7 +932,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 					return err
 				}
 			}
-			_, err := invoke(append([]string{"get", "-d"}, args.Pkg)...)
+			_, err := invoke("get", "-d", "--", args.Pkg)
 			return err
 		})
 	})
@@ -1045,6 +1045,8 @@ func runGoGetModule(invoke func(...string) (*bytes.Buffer, error), addRequire bo
 			return err
 		}
 	}
+	// args may contain flags, so we cannot insert "--" here;
+	// callers that pass module paths must do so.
 	_, err := invoke(append([]string{"get", "-d"}, args...)...)
 	return err
 }
@@ -1054,13 +1056,27 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 	// `// indirect` comment we may not want. The only way to avoid it
 	// is to add the require as direct first. Then we can use go get to
 	// update go.sum and tidy up.
-	_, err := invoke(append([]string{"mod", "edit", "-require"}, args...)...)
+	//
+	// Each argument is attached to its own -require flag, so that no
+	// argument can be interpreted as a separate flag or as the go.mod
+	// file name. A "--" argument (a separator intended for go get)
+	// is ignored.
+	cmd := []string{"mod", "edit"}
+	for _, arg := range args {
+		if arg == "--" {
+			continue
+		}
+		cmd = append(cmd, "-require="+arg)
+	}
+	_, err := invoke(cmd...)
 	return err
 }
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	args := append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...)
+	// A module path may begin with a dash, so the paths must be
+	// preceded by "--" lest they be interpreted as flags.
+	args := append([]string{"-mod=readonly", "-m", "-u", "-json", "--"}, modules...)
 	inv, cleanup, err := snapshot.GoCommandInvocation(cache.NetworkOK, uri.DirPath(), "list", args)
 	if err != nil {
 		return nil, err

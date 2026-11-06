@@ -401,7 +401,7 @@ func missingModuleDiagnostic(pm *ParsedModule, req *modfile.Require) (*Diagnosti
 	cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 		URI:        pm.Mapper.URI,
 		AddRequire: !req.Indirect,
-		GoCmdArgs:  []string{req.Mod.Path + "@" + req.Mod.Version},
+		GoCmdArgs:  []string{"--", req.Mod.Path + "@" + req.Mod.Version},
 	})
 	return &Diagnostic{
 		URI:            pm.Mapper.URI,
