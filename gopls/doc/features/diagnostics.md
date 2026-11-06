@@ -137,6 +137,9 @@ Settings:
   the idle period after an edit before diagnostics are recomputed.
 - The [`diagnosticsTriggerr`](../settings.md#diagnosticsTrigger) setting determines
   what events cause recomputation of diagnostics.
+- The [`diagnosticsScope`](../settings.md#diagnosticsScope) setting determines
+  whether compilation errors are reported for all workspace packages or
+  only for packages that contain an open file.
 - The [`linkTarget`](../settings.md#linkTarget) setting specifies
   the base URI for Go package links in the Diagnostic.CodeDescription field.
 

@@ -2483,3 +2483,89 @@ func _() {}
 		env.Await(NoErrorLogs())
 	})
 }
+
+// TestDiagnosticsScope checks that with "diagnosticsScope": "openPackages",
+// gopls reports compilation errors only for packages that contain an open
+// file, and clears them when the package no longer contains one.
+func TestDiagnosticsScope(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- a/a.go --
+package a
+
+var _ int = "a"
+-- a/a2.go --
+package a
+
+var _ int = "a2"
+-- b/b.go --
+package b
+
+var _ int = "b"
+`
+
+	t.Run("workspace", func(t *testing.T) {
+		// By default, all workspace packages are diagnosed, even when no file
+		// is open.
+		Run(t, files, func(t *testing.T, env *Env) {
+			env.OnceMet(
+				InitialWorkspaceLoad,
+				Diagnostics(env.AtRegexp("a/a.go", `"a"`)),
+				Diagnostics(env.AtRegexp("a/a2.go", `"a2"`)),
+				Diagnostics(env.AtRegexp("b/b.go", `"b"`)),
+			)
+		})
+	})
+
+	t.Run("openPackages", func(t *testing.T) {
+		WithOptions(
+			Settings{"diagnosticsScope": "openPackages"},
+		).Run(t, files, func(t *testing.T, env *Env) {
+			env.OnceMet(
+				InitialWorkspaceLoad,
+				NoDiagnostics(ForFile("a/a.go")),
+				NoDiagnostics(ForFile("a/a2.go")),
+				NoDiagnostics(ForFile("b/b.go")),
+			)
+
+			// Opening a file diagnoses its whole package, but no other package.
+			env.OpenFile("a/a.go")
+			env.AfterChange(
+				Diagnostics(env.AtRegexp("a/a.go", `"a"`)),
+				Diagnostics(env.AtRegexp("a/a2.go", `"a2"`)),
+				NoDiagnostics(ForFile("b/b.go")),
+			)
+
+			// Closing the last open file of the package clears its diagnostics.
+			env.CloseBuffer("a/a.go")
+			env.AfterChange(
+				NoDiagnostics(ForFile("a/a.go")),
+				NoDiagnostics(ForFile("a/a2.go")),
+				NoDiagnostics(ForFile("b/b.go")),
+			)
+		})
+	})
+
+	t.Run("change configuration", func(t *testing.T) {
+		// Switching to "openPackages" clears diagnostics that were published
+		// for packages without an open file.
+		Run(t, files, func(t *testing.T, env *Env) {
+			env.OpenFile("a/a.go")
+			env.AfterChange(
+				Diagnostics(env.AtRegexp("a/a.go", `"a"`)),
+				Diagnostics(env.AtRegexp("b/b.go", `"b"`)),
+			)
+			cfg := env.Editor.Config()
+			cfg.Settings = map[string]any{"diagnosticsScope": "openPackages"}
+			env.ChangeConfiguration(cfg)
+			env.AfterChange(
+				Diagnostics(env.AtRegexp("a/a.go", `"a"`)),
+				Diagnostics(env.AtRegexp("a/a2.go", `"a2"`)),
+				NoDiagnostics(ForFile("b/b.go")),
+			)
+		})
+	})
+}

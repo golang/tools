@@ -445,12 +445,22 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	//   the pair of packages {x, x_test}, Originally we used all
 	//   covering packages, so {x.go} alone would be analyzed
 	//   twice.)
+	//
+	// Type checking normally covers every workspace package. With
+	// "diagnosticsScope": "openPackages", it covers only packages that
+	// contain an open file, like analysis. The final call to
+	// updateDiagnostics then clears any diagnostics that were published
+	// earlier for files of packages that are no longer diagnosed (for
+	// example, after the last open file of a package is closed). The fast
+	// path in diagnoseChangedFiles already considers only open files.
 	var (
 		toDiagnose = make(map[metadata.PackageID]*metadata.Package)
 		toAnalyze  = make(map[metadata.PackageID]*metadata.Package)
 
 		// secondary index, used to eliminate narrower packages.
 		toAnalyzeWidest = make(map[golang.PackagePath]*metadata.Package)
+
+		onlyOpenPackages = snapshot.Options().DiagnosticsScope == settings.OpenPackagesDiagnosticsScope
 	)
 	for _, mp := range workspacePkgs {
 		var hasNonIgnored, hasOpenFile bool
@@ -463,7 +473,9 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 			}
 		}
 		if hasNonIgnored {
-			toDiagnose[mp.ID] = mp
+			if hasOpenFile || !onlyOpenPackages {
+				toDiagnose[mp.ID] = mp
+			}
 			if hasOpenFile {
 				if prev, ok := toAnalyzeWidest[mp.PkgPath]; ok {
 					if len(prev.CompiledGoFiles) >= len(mp.CompiledGoFiles) {
