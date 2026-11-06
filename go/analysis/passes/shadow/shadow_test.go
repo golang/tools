@@ -15,3 +15,8 @@ func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, shadow.Analyzer, "a")
 }
+
+func TestCrossFile(t *testing.T) {
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, shadow.Analyzer, "crossfile")
+}
