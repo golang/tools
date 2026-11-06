@@ -124,6 +124,7 @@ var testdataTests = []string{
 	"fixedbugs/issue55115.go",
 	"fixedbugs/issue66783.go",
 	"fixedbugs/issue69929.go",
+	"fixedbugs/issue77067.go",
 	"forvarlifetime_go122.go",
 	"issue79414a.go",
 	"issue79414b.go",
