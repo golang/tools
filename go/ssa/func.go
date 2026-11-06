@@ -69,16 +69,9 @@ func (f *Function) selection(selector *ast.SelectorExpr) *selection {
 			pkg := f.declaredPackage().Pkg
 			obj, index, indirect := types.LookupFieldOrMethod(recv, true, pkg, sel.Obj().Name())
 
-			// sig replaces sel.Type(). See (types.Selection).Typ() for details.
-			sig := obj.Type().(*types.Signature)
-			sig = changeRecv(sig, newVar(sig.Recv().Name(), recv))
-			if sel.Kind() == types.MethodExpr {
-				sig = recvAsFirstArg(sig)
-			}
 			return &selection{
 				kind:     sel.Kind(),
 				recv:     recv,
-				typ:      sig,
 				obj:      obj,
 				index:    index,
 				indirect: indirect,
