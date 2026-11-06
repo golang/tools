@@ -10,7 +10,6 @@ go 1.18
 package extract
 
 import (
-    "fmt"
     "strings"
 )
 
@@ -21,14 +20,13 @@ func main() {
 	if b {
 		return
 	} //@loc(end, "}")
-	fmt.Println(b)
+	println(b)
 }
 
 -- @ext/a.go --
 package extract
 
 import (
-    "fmt"
     "strings"
 )
 
@@ -37,7 +35,7 @@ func main() {
 	if shouldReturn {
 		return
 	} //@loc(end, "}")
-	fmt.Println(b)
+	println(b)
 }
 
 func newFunction() (bool, bool) {
