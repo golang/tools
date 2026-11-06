@@ -362,6 +362,9 @@ type Interface interface {
 	// ModifyTags: Add or remove struct tags on a given node.
 	ModifyTags(context.Context, ModifyTagsArgs, *protocol.InteractiveParams) (Action, error)
 
+	// GoToTest: Go to test declaration.
+	GoToTest(context.Context, protocol.Location) error
+
 	// ImplementInterface: Add methods to a type to implement an interface.
 	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) (Action, error)
 
