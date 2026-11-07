@@ -8,17 +8,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/cursorutil"
 )
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
-func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	ifStatement, _, err := canInvertIfCondition(file, start, end)
+func invertIfCondition(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = pkg.FileSet()
+		src  = pgf.Src
+	)
+
+	ifStatement, _, err := canInvertIfCondition(pgf.Cursor(), start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -35,10 +42,7 @@ func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, fi
 		// version of the original if body
 		sourcePos := safetoken.StartPosition(fset, ifStatement.Pos())
 
-		indent := sourcePos.Column - 1
-		if indent < 0 {
-			indent = 0
-		}
+		indent := max(sourcePos.Column-1, 0)
 
 		standaloneBodyText := ifBodyToStandaloneCode(fset, ifStatement.Body, src)
 		replaceElse = analysis.TextEdit{
@@ -240,28 +244,23 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 }
 
 // canInvertIfCondition reports whether we can do invert-if-condition on the
-// code in the given range
-func canInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
-	path, _ := astutil.PathEnclosingInterval(file, start, end)
-	for _, node := range path {
-		stmt, isIfStatement := node.(*ast.IfStmt)
-		if !isIfStatement {
-			continue
-		}
-
-		if stmt.Else == nil {
-			// Can't invert conditions without else clauses
-			return nil, false, fmt.Errorf("else clause required")
-		}
-
-		if _, hasElseIf := stmt.Else.(*ast.IfStmt); hasElseIf {
-			// Can't invert conditions with else-if clauses, unclear what that
-			// would look like
-			return nil, false, fmt.Errorf("else-if not supported")
-		}
-
-		return stmt, true, nil
+// code in the given range.
+func canInvertIfCondition(curFile inspector.Cursor, start, end token.Pos) (*ast.IfStmt, bool, error) {
+	curIf, _ := curFile.FindByPos(start, end)
+	stmt, _ := cursorutil.FirstEnclosing[*ast.IfStmt](curIf)
+	if stmt == nil {
+		return nil, false, fmt.Errorf("not an if statement")
+	}
+	if stmt.Else == nil {
+		// Can't invert conditions without else clauses
+		return nil, false, fmt.Errorf("else clause required")
 	}
 
-	return nil, false, fmt.Errorf("not an if statement")
+	if _, hasElseIf := stmt.Else.(*ast.IfStmt); hasElseIf {
+		// Can't invert conditions with else-if clauses, unclear what that
+		// would look like
+		return nil, false, fmt.Errorf("else-if not supported")
+	}
+
+	return stmt, true, nil
 }

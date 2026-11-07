@@ -6,6 +6,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -19,13 +20,17 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
+type codeLensMetadata struct {
+	Source string `json:"source"`
+}
+
 // CodeLens reports the set of available CodeLenses
 // (range-associated commands) in the given file.
 func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) ([]protocol.CodeLens, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.codeLens", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.CodeLens", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +59,18 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 			continue
 		}
 		lenses = append(lenses, added...)
+	}
+	for i := range lenses {
+		if lenses[i].Command == nil {
+			continue
+		}
+		meta := codeLensMetadata{Source: "codelens"}
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			event.Error(ctx, "failed to marshal codelens metadata", err)
+			continue
+		}
+		lenses[i].Command.Arguments = append(lenses[i].Command.Arguments, json.RawMessage(metaBytes))
 	}
 	sort.Slice(lenses, func(i, j int) bool {
 		a, b := lenses[i], lenses[j]

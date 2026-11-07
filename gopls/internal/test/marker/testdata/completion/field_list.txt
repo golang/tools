@@ -14,25 +14,25 @@ package fieldlist
 var myInt int   //@item(flVar, "myInt", "int", "var")
 type myType int //@item(flType, "myType", "int", "type")
 
-func (my) _()    {} //@complete(") _", flType)
-func (my my) _() {} //@complete(" my)"),complete(") _", flType)
+func (my) _()    {} //@complete(re"()\\) _", flType)
+func (my my) _() {} //@complete(re"() my\\)"),complete(re"()\\) _", flType)
 
-func (myType) _() {} //@complete(") {", flType)
+func (myType) _() {} //@complete(re"()\\) {", flType)
 
-func (myType) _(my my) {} //@complete(" my)"),complete(") {", flType)
+func (myType) _(my my) {} //@complete(re"() my\\)"),complete(re"()\\) {", flType)
 
-func (myType) _() my {} //@complete(" {", flType)
+func (myType) _() my {} //@complete(re"() {", flType)
 
-func (myType) _() (my my) {} //@complete(" my"),complete(") {", flType)
+func (myType) _() (my my) {} //@complete(re"() my"),complete(re"()\\) {", flType)
 
 func _() {
 	var _ struct {
 		//@complete("", flType)
-		m my //@complete(" my"),complete(" //", flType)
+		m my //@complete(re"() my"),complete(re"() \\/\\/", flType)
 	}
 
 	var _ interface {
 		//@complete("", flType)
-		m() my //@complete("("),complete(" //", flType)
+		m() my //@complete(re"()\\("),complete(re"() \\/\\/", flType)
 	}
 }

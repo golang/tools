@@ -8,25 +8,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/memoize"
 )
 
 // A ParsedModule contains the results of parsing a go.mod file.
 type ParsedModule struct {
 	URI         protocol.DocumentURI
-	File        *modfile.File
+	File        *modfile.File // maybe absent in case of error
+	ReplaceMap  map[module.Version]module.Version
 	Mapper      *protocol.Mapper
 	ParseErrors []*Diagnostic
 }
@@ -47,14 +48,14 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule,
 
 	// cache miss?
 	if !hit {
-		promise, release := s.store.Promise(parseModKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
+		promise, release := s.store.Promise(parseModKey(fh.Identity()), func(ctx context.Context, _ any) any {
 			parsed, err := parseModImpl(ctx, fh)
 			return parseModResult{parsed, err}
 		})
 
 		entry = promise
 		s.mu.Lock()
-		s.parseModHandles.Set(uri, entry, func(_, _ interface{}) { release() })
+		s.parseModHandles.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 
@@ -100,10 +101,19 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 			})
 		}
 	}
+
+	replaceMap := make(map[module.Version]module.Version)
+	if parseErr == nil {
+		for _, rep := range file.Replace {
+			replaceMap[rep.Old] = rep.New
+		}
+	}
+
 	return &ParsedModule{
 		URI:         fh.URI(),
 		Mapper:      m,
 		File:        file,
+		ReplaceMap:  replaceMap,
 		ParseErrors: parseErrors,
 	}, parseErr
 }
@@ -133,14 +143,14 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFi
 
 	// cache miss?
 	if !hit {
-		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
+		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ any) any {
 			parsed, err := parseWorkImpl(ctx, fh)
 			return parseWorkResult{parsed, err}
 		})
 
 		entry = handle
 		s.mu.Lock()
-		s.parseWorkHandles.Set(uri, entry, func(_, _ interface{}) { release() })
+		s.parseWorkHandles.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 
@@ -214,7 +224,7 @@ func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 
 	// cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg any) any {
 			why, err := modWhyImpl(ctx, arg.(*Snapshot), fh)
 			return modWhyResult{why, err}
 		})
@@ -248,15 +258,13 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 		return nil, nil // empty result
 	}
 	// Run `go mod why` on all the dependencies.
-	args := []string{"why", "-m"}
+	// A module path may begin with a dash, so the paths must be
+	// preceded by "--" lest they be interpreted as flags.
+	args := []string{"why", "-m", "--"}
 	for _, req := range pm.File.Require {
 		args = append(args, req.Mod.Path)
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       args,
-		WorkingDir: filepath.Dir(fh.URI().Path()),
-	})
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(NoNetwork, fh.URI().DirPath(), "mod", args)
 	if err != nil {
 		return nil, err
 	}
@@ -375,8 +383,8 @@ func (s *Snapshot) matchErrorToModule(pm *ParsedModule, goCmdError string) (prot
 	var reference *modfile.Line
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 
-	for i := len(matches) - 1; i >= 0; i-- {
-		ver := module.Version{Path: matches[i][1], Version: matches[i][2]}
+	for _, match := range slices.Backward(matches) {
+		ver := module.Version{Path: match[1], Version: match[2]}
 		if err := module.Check(ver.Path, ver.Version); err != nil {
 			continue
 		}
@@ -407,8 +415,8 @@ func (s *Snapshot) matchErrorToModule(pm *ParsedModule, goCmdError string) (prot
 func (s *Snapshot) goCommandDiagnostic(pm *ParsedModule, loc protocol.Location, goCmdError string) (*Diagnostic, error) {
 	matches := moduleVersionInErrorRe.FindAllStringSubmatch(goCmdError, -1)
 	var innermost *module.Version
-	for i := len(matches) - 1; i >= 0; i-- {
-		ver := module.Version{Path: matches[i][1], Version: matches[i][2]}
+	for _, match := range slices.Backward(matches) {
+		ver := module.Version{Path: match[1], Version: match[2]}
 		if err := module.Check(ver.Path, ver.Version); err != nil {
 			continue
 		}
@@ -418,10 +426,7 @@ func (s *Snapshot) goCommandDiagnostic(pm *ParsedModule, loc protocol.Location, 
 
 	switch {
 	case strings.Contains(goCmdError, "inconsistent vendoring"):
-		cmd, err := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: pm.URI})
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: pm.URI})
 		return &Diagnostic{
 			URI:      pm.URI,
 			Range:    loc.Range,
@@ -435,14 +440,8 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
 		var args []protocol.DocumentURI
 		args = append(args, s.View().ModFiles()...)
-		tidyCmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
-		if err != nil {
-			return nil, err
-		}
-		updateCmd, err := command.NewUpdateGoSumCommand("Update go.sum", command.URIArgs{URIs: args})
-		if err != nil {
-			return nil, err
-		}
+		tidyCmd := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
+		updateCmd := command.NewUpdateGoSumCommand("Update go.sum", command.URIArgs{URIs: args})
 		msg := "go.sum is out of sync with go.mod. Please update it by applying the quick fix."
 		if innermost != nil {
 			msg = fmt.Sprintf("go.sum is out of sync with go.mod: entry for %v is missing. Please updating it by applying the quick fix.", innermost)
@@ -460,14 +459,11 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 		}, nil
 	case strings.Contains(goCmdError, "disabled by GOPROXY=off") && innermost != nil:
 		title := fmt.Sprintf("Download %v@%v", innermost.Path, innermost.Version)
-		cmd, err := command.NewAddDependencyCommand(title, command.DependencyArgs{
+		cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 			URI:        pm.URI,
 			AddRequire: false,
-			GoCmdArgs:  []string{fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
+			GoCmdArgs:  []string{"--", fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
 		})
-		if err != nil {
-			return nil, err
-		}
 		return &Diagnostic{
 			URI:            pm.URI,
 			Range:          loc.Range,
@@ -504,4 +500,32 @@ func findModuleReference(mf *modfile.File, ver module.Version) *modfile.Line {
 		}
 	}
 	return nil
+}
+
+// ResolvedVersion returns the version used for a module, which considers replace directive.
+func ResolvedVersion(module *packages.Module) string {
+	// don't visit replace recursively as src/cmd/go/internal/modinfo/info.go
+	// visits replace field only once.
+	if module.Replace != nil {
+		return module.Replace.Version
+	}
+	return module.Version
+}
+
+// ResolvedPath returns the module path, which considers replace directive.
+func ResolvedPath(module *packages.Module) string {
+	if module.Replace != nil {
+		return module.Replace.Path
+	}
+	return module.Path
+}
+
+// ResolvedString returns a representation of the Version suitable for logging
+// (Path@Version, or just Path if Version is empty),
+// which considers replace directive.
+func ResolvedString(module *packages.Module) string {
+	if ResolvedVersion(module) == "" {
+		ResolvedPath(module)
+	}
+	return ResolvedPath(module) + "@" + ResolvedVersion(module)
 }

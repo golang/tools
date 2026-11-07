@@ -38,4 +38,6 @@ func Baz(inp I) {
 // Local(inp) -> Local(i)
 // Local(t1) -> Local(iii)
 // Local(t2) -> Local(ii)
-// Local(i) -> Local(t0[0]), Local(t0[1])
+// Local(i) -> Return(foo[0]), Return(foo[1])
+// Return(foo[0]) -> Local(t0[0])
+// Return(foo[1]) -> Local(t0[1])

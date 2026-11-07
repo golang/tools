@@ -7,18 +7,13 @@
 // to be extended with IDE-like features;
 // see https://langserver.org/ for details.
 //
-// See https://github.com/golang/tools/blob/master/gopls/README.md
-// for the most up-to-date documentation.
-package main // import "golang.org/x/tools/gopls"
+// See https://go.dev/gopls for comprehensive documentation on Gopls.
+package main
 
 import (
-	"context"
-	"os"
-
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/cmd"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
-	"golang.org/x/tools/internal/tool"
 )
 
 var version = "" // if set by the linker, overrides the gopls version
@@ -31,6 +26,5 @@ func main() {
 		Upload:        true,
 	})
 
-	ctx := context.Background()
-	tool.Main(ctx, cmd.New(), os.Args[1:])
+	cmd.Main()
 }

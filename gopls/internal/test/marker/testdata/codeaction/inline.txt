@@ -1,5 +1,15 @@
-This is a minimal test of the refactor.inline code action, without resolve support.
+This is a minimal test of the refactor.inline.call code action, without resolve support.
 See inline_resolve.txt for same test with resolve support.
+
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": false,
+			"resolveSupport": {}
+		}
+	}
+}
 
 -- go.mod --
 module example.com/codeaction
@@ -9,7 +19,7 @@ go 1.18
 package a
 
 func _() {
-	println(add(1, 2)) //@codeaction("add", ")", "refactor.inline", inline)
+	println(add(1, 2)) //@codeaction("add", "refactor.inline.call", end=")", result=inline)
 }
 
 func add(x, y int) int { return x + y }
@@ -18,7 +28,8 @@ func add(x, y int) int { return x + y }
 package a
 
 func _() {
-	println(1 + 2) //@codeaction("add", ")", "refactor.inline", inline)
+	println(1 + 2) //@codeaction("add", "refactor.inline.call", end=")", result=inline)
 }
 
 func add(x, y int) int { return x + y }
+

@@ -185,8 +185,7 @@ func (p *_point) clean() {
 // The format produced is one that can be read back in using parseSpan.
 //
 // TODO(adonovan): this is esoteric, and the formatting options are
-// never used outside of TestFormat. Replace with something simpler
-// along the lines of MappedRange.String.
+// never used outside of TestFormat.
 func (s span) Format(f fmt.State, c rune) {
 	fullForm := f.Flag('+')
 	preferOffset := f.Flag('#')

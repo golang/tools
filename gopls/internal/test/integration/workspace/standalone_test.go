@@ -29,7 +29,6 @@ type I interface {
 }
 -- lib/ignore.go --
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -118,17 +117,17 @@ func main() {
 		}
 
 		// We should resolve workspace definitions in the standalone file.
-		fileLoc := env.GoToDefinition(env.RegexpSearch("lib/ignore.go", "lib.(K)"))
+		fileLoc := env.FirstDefinition(env.RegexpSearch("lib/ignore.go", "lib.(K)"))
 		file := env.Sandbox.Workdir.URIToPath(fileLoc.URI)
 		if got, want := file, "lib/lib.go"; got != want {
-			t.Errorf("GoToDefinition(lib.K) = %v, want %v", got, want)
+			t.Errorf("Definition(lib.K) = %v, want %v", got, want)
 		}
 
 		// ...as well as intra-file definitions
-		loc := env.GoToDefinition(env.RegexpSearch("lib/ignore.go", "\\+ (K)"))
+		loc := env.FirstDefinition(env.RegexpSearch("lib/ignore.go", "\\+ (K)"))
 		wantLoc := env.RegexpSearch("lib/ignore.go", "const (K)")
 		if loc != wantLoc {
-			t.Errorf("GoToDefinition(K) = %v, want %v", loc, wantLoc)
+			t.Errorf("Definition(K) = %v, want %v", loc, wantLoc)
 		}
 
 		// Renaming "lib.K" to "lib.D" should cause a diagnostic in the standalone
@@ -164,7 +163,6 @@ go 1.18
 package lib // without this package, files are loaded as command-line-arguments
 -- ignore.go --
 //go:build ignore
-// +build ignore
 
 package main
 
@@ -173,7 +171,6 @@ package main
 func main() {}
 -- standalone.go --
 //go:build standalone
-// +build standalone
 
 package main
 
@@ -194,7 +191,7 @@ func main() {}
 		)
 
 		cfg := env.Editor.Config()
-		cfg.Settings = map[string]interface{}{
+		cfg.Settings = map[string]any{
 			"standaloneTags": []string{"ignore"},
 		}
 		env.ChangeConfiguration(cfg)

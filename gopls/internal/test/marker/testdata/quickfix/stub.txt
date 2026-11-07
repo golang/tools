@@ -1,0 +1,348 @@
+This test checks the 'implement interface' quick fix.
+
+-- go.mod --
+module golang.org/lsptests/stub
+
+go 1.18
+
+-- other/other.go --
+package other
+
+import (
+	"bytes"
+	renamed_context "context"
+)
+
+type Interface interface {
+	Get(renamed_context.Context) *bytes.Buffer
+}
+
+-- add_selector.go --
+package stub
+
+import "io"
+
+// This file tests that if an interface
+// method references a type from its own package
+// then our implementation must add the import/package selector
+// in the concrete method if the concrete type is outside of the interface
+// package
+var _ io.ReaderFrom = &readerFrom{} //@quickfix("&readerFrom", re"cannot use", readerFrom)
+
+type readerFrom struct{}
+-- @readerFrom/add_selector.go --
+@@ -13 +13,5 @@
++
++// ReadFrom implements [io.ReaderFrom].
++func (*readerFrom) ReadFrom(r io.Reader) (n int64, err error) {
++	panic("unimplemented")
++}
+-- assign.go --
+package stub
+
+import "io"
+
+func _() {
+	var br io.ByteWriter
+	br = &byteWriter{} //@quickfix("&", re"does not implement", assign)
+	_ = br
+}
+
+type byteWriter struct{}
+-- @assign/assign.go --
+@@ -12 +12,5 @@
++
++// WriteByte implements [io.ByteWriter].
++func (b *byteWriter) WriteByte(c byte) error {
++	panic("unimplemented")
++}
+-- assign_multivars.go --
+package stub
+
+import "io"
+
+func _() {
+	var br io.ByteWriter
+	var i int
+	i, br = 1, &multiByteWriter{} //@quickfix("&", re"does not implement", assign_multivars)
+	_, _ = i, br
+}
+
+type multiByteWriter struct{}
+-- @assign_multivars/assign_multivars.go --
+@@ -13 +13,5 @@
++
++// WriteByte implements [io.ByteWriter].
++func (m *multiByteWriter) WriteByte(c byte) error {
++	panic("unimplemented")
++}
+-- call_expr.go --
+package stub
+
+func main() {
+	check(&callExpr{}) //@quickfix("&", re"does not implement", call_expr)
+}
+
+func check(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+type callExpr struct{}
+-- @call_expr/call_expr.go --
+@@ -14 +14,5 @@
++
++// Error implements [error].
++func (c *callExpr) Error() string {
++	panic("unimplemented")
++}
+-- embedded.go --
+package stub
+
+import (
+	"io"
+	"sort"
+)
+
+var _ embeddedInterface = (*embeddedConcrete)(nil) //@quickfix("(", re"does not implement", embedded)
+
+type embeddedConcrete struct{}
+
+type embeddedInterface interface {
+	sort.Interface
+	io.Reader
+}
+-- @embedded/embedded.go --
+@@ -12 +12,20 @@
++// Len implements [embeddedInterface].
++func (e *embeddedConcrete) Len() int {
++	panic("unimplemented")
++}
++
++// Less implements [embeddedInterface].
++func (e *embeddedConcrete) Less(i int, j int) bool {
++	panic("unimplemented")
++}
++
++// Read implements [embeddedInterface].
++func (e *embeddedConcrete) Read(p []byte) (n int, err error) {
++	panic("unimplemented")
++}
++
++// Swap implements [embeddedInterface].
++func (e *embeddedConcrete) Swap(i int, j int) {
++	panic("unimplemented")
++}
++
+-- err.go --
+package stub
+
+func _() {
+	var br error = &customErr{} //@quickfix("&", re"does not implement", err)
+	_ = br
+}
+
+type customErr struct{}
+-- @err/err.go --
+@@ -9 +9,5 @@
++
++// Error implements [error].
++func (c *customErr) Error() string {
++	panic("unimplemented")
++}
+-- function_return.go --
+package stub
+
+import (
+	"io"
+)
+
+func newCloser() io.Closer {
+	return closer{} //@quickfix("c", re"does not implement", function_return)
+}
+
+type closer struct{}
+-- @function_return/function_return.go --
+@@ -12 +12,5 @@
++
++// Close implements [io.Closer].
++func (c closer) Close() error {
++	panic("unimplemented")
++}
+-- successive_function_return.go --
+package stub
+
+import (
+	"io"
+)
+
+func _() (a, b int, c io.Closer) {
+	return 1, 2, closer2{} //@quickfix("c", re"does not implement", successive)
+}
+
+type closer2 struct{}
+-- @successive/successive_function_return.go --
+@@ -12 +12,5 @@
++
++// Close implements [io.Closer].
++func (c closer2) Close() error {
++	panic("unimplemented")
++}
+-- generic_receiver.go --
+package stub
+
+import "io"
+
+// This file tests that the stub method generator accounts for concrete
+// types that have type parameters defined.
+var _ io.ReaderFrom = &genReader[string, int]{} //@quickfix("&genReader", re"does not implement", generic_receiver)
+
+type genReader[T, Y any] struct {
+	T T
+	Y Y
+}
+-- @generic_receiver/generic_receiver.go --
+@@ -13 +13,5 @@
++
++// ReadFrom implements [io.ReaderFrom].
++func (g *genReader[T, Y]) ReadFrom(r io.Reader) (n int64, err error) {
++	panic("unimplemented")
++}
+-- ignored_imports.go --
+package stub
+
+import (
+	"compress/zlib"
+	. "io"
+	_ "io"
+)
+
+// This file tests that dot-imports and underscore imports
+// are properly ignored and that a new import is added to
+// reference method types
+
+var (
+	_ Reader
+	_ zlib.Resetter = (*ignoredResetter)(nil) //@quickfix("(", re"does not implement", ignored_imports)
+)
+
+type ignoredResetter struct{}
+-- @ignored_imports/ignored_imports.go --
+@@ -19 +19,5 @@
++
++// Reset implements [zlib.Resetter].
++func (i *ignoredResetter) Reset(r Reader, dict []byte) error {
++	panic("unimplemented")
++}
+-- issue2606.go --
+package stub
+
+type I interface{ error }
+
+type C int
+
+var _ I = C(0) //@quickfix("C", re"does not implement", issue2606)
+-- @issue2606/issue2606.go --
+@@ -7 +7,5 @@
++// Error implements [I].
++func (c C) Error() string {
++	panic("unimplemented")
++}
++
+-- multi_var.go --
+package stub
+
+import "io"
+
+// This test ensures that a variable declaration that
+// has multiple values on the same line can still be
+// analyzed correctly to target the interface implementation
+// diagnostic.
+var one, two, three io.Reader = nil, &multiVar{}, nil //@quickfix("&", re"does not implement", multi_var)
+
+type multiVar struct{}
+-- @multi_var/multi_var.go --
+@@ -12 +12,5 @@
++
++// Read implements [io.Reader].
++func (m *multiVar) Read(p []byte) (n int, err error) {
++	panic("unimplemented")
++}
+-- pointer.go --
+package stub
+
+import "io"
+
+func getReaderFrom() io.ReaderFrom {
+	return &pointerImpl{} //@quickfix("&", re"does not implement", pointer)
+}
+
+type pointerImpl struct{}
+-- @pointer/pointer.go --
+@@ -10 +10,5 @@
++
++// ReadFrom implements [io.ReaderFrom].
++func (p *pointerImpl) ReadFrom(r io.Reader) (n int64, err error) {
++	panic("unimplemented")
++}
+-- renamed_import.go --
+package stub
+
+import (
+	"compress/zlib"
+	myio "io"
+)
+
+var _ zlib.Resetter = &myIO{} //@quickfix("&", re"does not implement", renamed_import)
+var _ myio.Reader
+
+type myIO struct{}
+-- @renamed_import/renamed_import.go --
+@@ -12 +12,5 @@
++
++// Reset implements [zlib.Resetter].
++func (m *myIO) Reset(r myio.Reader, dict []byte) error {
++	panic("unimplemented")
++}
+-- renamed_import_iface.go --
+package stub
+
+import (
+	"golang.org/lsptests/stub/other"
+)
+
+// This file tests that if an interface
+// method references an import from its own package
+// that the concrete type does not yet import, and that import happens
+// to be renamed, then we prefer the renaming of the interface.
+var _ other.Interface = &otherInterfaceImpl{} //@quickfix("&otherInterfaceImpl", re"does not implement", renamed_import_iface)
+
+type otherInterfaceImpl struct{}
+-- @renamed_import_iface/renamed_import_iface.go --
+@@ -4 +4,2 @@
++	"bytes"
++	"context"
+@@ -14 +16,5 @@
++
++// Get implements [other.Interface].
++func (o *otherInterfaceImpl) Get(context.Context) *bytes.Buffer {
++	panic("unimplemented")
++}
+-- stdlib.go --
+package stub
+
+import (
+	"io"
+)
+
+var _ io.Writer = writer{} //@quickfix("w", re"does not implement", stdlib)
+
+type writer struct{}
+-- @stdlib/stdlib.go --
+@@ -10 +10,5 @@
++
++// Write implements [io.Writer].
++func (w writer) Write(p []byte) (n int, err error) {
++	panic("unimplemented")
++}

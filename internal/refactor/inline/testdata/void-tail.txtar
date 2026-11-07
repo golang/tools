@@ -1,0 +1,372 @@
+Void tail-call inlining test cases.
+
+1. a0: deeply nested bare blocks ending in return.
+2. a1: call in switch case, with return after the switch statement.
+3. a2: complex nested hierarchy (if -> switch -> block) ending at return.
+4. a3: multiple stacked labels before return.
+5. a4: call inside else-if branch with explicit return.
+6. a5: call inside for loop (must literalize, loop repeats).
+7. a6: trailing code after block (must literalize).
+8. a7: last statement of if at function end (implicit return).
+9. a8: last statement of else at function end (implicit return).
+10. a9: type switch case, with return after the type switch.
+11. a10: fallthrough after the call (must literalize).
+12. a11: call in select default, with return after the select.
+13. a12: stacked labels on the return that follows the call.
+14. a13: explicit bare return, func f() { defer ...; return }.
+
+-- go.mod --
+module testdata
+go 1.20
+
+-- a/pkg.go --
+package a
+
+func cleanup() {
+	defer println("done")
+	println("cleaning")
+}
+
+-- a/a0.go --
+package a
+
+func _() {
+	{
+		{
+			cleanup() //@ inline(re"cleanup", nestedBlocks)
+		}
+	}
+	return
+}
+
+-- nestedBlocks --
+package a
+
+func _() {
+	{
+		{
+			defer println("done")
+			println("cleaning") //@ inline(re"cleanup", nestedBlocks)
+		}
+	}
+	return
+}
+
+-- a/a1.go --
+package a
+
+func _(x int) {
+	switch x {
+	case 1:
+		cleanup() //@ inline(re"cleanup", switchThenReturn)
+	default:
+		println("default")
+	}
+	return
+}
+
+-- switchThenReturn --
+package a
+
+func _(x int) {
+	switch x {
+	case 1:
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", switchThenReturn)
+	default:
+		println("default")
+	}
+	return
+}
+
+-- a/a2.go --
+package a
+
+func _(x int, cond bool) {
+	if cond {
+		switch x {
+		case 1:
+			{
+				cleanup() //@ inline(re"cleanup", ifSwitchBlock)
+			}
+		}
+	}
+	return
+}
+
+-- ifSwitchBlock --
+package a
+
+func _(x int, cond bool) {
+	if cond {
+		switch x {
+		case 1:
+			{
+				defer println("done")
+				println("cleaning") //@ inline(re"cleanup", ifSwitchBlock)
+			}
+		}
+	}
+	return
+}
+
+-- a/a3.go --
+package a
+
+func _() {
+label1:
+label2:
+	cleanup() //@ inline(re"cleanup", stackedLabels)
+	return
+}
+
+-- stackedLabels --
+package a
+
+func _() {
+label1:
+label2:
+	{
+		defer println("done")
+		println("cleaning")
+	} //@ inline(re"cleanup", stackedLabels)
+	return
+}
+
+-- a/a4.go --
+package a
+
+func _(a, b int) {
+	if a > 0 {
+		println("a")
+	} else if b > 0 {
+		cleanup() //@ inline(re"cleanup", elseIfReturn)
+		return
+	}
+	println("after")
+}
+
+-- elseIfReturn --
+package a
+
+func _(a, b int) {
+	if a > 0 {
+		println("a")
+	} else if b > 0 {
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", elseIfReturn)
+		return
+	}
+	println("after")
+}
+
+-- a/a5.go --
+package a
+
+func _() {
+	for i := 0; i < 2; i++ {
+		cleanup() //@ inline(re"cleanup", inLoop)
+	}
+	return
+}
+
+-- inLoop --
+package a
+
+func _() {
+	for i := 0; i < 2; i++ {
+		func() { defer println("done"); println("cleaning") }() //@ inline(re"cleanup", inLoop)
+	}
+	return
+}
+
+-- a/a6.go --
+package a
+
+func _() {
+	{
+		cleanup() //@ inline(re"cleanup", trailingCode)
+	}
+	println("not tail")
+	return
+}
+
+-- trailingCode --
+package a
+
+func _() {
+	{
+		func() { defer println("done"); println("cleaning") }() //@ inline(re"cleanup", trailingCode)
+	}
+	println("not tail")
+	return
+}
+
+-- a/a7.go --
+package a
+
+func _(cond bool) {
+	if cond {
+		cleanup() //@ inline(re"cleanup", lastInIf)
+	} else {
+		println("else")
+	}
+}
+
+-- lastInIf --
+package a
+
+func _(cond bool) {
+	if cond {
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", lastInIf)
+	} else {
+		println("else")
+	}
+}
+
+-- a/a8.go --
+package a
+
+func _(cond bool) {
+	if cond {
+		println("then")
+	} else {
+		cleanup() //@ inline(re"cleanup", lastInElse)
+	}
+}
+
+-- lastInElse --
+package a
+
+func _(cond bool) {
+	if cond {
+		println("then")
+	} else {
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", lastInElse)
+	}
+}
+
+-- a/a9.go --
+package a
+
+func _(x any) {
+	switch x.(type) {
+	case int:
+		cleanup() //@ inline(re"cleanup", typeSwitchThenReturn)
+	default:
+		println("default")
+	}
+	return
+}
+
+-- typeSwitchThenReturn --
+package a
+
+func _(x any) {
+	switch x.(type) {
+	case int:
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", typeSwitchThenReturn)
+	default:
+		println("default")
+	}
+	return
+}
+
+-- a/a10.go --
+package a
+
+func _(x int) {
+	switch x {
+	case 1:
+		cleanup() //@ inline(re"cleanup", fallthroughAfter)
+		fallthrough
+	default:
+		println("default")
+	}
+	return
+}
+
+-- fallthroughAfter --
+package a
+
+func _(x int) {
+	switch x {
+	case 1:
+		func() { defer println("done"); println("cleaning") }() //@ inline(re"cleanup", fallthroughAfter)
+		fallthrough
+	default:
+		println("default")
+	}
+	return
+}
+
+-- a/a11.go --
+package a
+
+func _() {
+	select {
+	default:
+		cleanup() //@ inline(re"cleanup", selectThenReturn)
+	}
+	return
+}
+
+-- selectThenReturn --
+package a
+
+func _() {
+	select {
+	default:
+		defer println("done")
+		println("cleaning") //@ inline(re"cleanup", selectThenReturn)
+	}
+	return
+}
+
+-- a/a12.go --
+package a
+
+func _() {
+	cleanup() //@ inline(re"cleanup", labeledReturn)
+done:
+	return
+}
+
+-- labeledReturn --
+package a
+
+func _() {
+	{
+		defer println("done")
+		println("cleaning")
+	} //@ inline(re"cleanup", labeledReturn)
+done:
+	return
+}
+
+-- a/a13.go --
+package a
+
+func f() {
+	justDefer() //@ inline(re"justDefer", explicitBareReturn)
+	return
+}
+
+func justDefer() {
+	defer println("done")
+}
+
+-- explicitBareReturn --
+package a
+
+func f() {
+	defer println("done") //@ inline(re"justDefer", explicitBareReturn)
+	return
+}
+
+func justDefer() {
+	defer println("done")
+}

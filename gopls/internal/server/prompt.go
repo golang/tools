@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"testing"
 	"time"
 
 	"golang.org/x/telemetry"
@@ -50,7 +51,7 @@ const (
 // The following environment variables may be set by the client.
 // Exported for testing telemetry integration.
 const (
-	GoTelemetryGoplsClientStartTimeEnvvar = "GOTELEMETRY_GOPLS_CLIENT_START_TIME" // telemetry start time recored in client
+	GoTelemetryGoplsClientStartTimeEnvvar = "GOTELEMETRY_GOPLS_CLIENT_START_TIME" // telemetry start time recorded in client
 	GoTelemetryGoplsClientTokenEnvvar     = "GOTELEMETRY_GOPLS_CLIENT_TOKEN"      // sampling token
 )
 
@@ -62,19 +63,6 @@ func (s *server) getenv(key string) string {
 		return v
 	}
 	return os.Getenv(key)
-}
-
-// configDir returns the root of the gopls configuration dir. By default this
-// is os.UserConfigDir/gopls, but it may be overridden for tests.
-func (s *server) configDir() (string, error) {
-	if d := s.getenv(GoplsConfigDirEnvvar); d != "" {
-		return d, nil
-	}
-	userDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(userDir, "gopls"), nil
 }
 
 // telemetryMode returns the current effective telemetry mode.
@@ -113,33 +101,35 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		defer work.End(ctx, "Done.")
 	}
 
-	if !enabled { // check this after the work progress message for testing.
-		return // prompt is disabled
-	}
-
-	if s.telemetryMode() == "on" || s.telemetryMode() == "off" {
-		// Telemetry is already on or explicitly off -- nothing to ask about.
-		return
-	}
-
 	errorf := func(format string, args ...any) {
 		err := fmt.Errorf(format, args...)
 		event.Error(ctx, "telemetry prompt failed", err)
 	}
 
 	// Only prompt if we can read/write the prompt config file.
-	configDir, err := s.configDir()
-	if err != nil {
-		errorf("unable to determine config dir: %v", err)
+	configDir := s.getenv(GoplsConfigDirEnvvar) // set for testing
+	if configDir == "" && testing.Testing() {
+		// Unless tests set GoplsConfigDirEnvvar, the prompt is a no op.
+		// We don't want tests to interact with os.UserConfigDir().
 		return
 	}
+	if configDir == "" {
+		userDir, err := os.UserConfigDir()
+		if err != nil {
+			errorf("unable to determine user config dir: %v", err)
+			return
+		}
+		configDir = filepath.Join(userDir, "gopls")
+	}
+
+	// Read the current prompt file.
 
 	var (
 		promptDir  = filepath.Join(configDir, "prompt")    // prompt configuration directory
 		promptFile = filepath.Join(promptDir, "telemetry") // telemetry prompt file
 	)
 
-	// prompt states, to be written to the prompt file
+	// prompt states, stored in the prompt file
 	const (
 		pUnknown  = ""        // first time
 		pNotReady = "-"       // user is not asked yet (either not sampled or not past the grace period)
@@ -161,7 +151,7 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		state    = pUnknown
 		attempts = 0 // number of times we've asked already
 
-		// the followings are recorded after gopls v0.17+.
+		// the following are recorded after gopls v0.17+.
 		token        = 0   // valid token is [1, 1000]
 		creationTime int64 // unix time sec
 	)
@@ -172,22 +162,61 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 			//  v0.17 ~: must have all four fields.
 		} else {
 			state, attempts, creationTime, token = pUnknown, 0, 0, 0
+			// TODO(hyangah): why do we want to present this as an error to user?
 			errorf("malformed prompt result %q", string(content))
 		}
 	} else if !os.IsNotExist(err) {
 		errorf("reading prompt file: %v", err)
 		// Something went wrong. Since we don't know how many times we've asked the
-		// prompt, err on the side of not spamming.
+		// prompt, err on the side of not asking.
+		//
+		// But record this in telemetry, in case some users enable telemetry by
+		// other means.
+		counter.New("gopls/telemetryprompt/corrupted").Inc()
 		return
 	}
 
-	// Terminal conditions.
-	if state == pYes || state == pNo {
-		// Prompt has been answered. Nothing to do.
+	counter.New(fmt.Sprintf("gopls/telemetryprompt/attempts:%d", attempts)).Inc()
+
+	// Check terminal conditions.
+
+	if state == pYes {
+		// Prompt has been accepted.
+		//
+		// We record this counter for every gopls session, rather than when the
+		// prompt actually accepted below, because if we only recorded it in the
+		// counter file at the time telemetry is enabled, we'd never upload it,
+		// because we exclude any counter files that overlap with a time period
+		// that has telemetry uploading is disabled.
+		counter.New("gopls/telemetryprompt/accepted").Inc()
+		return
+	}
+	if state == pNo {
+		// Prompt has been declined. In most cases, this means we'll never see the
+		// counter below, but it's possible that the user may enable telemetry by
+		// other means later on. If we see a significant number of users that have
+		// accepted telemetry but declined the prompt, it may be an indication that
+		// the prompt is not working well.
+		counter.New("gopls/telemetryprompt/declined").Inc()
 		return
 	}
 	if attempts >= 5 { // pPending or pFailed
-		// We've tried asking enough; give up.
+		// We've tried asking enough; give up. Record that the prompt expired, in
+		// case the user decides to enable telemetry by other means later on.
+		// (see also the pNo case).
+		counter.New("gopls/telemetryprompt/expired").Inc()
+		return
+	}
+
+	// We only check enabled after (1) the work progress is started, and (2) the
+	// prompt file has been read. (1) is for testing purposes, and (2) is so that
+	// we record the "gopls/telemetryprompt/accepted" counter for every session.
+	if !enabled {
+		return // prompt is disabled
+	}
+
+	if s.telemetryMode() == "on" || s.telemetryMode() == "off" {
+		// Telemetry is already on or explicitly off -- nothing to ask about.
 		return
 	}
 
@@ -254,7 +283,7 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		attempts++
 	}
 
-	pendingContent := []byte(fmt.Sprintf("%s %d %d %d", state, attempts, creationTime, token))
+	pendingContent := fmt.Appendf(nil, "%s %d %d %d", state, attempts, creationTime, token)
 	if err := os.WriteFile(promptFile, pendingContent, 0666); err != nil {
 		errorf("writing pending state: %v", err)
 		return
@@ -275,20 +304,9 @@ Would you like to enable Go telemetry?
 `
 	}
 	// TODO(rfindley): investigate a "tell me more" action in combination with ShowDocument.
-	params := &protocol.ShowMessageRequestParams{
-		Type:    protocol.Info,
-		Message: prompt,
-		Actions: []protocol.MessageActionItem{
-			{Title: TelemetryYes},
-			{Title: TelemetryNo},
-		},
-	}
-
-	item, err := s.client.ShowMessageRequest(ctx, params)
+	action, err := showMessageRequest(ctx, s.client, protocol.Info, prompt, TelemetryYes, TelemetryNo)
 	if err != nil {
 		errorf("ShowMessageRequest failed: %v", err)
-		// Defensive: ensure item == nil for the logic below.
-		item = nil
 	}
 
 	message := func(typ protocol.MessageType, msg string) {
@@ -299,17 +317,16 @@ Would you like to enable Go telemetry?
 	}
 
 	result := pFailed
-	if item == nil {
+	if action == "" {
 		// e.g. dialog was dismissed
 		errorf("no response")
 	} else {
 		// Response matches MessageActionItem.Title.
-		switch item.Title {
+		switch action {
 		case TelemetryYes:
 			result = pYes
 			if err := s.setTelemetryMode("on"); err == nil {
 				message(protocol.Info, telemetryOnMessage(s.Options().LinkifyShowMessage))
-				counter.New("gopls/telemetryprompt/accepted").Inc()
 			} else {
 				errorf("enabling telemetry failed: %v", err)
 				msg := fmt.Sprintf("Failed to enable Go telemetry: %v\nTo enable telemetry manually, please run `go run golang.org/x/telemetry/cmd/gotelemetry@latest on`", err)
@@ -319,14 +336,45 @@ Would you like to enable Go telemetry?
 		case TelemetryNo:
 			result = pNo
 		default:
-			errorf("unrecognized response %q", item.Title)
-			message(protocol.Error, fmt.Sprintf("Unrecognized response %q", item.Title))
+			errorf("unrecognized response %q", action)
+			message(protocol.Error, fmt.Sprintf("Unrecognized response %q", action))
 		}
 	}
-	resultContent := []byte(fmt.Sprintf("%s %d %d %d", result, attempts, creationTime, token))
+	resultContent := fmt.Appendf(nil, "%s %d %d %d", result, attempts, creationTime, token)
 	if err := os.WriteFile(promptFile, resultContent, 0666); err != nil {
 		errorf("error writing result state to prompt file: %v", err)
 	}
+}
+
+// showMessageRequest causes the client to show a plain-text prompt that the user can respond to.
+// It returns the title of the action the user selected, or "" if the user dismissed the prompt.
+func showMessageRequest(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string, actions ...string) (string, error) {
+	var actionItems []protocol.MessageActionItem
+	for _, action := range actions {
+		actionItems = append(actionItems, protocol.MessageActionItem{Title: action})
+	}
+	params := &protocol.ShowMessageRequestParams{
+		Type:    typ,
+		Message: message,
+		Actions: actionItems,
+	}
+	// Timeout used to wait for the user to respond to a message request.
+	const timeout = 15 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	result, err := cli.ShowMessageRequest(ctx, params)
+
+	if err != nil {
+		if cause := context.Cause(ctx); cause == context.DeadlineExceeded || cause == context.Canceled {
+			return "", nil
+		}
+		return "", err
+	}
+	if result == nil {
+		return "", nil // User dismissed the notification
+	}
+	return result.Title, nil
 }
 
 func telemetryOnMessage(linkify bool) string {

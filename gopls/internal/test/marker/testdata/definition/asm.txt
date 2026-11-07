@@ -1,0 +1,53 @@
+This test exercises the Definition request in a Go assembly file.
+
+For now we support only references to package-level symbols defined in
+the same package or a dependency.
+
+Repeatedly jumping to Definition on ff ping-pongs between the Go and
+assembly declarations.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+import _ "fmt"
+import _ "example.com/b"
+
+func ff() //@ loc(ffgo, "ff"), def("ff", ffasm)
+
+var _ = ff // pacify unusedfunc analyzer
+
+-- a/asm.s --
+// portable assembly
+
+TEXT ·ff(SB), $16                       //@ loc(ffasm, "ff"), def("ff", ffgo)
+        CALL    example·com∕b·B         //@ def("com", bB)
+        JMP     ·ff                     //@ def("ff", ffgo)
+	JMP     label			//@ def("label", label)
+label:					//@ loc(label,"label")
+	CALL	other·bar(SB)		//@ def("bar") // not a dependency: no definition
+        RET
+
+-- b/b.go --
+package b
+
+func B() {} //@ loc(bB, "B")
+
+-- a/asm2.s --
+// Labels are function-scoped: the same label name in different TEXT
+// functions denotes different labels.
+
+TEXT ·f1(SB), $0-0
+onlyf1:
+loop:				//@ loc(f1loop, "loop")
+	JMP	loop		//@ def("loop", f1loop)
+	RET
+
+TEXT ·f2(SB), $0-0
+loop:				//@ loc(f2loop, "loop")
+	JMP	loop		//@ def("loop", f2loop)
+	JMP	onlyf1		//@ def("onlyf1") // defined only in f1: no definition here
+	RET

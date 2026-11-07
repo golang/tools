@@ -1,4 +1,6 @@
-# Gopls: Diagnostics
+---
+title: "Gopls: Diagnostics"
+---
 
 Gopls continuously annotates all your open files of source code with a
 variety of diagnostics. Every time you edit a file or make a
@@ -11,7 +13,7 @@ common mistakes.
 Diagnostics come from two main sources: compilation errors and analysis findings.
 
 - **Compilation errors** are those that you would obtain from running `go
-  build`. Gopls doesn't actually run the compiler; that would be too
+build`. Gopls doesn't actually run the compiler; that would be too
   slow. Instead it runs `go list` (when needed) to compute the
   metadata of the compilation, then processes those packages in a similar
   manner to the compiler front-end: reading, scanning, and parsing the
@@ -40,7 +42,7 @@ Diagnostics come from two main sources: compilation errors and analysis findings
   `fmt.Printf("%d", "three")`.
 
   Gopls provides dozens of analyzers aggregated from a variety of
-  suites. See [Analyzers](../analyzers.md) for the complete list. The
+  suites; see [Analyzers](../analyzers.md) for the complete list. The
   `source` field of each diagnostic produced by an analyzer records
   the name of the analyzer that produced it.
 
@@ -49,9 +51,33 @@ Diagnostics come from two main sources: compilation errors and analysis findings
   The example above shows a `printf` formatting mistake. The diagnostic contains
   a link to the documentation for the `printf` analyzer.
 
+There is an optional third source of diagnostics:
+
+<a id='toggleCompilerOptDetails'></a>
+
+- **Compiler optimization details** are diagnostics that report
+  details relevant to optimization decisions made by the Go
+  compiler, such as whether a variable escapes or a slice index
+  requires a bounds check.
+
+  Optimization decisions include:
+  whether a variable escapes, and how escape is inferred;
+  whether a nil-pointer check is implied or eliminated; and
+  whether a function can be inlined.
+
+  This source is disabled by default but can be enabled on a
+  package-by-package basis by invoking the
+  `source.toggleCompilerOptDetails` ("{Show,Hide} compiler optimization
+  details") code action.
+
+  Remember that the compiler's optimizer runs only on packages that
+  are transitively free from errors, so optimization diagnostics
+  will not be shown on packages that do not build.
+
+
 ## Recomputation of diagnostics
 
-Diagnostics are automatically recomputed each time the source files
+By default, diagnostics are automatically recomputed each time the source files
 are edited.
 
 Compilation errors in open files are updated after a very short delay
@@ -68,9 +94,12 @@ Alternatively, diagnostics may be triggered only after an edited file
 is saved, using the
 [`diagnosticsTrigger`](../settings.md#diagnosticsTrigger) setting.
 
-Gopls does not currently support "pull-based" diagnostics, which are
-computed synchronously when requested by the client; see golang/go#53275.
-
+When initialized with `"pullDiagnostics": true`, gopls also supports
+["pull diagnostics"](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_pullDiagnostics),
+an alternative mechanism for recomputing diagnostics in which the client
+requests diagnostics from gopls explicitly using the `textDocument/diagnostic`
+request. This feature is off by default until the performance of pull
+diagnostics is comparable to push diagnostics.
 
 ## Quick fixes
 
@@ -89,8 +118,15 @@ parameter" analysis diagnostic with two alternative fixes.
 
 Suggested fixes that are indisputably safe are [code
 actions](transformation.md#code-actions) whose kind is
-`"source.fixAll"`. Many client editors have a shortcut to apply all
-such fixes.
+`"source.fixAll"`.
+Many client editors have a shortcut to apply all such fixes.
+
+<!-- Note: each Code Action has exactly one kind, so a server
+     must offer each "safe" action twice, once with its usual kind
+     and once with kind "source.fixAll".
+     The only ones in gopls are simplify{compositelit,range,slice},
+     which are fixAll + quickfix.
+-->
 
 TODO(adonovan): audit all the analyzers to ensure that their
 documentation is up-to-date w.r.t. any fixes they suggest.
@@ -105,14 +141,139 @@ Settings:
   the base URI for Go package links in the Diagnostic.CodeDescription field.
 
 Client support:
-- **VS Code**: Diagnostics appear as a squiggly underline.
+
+- **VS Code**: Each diagnostic appears as a squiggly underline.
   Hovering reveals the details, along with any suggested fixes.
-- **Emacs + eglot**: Diagnostics appear as a squiggly underline.
+- **Emacs + eglot**: Each diagnostic appears as a squiggly underline.
   Hovering reveals the details. Use `M-x eglot-code-action-quickfix`
   to apply available fixes; it will prompt if there are more than one.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls check file.go`
 
+<!-- Below we list any quick fixes (by their internal fix name)
+     that aren't analyzers. -->
+
+### `stubMissingInterfaceMethods`: Declare missing methods of I
+
+When a value of a concrete type is assigned to a variable of an
+interface type, but the concrete type does not possess all the
+necessary methods, the type checker will report a "missing method"
+error.
+
+In this situation, gopls offers a quick fix to add stub declarations
+of all the missing methods to the concrete type so that it implements
+the interface.
+
+For example, this function will not compile because the value
+`NegativeErr{}` does not implement the "error" interface:
+
+```go
+func sqrt(x float64) (float64, error) {
+	if x < 0 {
+		return 0, NegativeErr{} // error: missing method
+	}
+	...
+}
+
+type NegativeErr struct{}
+```
+
+Gopls will offer a quick fix to declare this method:
+
+```go
+
+// Error implements [error.Error].
+func (NegativeErr) Error() string {
+	panic("unimplemented")
+}
+```
+
+Beware that the new declarations appear alongside the concrete type,
+which may be in a different file or even package from the cursor
+position.
+(Perhaps gopls should send a `showDocument` request to navigate the
+client there, or a progress notification indicating that something
+happened.)
+
+### `StubMissingCalledFunction`: Declare missing method T.f
+
+When you attempt to call a method on a type that does not have that method,
+the compiler will report an error such as "type X has no field or method Y".
+In this scenario, gopls now offers a quick fix to generate a stub declaration of
+the missing method, inferring its type from the call.
+
+Consider the following code where `Foo` does not have a method `bar`:
+
+```go
+type Foo struct{}
+
+func main() {
+  var s string
+  f := Foo{}
+  s = f.bar("str", 42) // error: f.bar undefined (type Foo has no field or method bar)
+}
+```
+
+Gopls will offer a quick fix, "Declare missing method Foo.bar".
+When invoked, it creates the following declaration:
+
+```go
+func (f Foo) bar(s string, i int) string {
+	panic("unimplemented")
+}
+```
+
+### `CreateUndeclared`: Create missing declaration for "undeclared name: X"
+
+A Go compiler error "undeclared name: X" indicates that a variable or function is being used before
+it has been declared in the current scope. In this scenario, gopls offers a quick fix to create the declaration.
+
+#### Declare a new variable
+
+When you reference a variable that hasn't been declared:
+
+```go
+func main() {
+  x := 42
+  min(x, y) // error: undefined: y
+}
+```
+
+The quick fix would insert a variable declaration
+inferring its type from the context:
+
+```go
+func main() {
+  x := 42
+  var y int
+  min(x, y)
+}
+```
+
+#### Declare a new function
+
+Similarly, if you call a function that hasn't been declared:
+
+```go
+func main() {
+  var s string
+  s = doSomething(42) // error: undefined: doSomething
+}
+```
+
+Gopls will insert a new function declaration below,
+inferring its type from the call:
+
+```go
+func main() {
+  var s string
+  s = doSomething(42)
+}
+
+func doSomething(i int) string {
+  panic("unimplemented")
+}
+```
 <!--
 
 dorky details and deletia:
@@ -155,16 +316,12 @@ dorky details and deletia:
 
   currently: atomicalign deepequalerrors nilness sortslice unusedwrite embeddirective
 
-- **staticcheck**: four suites:
-
-	add(simple.Analyzers, nil)
-	add(staticcheck.Analyzers - SA5009, SA5011
-	add(stylecheck.Analyzers, nil)
-	add(quickfix.Analyzers, nil)
+- **staticcheck**: four suites (S=simple, SA=static analysis, QF=quickfix, ST=stylecheck)
+  Only a hand-picked subset of them are enabled by default.
 
 - **Experimental analyzers**. Gopls has some analyzers that are not
   enabled by default, because they produce too high a rate of false
-  positives. For example, fieldalignment, shadow, useany.
+  positives. For example, fieldalignment, shadow.
 
 Note: fillstruct is not a real analyzer.
 

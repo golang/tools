@@ -1,0 +1,9 @@
+package rmimport
+
+// Test that application of two fixes that each remove the second-last
+// import of "a" results in removal of the import. This is implemented
+// by the general analysis fix logic, not by any one analyzer.
+func _() {
+	print(2) // want `should be inlined`
+	print(2) // want `should be inlined`
+}

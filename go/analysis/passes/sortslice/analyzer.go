@@ -15,9 +15,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = `check the argument type of sort.Slice
@@ -33,8 +33,8 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	if !analysisutil.Imports(pass.Pkg, "sort") {
+func run(pass *analysis.Pass) (any, error) {
+	if !typesinternal.Imports(pass.Pkg, "sort") {
 		return nil, nil // doesn't directly import sort
 	}
 
@@ -46,10 +46,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
-		fn, _ := typeutil.Callee(pass.TypesInfo, call).(*types.Func)
-		if !analysisutil.IsFunctionNamed(fn, "sort", "Slice", "SliceStable", "SliceIsSorted") {
+		obj := typeutil.Callee(pass.TypesInfo, call)
+		if !typesinternal.IsFunctionNamed(obj, "sort", "Slice", "SliceStable", "SliceIsSorted") {
 			return
 		}
+		callee := obj.(*types.Func)
 
 		arg := call.Args[0]
 		typ := pass.TypesInfo.Types[arg].Type
@@ -126,7 +127,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		pass.Report(analysis.Diagnostic{
 			Pos:            call.Pos(),
 			End:            call.End(),
-			Message:        fmt.Sprintf("%s's argument must be a slice; is called with %s", fn.FullName(), typ.String()),
+			Message:        fmt.Sprintf("%s's argument must be a slice; is called with %s", callee.FullName(), typ.String()),
 			SuggestedFixes: fixes,
 		})
 	})

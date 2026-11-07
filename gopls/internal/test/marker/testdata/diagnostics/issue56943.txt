@@ -3,6 +3,11 @@ unexported interface methods in non-workspace packages.
 
 Previously, we would fail to produce a diagnostic because we trimmed the AST.
 See golang/go#56943.
+-- settings.json --
+{
+	"pullDiagnostics": true
+}
+
 -- main.go --
 package main
 

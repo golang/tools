@@ -108,4 +108,4 @@ func (m *BuilderMode) Set(s string) error {
 }
 
 // Get returns m.
-func (m BuilderMode) Get() interface{} { return m }
+func (m BuilderMode) Get() any { return m }

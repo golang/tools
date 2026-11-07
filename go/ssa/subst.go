@@ -5,10 +5,10 @@
 package ssa
 
 import (
+	"fmt"
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 )
 
 // subster defines a type substitution operation of a set of type parameters
@@ -56,17 +56,24 @@ type subster struct {
 	// TODO(taking): consider adding Pos
 }
 
-// Returns a subster that replaces tparams[i] with targs[i]. Uses ctxt as a cache.
-// targs should not contain any types in tparams.
+// Returns a subster that replaces rtparams[i] with rtargs[i] and tparams[i] with targs[i].
+// Uses ctxt as a cache. rtargs and targs should not contain any types in rtparams or tparams.
 // fn is the generic function for which we are substituting.
-func makeSubster(ctxt *types.Context, fn *types.Func, tparams *types.TypeParamList, targs []types.Type, debug bool) *subster {
-	assert(tparams.Len() == len(targs), "makeSubster argument count must match")
+func makeSubster(ctxt *types.Context, fn *types.Func, rtparams *types.TypeParamList, rtargs []types.Type, tparams *types.TypeParamList, targs []types.Type) *subster {
+	got := len(rtargs) + len(targs)
+	want := rtparams.Len() + tparams.Len()
+	if got != want {
+		panic(fmt.Sprintf("makeSubster argument count must match: got %d; want %d", got, want))
+	}
 
 	subst := &subster{
-		replacements: make(map[*types.TypeParam]types.Type, tparams.Len()),
+		replacements: make(map[*types.TypeParam]types.Type, want),
 		cache:        make(map[types.Type]types.Type),
 		origin:       fn.Origin(),
 		ctxt:         ctxt,
+	}
+	for i := 0; i < rtparams.Len(); i++ {
+		subst.replacements[rtparams.At(i)] = rtargs[i]
 	}
 	for i := 0; i < tparams.Len(); i++ {
 		subst.replacements[tparams.At(i)] = targs[i]
@@ -144,14 +151,11 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 	case *types.Interface:
 		return subst.interface_(t)
 
-	case *aliases.Alias:
+	case *types.Alias:
 		return subst.alias(t)
 
 	case *types.Named:
 		return subst.named(t)
-
-	case *opaqueType:
-		return t // opaque types are never substituted
 
 	default:
 		panic("unreachable")
@@ -227,7 +231,7 @@ func (subst *subster) var_(v *types.Var) *types.Var {
 			if v.IsField() {
 				return types.NewField(v.Pos(), v.Pkg(), v.Name(), typ, v.Embedded())
 			}
-			return types.NewVar(v.Pos(), v.Pkg(), v.Name(), typ)
+			return types.NewParam(v.Pos(), v.Pkg(), v.Name(), typ)
 		}
 	}
 	return v
@@ -266,7 +270,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var methods []*types.Func
 	initMethods := func(n int) { // copy first n explicit methods
 		methods = make([]*types.Func, iface.NumExplicitMethods())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f := iface.ExplicitMethod(i)
 			norecv := changeRecv(f.Type().(*types.Signature), nil)
 			methods[i] = types.NewFunc(f.Pos(), f.Pkg(), f.Name(), norecv)
@@ -290,7 +294,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	var embeds []types.Type
 	initEmbeds := func(n int) { // copy first n embedded types
 		embeds = make([]types.Type, iface.NumEmbeddeds())
-		for i := 0; i < n; i++ {
+		for i := range n {
 			embeds[i] = iface.EmbeddedType(i)
 		}
 	}
@@ -317,16 +321,76 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	return types.NewInterfaceType(methods, embeds).Complete()
 }
 
-func (subst *subster) alias(t *aliases.Alias) types.Type {
-	// TODO(go.dev/issues/46477): support TypeParameters once these are available from go/types.
-	u := aliases.Unalias(t)
-	if s := subst.typ(u); s != u {
-		// If there is any change, do not create a new alias.
-		return s
+func (subst *subster) alias(t *types.Alias) types.Type {
+	// See subster.named. This follows the same strategy.
+	tparams := t.TypeParams()
+	targs := t.TypeArgs()
+	tname := t.Obj()
+	torigin := t.Origin()
+
+	if !declaredWithin(tname, subst.origin) {
+		// t is declared outside of the function origin. So t is a package level type alias.
+		if targs.Len() == 0 {
+			// No type arguments so no instantiation needed.
+			return t
+		}
+
+		// Instantiate with the substituted type arguments.
+		newTArgs := subst.typelist(targs)
+		return subst.instantiate(torigin, newTArgs)
 	}
-	// If there is no change, t did not reach any type parameter.
-	// Keep the Alias.
-	return t
+
+	if targs.Len() == 0 {
+		// t is declared within the function origin and has no type arguments.
+		//
+		// Example: This corresponds to A or B in F, but not A[int]:
+		//
+		//     func F[T any]() {
+		//       type A[S any] = struct{t T, s S}
+		//       type B = T
+		//       var x A[int]
+		//       ...
+		//     }
+		//
+		// This is somewhat different than *Named as *Alias cannot be created recursively.
+
+		// Copy and substitute type params.
+		var newTParams []*types.TypeParam
+		for cur := range tparams.TypeParams() {
+			cobj := cur.Obj()
+			cname := types.NewTypeName(cobj.Pos(), cobj.Pkg(), cobj.Name(), nil)
+			ntp := types.NewTypeParam(cname, nil)
+			subst.cache[cur] = ntp // See the comment "Note: Subtle" in subster.named.
+			newTParams = append(newTParams, ntp)
+		}
+
+		// Substitute rhs.
+		rhs := subst.typ(t.Rhs())
+
+		// Create the fresh alias.
+		tname := types.NewTypeName(tname.Pos(), tname.Pkg(), tname.Name(), nil)
+		types.NewAlias(tname, rhs).SetTypeParams(newTParams)
+
+		// Substitute into all of the constraints after they are created.
+		for i, ntp := range newTParams {
+			bound := tparams.At(i).Constraint()
+			ntp.SetConstraint(subst.typ(bound))
+		}
+		return tname.Type()
+	}
+
+	// t is declared within the function origin and has type arguments.
+	//
+	// Example: This corresponds to A[int] in F. Cases A and B are handled above.
+	//     func F[T any]() {
+	//       type A[S any] = struct{t T, s S}
+	//       type B = T
+	//       var x A[int]
+	//       ...
+	//     }
+	subOrigin := subst.typ(torigin)
+	subTArgs := subst.typelist(targs)
+	return subst.instantiate(subOrigin, subTArgs)
 }
 
 func (subst *subster) named(t *types.Named) types.Type {
@@ -423,8 +487,7 @@ func (subst *subster) named(t *types.Named) types.Type {
 		obj := types.NewTypeName(tname.Pos(), tname.Pkg(), tname.Name(), nil)
 		fresh := types.NewNamed(obj, nil, nil)
 		var newTParams []*types.TypeParam
-		for i := 0; i < tparams.Len(); i++ {
-			cur := tparams.At(i)
+		for cur := range tparams.TypeParams() {
 			cobj := cur.Obj()
 			cname := types.NewTypeName(cobj.Pos(), cobj.Pkg(), cobj.Name(), nil)
 			ntp := types.NewTypeParam(cname, nil)
@@ -456,7 +519,7 @@ func (subst *subster) named(t *types.Named) types.Type {
 
 func (subst *subster) instantiate(orig types.Type, targs []types.Type) types.Type {
 	i, err := types.Instantiate(subst.ctxt, orig, targs, false)
-	assert(err == nil, "failed to Instantiate Named type")
+	assert(err == nil, "failed to Instantiate named (Named or Alias) type")
 	if c, _ := subst.uniqueness.At(i).(types.Type); c != nil {
 		return c.(types.Type)
 	}
@@ -478,7 +541,7 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 	// We are choosing not to support tparams.Len() > 0 until a need has been observed in practice.
 	//
 	// There are some known usages for types.Types coming from types.{Eval,CheckExpr}.
-	// To support tparams.Len() > 0, we just need to do the following [psuedocode]:
+	// To support tparams.Len() > 0, we just need to do the following [pseudocode]:
 	//   targs := {subst.replacements[tparams[i]]]}; Instantiate(ctxt, t, targs, false)
 
 	assert(tparams.Len() == 0, "Substituting types.Signatures with generic functions are currently unsupported.")
@@ -501,77 +564,4 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 		return types.NewSignatureType(recv, nil, nil, params, results, t.Variadic())
 	}
 	return t
-}
-
-// reaches returns true if a type t reaches any type t' s.t. c[t'] == true.
-// It updates c to cache results.
-//
-// reaches is currently only part of the wellFormed debug logic, and
-// in practice c is initially only type parameters. It is not currently
-// relied on in production.
-func reaches(t types.Type, c map[types.Type]bool) (res bool) {
-	if c, ok := c[t]; ok {
-		return c
-	}
-
-	// c is populated with temporary false entries as types are visited.
-	// This avoids repeat visits and break cycles.
-	c[t] = false
-	defer func() {
-		c[t] = res
-	}()
-
-	switch t := t.(type) {
-	case *types.TypeParam, *types.Basic:
-		return false
-	case *types.Array:
-		return reaches(t.Elem(), c)
-	case *types.Slice:
-		return reaches(t.Elem(), c)
-	case *types.Pointer:
-		return reaches(t.Elem(), c)
-	case *types.Tuple:
-		for i := 0; i < t.Len(); i++ {
-			if reaches(t.At(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Struct:
-		for i := 0; i < t.NumFields(); i++ {
-			if reaches(t.Field(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Map:
-		return reaches(t.Key(), c) || reaches(t.Elem(), c)
-	case *types.Chan:
-		return reaches(t.Elem(), c)
-	case *types.Signature:
-		if t.Recv() != nil && reaches(t.Recv().Type(), c) {
-			return true
-		}
-		return reaches(t.Params(), c) || reaches(t.Results(), c)
-	case *types.Union:
-		for i := 0; i < t.Len(); i++ {
-			if reaches(t.Term(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Interface:
-		for i := 0; i < t.NumEmbeddeds(); i++ {
-			if reaches(t.Embedded(i), c) {
-				return true
-			}
-		}
-		for i := 0; i < t.NumExplicitMethods(); i++ {
-			if reaches(t.ExplicitMethod(i).Type(), c) {
-				return true
-			}
-		}
-	case *types.Named, *aliases.Alias:
-		return reaches(t.Underlying(), c)
-	default:
-		panic("unreachable")
-	}
-	return false
 }

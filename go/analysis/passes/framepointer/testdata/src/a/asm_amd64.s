@@ -11,6 +11,13 @@ TEXT ·bad2(SB), 0, $0
 TEXT ·bad3(SB), 0, $0
 	MOVQ	6(AX), BP // want `frame pointer is clobbered before saving`
 	RET
+TEXT ·bad4(SB), 0, $0
+	CMPQ	AX, BX
+	JEQ	skip
+	// Assume the above conditional branch is not taken
+	MOVQ	$0, BP // want `frame pointer is clobbered before saving`
+skip:
+	RET
 TEXT ·good1(SB), 0, $0
 	PUSHQ	BP
 	MOVQ	$0, BP // this is ok
@@ -23,7 +30,7 @@ TEXT ·good2(SB), 0, $0
 	RET
 TEXT ·good3(SB), 0, $0
 	CMPQ	AX, BX
-	JEQ	skip
+	JMP	skip
 	MOVQ	$0, BP // this is ok
 skip:
 	RET

@@ -7,7 +7,7 @@ type P struct{}
 
 func (P) M() {} //@rename("M", "N", MToN)
 
-var x = []*P{{}}
+var _ = []*P{{}}
 -- @MToN/p.go --
 @@ -5 +5 @@
 -func (P) M() {} //@rename("M", "N", MToN)

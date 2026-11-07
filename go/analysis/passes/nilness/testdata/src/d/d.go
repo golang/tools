@@ -53,3 +53,45 @@ func noninvoke[T ~func()]() {
 	var x T
 	x() // want "nil dereference in dynamic function call"
 }
+
+// Indexing a type parameter whose type set mixes *array and slice
+// types has no core type, but is a nil dereference nonetheless.
+func indexMixed[P *[4]int | []int](p P) int {
+	if p == nil {
+		return p[0] // want "nil dereference in index operation"
+	}
+	return 0
+}
+
+func indexArrayPtrs[P *[4]int | *myArray](p P) int {
+	if p == nil {
+		return p[0] // want "nil dereference in array index operation"
+	}
+	return 0
+}
+
+type myArray [4]int // *[4]int and *myArray have different underlying types
+
+// After a failed type assertion, the result is the zero value of the
+// asserted type, which is nil for interfaces and nillable type parameters.
+func assertIface(x any) {
+	if r, ok := x.(interface{ Read() }); !ok {
+		if r != nil { // want "impossible condition: nil != nil"
+			print()
+		}
+	}
+}
+
+func assertNillableTParam[P *int | []int](x any) {
+	if p, ok := x.(P); !ok {
+		if p != nil { // want "impossible condition: nil != nil"
+			print()
+		}
+	}
+}
+
+func assertUnrestrictedTParam[P any](x any) {
+	if p, ok := x.(P); !ok {
+		print(p) // zero value of P need not be nil
+	}
+}

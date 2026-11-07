@@ -5,7 +5,7 @@
 /*
 The deadcode command reports unreachable functions in Go programs.
 
-Usage: deadcode [flags] package...
+	Usage: deadcode [flags] package...
 
 The deadcode command loads a Go program from source then uses Rapid
 Type Analysis (RTA) to build a call graph of all the functions
@@ -25,8 +25,8 @@ function without an "Output:" comment is merely documentation:
 it is dead code, and does not contribute coverage.
 
 The -filter flag restricts results to packages that match the provided
-regular expression; its default value is the module name of the first
-package. Use -filter= to display all results.
+regular expression; its default value matches the listed packages and any other
+packages belonging to the same modules. Use -filter= to display all results.
 
 Example: show all dead code within the gopls module:
 
@@ -42,6 +42,13 @@ This may result in the latter function being spuriously reported as dead.
 By default, the tool does not report dead functions in generated files,
 as determined by the special comment described in
 https://go.dev/s/generatedcode. Use the -generated flag to include them.
+
+The tool also does not report marker interface methods by default.
+Marker interface methods are typically used to create compile-time constraints
+to ensure that only specific types can implement a particular interface.
+These methods have no other functionality (empty function body) and are never invoked.
+Although marker interface methods are technically unreachable, removing them would break
+the interface implementation. Hence, the tool excludes them from the report.
 
 In any case, just because a function is reported as dead does not mean
 it is unconditionally safe to delete it. For example, a dead function
@@ -121,6 +128,7 @@ is static or dynamic, and its source line number. For example:
 		Name      string   // name (sans package qualifier)
 		Position  Position // file/line/column of function declaration
 		Generated bool     // function is declared in a generated .go file
+		Marker    bool     // function is a marker interface method
 	}
 
 	type Edge struct {

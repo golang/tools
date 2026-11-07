@@ -1,0 +1,36 @@
+Test case for golang/go#74653. Inlining a generic function where a parameter type's
+selector name matches the type parameter name (e.g. p.Value) should not cause
+a type mismatch panic during type parameter substitution.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- p/p.go --
+package p
+
+type Value struct{}
+
+-- a.go --
+package foo
+
+import "example.com/p"
+
+func F[Value any](v p.Value) {}
+
+func _() {
+	F[*int](p.Value{}) //@ codeaction("F", "refactor.inline.call", result=inline)
+}
+
+-- @inline/a.go --
+package foo
+
+import "example.com/p"
+
+func F[Value any](v p.Value) {}
+
+func _() {
+	 //@ codeaction("F", "refactor.inline.call", result=inline)
+}
+

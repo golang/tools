@@ -12,12 +12,11 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // symbols implements the symbols verb for gopls
 type symbols struct {
-	app *Application
+	app *application
 }
 
 func (r *symbols) Name() string      { return "symbols" }
@@ -33,14 +32,14 @@ Example:
 }
 func (r *symbols) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("symbols expects 1 argument (position)")
+		return commandLineErrorf("symbols expects 1 argument (position)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	p := protocol.DocumentSymbolParams{
@@ -48,12 +47,12 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 			URI: from.URI(),
 		},
 	}
-	symbols, err := conn.DocumentSymbol(ctx, &p)
+	symbols, err := cli.server.DocumentSymbol(ctx, &p)
 	if err != nil {
 		return err
 	}
 	for _, s := range symbols {
-		if m, ok := s.(map[string]interface{}); ok {
+		if m, ok := s.(map[string]any); ok {
 			s, err = mapToSymbol(m)
 			if err != nil {
 				return err
@@ -69,7 +68,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func mapToSymbol(m map[string]interface{}) (interface{}, error) {
+func mapToSymbol(m map[string]any) (any, error) {
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, err

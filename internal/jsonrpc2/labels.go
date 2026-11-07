@@ -11,11 +11,11 @@ var (
 	Method        = keys.NewString("method", "")
 	RPCID         = keys.NewString("id", "")
 	RPCDirection  = keys.NewString("direction", "")
-	Started       = keys.NewInt64("started", "Count of started RPCs.")
-	SentBytes     = keys.NewInt64("sent_bytes", "Bytes sent.")         //, unit.Bytes)
-	ReceivedBytes = keys.NewInt64("received_bytes", "Bytes received.") //, unit.Bytes)
+	Started       = keys.NewInt("started", "count of started RPCs")
+	SentBytes     = keys.NewInt("sent_bytes", "bytes sent")
+	ReceivedBytes = keys.NewInt("received_bytes", "bytes received")
 	StatusCode    = keys.NewString("status.code", "")
-	Latency       = keys.NewFloat64("latency_ms", "Elapsed time in milliseconds") //, unit.Milliseconds)
+	Latency       = keys.NewFloat("latency", "elapsed time in seconds")
 )
 
 const (

@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/aliases"
 )
 
 // Features is a set of flags reporting which features of generic Go code a
@@ -81,7 +80,7 @@ func ForPackage(inspect *inspector.Inspector, info *types.Info) Features {
 				direct |= GenericFuncDecls
 			}
 		case *ast.InterfaceType:
-			tv := info.Types[n]
+			tv := info.Types[n] // may be zero
 			if iface, _ := tv.Type.(*types.Interface); iface != nil && !iface.IsMethodSet() {
 				direct |= EmbeddedTypeSets
 			}
@@ -93,7 +92,7 @@ func ForPackage(inspect *inspector.Inspector, info *types.Info) Features {
 	})
 
 	for _, inst := range info.Instances {
-		switch aliases.Unalias(inst.Type).(type) {
+		switch types.Unalias(inst.Type).(type) {
 		case *types.Named:
 			direct |= TypeInstantiation
 		case *types.Signature:

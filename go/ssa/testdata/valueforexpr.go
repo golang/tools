@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 // This file is the input to TestValueForExpr in source_test.go, which
@@ -58,7 +55,7 @@ func f(spilled, unspilled int) {
 
 	_ = /*@UnOp*/ (global)
 	/*@UnOp*/ (global)[""] = ""
-	/*@Global*/ (global) = map[string]string{}
+	/*@MakeMap*/ (global) = map[string]string{}
 
 	var local t
 	/*UnOp*/ (local.x) = 1

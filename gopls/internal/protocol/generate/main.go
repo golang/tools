@@ -25,20 +25,18 @@ import (
 
 const vscodeRepo = "https://github.com/microsoft/vscode-languageserver-node"
 
-// lspGitRef names a branch or tag in vscodeRepo.
+// lspGitRef names a commit in vscodeRepo.
 // It implicitly determines the protocol version of the LSP used by gopls.
 // For example, tag release/protocol/3.17.3 of the repo defines
 // protocol version 3.17.0 (as declared by the metaData.version field).
 // (Point releases are reflected in the git tag version even when they are cosmetic
 // and don't change the protocol.)
-var lspGitRef = "release/protocol/3.17.6-next.2"
+var lspGitRef = "release/protocol/3.18.2"
 
 var (
 	repodir   = flag.String("d", "", "directory containing clone of "+vscodeRepo)
 	outputdir = flag.String("o", ".", "output directory")
 	// PJW: not for real code
-	cmpdir      = flag.String("c", "", "directory of earlier code")
-	doboth      = flag.String("b", "", "generate and compare")
 	lineNumbers = flag.Bool("l", false, "add line numbers to generated output")
 )
 
@@ -60,12 +58,18 @@ func processinline() {
 		defer os.RemoveAll(tmpdir) // ignore error
 
 		// Clone the repository.
-		cmd := exec.Command("git", "clone", "--quiet", "--depth=1", "-c", "advice.detachedHead=false", vscodeRepo, "--branch="+lspGitRef, "--single-branch", tmpdir)
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatal(err)
+		run := func(args ...string) {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = tmpdir
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Fatal(err)
+			}
 		}
+		run("init", "--quiet")
+		run("fetch", "--quiet", "--depth=1", vscodeRepo, lspGitRef) // (accepts any commit ref)
+		run("-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD")
 
 		*repodir = tmpdir
 	} else {
@@ -73,6 +77,40 @@ func processinline() {
 	}
 
 	model := parse(filepath.Join(*repodir, "protocol/metaModel.json"))
+
+	// Add a client to server LSP method "command/resolve" for interactive
+	// refactoring. The method's param and result are both "ExecuteCommandParams".
+	// The types are only accessible from the "workspace/executeCommand" request.
+	//
+	// See microsoft/language-server-protocol#1164.
+	for _, req := range model.Requests {
+		if req.Method == "workspace/executeCommand" {
+			model.Requests = append(model.Requests, &Request{
+				Method:    "command/resolve",
+				ErrorData: req.ErrorData,
+				Direction: "clientToServer",
+				Params:    req.Params,
+				Result:    req.Params,
+			})
+			break
+		}
+	}
+
+	model.Requests = append(model.Requests, &Request{
+		Method:    "interactive/listEnum",
+		Direction: "clientToServer",
+		Params: &Type{
+			Kind: "reference",
+			Name: "InteractiveListEnumParams",
+		},
+		Result: &Type{
+			Kind: "array",
+			Element: &Type{
+				Kind: "reference",
+				Name: "FormEnumEntry",
+			},
+		},
+	})
 
 	findTypeNames(model)
 	generateOutput(model)
@@ -97,6 +135,8 @@ func writeclient() {
 	out.WriteString(
 		`import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -106,14 +146,27 @@ func writeclient() {
 		out.WriteString(cdecls[k])
 	}
 	out.WriteString("}\n\n")
-	out.WriteString(`func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
-	switch r.Method() {
+	out.WriteString(`
+func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
+	resp, valid, err := ClientDispatchCall(ctx, client, r.Method(), r.Params())
+	if !valid {
+		return false, nil
+	}
+
+	if err != nil {
+		return valid, reply(ctx, nil, err)
+	} else {
+	 	return valid, reply(ctx, resp, nil)
+	}
+}
+
+func ClientDispatchCall(ctx context.Context, client Client, method string, raw json.RawMessage) (resp any, _ bool, err error) {
+	switch method {
 `)
 	for _, k := range ccases.keys() {
 		out.WriteString(ccases[k])
 	}
-	out.WriteString(("\tdefault:\n\t\treturn false, nil\n\t}\n}\n\n"))
+	out.WriteString(("\tdefault:\n\t\treturn nil, false, nil\n\t}\n}\n\n"))
 	for _, k := range cfuncs.keys() {
 		out.WriteString(cfuncs[k])
 	}
@@ -126,6 +179,8 @@ func writeserver() {
 	out.WriteString(
 		`import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -136,15 +191,26 @@ func writeserver() {
 	}
 	out.WriteString(`
 }
-
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
-	switch r.Method() {
+	resp, valid, err := ServerDispatchCall(ctx, server, r.Method(), r.Params())
+	if !valid {
+		return false, nil
+	}
+
+	if err != nil {
+		return valid, reply(ctx, nil, err)
+	} else {
+	 	return valid, reply(ctx, resp, nil)
+	}
+}
+
+func ServerDispatchCall(ctx context.Context, server Server, method string, raw json.RawMessage) (resp any, _ bool, err error) {
+	switch method {
 `)
 	for _, k := range scases.keys() {
 		out.WriteString(scases[k])
 	}
-	out.WriteString(("\tdefault:\n\t\treturn false, nil\n\t}\n}\n\n"))
+	out.WriteString(("\tdefault:\n\t\treturn nil, false, nil\n\t}\n}\n\n"))
 	for _, k := range sfuncs.keys() {
 		out.WriteString(sfuncs[k])
 	}
@@ -187,8 +253,11 @@ func writeprotocol() {
 func writejsons() {
 	out := new(bytes.Buffer)
 	fmt.Fprintln(out, fileHdr)
-	out.WriteString("import \"encoding/json\"\n\n")
-	out.WriteString("import \"fmt\"\n")
+	out.WriteString(`import (
+	"encoding/json"
+	"fmt"
+)
+`)
 
 	out.WriteString(`
 // UnmarshalError indicates that a JSON value did not conform to
@@ -197,7 +266,7 @@ type UnmarshalError struct {
 	msg string
 }
 
-func (e UnmarshalError) Error() string {
+func (e *UnmarshalError) Error() string {
 	return e.msg
 }
 `)
@@ -213,7 +282,9 @@ func formatTo(basename string, src []byte) {
 	formatted, err := format.Source(src)
 	if err != nil {
 		failed := filepath.Join("/tmp", basename+".fail")
-		os.WriteFile(failed, src, 0644)
+		if err := os.WriteFile(failed, src, 0644); err != nil {
+			log.Fatal(err)
+		}
 		log.Fatalf("formatting %s: %v (see %s)", basename, err, failed)
 	}
 	if err := os.WriteFile(filepath.Join(*outputdir, basename), formatted, 0644); err != nil {

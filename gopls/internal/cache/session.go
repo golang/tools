@@ -5,12 +5,14 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,15 +25,13 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/util/persistent"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // NewSession creates a new gopls session with the given cache.
@@ -63,7 +63,7 @@ type Session struct {
 
 	viewMu  sync.Mutex
 	views   []*View
-	viewMap map[protocol.DocumentURI]*View // file->best view or nil; nil after shutdown
+	viewMap map[protocol.DocumentURI]*View // file->best view or nil; nil after shutdown; the key must be a clean uri.
 
 	// snapshots is a counting semaphore that records the number
 	// of unreleased snapshots associated with this session.
@@ -108,6 +108,10 @@ func (s *Session) Cache() *Cache {
 // TODO(rfindley): is the logic surrounding this error actually necessary?
 var ErrViewExists = errors.New("view already exists for session")
 
+// ErrSessionShutdown is returned when an operation is attempted on a Session
+// that has been shut down.
+var ErrSessionShutdown = errors.New("session is shut down")
+
 // NewView creates a new View, returning it and its first snapshot. If a
 // non-empty tempWorkspace directory is provided, the View will record a copy
 // of its gopls workspace module in that directory, so that client tooling
@@ -118,7 +122,7 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	defer s.viewMu.Unlock()
 
 	if s.viewMap == nil {
-		return nil, nil, nil, fmt.Errorf("session is shut down")
+		return nil, nil, nil, ErrSessionShutdown
 	}
 
 	// Querying the file system to check whether
@@ -138,13 +142,21 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	}
 	view, snapshot, release := s.createView(ctx, def)
 	s.views = append(s.views, view)
-	// we always need to drop the view map
-	s.viewMap = make(map[protocol.DocumentURI]*View)
+	s.viewMap[folder.Dir.Clean()] = view
 	return view, snapshot, release, nil
 }
 
+// HasView checks whether the uri's view exists.
+func (s *Session) HasView(uri protocol.DocumentURI) bool {
+	uri = uri.Clean()
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+	_, ok := s.viewMap[uri]
+	return ok
+}
+
 // createView creates a new view, with an initial snapshot that retains the
-// supplied context, detached from events and cancelation.
+// supplied context, detached from events and cancellation.
 //
 // The caller is responsible for calling the release function once.
 func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *Snapshot, func()) {
@@ -152,7 +164,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 
 	// We want a true background context and not a detached context here
 	// the spans need to be unrelated and no tag values should pollute it.
-	baseCtx := event.Detach(xcontext.Detach(ctx))
+	baseCtx := event.Detach(context.WithoutCancel(ctx))
 	backgroundCtx, cancel := context.WithCancel(baseCtx)
 
 	// Compute a skip function to use for module cache scanning.
@@ -168,14 +180,14 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		// Compute a prefix match, respecting segment boundaries, by ensuring
 		// the pattern (dir) has a trailing slash.
 		dirPrefix := strings.TrimSuffix(string(def.folder.Dir), "/") + "/"
-		filterer := NewFilterer(def.folder.Options.DirectoryFilters)
+		pathIncluded := PathIncludeFunc(def.folder.Options.DirectoryFilters)
 		skipPath = func(dir string) bool {
 			uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
 			// Note that the logic below doesn't handle the case where uri ==
 			// v.folder.Dir, because there is no point in excluding the entire
 			// workspace folder!
-			if rel := strings.TrimPrefix(uri, dirPrefix); rel != uri {
-				return filterer.Disallow(rel)
+			if rel, ok := strings.CutPrefix(uri, dirPrefix); ok {
+				return !pathIncluded(rel)
 			}
 			return false
 		}
@@ -191,7 +203,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		} else {
 			dirs = append(dirs, def.folder.Env.GOMODCACHE)
 			for m := range def.workspaceModFiles {
-				dirs = append(dirs, filepath.Dir(m.Path()))
+				dirs = append(dirs, m.DirPath())
 			}
 		}
 		ignoreFilter = newIgnoreFilter(dirs)
@@ -218,7 +230,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			ModCache:       s.cache.modCache.dirCache(def.folder.Env.GOMODCACHE),
 		}
 		if def.folder.Options.VerboseOutput {
-			pe.Logf = func(format string, args ...interface{}) {
+			pe.Logf = func(format string, args ...any) {
 				event.Log(ctx, fmt.Sprintf(format, args...))
 			}
 		}
@@ -229,37 +241,39 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		gocmdRunner:          s.gocmdRunner,
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
+		reloadSema:           make(chan struct{}, 1),
 		baseCtx:              baseCtx,
+		pkgIndex:             typerefs.NewPackageIndex(),
 		parseCache:           s.parseCache,
 		ignoreFilter:         ignoreFilter,
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
+		modcacheState:        newModcacheState(def.folder.Env.GOMODCACHE),
 	}
 
 	s.snapshotWG.Add(1)
 	v.snapshot = &Snapshot{
-		view:             v,
-		backgroundCtx:    backgroundCtx,
-		cancel:           cancel,
-		store:            s.cache.store,
-		refcount:         1, // Snapshots are born referenced.
-		done:             s.snapshotWG.Done,
-		packages:         new(persistent.Map[PackageID, *packageHandle]),
-		meta:             new(metadata.Graph),
-		files:            newFileMap(),
-		activePackages:   new(persistent.Map[PackageID, *Package]),
-		symbolizeHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		shouldLoad:       new(persistent.Map[PackageID, []PackagePath]),
-		unloadableFiles:  new(persistent.Set[protocol.DocumentURI]),
-		parseModHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		parseWorkHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modTidyHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modVulnHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modWhyHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		pkgIndex:         typerefs.NewPackageIndex(),
-		moduleUpgrades:   new(persistent.Map[protocol.DocumentURI, map[string]string]),
-		vulns:            new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
+		view:              v,
+		backgroundCtx:     backgroundCtx,
+		cancel:            cancel,
+		store:             s.cache.store,
+		refcount:          1, // Snapshots are born referenced.
+		done:              s.snapshotWG.Done,
+		packages:          new(persistent.Map[PackageID, *packageHandle]),
+		fullAnalysisKeys:  new(persistent.Map[PackageID, file.Hash]),
+		factyAnalysisKeys: new(persistent.Map[PackageID, file.Hash]),
+		meta:              new(metadata.Graph),
+		files:             newFileMap(),
+		shouldLoad:        new(persistent.Map[PackageID, []PackagePath]),
+		unloadableFiles:   new(persistent.Set[protocol.DocumentURI]),
+		parseModHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		parseWorkHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modTidyHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modVulnHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modWhyHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		moduleUpgrades:    new(persistent.Map[protocol.DocumentURI, map[string]string]),
+		vulns:             new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
 
 	// Snapshots must observe all open files, as there are some caching
@@ -280,7 +294,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 	)
 
 	// Initialize the view without blocking.
-	initCtx, initCancel := context.WithCancel(xcontext.Detach(ctx))
+	initCtx, initCancel := context.WithCancel(context.WithoutCancel(ctx))
 	v.cancelInitialWorkspaceLoad = initCancel
 	snapshot := v.snapshot
 
@@ -348,7 +362,7 @@ func (s *Session) View(id string) (*View, error) {
 // SnapshotOf returns a Snapshot corresponding to the given URI.
 //
 // In the case where the file can be  can be associated with a View by
-// bestViewForURI (based on directory information alone, without package
+// [RelevantViews] (based on directory information alone, without package
 // metadata), SnapshotOf returns the current Snapshot for that View. Otherwise,
 // it awaits loading package metadata and returns a Snapshot for the first View
 // containing a real (=not command-line-arguments) package for the file.
@@ -363,6 +377,7 @@ func (s *Session) View(id string) (*View, error) {
 //
 // On success, the caller must call the returned function to release the snapshot.
 func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Snapshot, func(), error) {
+	uri = uri.Clean()
 	// Fast path: if the uri has a static association with a view, return it.
 	s.viewMu.Lock()
 	v, err := s.viewOfLocked(ctx, uri)
@@ -402,7 +417,7 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 			continue // view was shut down
 		}
 		// We don't check the error from awaitLoaded, because a load failure (that
-		// doesn't result from context cancelation) should not prevent us from
+		// doesn't result from context cancellation) should not prevent us from
 		// continuing to search for the best view.
 		_ = snapshot.awaitLoaded(ctx)
 		g := snapshot.MetadataGraph()
@@ -418,8 +433,8 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 		//
 		// Any view can load a command-line-arguments package; aggregate those into
 		// views[0] below.
-		for _, id := range g.IDs[uri] {
-			if !metadata.IsCommandLineArguments(id) || g.Packages[id].Standalone {
+		for _, pkg := range g.ForFile[uri] {
+			if !metadata.IsCommandLineArguments(pkg.ID) || pkg.Standalone {
 				return snapshot, release, nil
 			}
 		}
@@ -432,7 +447,28 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 			return snapshot, release, nil // first valid snapshot
 		}
 	}
+	s.viewMu.Lock()
+	shutdown := s.viewMap == nil
+	s.viewMu.Unlock()
+	if shutdown {
+		return nil, nil, ErrSessionShutdown
+	}
 	return nil, nil, errNoViews
+}
+
+// FileOf returns the file for a given URI and its snapshot.
+// On success, the returned function must be called to release the snapshot.
+func (s *Session) FileOf(ctx context.Context, uri protocol.DocumentURI) (file.Handle, *Snapshot, func(), error) {
+	snapshot, release, err := s.SnapshotOf(ctx, uri)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	fh, err := snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	return fh, snapshot, release, nil
 }
 
 // errNoViews is sought by orphaned file diagnostics, to detect the case where
@@ -442,12 +478,12 @@ var errNoViews = errors.New("no views")
 // viewOfLocked evaluates the best view for uri, memoizing its result in
 // s.viewMap.
 //
-// Precondition: caller holds s.viewMu lock.
+// Precondition: caller holds s.viewMu lock; uri must be clean.
 //
 // May return (nil, nil) if no best view can be determined.
 func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*View, error) {
 	if s.viewMap == nil {
-		return nil, errors.New("session is shut down")
+		return nil, ErrSessionShutdown
 	}
 	v, hit := s.viewMap[uri]
 	if !hit {
@@ -551,13 +587,12 @@ checkFiles:
 		}
 		def, err = defineView(ctx, fs, folder, fh)
 		if err != nil {
-			// We should never call selectViewDefs with a cancellable context, so
-			// this should never fail.
-			return nil, bug.Errorf("failed to define view for open file: %v", err)
+			// e.g. folder path is invalid?
+			return nil, fmt.Errorf("failed to define view for open file: %v", err)
 		}
 		// It need not strictly be the case that the best view for a file is
 		// distinct from other views, as the logic of getViewDefinition and
-		// bestViewForURI does not align perfectly. This is not necessarily a bug:
+		// [RelevantViews] does not align perfectly. This is not necessarily a bug:
 		// there may be files for which we can't construct a valid view.
 		//
 		// Nevertheless, we should not create redundant views.
@@ -572,7 +607,7 @@ checkFiles:
 	return defs, nil
 }
 
-// The viewDefiner interface allows the bestView algorithm to operate on both
+// The viewDefiner interface allows the [RelevantViews] algorithm to operate on both
 // Views and viewDefinitions.
 type viewDefiner interface{ definition() *viewDefinition }
 
@@ -670,6 +705,12 @@ func RelevantViews[V viewDefiner](ctx context.Context, fs file.Source, uri proto
 	return relevantViews, nil
 }
 
+// zeroConfigSupported reports whether the specified file kind
+// is supported by gopls' "zero config" view-selection mechanism.
+func zeroConfigSupported(kind file.Kind) bool {
+	return kind == file.Go || kind == file.Asm
+}
+
 // matchingView returns the View or viewDefinition out of relevantViews that
 // matches the given file's build constraints, or nil if no match is found.
 //
@@ -687,17 +728,19 @@ func matchingView[V viewDefiner](fh file.Handle, relevantViews []V) V {
 
 	content, err := fh.Content()
 
-	// Port matching doesn't apply to non-go files, or files that no longer exist.
+	// Port matching applies only to existing Go and assembly files.
 	// Note that the behavior here on non-existent files shouldn't matter much,
 	// since there will be a subsequent failure.
-	if fileKind(fh) != file.Go || err != nil {
+	kind := fileKind(fh)
+	if err != nil || // file does not exist
+		!zeroConfigSupported(kind) {
 		return relevantViews[0]
 	}
 
 	// Find the first view that matches constraints.
 	// Content trimming is nontrivial, so do this outside of the loop below.
 	path := fh.URI().Path()
-	content = trimContentForPortMatch(content)
+	content = buildConstraintFile(kind, content)
 	for _, v := range relevantViews {
 		def := v.definition()
 		viewPort := port{def.GOOS(), def.GOARCH()}
@@ -715,10 +758,10 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 	defer s.viewMu.Unlock()
 
 	if s.viewMap == nil {
-		return nil, fmt.Errorf("session is shut down")
+		return nil, ErrSessionShutdown
 	}
 
-	view, err := s.viewOfLocked(ctx, uri)
+	view, err := s.viewOfLocked(ctx, uri.Clean())
 	if err != nil {
 		return nil, err
 	}
@@ -755,7 +798,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 
 	// Short circuit the logic below if s is shut down.
 	if s.viewMap == nil {
-		return nil, fmt.Errorf("session is shut down")
+		return nil, ErrSessionShutdown
 	}
 
 	// Update overlays.
@@ -773,6 +816,25 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 	// changed on disk.
 	checkViews := false
 
+	// Hack: collect folders from existing views.
+	// TODO(golang/go#57979): we really should track folders independent of
+	// Views, but since we always have a default View for each folder, this
+	// works for now.
+	var folders []*Folder // preserve folder order
+	workspaceFileGlobsSet := make(map[string]bool)
+	seen := make(map[*Folder]unit)
+	for _, v := range s.views {
+		if _, ok := seen[v.folder]; ok {
+			continue
+		}
+		seen[v.folder] = unit{}
+		folders = append(folders, v.folder)
+		for _, glob := range v.folder.Options.WorkspaceFiles {
+			workspaceFileGlobsSet[glob] = true
+		}
+	}
+	workspaceFileGlobs := slices.Collect(maps.Keys(workspaceFileGlobsSet))
+
 	changed := make(map[protocol.DocumentURI]file.Handle)
 	for _, c := range modifications {
 		fh := mustReadFile(ctx, s, c.URI)
@@ -788,7 +850,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
 		// check each view's source to handle the case of an explicit GOWORK value.
 		// Write a test that fails, and fix this.
-		if (isGoWork(c.URI) || isGoMod(c.URI)) && (c.Action == file.Save || c.OnDisk) {
+		if (isGoWork(c.URI) || isGoMod(c.URI) || isWorkspaceFile(c.URI, workspaceFileGlobs)) && (c.Action == file.Save || c.OnDisk) {
 			checkViews = true
 		}
 
@@ -804,10 +866,11 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 		// However, extracting the build comment is nontrivial, so we don't want to
 		// pay this cost when e.g. processing a bunch of on-disk changes due to a
 		// branch change. Be careful to only do this if both files are open Go
-		// files.
-		if old, ok := replaced[c.URI]; ok && !checkViews && fileKind(fh) == file.Go {
+		// or assembly files.
+		kind := fileKind(fh)
+		if old, ok := replaced[c.URI]; ok && !checkViews && zeroConfigSupported(kind) {
 			if new, ok := fh.(*overlay); ok {
-				if buildComment(old.content) != buildComment(new.content) {
+				if !bytes.Equal(buildConstraintFile(kind, old.content), buildConstraintFile(kind, new.content)) {
 					checkViews = true
 				}
 			}
@@ -815,28 +878,12 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 	}
 
 	if checkViews {
-		// Hack: collect folders from existing views.
-		// TODO(golang/go#57979): we really should track folders independent of
-		// Views, but since we always have a default View for each folder, this
-		// works for now.
-		var folders []*Folder // preserve folder order
-		seen := make(map[*Folder]unit)
-		for _, v := range s.views {
-			if _, ok := seen[v.folder]; ok {
-				continue
-			}
-			seen[v.folder] = unit{}
-			folders = append(folders, v.folder)
-		}
-
 		var openFiles []protocol.DocumentURI
 		for _, o := range s.Overlays() {
 			openFiles = append(openFiles, o.URI())
 		}
 		// Sort for determinism.
-		sort.Slice(openFiles, func(i, j int) bool {
-			return openFiles[i] < openFiles[j]
-		})
+		slices.Sort(openFiles)
 
 		// TODO(rfindley): can we avoid running the go command (go env)
 		// synchronously to change processing? Can we assume that the env did not
@@ -1042,6 +1089,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 			uri:     c.URI,
 			version: version,
 			content: text,
+			modTime: time.Now(),
 			kind:    kind,
 			hash:    hash,
 			saved:   sameContentOnDisk,
@@ -1057,7 +1105,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 }
 
 func mustReadFile(ctx context.Context, fs file.Source, uri protocol.DocumentURI) file.Handle {
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		// ReadFile cannot fail with an uncancellable context.
@@ -1073,11 +1121,13 @@ type brokenFile struct {
 	err error
 }
 
-func (b brokenFile) URI() protocol.DocumentURI { return b.uri }
-func (b brokenFile) Identity() file.Identity   { return file.Identity{URI: b.uri} }
-func (b brokenFile) SameContentsOnDisk() bool  { return false }
-func (b brokenFile) Version() int32            { return 0 }
-func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
+func (b brokenFile) String() string              { return b.uri.Path() }
+func (b brokenFile) URI() protocol.DocumentURI   { return b.uri }
+func (b brokenFile) Identity() file.Identity     { return file.Identity{URI: b.uri} }
+func (b brokenFile) SameContentsOnDisk() bool    { return false }
+func (b brokenFile) Version() int32              { return 0 }
+func (b brokenFile) Content() ([]byte, error)    { return nil, b.err }
+func (b brokenFile) ModTime() (time.Time, error) { return time.Time{}, b.err }
 
 // FileWatchingGlobPatterns returns a set of glob patterns that the client is
 // required to watch for changes, and notify the server of them, in order to
@@ -1085,11 +1135,12 @@ func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 //
 // This set includes
 //  1. all go.mod and go.work files in the workspace; and
-//  2. for each Snapshot, its modules (or directory for ad-hoc views). In
+//  2. all files defined by the WorkspaceFiles option in BuildOptions (to support custom GOPACKAGESDRIVERS); and
+//  3. for each Snapshot, its modules (or directory for ad-hoc views). In
 //     module mode, this is the set of active modules (and for VS Code, all
 //     workspace directories within them, due to golang/go#42348).
 //
-// The watch for workspace go.work and go.mod files in (1) is sufficient to
+// The watch for workspace files in (1) is sufficient to
 // capture changes to the repo structure that may affect the set of views.
 // Whenever this set changes, we reload the workspace and invalidate memoized
 // files.
@@ -1125,9 +1176,7 @@ func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[protocol.Rel
 		if err != nil {
 			continue // view is shut down; continue with others
 		}
-		for k, v := range snapshot.fileWatchingGlobPatterns() {
-			patterns[k] = v
-		}
+		maps.Copy(patterns, snapshot.fileWatchingGlobPatterns())
 		release()
 	}
 	return patterns
@@ -1146,6 +1195,13 @@ func (s *Session) OrphanedFileDiagnostics(ctx context.Context) (map[protocol.Doc
 		// (Previously, it was possible to get all the way to packages.Load on a cancelled context)
 		return nil, err
 	}
+	s.viewMu.Lock()
+	if s.viewMap == nil {
+		s.viewMu.Unlock()
+		return nil, ErrSessionShutdown
+	}
+	s.viewMu.Unlock()
+
 	// Note: diagnostics holds a slice for consistency with other diagnostic
 	// funcs.
 	diagnostics := make(map[protocol.DocumentURI][]*Diagnostic)

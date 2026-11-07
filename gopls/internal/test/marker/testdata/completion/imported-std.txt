@@ -13,7 +13,8 @@ behaves correctly in go1.22. (When go1.22 is assured, we can remove
 the min_go flag but leave the test inputs unchanged.)
 
 -- flags --
--ignore_extra_diags -min_go=go1.22
+-ignore_extra_diags
+-min_go_command=go1.22
 
 -- go.mod --
 module example.com
@@ -28,16 +29,16 @@ import "go/token"
 import "go/types"
 
 // package-level decl
-var _ = types.Sat //@rankl("Sat", "Satisfies")
-var _ = types.Ali //@rankl("Ali", "!Alias")
+var _ = types.Sat //@rank(re"()Sat", "Satisfies")
+var _ = types.Ali //@rank(re"()Ali", "!Alias")
 
 // field
-var _ = new(types.Info).Use //@rankl("Use", "Uses")
-var _ = new(types.Info).Fil //@rankl("Fil", "!FileVersions")
+var _ = new(types.Info).Use //@rank(re"()Use", "Uses")
+var _ = new(types.Info).Fil //@rank(re"()Fil", "!FileVersions")
 
 // method
-var _ = new(types.Checker).Obje //@rankl("Obje", "ObjectOf")
-var _ = new(types.Checker).PkgN //@rankl("PkgN", "!PkgNameOf")
+var _ = new(types.Checker).Obje //@rank(re"()Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rank(re"()PkgN", "!PkgNameOf")
 
 -- b/b.go --
 //go:build go1.22
@@ -49,13 +50,13 @@ import "go/token"
 import "go/types"
 
 // package-level decl
-var _ = types.Sat //@rankl("Sat", "Satisfies")
-var _ = types.Ali //@rankl("Ali", "Alias")
+var _ = types.Sat //@rank(re"()Sat", "Satisfies")
+var _ = types.Ali //@rank(re"()Ali", "Alias")
 
 // field
-var _ = new(types.Info).Use //@rankl("Use", "Uses")
-var _ = new(types.Info).Fil //@rankl("Fil", "FileVersions")
+var _ = new(types.Info).Use //@rank(re"()Use", "Uses")
+var _ = new(types.Info).Fil //@rank(re"()Fil", "FileVersions")
 
 // method
-var _ = new(types.Checker).Obje //@rankl("Obje", "ObjectOf")
-var _ = new(types.Checker).PkgN //@rankl("PkgN", "PkgNameOf")
+var _ = new(types.Checker).Obje //@rank(re"()Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rank(re"()PkgN", "PkgNameOf")

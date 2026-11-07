@@ -10,121 +10,63 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/fuzzy"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
+	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
 var doc string
 
+// No standalone main.go: this analyzer only adds fixes to type errors,
+// and is thus useful only within gopls.
+
 var Analyzer = &analysis.Analyzer{
 	Name:             "fillreturns",
-	Doc:              analysisinternal.MustExtractDoc(doc, "fillreturns"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "fillreturns"),
+	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
 	RunDespiteErrors: true,
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
-	if info == nil {
-		return nil, fmt.Errorf("nil TypeInfo")
-	}
 
 outer:
 	for _, typeErr := range pass.TypeErrors {
-		// Filter out the errors that are not relevant to this analyzer.
-		if !FixesError(typeErr) {
-			continue
+		if !fixesError(typeErr) {
+			continue // irrelevant type error
 		}
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.Pos() <= typeErr.Pos && typeErr.Pos <= f.End() {
-				file = f
-				break
-			}
+		_, start, end, ok := typesinternal.ErrorCodeStartEnd(typeErr)
+		if !ok {
+			continue // no position information
 		}
-		if file == nil {
-			continue
+		curErr, ok := inspect.Root().FindByPos(start, end)
+		if !ok {
+			continue // can't find node
 		}
 
-		// Get the end position of the error.
-		// (This heuristic assumes that the buffer is formatted,
-		// at least up to the end position of the error.)
-		var buf bytes.Buffer
-		if err := format.Node(&buf, pass.Fset, file); err != nil {
-			continue
-		}
-		typeErrEndPos := analysisinternal.TypeErrorEndPos(pass.Fset, buf.Bytes(), typeErr.Pos)
-
-		// TODO(rfindley): much of the error handling code below returns, when it
-		// should probably continue.
-
-		// Get the path for the relevant range.
-		path, _ := astutil.PathEnclosingInterval(file, typeErr.Pos, typeErrEndPos)
-		if len(path) == 0 {
-			return nil, nil
-		}
-
-		// Find the enclosing return statement.
-		var ret *ast.ReturnStmt
-		var retIdx int
-		for i, n := range path {
-			if r, ok := n.(*ast.ReturnStmt); ok {
-				ret = r
-				retIdx = i
-				break
-			}
-		}
+		// Find cursor for enclosing return statement (which may be curErr itself).
+		ret, curRet := cursorutil.FirstEnclosing[*ast.ReturnStmt](curErr)
 		if ret == nil {
-			return nil, nil
+			continue // no enclosing return
 		}
 
-		// Get the function type that encloses the ReturnStmt.
-		var enclosingFunc *ast.FuncType
-		for _, n := range path[retIdx+1:] {
-			switch node := n.(type) {
-			case *ast.FuncLit:
-				enclosingFunc = node.Type
-			case *ast.FuncDecl:
-				enclosingFunc = node.Type
-			}
-			if enclosingFunc != nil {
-				break
-			}
-		}
-		if enclosingFunc == nil || enclosingFunc.Results == nil {
-			continue
-		}
-
-		// Skip any generic enclosing functions, since type parameters don't
-		// have 0 values.
-		// TODO(rfindley): We should be able to handle this if the return
-		// values are all concrete types.
-		if tparams := enclosingFunc.TypeParams; tparams != nil && tparams.NumFields() > 0 {
-			return nil, nil
-		}
-
-		// Find the function declaration that encloses the ReturnStmt.
-		var outer *ast.FuncDecl
-		for _, p := range path {
-			if p, ok := p.(*ast.FuncDecl); ok {
-				outer = p
-				break
-			}
-		}
-		if outer == nil {
-			return nil, nil
-		}
-
-		// Skip any return statements that contain function calls with multiple
-		// return values.
+		// Skip if any return argument is a tuple-valued function call.
 		for _, expr := range ret.Results {
 			e, ok := expr.(*ast.CallExpr)
 			if !ok {
@@ -135,25 +77,48 @@ outer:
 			}
 		}
 
+		// Get type of innermost enclosing function.
+		var funcType *ast.FuncType
+		curFunc, _ := enclosingFunc(curRet) // can't fail
+		switch fn := curFunc.Node().(type) {
+		case *ast.FuncLit:
+			funcType = fn.Type
+		case *ast.FuncDecl:
+			funcType = fn.Type
+
+			// Skip generic functions since type parameters don't have zero values.
+			// TODO(rfindley): We should be able to handle this if the return
+			// values are all concrete types.
+			if funcType.TypeParams.NumFields() > 0 {
+				continue
+			}
+		}
+		if funcType.Results == nil {
+			continue
+		}
+
 		// Duplicate the return values to track which values have been matched.
 		remaining := make([]ast.Expr, len(ret.Results))
 		copy(remaining, ret.Results)
 
-		fixed := make([]ast.Expr, len(enclosingFunc.Results.List))
+		fixed := make([]ast.Expr, len(funcType.Results.List))
 
 		// For each value in the return function declaration, find the leftmost element
 		// in the return statement that has the desired type. If no such element exists,
 		// fill in the missing value with the appropriate "zero" value.
 		// Beware that type information may be incomplete.
 		var retTyps []types.Type
-		for _, ret := range enclosingFunc.Results.List {
+		for _, ret := range funcType.Results.List {
 			retTyp := info.TypeOf(ret.Type)
 			if retTyp == nil {
 				return nil, nil
 			}
 			retTyps = append(retTyps, retTyp)
 		}
-		matches := analysisinternal.MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
+
+		file := astutil.EnclosingFile(curRet)
+		matches := MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
+		qual := typesinternal.FileQualifier(file, pass.Pkg)
 		for i, retTyp := range retTyps {
 			var match ast.Expr
 			var idx int
@@ -161,7 +126,7 @@ outer:
 				if t := info.TypeOf(val); t == nil || !matchingTypes(t, retTyp) {
 					continue
 				}
-				if !analysisinternal.IsZeroValue(val) {
+				if !isZeroExpr(val) {
 					match, idx = val, j
 					break
 				}
@@ -173,7 +138,7 @@ outer:
 
 			if match != nil {
 				fixed[i] = match
-				remaining = append(remaining[:idx], remaining[idx+1:]...)
+				remaining = slices.Delete(remaining, idx, idx+1)
 			} else {
 				names, ok := matches[retTyp]
 				if !ok {
@@ -183,7 +148,7 @@ outer:
 				// If no identifier matches the pattern, generate a zero value.
 				if best := fuzzy.BestMatch(retTyp.String(), names); best != "" {
 					fixed[i] = ast.NewIdent(best)
-				} else if zero := analysisinternal.ZeroValue(file, pass.Pkg, retTyp); zero != nil {
+				} else if zero, isValid := typesinternal.ZeroExpr(retTyp, qual); isValid {
 					fixed[i] = zero
 				} else {
 					return nil, nil
@@ -194,7 +159,7 @@ outer:
 		// Remove any non-matching "zero values" from the leftover values.
 		var nonZeroRemaining []ast.Expr
 		for _, expr := range remaining {
-			if !analysisinternal.IsZeroValue(expr) {
+			if !isZeroExpr(expr) {
 				nonZeroRemaining = append(nonZeroRemaining, expr)
 			}
 		}
@@ -213,8 +178,8 @@ outer:
 		}
 
 		pass.Report(analysis.Diagnostic{
-			Pos:     typeErr.Pos,
-			End:     typeErrEndPos,
+			Pos:     start,
+			End:     end,
 			Message: typeErr.Msg,
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Fill in return values",
@@ -253,7 +218,7 @@ var wrongReturnNumRegexes = []*regexp.Regexp{
 	regexp.MustCompile(`not enough return values`),
 }
 
-func FixesError(err types.Error) bool {
+func fixesError(err types.Error) bool {
 	msg := strings.TrimSpace(err.Msg)
 	for _, rx := range wrongReturnNumRegexes {
 		if rx.MatchString(msg) {
@@ -261,4 +226,116 @@ func FixesError(err types.Error) bool {
 		}
 	}
 	return false
+}
+
+// enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
+// that encloses c, if any.
+func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
+	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+}
+
+// isZeroExpr uses simple syntactic heuristics to report whether expr
+// is a obvious zero value, such as 0, "", nil, or false.
+// It cannot do better without type information.
+func isZeroExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		return e.Value == "0" || e.Value == `""`
+	case *ast.Ident:
+		return e.Name == "nil" || e.Name == "false"
+	default:
+		return false
+	}
+}
+
+// MatchingIdents finds the names of all identifiers in 'node' that match any of the given types.
+// 'pos' represents the position at which the identifiers may be inserted. 'pos' must be within
+// the scope of each of identifier we select. Otherwise, we will insert a variable at 'pos' that
+// is unrecognized.
+//
+// This function is shared with the 'fillstruct' analyzer.
+func MatchingIdents(typs []types.Type, node ast.Node, pos token.Pos, info *types.Info, pkg *types.Package) map[types.Type][]string {
+
+	// Initialize matches to contain the variable types we are searching for.
+	matches := make(map[types.Type][]string)
+	for _, typ := range typs {
+		if typ == nil {
+			continue // TODO(adonovan): is this reachable?
+		}
+		matches[typ] = nil // create entry
+	}
+
+	seen := map[types.Object]struct{}{}
+	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		// Prevent circular definitions. If 'pos' is within an assignment statement, do not
+		// allow any identifiers in that assignment statement to be selected. Otherwise,
+		// we could do the following, where 'x' satisfies the type of 'f0':
+		//
+		// x := fakeStruct{f0: x}
+		//
+		if assign, ok := n.(*ast.AssignStmt); ok && pos > assign.Pos() && pos <= assign.End() {
+			return false
+		}
+		if n.End() > pos {
+			return n.Pos() <= pos
+		}
+		ident, ok := n.(*ast.Ident)
+		if !ok || ident.Name == "_" {
+			return true
+		}
+		obj := info.Defs[ident]
+		if obj == nil || obj.Type() == nil {
+			return true
+		}
+		if _, ok := obj.(*types.TypeName); ok {
+			return true
+		}
+		// Prevent duplicates in matches' values.
+		if _, ok = seen[obj]; ok {
+			return true
+		}
+		seen[obj] = struct{}{}
+		// Find the scope for the given position. Then, check whether the object
+		// exists within the scope.
+		innerScope := pkg.Scope().Innermost(pos)
+		if innerScope == nil {
+			return true
+		}
+		_, foundObj := innerScope.LookupParent(ident.Name, pos)
+		if foundObj != obj {
+			return true
+		}
+		// The object must match one of the types that we are searching for.
+		// TODO(adonovan): opt: use typeutil.Map?
+		if names, ok := matches[obj.Type()]; ok {
+			matches[obj.Type()] = append(names, ident.Name)
+		} else {
+			// If the object type does not exactly match
+			// any of the target types, greedily find the first
+			// target type that the object type can satisfy.
+			for typ := range matches {
+				if equivalentTypes(obj.Type(), typ) {
+					matches[typ] = append(matches[typ], ident.Name)
+				}
+			}
+		}
+		return true
+	})
+	return matches
+}
+
+func equivalentTypes(want, got types.Type) bool {
+	if types.Identical(want, got) {
+		return true
+	}
+	// Code segment to help check for untyped equality from (golang/go#32146).
+	if rhs, ok := want.(*types.Basic); ok && rhs.Info()&types.IsUntyped > 0 {
+		if lhs, ok := got.Underlying().(*types.Basic); ok {
+			return rhs.Info()&types.IsConstType == lhs.Info()&types.IsConstType
+		}
+	}
+	return types.AssignableTo(want, got)
 }

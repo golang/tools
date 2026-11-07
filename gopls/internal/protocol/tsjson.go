@@ -6,13 +6,14 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
-// LSP metaData.version = 3.17.0.
+// Code generated from protocol/metaModel.json at ref release/protocol/3.18.2 (hash 20969f3e75cb3cd35c2bb794b1d15cc2dfbe4abb).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.18.2/protocol/metaModel.json
+// LSP metaData.version = 3.18.0.
 
-import "encoding/json"
-
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // UnmarshalError indicates that a JSON value did not conform to
 // one of the expected cases of an LSP union type.
@@ -20,7 +21,7 @@ type UnmarshalError struct {
 	msg string
 }
 
-func (e UnmarshalError) Error() string {
+func (e *UnmarshalError) Error() string {
 	return e.msg
 }
 func (t OrPLocation_workspace_symbol) MarshalJSON() ([]byte, error) {
@@ -383,6 +384,36 @@ func (t *Or_Diagnostic_code) UnmarshalJSON(x []byte) error {
 	return &UnmarshalError{"unmarshal failed to match one of [int32 string]"}
 }
 
+func (t Or_Diagnostic_message) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case MarkupContent:
+		return json.Marshal(x)
+	case string:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [MarkupContent string]", t)
+}
+
+func (t *Or_Diagnostic_message) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 MarkupContent
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 string
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [MarkupContent string]"}
+}
+
 func (t Or_DocumentDiagnosticReport) MarshalJSON() ([]byte, error) {
 	switch x := t.Value.(type) {
 	case RelatedFullDocumentDiagnosticReport:
@@ -441,6 +472,36 @@ func (t *Or_DocumentDiagnosticReportPartialResult_relatedDocuments_Value) Unmars
 		return nil
 	}
 	return &UnmarshalError{"unmarshal failed to match one of [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]"}
+}
+
+func (t Or_DocumentDiagnosticReportProgress) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case DocumentDiagnosticReport:
+		return json.Marshal(x)
+	case DocumentDiagnosticReportPartialResult:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [DocumentDiagnosticReport DocumentDiagnosticReportPartialResult]", t)
+}
+
+func (t *Or_DocumentDiagnosticReportProgress) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 DocumentDiagnosticReport
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 DocumentDiagnosticReportPartialResult
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [DocumentDiagnosticReport DocumentDiagnosticReportPartialResult]"}
 }
 
 func (t Or_DocumentFilter) MarshalJSON() ([]byte, error) {
@@ -1932,12 +1993,14 @@ func (t Or_TextDocumentEdit_edits_Elem) MarshalJSON() ([]byte, error) {
 	switch x := t.Value.(type) {
 	case AnnotatedTextEdit:
 		return json.Marshal(x)
+	case SnippetTextEdit:
+		return json.Marshal(x)
 	case TextEdit:
 		return json.Marshal(x)
 	case nil:
 		return []byte("null"), nil
 	}
-	return nil, fmt.Errorf("type %T not one of [AnnotatedTextEdit TextEdit]", t)
+	return nil, fmt.Errorf("type %T not one of [AnnotatedTextEdit SnippetTextEdit TextEdit]", t)
 }
 
 func (t *Or_TextDocumentEdit_edits_Elem) UnmarshalJSON(x []byte) error {
@@ -1950,12 +2013,17 @@ func (t *Or_TextDocumentEdit_edits_Elem) UnmarshalJSON(x []byte) error {
 		t.Value = h0
 		return nil
 	}
-	var h1 TextEdit
+	var h1 SnippetTextEdit
 	if err := json.Unmarshal(x, &h1); err == nil {
 		t.Value = h1
 		return nil
 	}
-	return &UnmarshalError{"unmarshal failed to match one of [AnnotatedTextEdit TextEdit]"}
+	var h2 TextEdit
+	if err := json.Unmarshal(x, &h2); err == nil {
+		t.Value = h2
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [AnnotatedTextEdit SnippetTextEdit TextEdit]"}
 }
 
 func (t Or_TextDocumentFilter) MarshalJSON() ([]byte, error) {
@@ -2097,6 +2165,36 @@ func (t *Or_WorkspaceEdit_documentChanges_Elem) UnmarshalJSON(x []byte) error {
 		return nil
 	}
 	return &UnmarshalError{"unmarshal failed to match one of [CreateFile DeleteFile RenameFile TextDocumentEdit]"}
+}
+
+func (t Or_WorkspaceOptions_textDocumentContent) MarshalJSON() ([]byte, error) {
+	switch x := t.Value.(type) {
+	case TextDocumentContentOptions:
+		return json.Marshal(x)
+	case TextDocumentContentRegistrationOptions:
+		return json.Marshal(x)
+	case nil:
+		return []byte("null"), nil
+	}
+	return nil, fmt.Errorf("type %T not one of [TextDocumentContentOptions TextDocumentContentRegistrationOptions]", t)
+}
+
+func (t *Or_WorkspaceOptions_textDocumentContent) UnmarshalJSON(x []byte) error {
+	if string(x) == "null" {
+		t.Value = nil
+		return nil
+	}
+	var h0 TextDocumentContentOptions
+	if err := json.Unmarshal(x, &h0); err == nil {
+		t.Value = h0
+		return nil
+	}
+	var h1 TextDocumentContentRegistrationOptions
+	if err := json.Unmarshal(x, &h1); err == nil {
+		t.Value = h1
+		return nil
+	}
+	return &UnmarshalError{"unmarshal failed to match one of [TextDocumentContentOptions TextDocumentContentRegistrationOptions]"}
 }
 
 func (t Or_textDocument_declaration) MarshalJSON() ([]byte, error) {

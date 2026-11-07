@@ -1,0 +1,14 @@
+Regression test for go.dev/issue/79335: crash when highlighting a
+continue'statement not inside a loop.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- p.go --
+package p
+
+func _() {
+	continue //@hiloc(cont, "continue", text), diag("continue", re"continue")
+	//@highlight(cont)
+}

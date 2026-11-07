@@ -26,3 +26,33 @@ var (
 		complUsed,
 	}
 )
+
+// Proposed counters for evaluating gopls change signature and rename. These
+// counters increment when the user attempts to perform one of these operations,
+// regardless of whether it succeeds.
+var (
+	countChangeSignature = counter.New("gopls/changesig")
+
+	countRename = counter.New("gopls/rename")
+)
+
+// Proposed counters for evaluating gopls refactoring codeactions add struct
+// tags and remove struct tags.
+var (
+	countAddStructTags = counter.New("gopls/structtags:add")
+
+	countRemoveStructTags = counter.New("gopls/structtags:remove")
+)
+
+// Proposed counters to evaluate vulncheck_prompt usage patterns.
+var (
+	// Vulncheck prompt user choices.
+	countVulncheckPromptYes    = counter.New("gopls/vulncheck-prompt/choice:yes")
+	countVulncheckPromptNo     = counter.New("gopls/vulncheck-prompt/choice:no")
+	countVulncheckPromptAlways = counter.New("gopls/vulncheck-prompt/choice:always")
+	countVulncheckPromptNever  = counter.New("gopls/vulncheck-prompt/choice:never")
+
+	// Vulncheck prompt upgrade choice.
+	countVulncheckUpgradeAll    = counter.New("gopls/vulncheck-prompt/upgrade:yes")
+	countVulncheckUpgradeIgnore = counter.New("gopls/vulncheck-prompt/upgrade:no")
+)

@@ -1,0 +1,56 @@
+Test that an Implementation query correctly locates a method that is
+promoted via embedding from a third package: the embedding package's
+methodsets index does not store the method's position, so it must be
+resolved at query time via the declaring package's index
+(see methodsets.Index.LocationOf).
+
+The interface I has two methods so that impl.T (which provides only M)
+does not itself implement I; the only implementers are embed.S and
+chain.S2, both of which acquire M by embedding. Thus the only path to
+TM in the result of implementation("M", ...) is via cross-package
+resolution. (A resolution failure would be caught by bug.PanicOnBugs
+even though the result location—deduplicated—would otherwise look
+correct.)
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- iface/iface.go --
+package iface
+
+type I interface { //@loc(I, "I"),implementation("I", S, S2)
+	M() //@loc(IM, "M"),implementation("M", TM)
+	N() //@loc(IN, "N"),implementation("N", SN)
+}
+
+-- impl/impl.go --
+package impl
+
+type T struct{} //@loc(T, "T")
+
+func (T) M() {} //@loc(TM, "M")
+
+-- embed/embed.go --
+package embed
+
+import "example.com/impl"
+
+// S implements iface.I: M is promoted from impl.T, N is declared here.
+type S struct { //@loc(S, "S"),implementation("S", I)
+	impl.T
+}
+
+func (S) N() {} //@loc(SN, "N")
+
+-- chain/chain.go --
+package chain
+
+import "example.com/embed"
+
+// S2 tests two-level embedding: S2 → embed.S → impl.T.
+// Both M (declaring package impl) and N (declaring package embed) are
+// promoted, exercising resolution against two different indexes.
+type S2 struct { //@loc(S2, "S2"),implementation("S2", I)
+	embed.S
+}

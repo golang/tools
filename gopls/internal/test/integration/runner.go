@@ -25,11 +25,10 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 // Mode is a bitmask that defines for which execution modes a test should run.
@@ -56,13 +55,23 @@ import (
 type Mode int
 
 const (
+	// NoMode represents an empty mode filter.
+	//
+	// When passed to the Modes() option, it explicitly instructs the runner
+	// to run the test in zero modes (effectively skipping the test).
+	//
+	// This is distinct from not specifying the Modes() option at all (which
+	// defaults to a nil pointer, causing the runner to fall back to its
+	// DefaultModes).
+	NoMode Mode = 0
+
 	// Default mode runs gopls with the default options, communicating over pipes
 	// to emulate the lsp sidecar execution mode, which communicates over
 	// stdin/stdout.
 	//
 	// It uses separate servers for each test, but a shared cache, to avoid
 	// duplicating work when processing GOROOT.
-	Default Mode = 1 << iota
+	Default Mode = 1 << (iota - 1) // 1, because iota = 1
 
 	// Forwarded uses the default options, but forwards connections to a shared
 	// in-process gopls server.
@@ -77,6 +86,8 @@ const (
 
 func (m Mode) String() string {
 	switch m {
+	case NoMode:
+		return "none"
 	case Default:
 		return "default"
 	case Forwarded:
@@ -142,14 +153,13 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		config := defaultConfig()
 		for _, opt := range opts {
 			opt.set(&config)
 		}
 		modes := r.DefaultModes
-		if config.modes != 0 {
-			modes = config.modes
+		if config.modes != nil {
+			modes = *config.modes
 		}
 		if modes&tc.mode == 0 {
 			continue
@@ -173,7 +183,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			}
 
 			// TODO(rfindley): do we need an instance at all? Can it be removed?
-			ctx = debug.WithInstance(ctx, "off")
+			ctx = debug.WithInstance(ctx, "")
 
 			rootDir := filepath.Join(r.tempDir, filepath.FromSlash(t.Name()))
 			if err := os.MkdirAll(rootDir, 0755); err != nil {
@@ -195,15 +205,26 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			defer func() {
 				if !r.SkipCleanup {
 					if err := sandbox.Close(); err != nil {
-						pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+						pprof.Lookup("goroutine").WriteTo(os.Stderr, 1) // ignore error
 						t.Errorf("closing the sandbox: %v", err)
 					}
 				}
 			}()
 
 			// Write the go.sum file for the requested directories, before starting the server.
+			var environ []string
+			for k, v := range config.editor.Env {
+				// We must manually resolve $SANDBOX_WORKDIR here because WriteGoSum invokes go list
+				// before fake.Editor is fully initialized (which normally handles this substitution
+				// natively in Env()). Surprisingly, there is no shared helper function for this
+				// string replacement, so we duplicate Editor.Env() substitution logic here.
+				v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Path())
+				environ = append(environ, fmt.Sprintf("%s=%s", k, v))
+			}
+			environ = append(environ, "GOWORK=off")
+
 			for _, dir := range config.writeGoSum {
-				if err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, []string{"GOWORK=off"}, true); err != nil {
+				if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, environ, true); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -215,22 +236,10 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			framer = ls.framer(jsonrpc2.NewRawStream)
 			ts := servertest.NewPipeServer(ss, framer)
 
-			awaiter := NewAwaiter(sandbox.Workdir)
-			editor, err := fake.NewEditor(sandbox, config.editor).Connect(ctx, ts, awaiter.Hooks())
-			if err != nil {
-				t.Fatal(err)
-			}
-			env := &Env{
-				T:       t,
-				Ctx:     ctx,
-				Sandbox: sandbox,
-				Editor:  editor,
-				Server:  ts,
-				Awaiter: awaiter,
-			}
+			env := ConnectGoplsEnv(t, ctx, sandbox, config.editor, ts)
 			defer func() {
 				if t.Failed() && r.PrintGoroutinesOnFailure {
-					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1) // ignore error
 				}
 				if (t.Failed() && !config.noLogsOnError) || *printLogs {
 					ls.printBuffers(t.Name(), os.Stderr)
@@ -242,7 +251,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				// the editor: in general we want to clean up before proceeding to the
 				// next test, and if there is a deadlock preventing closing it will
 				// eventually be handled by the `go test` timeout.
-				if err := editor.Close(xcontext.Detach(ctx)); err != nil {
+				if err := env.Editor.Close(context.WithoutCancel(ctx)); err != nil {
 					t.Errorf("closing editor: %v", err)
 				}
 			}()
@@ -253,13 +262,35 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 	}
 }
 
+// ConnectGoplsEnv creates a new Gopls environment for the given sandbox,
+// editor config, and server connector.
+//
+// TODO(rfindley): significantly refactor the way testing environments are
+// constructed.
+func ConnectGoplsEnv(t testing.TB, ctx context.Context, sandbox *fake.Sandbox, config fake.EditorConfig, connector servertest.Connector) *Env {
+	awaiter := NewAwaiter(sandbox.Workdir)
+	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, connector, awaiter.Hooks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &Env{
+		TB:      t,
+		Ctx:     ctx,
+		Sandbox: sandbox,
+		Server:  connector,
+		Editor:  editor,
+		Awaiter: awaiter,
+	}
+	return env
+}
+
 // longBuilders maps builders that are skipped when -short is set to a
 // (possibly empty) justification.
 var longBuilders = map[string]string{
-	"openbsd-amd64-64":        "go.dev/issue/42789",
-	"openbsd-386-64":          "go.dev/issue/42789",
-	"openbsd-386-68":          "go.dev/issue/42789",
-	"openbsd-amd64-68":        "go.dev/issue/42789",
+	"x_tools-gotip-openbsd-amd64":  "go.dev/issue/72145",
+	"x_tools-go1.24-openbsd-amd64": "go.dev/issue/72145",
+	"x_tools-go1.23-openbsd-amd64": "go.dev/issue/72145",
+
 	"darwin-amd64-10_12":      "",
 	"freebsd-amd64-race":      "",
 	"illumos-amd64":           "",
@@ -339,7 +370,7 @@ func (r *Runner) defaultServer() jsonrpc2.StreamServer {
 func (r *Runner) forwardedServer() jsonrpc2.StreamServer {
 	r.tsOnce.Do(func() {
 		ctx := context.Background()
-		ctx = debug.WithInstance(ctx, "off")
+		ctx = debug.WithInstance(ctx, "")
 		ss := lsprpc.NewStreamServer(cache.New(nil), false, nil)
 		r.ts = servertest.NewTCPServer(ctx, ss, nil)
 	})

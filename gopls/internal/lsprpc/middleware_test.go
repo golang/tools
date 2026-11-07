@@ -79,7 +79,7 @@ func TestHandshakeMiddleware(t *testing.T) {
 	if err := check(true); err != nil {
 		t.Fatalf("after handshake: %v", err)
 	}
-	conn.Close()
+	conn.Close() // ignore error
 	// Wait for up to ~2s for connections to get cleaned up.
 	delay := 25 * time.Millisecond
 	for retries := 3; retries >= 0; retries-- {
@@ -154,7 +154,7 @@ func (h *Handshaker) Middleware(inner jsonrpc2_v2.Binder) jsonrpc2_v2.Binder {
 
 		// Wrap the delegated handler to accept the handshake.
 		delegate := opts.Handler
-		opts.Handler = jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		opts.Handler = jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == HandshakeMethod {
 				var peerInfo PeerInfo
 				if err := json.Unmarshal(req.Params, &peerInfo); err != nil {
@@ -206,7 +206,7 @@ func (h *Handshaker) nextID() int64 {
 }
 
 func (h *Handshaker) cleanupAtDisconnect(conn *jsonrpc2_v2.Connection, peerID int64) {
-	conn.Wait()
+	conn.Wait() // ignore error
 
 	h.mu.Lock()
 	defer h.mu.Unlock()

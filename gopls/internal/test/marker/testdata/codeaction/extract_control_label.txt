@@ -1,0 +1,83 @@
+This test verifies the behavior of extract function when the extracted block contains:
+- At least one free branch statement
+- A labeled branch statement and its label, where the corresponding LabeledStmt
+may or may not be an EmptyStmt.
+See golang/go#77157
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+
+-- extractwithlabel.go --
+package extract
+
+//@codeaction(extractWithLabelAndStmt, "refactor.extract.function", edit=labelAndStmt)
+//@codeaction(extractWithLabelOnly, "refactor.extract.function", edit=labelOnly)
+
+func FuncGoTo(a int) {
+	for range "abc" {
+        if a > 5 { //@ loc(extractWithLabelAndStmt, re`(?s)if.*println.1.`), loc(extractWithLabelOnly, re`(?s)if.*label1:`)
+            continue
+        }
+		if a == 10 {
+			goto label1
+		}
+	label1:
+		println(1)
+	}
+}
+
+-- @labelAndStmt/extractwithlabel.go --
+@@ -8 +8,3 @@
+-        if a > 5 { //@ loc(extractWithLabelAndStmt, re`(?s)if.*println.1.`), loc(extractWithLabelOnly, re`(?s)if.*label1:`)
++        ctrl := newFunction(a)
++        switch ctrl {
++        case 1:
+@@ -11,5 +13 @@
+-		if a == 10 {
+-			goto label1
+-		}
+-	label1:
+-		println(1)
+@@ -19 +16,12 @@
++func newFunction(a int) int {
++	if a > 5 { //@ loc(extractWithLabelAndStmt, re`(?s)if.*println.1.`), loc(extractWithLabelOnly, re`(?s)if.*label1:`)
++		return 1
++	}
++	if a == 10 {
++		goto label1
++	}
++label1:
++	println(1)
++	return 0
++}
++
+-- @labelOnly/extractwithlabel.go --
+@@ -8 +8,3 @@
+-        if a > 5 { //@ loc(extractWithLabelAndStmt, re`(?s)if.*println.1.`), loc(extractWithLabelOnly, re`(?s)if.*label1:`)
++        ctrl := newFunction(a)
++        switch ctrl {
++        case 1:
+@@ -11,4 +13 @@
+-		if a == 10 {
+-			goto label1
+-		}
+-	label1:
+@@ -19 +17,12 @@
++func newFunction(a int) int {
++	if a > 5 { //@ loc(extractWithLabelAndStmt, re`(?s)if.*println.1.`), loc(extractWithLabelOnly, re`(?s)if.*label1:`)
++		return 1
++	}
++	if a == 10 {
++		goto label1
++	}
++label1:
++	;
++	return 0
++}
++

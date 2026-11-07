@@ -1,0 +1,38 @@
+Test of PkgName renaming initiated over ImportSpec.Path.
+
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+import "example.com/b" //@rename("b", "c", bToc)
+
+var _ = b.B
+
+-- a/a2.go --
+package a
+
+import b "example.com/b" //@rename(re"/(b)", "c", bToc2)
+
+var _ = b.B
+
+-- b/b.go --
+package b
+
+const B = 0
+
+-- @bToc/a/a.go --
+@@ -3 +3 @@
+-import "example.com/b" //@rename("b", "c", bToc)
++import c "example.com/b" //@rename("b", "c", bToc)
+@@ -5 +5 @@
+-var _ = b.B
++var _ = c.B
+-- @bToc2/a/a2.go --
+@@ -3 +3 @@
+-import b "example.com/b" //@rename(re"/(b)", "c", bToc2)
++import c "example.com/b" //@rename(re"/(b)", "c", bToc2)
+@@ -5 +5 @@
+-var _ = b.B
++var _ = c.B

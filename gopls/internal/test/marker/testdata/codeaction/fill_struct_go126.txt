@@ -1,0 +1,78 @@
+This file tests the behavior of the 'fill struct' code action in a Go 1.26 module,
+focusing on how gopls handles direct references to embedded fields in struct literals
+(a feature introduced in Go 1.27, see golang/go#9859).
+
+-- flags --
+-min_go_command=go1.26
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/fillstruct
+
+go 1.26
+
+-- malformed/methodasfield.go --
+package malformed
+
+type foo struct {
+	A, B, C string
+}
+
+func (f *foo) Bar() {}
+
+// Test that we don't crash when a method is used as a struct literal key.
+var _ = foo{
+	Bar: 0,
+} //@codeaction("}", "refactor.rewrite.fillStruct", edit=methodasfield)
+-- @methodasfield/malformed/methodasfield.go --
+@@ -12 +12,3 @@
++	A:   "",
++	B:   "",
++	C:   "",
+-- malformed/fieldconflict.go --
+package malformed
+
+type a struct {
+	b
+	a1 string
+	a2 string
+}
+
+type b struct {
+	b1 string
+}
+
+// In Go 1.26, direct reference to embedded fields (like b1: "") is invalid.
+// gopls treats "b1" as unknown, does not detect a conflict with b, and
+// suggests filling direct fields a1 and a2.
+var _ = a{
+	b:  b{},
+	b1: "",
+} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fieldconflict)
+-- @fieldconflict/malformed/fieldconflict.go --
+@@ -19 +19,2 @@
++	a1: "",
++	a2: "",
+-- malformed/embeddedfields.go --
+package malformed
+
+type E struct {
+	E1, E2 string
+}
+
+type T struct {
+	E
+	T1, T2 string
+}
+
+// In Go 1.26, direct reference to embedded fields (like E1: "") is invalid.
+// gopls treat "E1" as unknown, does not flatten E, and suggests filling direct
+// fields E, T1, and T2.
+var _ = T{
+	E1: "",
+} //@codeaction("}", "refactor.rewrite.fillStruct", edit=embeddedfieldsgo)
+-- @embeddedfieldsgo/malformed/embeddedfields.go --
+@@ -17 +17,3 @@
++	E:  E{},
++	T1: "",
++	T2: "",

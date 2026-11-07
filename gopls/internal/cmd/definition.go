@@ -14,11 +14,10 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/tool"
 )
 
-// A Definition is the result of a 'definition' query.
-type Definition struct {
+// A definitionJSON is the result of a 'definition' query.
+type definitionJSON struct {
 	Span        span   `json:"span"`        // span of the definition
 	Description string `json:"description"` // description of the denoted object
 }
@@ -34,7 +33,7 @@ const (
 
 // definition implements the definition verb for gopls.
 type definition struct {
-	app *Application
+	app *application
 
 	JSON              bool `flag:"json" help:"emit output in JSON format"`
 	MarkdownSupported bool `flag:"markdown" help:"support markdown in responses"`
@@ -60,7 +59,7 @@ definition-flags:
 // results to stdout.
 func (d *definition) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("definition expects 1 argument")
+		return commandLineErrorf("definition expects 1 argument")
 	}
 	// Plaintext makes more sense for the command line.
 	opts := d.app.options
@@ -73,13 +72,13 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 			o.PreferredContentFormat = protocol.Markdown
 		}
 	}
-	conn, err := d.app.connect(ctx)
+	cli, _, err := d.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -90,15 +89,15 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	p := protocol.DefinitionParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	locs, err := conn.Definition(ctx, &p)
+	locs, err := cli.server.Definition(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
 
 	if len(locs) == 0 {
-		return fmt.Errorf("%v: not an identifier", from)
+		return fmt.Errorf("%v: no definition location (not an identifier?)", from)
 	}
-	file, err = conn.openFile(ctx, locs[0].URI)
+	file, err = cli.openFile(ctx, locs[0].URI)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
@@ -110,7 +109,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	q := protocol.HoverParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	hover, err := conn.Hover(ctx, &q)
+	hover, err := cli.server.Hover(ctx, &q)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
@@ -119,7 +118,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 		description = strings.TrimSpace(hover.Contents.Value)
 	}
 
-	result := &Definition{
+	result := &definitionJSON{
 		Span:        definition,
 		Description: description,
 	}

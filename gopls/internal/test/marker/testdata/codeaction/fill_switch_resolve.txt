@@ -1,17 +1,6 @@
 This test checks the behavior of the 'fill switch' code action, with resolve support.
 See fill_switch.txt for same test without resolve support.
 
--- capabilities.json --
-{
-	"textDocument": {
-		"codeAction": {
-			"dataSupport": true,
-			"resolveSupport": {
-				"properties": ["edit"]
-			}
-		}
-	}
-}
 -- flags --
 -ignore_extra_diags
 
@@ -35,7 +24,7 @@ const (
 package fillswitch
 
 import (
-	"golang.org/lsptests/fillswitch/data"
+	dataalias "golang.org/lsptests/fillswitch/data"
 )
 
 type typeA int
@@ -59,21 +48,21 @@ type notificationTwo struct{}
 func (notificationTwo) isNotification() {}
 
 func doSwitch() {
-	var b data.TypeB
+	var b dataalias.TypeB
 	switch b {
-	case data.TypeBOne: //@codeactionedit(":", "refactor.rewrite", a1)
+	case dataalias.TypeBOne: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a1)
 	}
 
 	var a typeA
 	switch a {
-	case typeAThree: //@codeactionedit(":", "refactor.rewrite", a2)
+	case typeAThree: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a2)
 	}
 
 	var n notification
-	switch n.(type) { //@codeactionedit("{", "refactor.rewrite", a3)
+	switch n.(type) { //@codeaction("{", "refactor.rewrite.fillSwitch", edit=a3)
 	}
 
-	switch nt := n.(type) { //@codeactionedit("{", "refactor.rewrite", a4)
+	switch nt := n.(type) { //@codeaction("{", "refactor.rewrite.fillSwitch", edit=a4)
 	}
 
 	var s struct {
@@ -81,35 +70,50 @@ func doSwitch() {
 	}
 
 	switch s.a {
-	case typeAThree: //@codeactionedit(":", "refactor.rewrite", a5)
+	case typeAThree: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a5)
 	}
 }
 -- @a1/a.go --
-@@ -31 +31,4 @@
-+	case data.TypeBThree:
-+	case data.TypeBTwo:
+@@ -4 +4,2 @@
++	"fmt"
++
+@@ -31 +33,4 @@
++	case dataalias.TypeBThree:
++	case dataalias.TypeBTwo:
 +	default:
 +		panic(fmt.Sprintf("unexpected data.TypeB: %#v", b))
 -- @a2/a.go --
-@@ -36 +36,4 @@
+@@ -4 +4,2 @@
++	"fmt"
++
+@@ -36 +38,4 @@
 +	case typeAOne:
 +	case typeATwo:
 +	default:
 +		panic(fmt.Sprintf("unexpected fillswitch.typeA: %#v", a))
 -- @a3/a.go --
-@@ -40 +40,4 @@
+@@ -4 +4,2 @@
++	"fmt"
++
+@@ -40 +42,4 @@
 +	case notificationOne:
 +	case notificationTwo:
 +	default:
 +		panic(fmt.Sprintf("unexpected fillswitch.notification: %#v", n))
 -- @a4/a.go --
-@@ -43 +43,4 @@
+@@ -4 +4,2 @@
++	"fmt"
++
+@@ -43 +45,4 @@
 +	case notificationOne:
 +	case notificationTwo:
 +	default:
 +		panic(fmt.Sprintf("unexpected fillswitch.notification: %#v", nt))
 -- @a5/a.go --
-@@ -51 +51,4 @@
+@@ -4 +4,2 @@
++	"fmt"
++
+@@ -51 +53,4 @@
 +	case typeAOne:
 +	case typeATwo:
 +	default:

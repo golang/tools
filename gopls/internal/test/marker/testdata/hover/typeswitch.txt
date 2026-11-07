@@ -1,0 +1,151 @@
+This test checks hover behavior on type switch cases and default clauses.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+type Node interface{ node() }
+type Expr interface{ Node; expr() }
+type Stmt interface{ Node; stmt() }
+
+type BasicLit struct{}
+func (*BasicLit) node() {}
+func (*BasicLit) expr() {}
+
+type BinaryExpr struct{}
+func (*BinaryExpr) node() {}
+func (*BinaryExpr) expr() {}
+
+type Ident struct{}
+func (*Ident) node() {}
+func (*Ident) expr() {}
+
+type UnaryExpr struct{}
+func (*UnaryExpr) node() {}
+func (*UnaryExpr) expr() {}
+
+type AssignStmt struct{}
+func (*AssignStmt) node() {}
+func (*AssignStmt) stmt() {}
+
+type BlockStmt struct{}
+func (*BlockStmt) node() {}
+func (*BlockStmt) stmt() {}
+
+type unexportedNode struct{}
+func (*unexportedNode) node() {}
+
+func F(n Node) {
+	switch n := n.(type) {
+	case Expr: //@ hover("case", "case Expr:", HoverCaseExpr)
+		_ = n
+	case *AssignStmt:
+		_ = n
+	case *BasicLit: //@diag("case", re"unreachable case clause"), hover("case", "case *BasicLit:", "matches no types")
+		_ = n
+	default: //@ hover("default", "default:", HoverDefault)
+		_ = n
+	}
+}
+
+func FAll(n Node) {
+	switch n := n.(type) {
+	case Expr: //@ hover("case", "case Expr:", "matches *BasicLit, *BinaryExpr, *Ident + 1 more")
+		_ = n
+	case *AssignStmt, *BlockStmt, *unexportedNode, nil:
+		_ = n
+	default: //@ hover("default", "default:", "matches no types")
+		_ = n
+	}
+}
+
+func FExprStmt(n Node) {
+	switch n.(type) {
+	case nil:
+	case Expr: //@ hover("case", "case Expr:", "matches *BasicLit, *BinaryExpr, *Ident + 1 more")
+	default: //@ hover("default", "default:", "matches *AssignStmt, *BlockStmt, *unexportedNode")
+	}
+}
+
+func FNonTypeSwitch(x int) {
+	switch x {
+	case 1:
+	default:
+	}
+}
+
+func FNested(n Node, x int) {
+	switch n := n.(type) {
+	case Expr:
+		switch x {
+		case 1:
+		default:
+		}
+		_ = n
+	default:
+		_ = n
+	}
+}
+
+-- @HoverCaseExpr --
+```go
+matches *BasicLit, *BinaryExpr, *Ident + 1 more
+```
+
+---
+
+Matches these 4 types from package example.com/a:
+
+  - \*BasicLit
+  - \*BinaryExpr
+  - \*Ident
+  - \*UnaryExpr
+-- @HoverDefault --
+```go
+matches nil, *BlockStmt, *unexportedNode
+```
+
+---
+
+Matches these 3 types from package example.com/a:
+
+  - nil
+  - \*BlockStmt
+  - \*unexportedNode
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func G(n a.Node) {
+	switch n := n.(type) {
+	case a.Expr: //@ hover("case", "case a.Expr:", "matches *BasicLit, *BinaryExpr, *Ident + 1 more")
+		_ = n
+	case *a.AssignStmt:
+		_ = n
+	default: //@ hover("default", "default:", "matches nil, *BlockStmt")
+		_ = n
+	}
+}
+
+-- c/c.go --
+package c
+
+type OpenReader interface{ Read() }
+type ReadA struct{}
+func (ReadA) Read() {}
+
+func H(r OpenReader) {
+	switch r := r.(type) {
+	case ReadA:
+		_ = r
+	case nil:
+		_ = r
+	default: //@ hover("default", "default:", "Matches no types from package example.com/c.")
+		_ = r
+	}
+}

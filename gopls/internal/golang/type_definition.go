@@ -7,16 +7,19 @@ package golang
 import (
 	"context"
 	"fmt"
-	"go/token"
+	"go/ast"
+	"go/types"
 
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
 // TypeDefinition handles the textDocument/typeDefinition request for Go files.
-func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "golang.TypeDefinition")
 	defer done()
 
@@ -24,30 +27,58 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(position)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
+	cur, _, _, _ := astutil.Select(pgf.Cursor(), start, end) // can't fail (start, end are within File)
 
-	// TODO(rfindley): handle type switch implicits correctly here: if the user
-	// jumps to the type definition of x in x := y.(type), it makes sense to jump
-	// to the type of y.
-	_, obj, _ := referencedObject(pkg, pgf, pos)
-	if obj == nil {
-		return nil, nil
+	// Find innermost enclosing expression that has a type.
+	// It needn't be an identifier.
+	var (
+		info = pkg.TypesInfo()
+		t    types.Type
+	)
+	for cur := range cur.Enclosing() {
+		expr, ok := cur.Node().(ast.Expr)
+		if !ok {
+			continue
+		}
+
+		// edge case: switch id := expr.(type) {}
+		// id has no type; use expr instead.
+		if cur.ParentEdgeKind() == edge.AssignStmt_Lhs &&
+			cur.Parent().ParentEdgeKind() == edge.TypeSwitchStmt_Assign {
+			expr = cur.Parent().Node().(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr).X
+		}
+
+		if id, ok := expr.(*ast.Ident); ok {
+			if obj := info.ObjectOf(id); obj != nil {
+				t = obj.Type()
+			}
+		} else {
+			t = info.TypeOf(expr)
+		}
+		if t != nil {
+			break
+		}
+	}
+	if t == nil {
+		return nil, fmt.Errorf("no enclosing expression has a type")
+	}
+	tnames := typeToObjects(t)
+	if len(tnames) == 0 {
+		return nil, fmt.Errorf("cannot find type name(s) from type %s", t)
 	}
 
-	tname := typeToObject(obj.Type())
-	if tname == nil {
-		return nil, fmt.Errorf("no type definition for %s", obj.Name())
-	}
-	if isBuiltin(tname) {
-		return nil, nil // built-ins (error, comparable) have no position
+	var locs []protocol.Location
+	for _, t := range tnames {
+		loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, t)
+		if err != nil {
+			return nil, err
+		}
+		locs = append(locs, loc)
 	}
 
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, tname.Pos(), tname.Pos()+token.Pos(len(tname.Name())))
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.Location{loc}, nil
+	return locs, nil
 }

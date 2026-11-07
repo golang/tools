@@ -27,38 +27,43 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.completion", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Completion", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
+	if params.Range.Start != params.Range.End {
+		return nil, fmt.Errorf("textDocument/completion request only applicable for position")
+	}
+	pos := params.Range.Start
+
 	var candidates []completion.CompletionItem
 	var surrounding *completion.Selection
 	switch snapshot.FileKind(fh) {
 	case file.Go:
-		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, params.Position, params.Context)
+		candidates, surrounding, err = completion.Completion(ctx, snapshot, fh, pos, params.Context)
 	case file.Mod:
 		candidates, surrounding = nil, nil
 	case file.Work:
-		cl, err := work.Completion(ctx, snapshot, fh, params.Position)
+		cl, err := work.Completion(ctx, snapshot, fh, pos)
 		if err != nil {
 			break
 		}
 		return cl, nil
 	case file.Tmpl:
 		var cl *protocol.CompletionList
-		cl, err = template.Completion(ctx, snapshot, fh, params.Position, params.Context)
+		cl, err = template.Completion(ctx, snapshot, fh, pos, params.Context)
 		if err != nil {
 			break // use common error handling, candidates==nil
 		}
 		return cl, nil
 	}
 	if err != nil {
-		event.Error(ctx, "no completions found", err, label.Position.Of(params.Position))
+		event.Error(ctx, "no completions found", err, label.Position.Of(pos))
 	}
 	if candidates == nil || surrounding == nil {
 		complEmpty.Inc()
@@ -102,6 +107,8 @@ func (s *server) saveLastCompletion(uri protocol.DocumentURI, version int32, ite
 	s.efficacyItems = items
 }
 
+// toProtocolCompletionItems converts the candidates to the protocol completion items,
+// the candidates must be sorted based on score as it will be respected by client side.
 func toProtocolCompletionItems(candidates []completion.CompletionItem, surrounding *completion.Selection, options *settings.Options) ([]protocol.CompletionItem, error) {
 	replaceRng, err := surrounding.Range()
 	if err != nil {
@@ -140,17 +147,21 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, surroundi
 			continue
 		}
 
-		doc := &protocol.Or_CompletionItem_documentation{
-			Value: protocol.MarkupContent{
-				Kind:  protocol.Markdown,
-				Value: golang.CommentToMarkdown(candidate.Documentation, options),
-			},
-		}
-		if options.PreferredContentFormat != protocol.Markdown {
-			doc.Value = candidate.Documentation
+		var doc *protocol.Or_CompletionItem_documentation
+		if candidate.Documentation != "" {
+			var value any
+			if options.PreferredContentFormat == protocol.Markdown {
+				value = protocol.MarkupContent{
+					Kind:  protocol.Markdown,
+					Value: golang.DocCommentToMarkdown(candidate.Documentation, options),
+				}
+			} else {
+				value = candidate.Documentation
+			}
+			doc = &protocol.Or_CompletionItem_documentation{Value: value}
 		}
 		var edits *protocol.Or_CompletionItem_textEdit
-		if options.InsertReplaceSupported {
+		if options.CompletionInsertReplaceSupported {
 			insertRng := insertRng0
 			if suffix == "" || strings.Contains(insertText, suffix) {
 				insertRng = replaceRng
@@ -194,6 +205,9 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, surroundi
 			Documentation: doc,
 			Tags:          protocol.NonNilSlice(candidate.Tags),
 			Deprecated:    candidate.Deprecated,
+		}
+		if options.CompletionLabelDetailsSupported {
+			item.LabelDetails = candidate.LabelDetails
 		}
 		items = append(items, item)
 	}

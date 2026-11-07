@@ -12,12 +12,6 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/keys"
-	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 // Binder builds a connection configuration.
@@ -64,7 +58,7 @@ type ConnectionOptions struct {
 // Connection is bidirectional; it does not have a designated server or client
 // end.
 type Connection struct {
-	seq int64 // must only be accessed using atomic operations
+	seq atomic.Int64 // must only be accessed using atomic operations
 
 	stateMu sync.Mutex
 	state   inFlightState // accessed only in updateInFlight
@@ -193,7 +187,6 @@ type incomingRequest struct {
 	*Request // the request being processed
 	ctx      context.Context
 	cancel   context.CancelFunc
-	endSpan  func() // called (and set to nil) when the response is sent
 }
 
 // Bind returns the options unmodified.
@@ -201,17 +194,46 @@ func (o ConnectionOptions) Bind(context.Context, *Connection) ConnectionOptions 
 	return o
 }
 
-// newConnection creates a new connection and runs it.
+// A ConnectionConfig configures a bidirectional jsonrpc2 connection.
+type ConnectionConfig struct {
+	Reader          Reader                    // required
+	Writer          Writer                    // required
+	Closer          io.Closer                 // required
+	Preempter       Preempter                 // optional
+	Bind            func(*Connection) Handler // required
+	OnDone          func()                    // optional
+	OnInternalError func(error)               // optional
+}
+
+// NewConnection creates a new [Connection] object and starts processing
+// incoming messages.
+func NewConnection(ctx context.Context, cfg ConnectionConfig) *Connection {
+	ctx = context.WithoutCancel(ctx)
+
+	c := &Connection{
+		state:           inFlightState{closer: cfg.Closer},
+		done:            make(chan struct{}),
+		writer:          make(chan Writer, 1),
+		onDone:          cfg.OnDone,
+		onInternalError: cfg.OnInternalError,
+	}
+	c.handler = cfg.Bind(c)
+	c.writer <- cfg.Writer
+	c.start(ctx, cfg.Reader, cfg.Preempter)
+	return c
+}
+
+// bindConnection creates a new connection and runs it.
 //
 // This is used by the Dial and Serve functions to build the actual connection.
 //
 // The connection is closed automatically (and its resources cleaned up) when
 // the last request has completed after the underlying ReadWriteCloser breaks,
 // but it may be stopped earlier by calling Close (for a clean shutdown).
-func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binder, onDone func()) *Connection {
+func bindConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binder, onDone func()) *Connection {
 	// TODO: Should we create a new event span here?
 	// This will propagate cancellation from ctx; should it?
-	ctx := notDone{bindCtx}
+	ctx := context.WithoutCancel(bindCtx)
 
 	c := &Connection{
 		state:  inFlightState{closer: rwc},
@@ -238,7 +260,11 @@ func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binde
 
 	c.writer <- framer.Writer(rwc)
 	reader := framer.Reader(rwc)
+	c.start(ctx, reader, options.Preempter)
+	return c
+}
 
+func (c *Connection) start(ctx context.Context, reader Reader, preempter Preempter) {
 	c.updateInFlight(func(s *inFlightState) {
 		select {
 		case <-c.done:
@@ -252,24 +278,17 @@ func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binde
 		// (If the Binder closed the Connection already, this should error out and
 		// return almost immediately.)
 		s.reading = true
-		go c.readIncoming(ctx, reader, options.Preempter)
+		go c.readIncoming(ctx, reader, preempter)
 	})
-	return c
 }
 
 // Notify invokes the target method but does not wait for a response.
 // The params will be marshaled to JSON before sending over the wire, and will
 // be handed to the method invoked.
-func (c *Connection) Notify(ctx context.Context, method string, params interface{}) (err error) {
-	ctx, done := event.Start(ctx, method,
-		jsonrpc2.Method.Of(method),
-		jsonrpc2.RPCDirection.Of(jsonrpc2.Outbound),
-	)
+func (c *Connection) Notify(ctx context.Context, method string, params any) (err error) {
 	attempted := false
 
 	defer func() {
-		labelStatus(ctx, err)
-		done()
 		if attempted {
 			c.updateInFlight(func(s *inFlightState) {
 				s.outgoingNotifications--
@@ -300,7 +319,6 @@ func (c *Connection) Notify(ctx context.Context, method string, params interface
 		return fmt.Errorf("marshaling notify parameters: %v", err)
 	}
 
-	event.Metric(ctx, jsonrpc2.Started.Of(1))
 	return c.write(ctx, notify)
 }
 
@@ -309,20 +327,13 @@ func (c *Connection) Notify(ctx context.Context, method string, params interface
 // be handed to the method invoked.
 // You do not have to wait for the response, it can just be ignored if not needed.
 // If sending the call failed, the response will be ready and have the error in it.
-func (c *Connection) Call(ctx context.Context, method string, params interface{}) *AsyncCall {
+func (c *Connection) Call(ctx context.Context, method string, params any) *AsyncCall {
 	// Generate a new request identifier.
-	id := Int64ID(atomic.AddInt64(&c.seq, 1))
-	ctx, endSpan := event.Start(ctx, method,
-		jsonrpc2.Method.Of(method),
-		jsonrpc2.RPCDirection.Of(jsonrpc2.Outbound),
-		jsonrpc2.RPCID.Of(fmt.Sprintf("%q", id)),
-	)
+	id := Int64ID(c.seq.Add(1))
 
 	ac := &AsyncCall{
-		id:      id,
-		ready:   make(chan struct{}),
-		ctx:     ctx,
-		endSpan: endSpan,
+		id:    id,
+		ready: make(chan struct{}),
 	}
 	// When this method returns, either ac is retired, or the request has been
 	// written successfully and the call is awaiting a response (to be provided by
@@ -349,7 +360,6 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 		return ac
 	}
 
-	event.Metric(ctx, jsonrpc2.Started.Of(1))
 	if err := c.write(ctx, call); err != nil {
 		// Sending failed. We will never get a response, so deliver a fake one if it
 		// wasn't already retired by the connection breaking.
@@ -368,10 +378,8 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 
 type AsyncCall struct {
 	id       ID
-	ready    chan struct{} // closed after response has been set and span has been ended
+	ready    chan struct{} // closed after response has been set
 	response *Response
-	ctx      context.Context // for event logging only
-	endSpan  func()          // close the tracing span when all processing for the message is complete
 }
 
 // ID used for this call.
@@ -399,18 +407,12 @@ func (ac *AsyncCall) retire(response *Response) {
 	}
 
 	ac.response = response
-	labelStatus(ac.ctx, response.Error)
-	ac.endSpan()
-	// Allow the trace context, which may retain a lot of reachable values,
-	// to be garbage-collected.
-	ac.ctx, ac.endSpan = nil, nil
-
 	close(ac.ready)
 }
 
 // Await waits for (and decodes) the results of a Call.
 // The response will be unmarshaled from JSON into the result.
-func (ac *AsyncCall) Await(ctx context.Context, result interface{}) error {
+func (ac *AsyncCall) Await(ctx context.Context, result any) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -429,7 +431,7 @@ func (ac *AsyncCall) Await(ctx context.Context, result interface{}) error {
 //
 // Respond must be called exactly once for any message for which a handler
 // returns ErrAsyncResponse. It must not be called for any other message.
-func (c *Connection) Respond(id ID, result interface{}, err error) error {
+func (c *Connection) Respond(id ID, result any, err error) error {
 	var req *incomingRequest
 	c.updateInFlight(func(s *inFlightState) {
 		req = s.incomingByID[id]
@@ -493,18 +495,15 @@ func (c *Connection) Close() error {
 func (c *Connection) readIncoming(ctx context.Context, reader Reader, preempter Preempter) {
 	var err error
 	for {
-		var (
-			msg Message
-			n   int64
-		)
-		msg, n, err = reader.Read(ctx)
+		var msg Message
+		msg, err = reader.Read(ctx)
 		if err != nil {
 			break
 		}
 
 		switch msg := msg.(type) {
 		case *Request:
-			c.acceptRequest(ctx, msg, n, preempter)
+			c.acceptRequest(ctx, msg, preempter)
 
 		case *Response:
 			c.updateInFlight(func(s *inFlightState) {
@@ -536,28 +535,14 @@ func (c *Connection) readIncoming(ctx context.Context, reader Reader, preempter 
 
 // acceptRequest either handles msg synchronously or enqueues it to be handled
 // asynchronously.
-func (c *Connection) acceptRequest(ctx context.Context, msg *Request, msgBytes int64, preempter Preempter) {
-	// Add a span to the context for this request.
-	labels := append(make([]label.Label, 0, 3), // Make space for the ID if present.
-		jsonrpc2.Method.Of(msg.Method),
-		jsonrpc2.RPCDirection.Of(jsonrpc2.Inbound),
-	)
-	if msg.IsCall() {
-		labels = append(labels, jsonrpc2.RPCID.Of(fmt.Sprintf("%q", msg.ID)))
-	}
-	ctx, endSpan := event.Start(ctx, msg.Method, labels...)
-	event.Metric(ctx,
-		jsonrpc2.Started.Of(1),
-		jsonrpc2.ReceivedBytes.Of(msgBytes))
-
+func (c *Connection) acceptRequest(ctx context.Context, msg *Request, preempter Preempter) {
 	// In theory notifications cannot be cancelled, but we build them a cancel
 	// context anyway.
-	ctx, cancel := context.WithCancel(ctx)
+	reqCtx, cancel := context.WithCancel(ctx)
 	req := &incomingRequest{
 		Request: msg,
-		ctx:     ctx,
+		ctx:     reqCtx,
 		cancel:  cancel,
-		endSpan: endSpan,
 	}
 
 	// If the request is a call, add it to the incoming map so it can be
@@ -678,7 +663,7 @@ func (c *Connection) handleAsync() {
 }
 
 // processResult processes the result of a request and, if appropriate, sends a response.
-func (c *Connection) processResult(from interface{}, req *incomingRequest, result interface{}, err error) error {
+func (c *Connection) processResult(from any, req *incomingRequest, result any, err error) error {
 	switch err {
 	case ErrAsyncResponse:
 		if !req.IsCall() {
@@ -688,10 +673,6 @@ func (c *Connection) processResult(from interface{}, req *incomingRequest, resul
 	case ErrNotHandled, ErrMethodNotFound:
 		// Add detail describing the unhandled method.
 		err = fmt.Errorf("%w: %q", ErrMethodNotFound, req.Method)
-	}
-
-	if req.endSpan == nil {
-		return c.internalErrorf("%#v produced a duplicate %q Response", from, req.Method)
 	}
 
 	if result != nil && err != nil {
@@ -713,7 +694,7 @@ func (c *Connection) processResult(from interface{}, req *incomingRequest, resul
 			delete(s.incomingByID, req.ID)
 		})
 		if respErr == nil {
-			writeErr := c.write(notDone{req.ctx}, response)
+			writeErr := c.write(context.WithoutCancel(req.ctx), response)
 			if err == nil {
 				err = writeErr
 			}
@@ -729,16 +710,11 @@ func (c *Connection) processResult(from interface{}, req *incomingRequest, resul
 		if err != nil {
 			// TODO: can/should we do anything with this error beyond writing it to the event log?
 			// (Is this the right label to attach to the log?)
-			event.Label(req.ctx, keys.Err.Of(err))
 		}
 	}
 
-	labelStatus(req.ctx, err)
-
-	// Cancel the request and finalize the event span to free any associated resources.
+	// Cancel the request to free any associated resources.
 	req.cancel()
-	req.endSpan()
-	req.endSpan = nil
 	c.updateInFlight(func(s *inFlightState) {
 		if s.incoming == 0 {
 			panic("jsonrpc2_v2: processResult called when incoming count is already zero")
@@ -753,8 +729,7 @@ func (c *Connection) processResult(from interface{}, req *incomingRequest, resul
 func (c *Connection) write(ctx context.Context, msg Message) error {
 	writer := <-c.writer
 	defer func() { c.writer <- writer }()
-	n, err := writer.Write(ctx, msg)
-	event.Metric(ctx, jsonrpc2.SentBytes.Of(n))
+	err := writer.Write(ctx, msg)
 
 	if err != nil && ctx.Err() == nil {
 		// The call to Write failed, and since ctx.Err() is nil we can't attribute
@@ -781,7 +756,7 @@ func (c *Connection) write(ctx context.Context, msg Message) error {
 // internalErrorf reports an internal error. By default it panics, but if
 // c.onInternalError is non-nil it instead calls that and returns an error
 // wrapping ErrInternal.
-func (c *Connection) internalErrorf(format string, args ...interface{}) error {
+func (c *Connection) internalErrorf(format string, args ...any) error {
 	err := fmt.Errorf(format, args...)
 	if c.onInternalError == nil {
 		panic("jsonrpc2: " + err.Error())
@@ -790,23 +765,3 @@ func (c *Connection) internalErrorf(format string, args ...interface{}) error {
 
 	return fmt.Errorf("%w: %v", ErrInternal, err)
 }
-
-// labelStatus labels the status of the event in ctx based on whether err is nil.
-func labelStatus(ctx context.Context, err error) {
-	if err == nil {
-		event.Label(ctx, jsonrpc2.StatusCode.Of("OK"))
-	} else {
-		event.Label(ctx, jsonrpc2.StatusCode.Of("ERROR"))
-	}
-}
-
-// notDone is a context.Context wrapper that returns a nil Done channel.
-type notDone struct{ ctx context.Context }
-
-func (ic notDone) Value(key interface{}) interface{} {
-	return ic.ctx.Value(key)
-}
-
-func (notDone) Done() <-chan struct{}       { return nil }
-func (notDone) Err() error                  { return nil }
-func (notDone) Deadline() (time.Time, bool) { return time.Time{}, false }

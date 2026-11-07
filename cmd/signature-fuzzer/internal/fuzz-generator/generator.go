@@ -48,6 +48,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -408,8 +409,7 @@ func ParseMaskString(arg string, tag string) (map[int]int, error) {
 	}
 	verb(1, "%s mask is %s", tag, arg)
 	m := make(map[int]int)
-	ss := strings.Split(arg, ":")
-	for _, s := range ss {
+	for s := range strings.SplitSeq(arg, ":") {
 		if strings.Contains(s, "-") {
 			rng := strings.Split(s, "-")
 			if len(rng) != 2 {
@@ -445,7 +445,7 @@ func writeCom(b *bytes.Buffer, i int) {
 
 var Verbctl int = 0
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if Verbctl >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")
@@ -561,12 +561,7 @@ func (s *genstate) popTunables() {
 // See precludeSelectedTypes below for more info.
 func (s *genstate) redistributeFraction(toIncorporate uint8, avoid []int) {
 	inavoid := func(j int) bool {
-		for _, k := range avoid {
-			if j == k {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(avoid, j)
 	}
 
 	doredis := func() {
@@ -631,7 +626,7 @@ func (s *genstate) GenParm(f *funcdef, depth int, mkctl bool, pidx int) parm {
 	// Convert tf into a cumulative sum
 	tf := s.tunables.typeFractions
 	sum := uint8(0)
-	for i := 0; i < len(tf); i++ {
+	for i := range len(tf) {
 		sum += tf[i]
 		tf[i] = sum
 	}
@@ -662,7 +657,7 @@ func (s *genstate) GenParm(f *funcdef, depth int, mkctl bool, pidx int) parm {
 			f.structdefs = append(f.structdefs, sp)
 			tnf := int64(s.tunables.nStructFields) / int64(depth+1)
 			nf := int(s.wr.Intn(tnf))
-			for fi := 0; fi < nf; fi++ {
+			for range nf {
 				fp := s.GenParm(f, depth+1, false, pidx)
 				skComp := tunables.doSkipCompare &&
 					uint8(s.wr.Intn(100)) < s.tunables.skipCompareFraction
@@ -832,7 +827,7 @@ func (s *genstate) GenFunc(fidx int, pidx int) *funcdef {
 	needControl := f.recur
 	f.dodefc = uint8(s.wr.Intn(100))
 	pTaken := uint8(s.wr.Intn(100)) < s.tunables.takenFraction
-	for pi := 0; pi < numParams; pi++ {
+	for range numParams {
 		newparm := s.GenParm(f, 0, needControl, pidx)
 		if !pTaken {
 			newparm.SetAddrTaken(notAddrTaken)
@@ -848,7 +843,7 @@ func (s *genstate) GenFunc(fidx int, pidx int) *funcdef {
 	}
 
 	rTaken := uint8(s.wr.Intn(100)) < s.tunables.takenFraction
-	for ri := 0; ri < numReturns; ri++ {
+	for range numReturns {
 		r := s.GenReturn(f, 0, pidx)
 		if !rTaken {
 			r.SetAddrTaken(notAddrTaken)
@@ -856,23 +851,20 @@ func (s *genstate) GenFunc(fidx int, pidx int) *funcdef {
 		f.returns = append(f.returns, r)
 	}
 	spw := uint(s.wr.Intn(11))
-	rstack := 1 << spw
-	if rstack < 4 {
-		rstack = 4
-	}
+	rstack := max(1<<spw, 4)
 	f.rstack = rstack
 	return f
 }
 
 func genDeref(p parm) (parm, string) {
 	curp := p
-	star := ""
+	var star strings.Builder
 	for {
 		if pp, ok := curp.(*pointerparm); ok {
-			star += "*"
+			star.WriteString("*")
 			curp = pp.totype
 		} else {
-			return curp, star
+			return curp, star.String()
 		}
 	}
 }
@@ -906,7 +898,7 @@ func (s *genstate) emitCompareFunc(f *funcdef, b *bytes.Buffer, p parm) {
 	b.WriteString("  return ")
 	numel := p.NumElements()
 	ncmp := 0
-	for i := 0; i < numel; i++ {
+	for i := range numel {
 		lelref, lelparm := p.GenElemRef(i, "left")
 		relref, _ := p.GenElemRef(i, "right")
 		if lelref == "" || lelref == "_" {
@@ -1504,7 +1496,7 @@ func (s *genstate) emitParamChecks(f *funcdef, b *bytes.Buffer, pidx int, value 
 		} else {
 			numel := p.NumElements()
 			cel := checkableElements(p)
-			for i := 0; i < numel; i++ {
+			for i := range numel {
 				verb(4, "emitting check-code for p%d el %d value=%d", pi, i, value)
 				elref, elparm := p.GenElemRef(i, s.genParamRef(p, pi))
 				valstr, value = s.GenValue(f, elparm, value, false)
@@ -1538,7 +1530,7 @@ func (s *genstate) emitParamChecks(f *funcdef, b *bytes.Buffer, pidx int, value 
 	// receiver value check
 	if f.isMethod {
 		numel := f.receiver.NumElements()
-		for i := 0; i < numel; i++ {
+		for i := range numel {
 			verb(4, "emitting check-code for rcvr el %d value=%d", i, value)
 			elref, elparm := f.receiver.GenElemRef(i, "rcvr")
 			valstr, value = s.GenValue(f, elparm, value, false)
@@ -1572,7 +1564,7 @@ func (s *genstate) emitParamChecks(f *funcdef, b *bytes.Buffer, pidx int, value 
 // where we randomly choose to either pass a param through to the
 // function literal, or have the param captured by the closure, then
 // check its value in the defer.
-func (s *genstate) emitDeferChecks(f *funcdef, b *bytes.Buffer, pidx int, value int) int {
+func (s *genstate) emitDeferChecks(f *funcdef, b *bytes.Buffer, value int) int {
 
 	if len(f.params) == 0 {
 		return value
@@ -1611,7 +1603,7 @@ func (s *genstate) emitDeferChecks(f *funcdef, b *bytes.Buffer, pidx int, value 
 		b.WriteString("  // check parm " + which + "\n")
 		numel := p.NumElements()
 		cel := checkableElements(p)
-		for i := 0; i < numel; i++ {
+		for i := range numel {
 			elref, elparm := p.GenElemRef(i, s.genParamRef(p, pi))
 			if elref == "" || elref == "_" || cel == 0 {
 				verb(4, "empty skip p%d el %d", pi, i)
@@ -1762,7 +1754,7 @@ func (s *genstate) emitChecker(f *funcdef, b *bytes.Buffer, pidx int, emit bool)
 	// defer testing
 	if s.tunables.doDefer && f.dodefc < s.tunables.deferFraction {
 		s.wr.Checkpoint("before defer checks")
-		_ = s.emitDeferChecks(f, b, pidx, value)
+		_ = s.emitDeferChecks(f, b, value)
 	}
 
 	// returns
@@ -2061,7 +2053,7 @@ func (s *genstate) emitMain(outf *os.File, numit int, fcnmask map[int]int, pkmas
 	for k := 0; k < s.NumTestPackages; k++ {
 		cp := fmt.Sprintf("%s%s%d", s.Tag, CallerName, k)
 		fmt.Fprintf(outf, "  go func(ch chan bool) {\n")
-		for i := 0; i < numit; i++ {
+		for i := range numit {
 			if shouldEmitFP(i, k, fcnmask, pkmask) {
 				fmt.Fprintf(outf, "    %s.%s%d(\"normal\")\n", cp, CallerName, i)
 				if s.tunables.doReflectCall {

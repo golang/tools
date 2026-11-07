@@ -20,15 +20,15 @@ import (
 
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/event"
 )
 
 type stats struct {
-	app *Application
+	app *application
 
 	Anon bool `flag:"anon" help:"hide any fields that may contain user names, file names, or source code"`
 }
@@ -55,19 +55,21 @@ Example:
 }
 
 func (s *stats) Run(ctx context.Context, args ...string) error {
+	// stats does not work with -remote yet.
+	// Other sessions on the daemon may interfere with results.
+	// Additionally, the type assertions in below only work if progress
+	// notifications bypass jsonrpc2 serialization.
+	// TODO(hyangah): support remote mode by fetching server-side
+	// statistics and avoiding hangs during InitialWorkspaceLoad.
 	if s.app.Remote != "" {
-		// stats does not work with -remote.
-		// Other sessions on the daemon may interfere with results.
-		// Additionally, the type assertions in below only work if progress
-		// notifications bypass jsonrpc2 serialization.
-		return fmt.Errorf("the stats subcommand does not work with -remote")
+		return commandLineErrorf("stats does not currently support remote mode")
 	}
 
 	if !s.app.Verbose {
 		event.SetExporter(nil) // don't log errors to stderr
 	}
 
-	stats := GoplsStats{
+	stats := statsJSON{
 		GOOS:             runtime.GOOS,
 		GOARCH:           runtime.GOARCH,
 		GOPLSCACHE:       os.Getenv("GOPLSCACHE"),
@@ -85,6 +87,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	// do executes a timed section of the stats command.
+
 	do := func(name string, f func() error) (time.Duration, error) {
 		start := time.Now()
 		fmt.Fprintf(os.Stderr, "%-30s", name+"...")
@@ -96,14 +99,14 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 		return d, nil
 	}
 
-	var conn *connection
+	var cli *cli
 	iwlDuration, err := do("Initializing workspace", func() (err error) {
-		conn, err = s.app.connect(ctx)
+		cli, _, err = s.app.connect(ctx)
 		if err != nil {
 			return err
 		}
 		select {
-		case <-conn.client.iwlDone:
+		case <-cli.iwlDone:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -112,7 +115,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	stats.InitialWorkspaceLoadDuration = fmt.Sprint(iwlDuration)
 
@@ -121,32 +124,32 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	do("Gathering bug reports", func() error {
 		stats.CacheDir, stats.BugReports = filecache.BugReports()
 		if stats.BugReports == nil {
-			stats.BugReports = []bugpkg.Bug{} // non-nil for JSON
+			stats.BugReports = []bug.Bug{} // non-nil for JSON
 		}
 		return nil
 	})
 
 	if _, err := do("Querying memstats", func() error {
-		memStats, err := conn.executeCommand(ctx, &protocol.Command{
-			Command: command.MemStats.String(),
+		memStats, err := executeCommand(ctx, cli.server, &protocol.Command{
+			Command: protocolcommand.MemStats.String(),
 		})
 		if err != nil {
 			return err
 		}
-		stats.MemStats = memStats.(command.MemStatsResult)
+		stats.MemStats = memStats.(protocolcommand.MemStatsResult)
 		return nil
 	}); err != nil {
 		return err
 	}
 
 	if _, err := do("Querying workspace stats", func() error {
-		wsStats, err := conn.executeCommand(ctx, &protocol.Command{
-			Command: command.WorkspaceStats.String(),
+		wsStats, err := executeCommand(ctx, cli.server, &protocol.Command{
+			Command: protocolcommand.WorkspaceStats.String(),
 		})
 		if err != nil {
 			return err
 		}
-		stats.WorkspaceStats = wsStats.(command.WorkspaceStatsResult)
+		stats.WorkspaceStats = wsStats.(protocolcommand.WorkspaceStatsResult)
 		return nil
 	}); err != nil {
 		return err
@@ -164,12 +167,11 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Filter JSON output to fields that are consistent with s.Anon.
-	okFields := make(map[string]interface{})
+	okFields := make(map[string]any)
 	{
 		v := reflect.ValueOf(stats)
 		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
+		for f := range t.Fields() {
 			if !token.IsExported(f.Name) {
 				continue
 			}
@@ -192,13 +194,13 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-// GoplsStats holds information extracted from a gopls session in the current
+// statsJSON holds information extracted from a gopls session in the current
 // workspace.
 //
 // Fields that should be printed with the -anon flag should be explicitly
 // marked as `anon:"ok"`. Only fields that cannot refer to user files or code
 // should be marked as such.
-type GoplsStats struct {
+type statsJSON struct {
 	GOOS, GOARCH                 string `anon:"ok"`
 	GOPLSCACHE                   string
 	GoVersion                    string `anon:"ok"`
@@ -206,10 +208,10 @@ type GoplsStats struct {
 	GOPACKAGESDRIVER             string
 	InitialWorkspaceLoadDuration string `anon:"ok"` // in time.Duration string form
 	CacheDir                     string
-	BugReports                   []bugpkg.Bug
-	MemStats                     command.MemStatsResult       `anon:"ok"`
-	WorkspaceStats               command.WorkspaceStatsResult `anon:"ok"`
-	DirStats                     dirStats                     `anon:"ok"`
+	BugReports                   []bug.Bug
+	MemStats                     protocolcommand.MemStatsResult       `anon:"ok"`
+	WorkspaceStats               protocolcommand.WorkspaceStatsResult `anon:"ok"`
+	DirStats                     dirStats                             `anon:"ok"`
 }
 
 type dirStats struct {
@@ -224,7 +226,7 @@ type dirStats struct {
 // subdirectories.
 func findDirStats() (dirStats, error) {
 	var ds dirStats
-	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -244,5 +246,5 @@ func findDirStats() (dirStats, error) {
 		}
 		return nil
 	})
-	return ds, nil
+	return ds, err
 }

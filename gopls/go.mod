@@ -1,29 +1,40 @@
 module golang.org/x/tools/gopls
 
-go 1.19 // => default GODEBUG has gotypesalias=0
+go 1.27.0
 
 require (
-	github.com/google/go-cmp v0.6.0
-	github.com/jba/templatecheck v0.7.0
-	golang.org/x/mod v0.19.0
-	golang.org/x/sync v0.7.0
-	golang.org/x/telemetry v0.0.0-20240712210958-268b4a8ec2d7
-	golang.org/x/text v0.16.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
-	golang.org/x/vuln v1.0.4
+	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/google/go-cmp v0.7.0
+	github.com/jba/templatecheck v0.7.1
+	github.com/modelcontextprotocol/go-sdk v1.8.0
+	golang.org/x/mod v0.42.0
+	golang.org/x/net v0.61.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/telemetry v0.0.0-20261013142427-f87725b73f11
+	golang.org/x/text v0.43.0
+	golang.org/x/tools v0.52.0
+	golang.org/x/vuln v1.9.0
 	gopkg.in/yaml.v3 v3.0.1
-	honnef.co/go/tools v0.4.7
-	mvdan.cc/gofumpt v0.6.0
-	mvdan.cc/xurls/v2 v2.5.0
+	honnef.co/go/tools v0.8.2
+	mvdan.cc/gofumpt v0.12.0
+	mvdan.cc/xurls/v2 v2.6.0
 )
 
 require (
-	github.com/BurntSushi/toml v1.2.1 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/fatih/camelcase v1.0.0 // indirect
+	github.com/fatih/structtag v1.2.0 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20221212164502-fae10dda9338 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20261014143641-f0251eb4aa3e // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-
 )
 
-replace golang.org/x/tools => ../
+replace golang.org/x/tools => ..

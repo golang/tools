@@ -1,0 +1,99 @@
+This test checks the fixes for bugs encountered while bug-bashing on the
+movement refactoring.
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- unnecessaryconversion.go --
+package a
+
+// We should not add unnecessary conversions to concrete arguments to concrete
+// parameters when the parameter use is in assignment context.
+
+type Hash [32]byte
+
+func Cache(key [32]byte, value any) { //@codeaction("key", "refactor.rewrite.moveParamRight", result=conversion)
+	// Not implemented.
+}
+
+func _() {
+	var k Hash
+	Cache(k, 0)
+	Cache(Hash{}, 1)
+	Cache([32]byte{}, 2)
+}
+
+-- @conversion/unnecessaryconversion.go --
+package a
+
+// We should not add unnecessary conversions to concrete arguments to concrete
+// parameters when the parameter use is in assignment context.
+
+type Hash [32]byte
+
+func Cache(value any, key [32]byte) { //@codeaction("key", "refactor.rewrite.moveParamRight", result=conversion)
+	// Not implemented.
+}
+
+func _() {
+	var k Hash
+	Cache(0, k)
+	Cache(1, Hash{})
+	Cache(2, [32]byte{})
+}
+-- shortvardecl.go --
+package a
+
+func Short(x, y int) (int, int) { //@codeaction("x", "refactor.rewrite.moveParamRight", result=short)
+	return x, y
+}
+
+func _() {
+	x, y := Short(0, 1)
+	_, _ = x, y
+}
+
+func _() {
+	var x, y int
+	x, y = Short(0, 1)
+	_, _ = x, y
+}
+
+func _() {
+	_, _ = Short(0, 1)
+}
+-- @short/shortvardecl.go --
+package a
+
+func Short(y, x int) (int, int) { //@codeaction("x", "refactor.rewrite.moveParamRight", result=short)
+	return x, y
+}
+
+func _() {
+	x, y := Short(1, 0)
+	_, _ = x, y
+}
+
+func _() {
+	var x, y int
+	x, y = Short(1, 0)
+	_, _ = x, y
+}
+
+func _() {
+	_, _ = Short(1, 0)
+}
+-- variadic.go --
+package a
+
+// We should not offer movement involving variadic parameters if it is not well
+// supported.
+
+func Variadic(x int, y ...string) { //@codeaction("x", "refactor.rewrite.moveParamRight", err="0 CodeActions"), codeaction("y", "refactor.rewrite.moveParamLeft", err="0 CodeActions")
+}
+
+func _() {
+	Variadic(1, "a", "b")
+}

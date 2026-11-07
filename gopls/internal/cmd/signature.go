@@ -10,12 +10,11 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // signature implements the signature verb for gopls
 type signature struct {
-	app *Application
+	app *application
 }
 
 func (r *signature) Name() string      { return "signature" }
@@ -35,17 +34,17 @@ Example:
 
 func (r *signature) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("signature expects 1 argument (position)")
+		return commandLineErrorf("signature expects 1 argument (position)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -59,13 +58,13 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
 
-	s, err := conn.SignatureHelp(ctx, &p)
+	s, err := cli.server.SignatureHelp(ctx, &p)
 	if err != nil {
 		return err
 	}
 
 	if s == nil || len(s.Signatures) == 0 {
-		return tool.CommandLineErrorf("%v: not a function", from)
+		return commandLineErrorf("%v: not a function", from)
 	}
 
 	// there is only ever one possible signature,

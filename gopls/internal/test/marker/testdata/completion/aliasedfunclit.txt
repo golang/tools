@@ -1,0 +1,27 @@
+This test checks that function-literal completion works the same for
+a named func type and an aliased func type (golang/go#80357).
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test
+
+go 1.24
+
+-- a.go --
+package a
+
+type NamedFunc func(i int) bool
+type AliasedFunc = func(i int) bool
+
+func WithNamedFunc(fn NamedFunc)     {}
+func WithAliasedFunc(fn AliasedFunc) {}
+
+func _() {
+	WithNamedFunc(fu) //@snippet(re"()\\)", litFunc, "func(i int) bool {$0\\}")
+
+	WithAliasedFunc(fu) //@snippet(re"()\\)", litFunc, "func(i int) bool {$0\\}")
+
+	//@item(litFunc, "func(...) {}", "", "var")
+}

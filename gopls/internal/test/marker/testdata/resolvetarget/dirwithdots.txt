@@ -1,0 +1,78 @@
+Testing directories with dots in their name. To make sure that resolve_target
+run from them considers them directories, not files. Also tests how that
+interacts with sub-target queries which also use dots.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/resolvetarget
+
+go 1.25
+
+-- a/b.v2/b.go --
+
+package b
+
+var B = "B" //@target(B_v2, "mod.test/resolvetarget/a/b.v2", "B", "B")
+
+-- a/b.v2/ --
+
+//@resolvetarget("B", "mod.test/resolvetarget/a/b.v2", B_v2)
+//@resolvetarget("mod.test/resolvetarget/a/b.v2.B", "", B_v2)
+
+//@resolvetarget("B", "a/b.v2", B_v2)
+//@resolvetarget("a/b.v2.B", "", B_v2)
+
+// If only specifying the package (not package path), it uses package name
+//@resolvetarget("B", "b", B_v2)
+//@resolvetarget("b.B", "", B_v2)
+
+-- x/x.go --
+package x
+
+-- x/ --
+// The tests below concern more with precedence when there is ambiguity
+// between package path (with dots) and sub-target querying (also uses dots).
+
+//@resolvetarget("pkg.with.dots.DotTarget", "", dot_target)
+
+// Test that the resolution tries the longer package name first.
+//@resolvetarget("pkg.with.x", "", toplevel_x)
+
+// But if we specify the package as the shorter part, it works.
+//@resolvetarget("with.x", "pkg", field_x)
+
+-- pkg.with.dots/pkg.go --
+// Add a package with dots in its name to your test workspace
+package dots
+
+var DotTarget = "dots" //@target(dot_target, "mod.test/resolvetarget/pkg.with.dots", "DotTarget", "DotTarget")
+
+-- pkg.with/pkg.go --
+// To test precedence, have a pkg with the name that is the same as another packages name+symbol
+package with
+
+var x = "dots" //@target(toplevel_x, "mod.test/resolvetarget/pkg.with", "x", "x")
+
+-- pkg/pkg.go --
+package pkg
+
+type with struct {
+  x string //@target(field_x, "mod.test/resolvetarget/pkg", "x", "x")
+}
+
+-- pkg/ --
+
+// specifying sub-query without pkg works
+//@resolvetarget("with.x", "", field_x)
+
+// specifying the current package in pkg works
+//@resolvetarget("with.x", "pkg", field_x)
+
+// Even if we are in the directory 'pkg', it still tries the longer package name first,
+// so 'pkg.with' will be hit.
+//@resolvetarget("pkg.with.x", "", toplevel_x)
+
+// tests file operations with dotted directories
+//@resolvetarget("../pkg.with.x", "", toplevel_x)

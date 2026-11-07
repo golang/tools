@@ -11,11 +11,13 @@ import (
 	"go/ast"
 	"go/token"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -29,10 +31,10 @@ import (
 )
 
 func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
-	ctx, done := event.Start(ctx, "lsp.Server.documentLink")
+	ctx, done := event.Start(ctx, "server.DocumentLink")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +61,30 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 	}
 
 	var links []protocol.DocumentLink
+	for _, rep := range pm.File.Replace {
+		if modfile.IsDirectoryPath(rep.New.Path) {
+			// Have local replacement, such as 'replace A => ../'.
+			dep := []byte(rep.New.Path)
+			start, end := rep.Syntax.Start.Byte, rep.Syntax.End.Byte
+			i := bytes.Index(pm.Mapper.Content[start:end], dep)
+			if i < 0 {
+				continue
+			}
+			path := rep.New.Path
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(fh.URI().DirPath(), path)
+			}
+			// jump to the go.mod file of replaced module.
+			path = filepath.Join(filepath.Clean(path), "go.mod")
+			l, err := toProtocolLink(pm.Mapper, protocol.URIFromPath(path).Path(), start+i, start+i+len(dep))
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, l)
+			continue
+		}
+	}
+
 	for _, req := range pm.File.Require {
 		if req.Syntax == nil {
 			continue
@@ -73,9 +99,21 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 		if i == -1 {
 			continue
 		}
+
+		mod := req.Mod
+		// respect the replacement when constructing a module link.
+		if m, ok := pm.ReplaceMap[req.Mod]; ok {
+			// Have: 'replace A v1.2.3 => A vx.x.x' or 'replace A v1.2.3 => B vx.x.x'.
+			mod = m
+		} else if m, ok := pm.ReplaceMap[module.Version{Path: req.Mod.Path}]; ok &&
+			!modfile.IsDirectoryPath(m.Path) { // exclude local replacement.
+			// Have: 'replace A => A vx.x.x' or 'replace A => B vx.x.x'.
+			mod = m
+		}
+
 		// Shift the start position to the location of the
 		// dependency within the require statement.
-		target := cache.BuildLink(snapshot.Options().LinkTarget, "mod/"+req.Mod.String(), "")
+		target := cache.BuildLink(snapshot.Options().LinkTarget, "mod/"+mod.String(), "")
 		l, err := toProtocolLink(pm.Mapper, target, start+i, start+i+len(dep))
 		if err != nil {
 			return nil, err
@@ -124,7 +162,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 		// This requires the import map from the package metadata. Ignore errors.
 		var depsByImpPath map[golang.ImportPath]golang.PackageID
 		if strings.ToLower(snapshot.Options().LinkTarget) == "pkg.go.dev" {
-			if meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, fh.URI()); err == nil {
+			if meta, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI()); err == nil {
 				depsByImpPath = meta.DepsByImpPath
 			}
 		}
@@ -142,8 +180,8 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 			urlPath := string(importPath)
 
 			// For pkg.go.dev, append module version suffix to package import path.
-			if mp := snapshot.Metadata(depsByImpPath[importPath]); mp != nil && mp.Module != nil && mp.Module.Path != "" && mp.Module.Version != "" {
-				urlPath = strings.Replace(urlPath, mp.Module.Path, mp.Module.Path+"@"+mp.Module.Version, 1)
+			if mp := snapshot.Metadata(depsByImpPath[importPath]); mp != nil && mp.Module != nil && cache.ResolvedPath(mp.Module) != "" && cache.ResolvedVersion(mp.Module) != "" {
+				urlPath = strings.Replace(urlPath, mp.Module.Path, cache.ResolvedString(mp.Module), 1)
 			}
 
 			start, end, err := safetoken.Offsets(pgf.Tok, imp.Path.Pos(), imp.Path.End())
@@ -164,17 +202,15 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 
 	// Gather links found in string literals.
 	var str []*ast.BasicLit
-	ast.Inspect(pgf.File, func(node ast.Node) bool {
-		switch n := node.(type) {
-		case *ast.ImportSpec:
-			return false // don't process import strings again
-		case *ast.BasicLit:
-			if n.Kind == token.STRING {
-				str = append(str, n)
+	for curLit := range pgf.Cursor().Preorder((*ast.BasicLit)(nil)) {
+		lit := curLit.Node().(*ast.BasicLit)
+		if lit.Kind == token.STRING {
+			if _, ok := curLit.Parent().Node().(*ast.ImportSpec); ok {
+				continue // ignore import strings
 			}
+			str = append(str, lit)
 		}
-		return true
-	})
+	}
 	for _, s := range str {
 		strOffset, err := safetoken.Offset(pgf.Tok, s.Pos())
 		if err != nil {
@@ -213,7 +249,7 @@ var acceptedSchemes = map[string]bool{
 	"https": true,
 }
 
-// urlRegexp is the user-supplied regular expression to match URL.
+// findLinksInString is the user-supplied regular expression to match URL.
 // srcOffset is the start offset of 'src' within m's file.
 func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *protocol.Mapper) ([]protocol.DocumentLink, error) {
 	var links []protocol.DocumentLink

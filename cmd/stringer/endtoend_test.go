@@ -5,7 +5,6 @@
 // go command is not available on android
 
 //go:build !android
-// +build !android
 
 package main
 
@@ -17,6 +16,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -92,20 +93,6 @@ func typeName(fname string) string {
 	return fmt.Sprintf("%c%s", base[0]+'A'-'a', base[1:len(base)-len(".go")])
 }
 
-func moreTests(t *testing.T, dirname, prefix string) []string {
-	x, err := os.ReadDir(dirname)
-	if err != nil {
-		// error, but try the rest of the tests
-		t.Errorf("can't read type param tess from %s: %v", dirname, err)
-		return nil
-	}
-	names := make([]string, len(x))
-	for i, f := range x {
-		names[i] = prefix + "/" + f.Name()
-	}
-	return names
-}
-
 // TestTags verifies that the -tags flag works as advertised.
 func TestTags(t *testing.T) {
 	stringer := stringerPath(t)
@@ -120,11 +107,10 @@ func TestTags(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Run stringer in the directory that contains the package files.
-	// We cannot run stringer in the current directory for the following reasons:
-	// - Versions of Go earlier than Go 1.11, do not support absolute directories as a pattern.
-	// - When the current directory is inside a go module, the path will not be considered
-	//   a valid path to a package.
+	// Run stringer in the directory that contains the module that contains the package files.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	err := runInDir(t, dir, stringer, "-type", "Const", ".")
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +152,10 @@ func TestConstValueChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	stringSource := filepath.Join(dir, "day_string.go")
-	// Run stringer in the directory that contains the package files.
+	// Run stringer in the directory that contains the module that contains the package files.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	err = runInDir(t, dir, stringer, "-type", "Day", "-output", stringSource)
 	if err != nil {
 		t.Fatal(err)
@@ -194,6 +183,127 @@ func TestConstValueChange(t *testing.T) {
 	err = run(t, "go", "build", stringSource, source)
 	if err == nil {
 		t.Fatal("unexpected compiler success")
+	}
+}
+
+var testfileSrcs = map[string]string{
+	"go.mod": "module foo",
+
+	// Normal file in the package.
+	"main.go": `package foo
+
+type Foo int
+
+const (
+	fooX Foo = iota
+	fooY
+	fooZ
+)
+`,
+
+	// Test file in the package.
+	"main_test.go": `package foo
+
+type Bar int
+
+const (
+	barX Bar = iota
+	barY
+	barZ
+)
+`,
+
+	// Test file in the test package.
+	"main_pkg_test.go": `package foo_test
+
+type Baz int
+
+const (
+	bazX Baz = iota
+	bazY
+	bazZ
+)
+`,
+}
+
+// Test stringer on types defined in different kinds of tests.
+// The generated code should not interfere between itself.
+func TestTestFiles(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	stringer := stringerPath(t)
+
+	dir := t.TempDir()
+	t.Logf("TestTestFiles in: %s \n", dir)
+	for name, src := range testfileSrcs {
+		source := filepath.Join(dir, name)
+		err := os.WriteFile(source, []byte(src), 0666)
+		if err != nil {
+			t.Fatalf("write file: %s", err)
+		}
+	}
+
+	// Must run stringer in the temp directory, see TestTags.
+	err := runInDir(t, dir, stringer, "-type=Foo,Bar,Baz", dir)
+	if err != nil {
+		t.Fatalf("run stringer: %s", err)
+	}
+
+	// Check that stringer has created the expected files.
+	content, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %s", err)
+	}
+	gotFiles := []string{}
+	for _, f := range content {
+		if !f.IsDir() {
+			gotFiles = append(gotFiles, f.Name())
+		}
+	}
+	wantFiles := []string{
+		// Original.
+		"go.mod",
+		"main.go",
+		"main_test.go",
+		"main_pkg_test.go",
+		// Generated.
+		"foo_string.go",
+		"bar_string_test.go",
+		"baz_string_test.go",
+	}
+	slices.Sort(gotFiles)
+	slices.Sort(wantFiles)
+	if !reflect.DeepEqual(gotFiles, wantFiles) {
+		t.Errorf("stringer generated files:\n%s\n\nbut want:\n%s",
+			strings.Join(gotFiles, "\n"),
+			strings.Join(wantFiles, "\n"),
+		)
+	}
+
+	// Run go test as a smoke test.
+	err = runInDir(t, dir, "go", "test", "-count=1", ".")
+	if err != nil {
+		t.Fatalf("go test: %s", err)
+	}
+}
+
+// The -output flag cannot be used in combination with matching types across multiple packages.
+func TestCollidingOutput(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	stringer := stringerPath(t)
+
+	dir := t.TempDir()
+	for name, src := range testfileSrcs {
+		source := filepath.Join(dir, name)
+		err := os.WriteFile(source, []byte(src), 0666)
+		if err != nil {
+			t.Fatalf("write file: %s", err)
+		}
+	}
+
+	// Must run stringer in the temp directory, see TestTags.
+	err := runInDir(t, dir, stringer, "-type=Foo,Bar,Baz", "-output=somefile.go", dir)
+	if err == nil {
+		t.Fatal("unexpected stringer success")
 	}
 }
 
@@ -266,7 +376,6 @@ func runInDir(t testing.TB, dir, name string, arg ...string) error {
 	t.Helper()
 	cmd := testenv.Command(t, name, arg...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GO111MODULE=auto")
 	out, err := cmd.CombinedOutput()
 	if len(out) > 0 {
 		t.Logf("%s", out)

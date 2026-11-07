@@ -11,12 +11,11 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // prepareRename implements the prepare_rename verb for gopls.
 type prepareRename struct {
-	app *Application
+	app *application
 }
 
 func (r *prepareRename) Name() string      { return "prepare_rename" }
@@ -34,23 +33,23 @@ Example:
 	printFlagDefaults(f)
 }
 
-// ErrInvalidRenamePosition is returned when prepareRename is run at a position that
+// errInvalidRenamePosition is returned when prepareRename is run at a position that
 // is not a candidate for renaming.
-var ErrInvalidRenamePosition = errors.New("request is not valid at the given position")
+var errInvalidRenamePosition = errors.New("request is not valid at the given position")
 
 func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("prepare_rename expects 1 argument (file)")
+		return commandLineErrorf("prepare_rename expects 1 argument (file)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -61,12 +60,12 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 	p := protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	result, err := conn.PrepareRename(ctx, &p)
+	result, err := cli.server.PrepareRename(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("prepare_rename failed: %w", err)
 	}
 	if result == nil {
-		return ErrInvalidRenamePosition
+		return errInvalidRenamePosition
 	}
 
 	s, err := file.rangeSpan(result.Range)

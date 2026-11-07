@@ -153,7 +153,7 @@ func findNamedFunc(pkg *Package, pos token.Pos) *Function {
 // the ssa.Value.)
 func (f *Function) ValueForExpr(e ast.Expr) (value Value, isAddr bool) {
 	if f.debugInfo() { // (opt)
-		e = unparen(e)
+		e = ast.Unparen(e)
 		for _, b := range f.Blocks {
 			for _, instr := range b.Instrs {
 				if ref, ok := instr.(*DebugRef); ok {
@@ -191,7 +191,7 @@ func (prog *Program) packageLevelMember(obj types.Object) Member {
 }
 
 // FuncValue returns the SSA function or (non-interface) method
-// denoted by the specified func symbol. It returns nil id the symbol
+// denoted by the specified func symbol. It returns nil if the symbol
 // denotes an interface method, or belongs to a package that was not
 // created by prog.CreatePackage.
 func (prog *Program) FuncValue(obj *types.Func) *Function {

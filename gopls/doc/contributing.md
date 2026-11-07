@@ -1,11 +1,52 @@
-# Gopls: Documentation for contributors
+---
+title: "Gopls: Contributing"
+---
 
-This documentation augments the general documentation for contributing to the
-x/tools repository, described at the [repository root](../../CONTRIBUTING.md).
+Contributions are welcome! However, development is fast moving,
+and we are limited in our capacity to review contributions.
+So, before sending a CL, please please please:
 
-Contributions are welcome, but since development is so active, we request that
-you file an issue and claim it before starting to work on something. Otherwise,
-it is likely that we might already be working on a fix for your issue.
+- **file an issue** for a bug or feature request, if one does not
+  exist already. This allows us to identify redundant requests, or to
+  merge a specific problem into a more general one, and to assess the
+  importance of the problem.
+- **claim it for yourself** by commenting on the issue or, if you are
+  able, by assigning the issue to yourself. This helps us avoid two
+  people working on the same problem.
+- **propose an implementation plan** in the issue tracker for CLs of
+  any complexity. It is much more efficient to discuss the plan at a
+  high level before we start getting bogged down in the details of
+  a code review.
+
+When you send a CL, it should include:
+
+- a **CL description** that summarizes the change,
+  motivates why it is necessary,
+  explains it at a high level,
+  contrasts it with more obvious or simpler approaches, and
+  links to relevant issues;
+- **tests** (integration tests or marker tests);
+- **documentation**, for new or modified features; and
+- **release notes**, for new features or significant changes.
+
+During code review, please address all reviewer comments.
+Some comments result in straightforward code changes;
+others demand a more complex response.
+When a reviewer asks a question, the best response is
+often not to respond to it directly, but to change the
+code to avoid raising the question,
+for example by making the code self-explanatory.
+It's fine to disagree with a comment,
+point out a reviewer's mistake,
+or offer to address a comment in a follow-up change,
+leaving a `TODO` comment in the current CL.
+But please don't dismiss or quietly ignore a comment without action,
+as it may lead reviewers to repeat themselves,
+or to serious problems being neglected.
+
+For more detail, see the Go project's
+[contribution guidelines](https://golang.org/doc/contribute.html).
+
 
 ## Finding issues
 
@@ -18,8 +59,43 @@ claiming it.
 
 ## Getting started
 
-Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal`
-directory. See [design/implementation.md] for an overview of the code organization.
+[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls/internal)](https://pkg.go.dev/golang.org/x/tools/gopls/internal)
+
+Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal` directory.
+See [design/implementation.md](./design/implementation.md) for an overview of the code organization.
+
+### Repository structure
+
+This repository provides two modules:
+- The root directory defines the `golang.org/x/tools` module, which provides importable packages.
+- The `gopls` subdirectory defines the `golang.org/x/tools/gopls` module, which provides the gopls application as its main package.
+
+The gopls/go.mod file contains a `replace` directive pointing to the parent directory to ensure that gopls uses the version of x/tools at the exact same git commit.
+
+We recommend creating a go.work file such as this in the root directory:
+
+```go
+go 1.25
+
+use .
+use ./gopls
+```
+
+so that the go command will allow you to specify gopls packages even when working outside the gopls directory. For example:
+
+```
+tools$ go test -short ./gopls/...
+```
+
+For more details on how to use workspaces, see the [Go workspace documentation](https://go.dev/doc/tutorial/workspaces) or run `go help work`.
+
+With this setup, you can run tests for all modules in the workspace from the root directory using:
+
+```bash
+go test work
+```
+
+This will run tests for both `golang.org/x/tools` and `golang.org/x/tools/gopls`.
 
 ## Build
 
@@ -84,14 +160,6 @@ believe "can't happen"?
 Note also that panicking is preferable to `log.Fatal` because it
 allows VS Code's crash reporting to recognize and capture the stack.
 
-Bugs reported through `bug.Errorf` and friends are retrieved using the
-`gopls bug` command, which opens a GitHub Issue template and populates
-it with a summary of each bug and its frequency.
-The text of the bug is rather fastidiously printed to stdout to avoid
-sharing user names and error message strings (which could contain
-project identifiers) with GitHub.
-Users are invited to share it if they are willing.
-
 ## Testing
 
 The normal command you should use to run the tests after a change is:
@@ -105,13 +173,13 @@ run the complete set, on a wide range of platforms.)
 
 Gopls tests are a mix of two kinds.
 
-- [Marker tests](../internal/test/marker) express each test scenario
+- [Marker tests](https://golang.org/x/tools/gopls/internal/test/marker) express each test scenario
   in a standalone text file that contains the target .go, go.mod, and
   go.work files, in which special annotations embedded in comments
   drive the test. These tests are generally easy to write and fast
   to iterate, but have limitations on what they can express.
 
-- [Integration tests](../internal/test/integration) are regular Go
+- [Integration tests](https://golang.org/x/tools/gopls/internal/test/integration) are regular Go
   `func Test(*testing.T)` functions that make a series of calls to an
   API for a fake LSP-enabled client editor. The API allows you to open
   and edit a file, navigate to a definition, invoke other LSP
@@ -124,7 +192,7 @@ Gopls tests are a mix of two kinds.
   within several minutes. We recommend that you set
   `GOPLS_INTEGRATION_TEST_TIMEOUT=10s` to reduce the timeout for
   integration tests when debugging.
-  
+
   When they fail, the integration tests print the log of the LSP
   session between client and server. Though verbose, they are very
   helpful for debugging once you know how to read them.
@@ -144,8 +212,8 @@ Furthermore, an additional "gopls-CI" pass will be run by _Kokoro_, which is a
 Jenkins-like Google infrastructure for running Dockerized tests. This allows us
 to run gopls tests in various environments that would be difficult to add to
 the TryBots. Notably, Kokoro runs tests on
-[older Go versions](../README.md#supported-go-versions) that are no longer supported
-by the TryBots. Per that that policy, support for these older Go versions is
+[older Go versions](index.md#supported-go-versions) that are no longer supported
+by the TryBots. Per that policy, support for these older Go versions is
 best-effort, and test failures may be skipped rather than fixed.
 
 Kokoro runs are triggered by the `Run-TryBot=1` label, just like TryBots, but
@@ -160,8 +228,45 @@ debugger.
 
 See also [Troubleshooting](troubleshooting.md#troubleshooting).
 
-<!--TODO(rstambler): Add more details about the debug server and viewing
-telemetry.-->
+### Debug Server
+
+Gopls includes a built-in debug server that exposes metrics, traces, and
+profiling information. Start it by passing the `-debug` flag, e.q. `gopls serve -debug=localhost:6060`. When using `:0`, gopls logs the assigned address to stderr.
+
+You can also start the server in a running gopls process by executing a StartDebugging LSP command. In VS Code this is bound to the "Go: Start language server maintainer's interface" command.
+
+**Key endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/` | Overview of caches, sessions and clients |
+| `/rpc/` | RPC statistics with latency and status codes |
+| `/trace/` | Recent spans and operation traces |
+| `/metrics/` | Prometheus-compatible metrics |
+| `/memory` | Memory usage statistics |
+| `/debug/pprof/` | Go pprof profiling |
+
+### OpenTelemetry
+
+Gopls supports periodical export of traces and metrics by POSTing JSON messages to an OpenTelemetry collector process such as Jaeger/Grafana. 
+Use the `-otel` flag to specify the collector endpoint to enable exporting:
+
+```bash
+gopls serve -otel=http://localhost:4318
+```
+
+The data are discarded if no collector is listening at that address.
+
+For example, to view traces locally with Jaeger:
+```sh
+$ podman run --rm --name jaeger \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:1.76.0
+```
+
+Then open http://localhost:16686 to view traces.
+
 
 [issue-gopls]: https://github.com/golang/go/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+label%3Agopls "gopls issues"
 [issue-wanted]: https://github.com/golang/go/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Agopls+label%3A"help+wanted" "help wanted"
@@ -172,10 +277,14 @@ Each CL that adds or changes a feature should include, in addition to
 a test that exercises the new behavior:
 
 - a **release note** that briefly explains the change, and
-- **comprehensive documentation** in the [index of features](features/README.md).
+- **comprehensive documentation** in the [index of features](features/).
 
 The release note should go in the file named for the forthcoming
 release, for example [release/v0.16.0.md](release/v0.16.0.md). (Create
 the file if your feature is the first to be added after a release.)
 
+## Design documentation
 
+* [Integrating `gopls` with an editor](design/integrating.md)
+* [Design requirements and decisions](design/design.md)
+* [Implementation overview](design/implementation.md)

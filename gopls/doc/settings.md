@@ -1,4 +1,6 @@
-# Gopls: Settings
+---
+title: "Gopls: Settings"
+---
 
 This document describes gopls' configuration settings.
 
@@ -88,7 +90,7 @@ Default: `["-**/node_modules"]`.
 <a id='templateExtensions'></a>
 ### `templateExtensions []string`
 
-templateExtensions gives the extensions of file names that are treateed
+templateExtensions gives the extensions of file names that are treated
 as template files. (The extension
 is the part of the file name after the final dot.)
 
@@ -119,17 +121,6 @@ gopls has to do to keep your workspace up to date.
 
 Default: `true`.
 
-<a id='allowImplicitNetworkAccess'></a>
-### `allowImplicitNetworkAccess bool`
-
-**This setting is experimental and may be deleted.**
-
-allowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module
-downloads rather than requiring user action. This option will eventually
-be removed.
-
-Default: `false`.
-
 <a id='standaloneTags'></a>
 ### `standaloneTags []string`
 
@@ -153,6 +144,18 @@ main file.
 This setting is only supported when gopls is built with Go 1.16 or later.
 
 Default: `["ignore"]`.
+
+<a id='workspaceFiles'></a>
+### `workspaceFiles []string`
+
+workspaceFiles configures the set of globs that match files defining the
+logical build of the current workspace. Any on-disk changes to any files
+matching a glob specified here will trigger a reload of the workspace.
+
+This setting need only be customized in environments with a custom
+GOPACKAGESDRIVER.
+
+Default: `[]`.
 
 <a id='formatting'></a>
 ## Formatting
@@ -195,21 +198,32 @@ Example Usage:
 ...
   "codelenses": {
     "generate": false,  // Don't show the `go generate` lens.
-    "gc_details": true  // Show a code lens toggling the display of gc's choices.
   }
 ...
 }
 ```
 
-Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"run_govulncheck":false,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
+Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":true,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
 
 <a id='semanticTokens'></a>
 ### `semanticTokens bool`
 
 **This setting is experimental and may be deleted.**
 
-semanticTokens controls whether the LSP server will send
-semantic tokens to the client.
+semanticTokens determines whether gopls will return a
+SemanticTokensProvider at initialization, or respond
+to requests for semantic tokens.
+
+This setting being `false` won't necessary disable the client's calls
+for semantic tokens. If you want that, it would need to be configured in
+the client. For example, in VSCode, this would disable all Go semantic
+token calls to the LSP server:
+
+```json5
+"[go]": {
+    "editor.semanticHighlighting.enabled": false,
+}
+```
 
 Default: `false`.
 
@@ -220,6 +234,9 @@ Default: `false`.
 
 noSemanticString turns off the sending of the semantic token 'string'
 
+Deprecated: Use SemanticTokenTypes["string"] = false instead. See
+golang/vscode-go#3632
+
 Default: `false`.
 
 <a id='noSemanticNumber'></a>
@@ -227,7 +244,50 @@ Default: `false`.
 
 **This setting is experimental and may be deleted.**
 
-noSemanticNumber  turns off the sending of the semantic token 'number'
+noSemanticNumber turns off the sending of the semantic token 'number'
+
+Deprecated: Use SemanticTokenTypes["number"] = false instead. See
+golang/vscode-go#3632.
+
+Default: `false`.
+
+<a id='semanticTokenTypes'></a>
+### `semanticTokenTypes map[string]bool`
+
+**This setting is experimental and may be deleted.**
+
+semanticTokenTypes configures the semantic token types. It allows
+disabling types by setting each value to false.
+By default, all types are enabled.
+
+Default: `{}`.
+
+<a id='semanticTokenModifiers'></a>
+### `semanticTokenModifiers map[string]bool`
+
+**This setting is experimental and may be deleted.**
+
+semanticTokenModifiers configures the semantic token modifiers. It allows
+disabling modifiers by setting each value to false.
+By default, all modifiers are enabled.
+
+Default: `{}`.
+
+<a id='newGoFileHeader'></a>
+### `newGoFileHeader bool`
+
+newGoFileHeader enables automatic insertion of the copyright comment
+and package declaration in a newly created Go file.
+
+Default: `true`.
+
+<a id='renameMovesSubpackages'></a>
+### `renameMovesSubpackages bool`
+
+**This setting is experimental and may be deleted.**
+
+renameMovesSubpackages enables Rename operations on packages to
+move subdirectories of the target package.
 
 Default: `false`.
 
@@ -301,7 +361,7 @@ Default: `true`.
 analyses specify analyses that the user would like to enable or disable.
 A map of the names of analysis passes that should be enabled/disabled.
 A full list of analyzers that gopls uses can be found in
-[analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).
+[analyzers](https://go.dev/gopls/analyzers).
 
 Example Usage:
 
@@ -321,19 +381,44 @@ Default: `{}`.
 
 **This setting is experimental and may be deleted.**
 
-staticcheck enables additional analyses from staticcheck.io.
+staticcheck configures the default set of analyses staticcheck.io.
 These analyses are documented on
 [Staticcheck's website](https://staticcheck.io/docs/checks/).
+
+The "staticcheck" option has three values:
+- false: disable all staticcheck analyzers
+- true: enable all staticcheck analyzers
+- unset: enable a subset of staticcheck analyzers
+  selected by gopls maintainers for runtime efficiency
+  and analytic precision.
+
+Regardless of this setting, individual analyzers can be
+selectively enabled or disabled using the `analyses` setting.
+
+Default: `false`.
+
+<a id='staticcheckProvided'></a>
+### `staticcheckProvided bool`
+
+**This setting is experimental and may be deleted.**
+
 
 Default: `false`.
 
 <a id='annotations'></a>
 ### `annotations map[enum]bool`
 
-**This setting is experimental and may be deleted.**
+annotations specifies the various kinds of compiler
+optimization details that should be reported as diagnostics
+when enabled for a package by the "Toggle compiler
+optimization details" (`gopls.gc_details`) command.
 
-annotations specifies the various kinds of optimization diagnostics
-that should be reported by the gc_details command.
+(Some users care only about one kind of annotation in their
+profiling efforts. More importantly, in large packages, the
+number of annotations can sometimes overwhelm the user
+interface and exceed the per-file diagnostic limit.)
+
+TODO(adonovan): rename this field to CompilerOptDetail.
 
 Each enum must be one of:
 
@@ -356,8 +441,9 @@ Must be one of:
 * `"Imports"`: In Imports mode, `gopls` will report vulnerabilities that affect packages
 directly and indirectly used by the analyzed main module.
 * `"Off"`: Disable vulnerability analysis.
+* `"Prompt"`: Vulncheck can be triggered via prompt.
 
-Default: `"Off"`.
+Default: `"Prompt"`.
 
 <a id='diagnosticsDelay'></a>
 ### `diagnosticsDelay time.Duration`
@@ -410,17 +496,16 @@ Default: `true`.
 ### `hoverKind enum`
 
 hoverKind controls the information that appears in the hover text.
-SingleLine and Structured are intended for use only by authors of editor plugins.
+SingleLine is intended for use only by authors of editor plugins.
 
 Must be one of:
 
 * `"FullDocumentation"`
 * `"NoDocumentation"`
 * `"SingleLine"`
-* `"Structured"` is an experimental setting that returns a structured hover format.
-This format separates the signature from the documentation, so that the client
-can do more manipulation of these fields.\
-This should only be used by clients that support this behavior.
+* `"Structured"` is a misguided experimental setting that returns a JSON
+hover format. This setting should not be used, as it will be removed in a
+future release of gopls.
 * `"SynopsisDocumentation"`
 
 Default: `"FullDocumentation"`.
@@ -467,8 +552,7 @@ Default: `true`.
 **This setting is experimental and may be deleted.**
 
 hints specify inlay hints that users want to see. A full list of hints
-that gopls uses can be found in
-[inlayHints.md](https://github.com/golang/tools/blob/master/gopls/doc/inlayHints.md).
+that gopls uses can be found in [inlayHints](https://go.dev/gopls/inlayHints).
 
 Default: `{}`.
 
@@ -550,6 +634,68 @@ dependencies.
 * `"workspace"` matches symbols in workspace packages only.
 
 Default: `"all"`.
+
+<a id='fileWatcher'></a>
+### `fileWatcher enum`
+
+**This setting is experimental and may be deleted.**
+
+fileWatcher specifies the server-side file watching strategy used by gopls.
+
+By default, this is set to "off", meaning gopls relies exclusively on the
+language client (e.g., the editor) to send file change notifications.
+
+Available options:
+  - "off"      : Client-driven watching (default)
+  - "fsnotify" : OS-level event notifications
+  - "poll"     : Periodic directory scanning
+
+Must be one of:
+
+* `"fsnotify"`
+* `"off"`
+* `"poll"`
+
+Default: `"off"`.
+
+<a id='maxFileCacheBytes'></a>
+### `maxFileCacheBytes int64`
+
+**This setting is experimental and may be deleted.**
+
+maxFileCacheBytes sets a soft limit on the file cache size in bytes.
+If zero, the default budget is used.
+
+The cache may temporarily use more than this amount.
+Also, this parameter limits file contents; disk block usage
+as measured by du(1) may be significantly higher.
+
+Default: `0`.
+
+<a id='memoryLimit'></a>
+### `memoryLimit int64`
+
+**This setting is experimental and may be deleted.**
+
+memoryLimit sets a soft memory limit (in bytes) for the gopls process, via
+runtime/debug.SetMemoryLimit. If non-positive (the default), no limit is set.
+
+On large workspaces, a single edit that invalidates many
+packages (for example a syntax error in a widely-imported
+package) can make the heap briefly grow well above the
+steady-state working set before the garbage collector
+catches up, spiking memory and, on memory-constrained
+machines, causing swapping. A soft limit makes the GC work
+harder to stay near the limit, trading some CPU for a lower
+memory peak.
+
+The limit is soft and may be exceeded. Set it comfortably above the
+steady-state working set, as too low a value causes excessive GC.
+
+Unlike the GOMEMLIMIT environment variable, this setting is
+strictly numeric; SI suffixes are not permitted.
+
+Default: `0`.
 
 <a id='verboseOutput'></a>
 ### `verboseOutput bool`

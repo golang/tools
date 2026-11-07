@@ -19,7 +19,7 @@ import (
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	r.hadConflicts = true
 	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }
@@ -36,7 +36,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)
@@ -313,19 +313,12 @@ func deeper(x, y *types.Scope) bool {
 // iteration is terminated and findLexicalRefs returns false.
 func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *ast.Ident, block *types.Scope) bool) bool {
 	ok := true
-	var stack []ast.Node
 
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
-		if n == nil {
-			stack = stack[:len(stack)-1] // pop
-			return false
-		}
+	var visit func(n ast.Node, stack []ast.Node) bool
+	visit = func(n ast.Node, stack []ast.Node) bool {
 		if !ok {
 			return false // bail out
 		}
-
-		stack = append(stack, n) // push
 		switch n := n.(type) {
 		case *ast.Ident:
 			if info.Uses[n] == obj {
@@ -334,12 +327,12 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 					ok = false
 				}
 			}
-			return visit(nil) // pop stack
+			return false
 
 		case *ast.SelectorExpr:
 			// don't visit n.Sel
-			ast.Inspect(n.X, visit)
-			return visit(nil) // pop stack, don't descend
+			ast.PreorderStack(n.X, stack, visit)
+			return false // don't descend
 
 		case *ast.CompositeLit:
 			// Handle recursion ourselves for struct literals
@@ -347,26 +340,23 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 			tv := info.Types[n]
 			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
-					ast.Inspect(n.Type, visit)
+					ast.PreorderStack(n.Type, stack, visit)
 				}
 				for _, elt := range n.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
-						ast.Inspect(kv.Value, visit)
+						ast.PreorderStack(kv.Value, stack, visit)
 					} else {
-						ast.Inspect(elt, visit)
+						ast.PreorderStack(elt, stack, visit)
 					}
 				}
-				return visit(nil) // pop stack, don't descend
+				return false // don't descend
 			}
 		}
 		return true
 	}
 
 	for _, f := range info.Files {
-		ast.Inspect(f, visit)
-		if len(stack) != 0 {
-			panic(stack)
-		}
+		ast.PreorderStack(f, nil, visit)
 		if !ok {
 			break
 		}
@@ -454,8 +444,8 @@ func (r *renamer) checkStructField(from *types.Var) {
 		// This struct is not a defined type. (It may be an alias.)
 		// We need only check for direct (non-promoted) field/field conflicts.
 		T := info.Types[tStruct].Type.Underlying().(*types.Struct)
-		for i := 0; i < T.NumFields(); i++ {
-			if prev := T.Field(i); prev.Name() == r.to {
+		for field := range T.Fields() {
+			if prev := field; prev.Name() == r.to {
 				r.errorf(from.Pos(), "renaming this field %q to %q",
 					from.Name(), r.to)
 				r.errorf(prev.Pos(), "\twould conflict with this field")
@@ -781,7 +771,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := I.(hasTypeName); ok {
+				if named, ok := I.(hasTypeName); ok { // *Named or *Alias
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {
@@ -837,7 +827,7 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 
 // recv returns the method's receiver.
 func recv(meth *types.Func) *types.Var {
-	return meth.Type().(*types.Signature).Recv()
+	return meth.Signature().Recv()
 }
 
 // someUse returns an arbitrary use of obj within info.

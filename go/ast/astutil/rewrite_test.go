@@ -244,7 +244,6 @@ func vardecl(name, typ string) *ast.GenDecl {
 func TestRewrite(t *testing.T) {
 	t.Run("*", func(t *testing.T) {
 		for _, test := range rewriteTests {
-			test := test
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
 				fset := token.NewFileSet()
@@ -271,7 +270,7 @@ var sink ast.Node
 func BenchmarkRewrite(b *testing.B) {
 	for _, test := range rewriteTests {
 		b.Run(test.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer()
 				fset := token.NewFileSet()
 				f, err := parser.ParseFile(fset, test.name, test.orig, parser.ParseComments)

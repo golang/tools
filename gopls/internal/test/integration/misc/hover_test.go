@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestHoverUnexported(t *testing.T) {
@@ -22,7 +21,7 @@ func TestHoverUnexported(t *testing.T) {
 -- golang.org/x/structs@v1.0.0/go.mod --
 module golang.org/x/structs
 
-go 1.12
+go 1.21
 
 -- golang.org/x/structs@v1.0.0/types.go --
 package structs
@@ -41,12 +40,9 @@ func printMixed(m Mixed) {
 -- go.mod --
 module mod.com
 
-go 1.12
+go 1.21
 
 require golang.org/x/structs v1.0.0
--- go.sum --
-golang.org/x/structs v1.0.0 h1:Ito/a7hBYZaNKShFrZKjfBA/SIPvmBrcPCBWPx5QeKk=
-golang.org/x/structs v1.0.0/go.mod h1:47gkSIdo5AaQaWJS0upVORsxfEr1LL1MWv9dmYF3iq4=
 -- main.go --
 package main
 
@@ -61,6 +57,7 @@ func main() {
 	// TODO: use a nested workspace folder here.
 	WithOptions(
 		ProxyFiles(proxy),
+		WriteGoSum("."),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		mixedLoc := env.RegexpSearch("main.go", "Mixed")
@@ -69,8 +66,9 @@ func main() {
 			t.Errorf("Workspace hover: missing expected field 'unexported'. Got:\n%q", got.Value)
 		}
 
-		cacheLoc := env.GoToDefinition(mixedLoc)
+		cacheLoc := env.FirstDefinition(mixedLoc)
 		cacheFile := env.Sandbox.Workdir.URIToPath(cacheLoc.URI)
+		env.OpenFile(cacheFile)
 		argLoc := env.RegexpSearch(cacheFile, "printMixed.*(Mixed)")
 		got, _ = env.Hover(argLoc)
 		if !strings.Contains(got.Value, "unexported") {
@@ -231,6 +229,94 @@ func main() {
 	})
 }
 
+func TestHoverPackageIdent(t *testing.T) {
+	const packageDoc1 = "Package lib1 hover documentation"
+	const packageDoc2 = "Package lib2 hover documentation"
+	tests := []struct {
+		hoverIdent string
+		want       string
+		wantError  bool
+	}{
+		{
+			"lib1",
+			packageDoc1,
+			false,
+		},
+		{
+			"lib2",
+			packageDoc2,
+			false,
+		},
+		{
+			"lib3",
+			"",
+			false,
+		},
+		{
+			"lib4",
+			"",
+			true,
+		},
+	}
+	source := fmt.Sprintf(`
+-- go.mod --
+module mod.com
+
+go 1.12
+-- lib1/a.go --
+// %s
+package lib1
+
+const C = 1
+
+-- lib1/b.go --
+package lib1
+
+const D = 1
+
+-- lib2/a.go --
+// %s
+package lib2
+
+const E = 1
+
+-- lib3/a.go --
+package lib3
+
+const F = 1
+
+-- main.go --
+package main
+
+import (
+	"mod.com/lib1"
+	"mod.com/lib2"
+	"mod.com/lib3"
+	"mod.com/lib4"
+)
+
+func main() {
+	println(lib1.C)
+	println(lib2.E)
+	println(lib3.F)
+	println(lib4.Z)
+}
+	`, packageDoc1, packageDoc2)
+	Run(t, source, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		for _, test := range tests {
+			got, _, err := env.Editor.Hover(env.Ctx, env.RegexpSearch("main.go", "("+test.hoverIdent+")\\."))
+			if test.wantError {
+				if err == nil {
+					t.Errorf("Hover(%q) succeeded unexpectedly", test.hoverIdent)
+				}
+			} else if !strings.Contains(got.Value, test.want) {
+				t.Errorf("Hover(%q): got:\n%q\nwant:\n%q", test.hoverIdent, got.Value, test.want)
+			}
+		}
+	})
+}
+
 // for x/tools/gopls: unhandled named anchor on the hover #57048
 func TestHoverTags(t *testing.T) {
 	const source = `
@@ -282,7 +368,6 @@ go 1.16
 }
 
 func TestHoverCompletionMarkdown(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	const source = `
 -- go.mod --
 module mod.com
@@ -302,12 +387,11 @@ func Hello() string {
 		// check that the markdown for SignatureHelp and Completion are
 		// the same, and contained in that for Hover (up to trailing \n)
 		env.OpenFile("main.go")
-		loc := env.RegexpSearch("main.go", "func (Hello)")
+		loc := env.RegexpSearch("main.go", "func ()Hello")
 		hover, _ := env.Hover(loc)
 		hoverContent := hover.Value
 
-		loc = env.RegexpSearch("main.go", "//Here")
-		loc.Range.Start.Character -= 3 // Hello(_) //Here
+		loc = env.RegexpSearch("main.go", `Hello()\(\) \/\/Here`) // Hello_() //Here
 		completions := env.Completion(loc)
 		signatures := env.SignatureHelp(loc)
 
@@ -335,7 +419,7 @@ func Hello() string {
 			t.Errorf("item:%q not sig:%q", itemContent, sigContent)
 		}
 		if !strings.Contains(hoverContent, itemContent) {
-			t.Errorf("hover:%q does not containt sig;%q", hoverContent, sigContent)
+			t.Errorf("hover:%q does not contain sig;%q", hoverContent, sigContent)
 		}
 	})
 }
@@ -343,7 +427,6 @@ func Hello() string {
 // Test that the generated markdown contains links for Go references.
 // https://github.com/golang/go/issues/58352
 func TestHoverLinks(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	const input = `
 -- go.mod --
 go 1.19
@@ -465,7 +548,6 @@ SKIPPED
 `
 
 func TestHoverEmbedDirective(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	Run(t, embedHover, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		from := env.RegexpSearch("main.go", `\*.txt`)
@@ -596,7 +678,7 @@ func main() {
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		got, _ := env.Hover(env.RegexpSearch("main.go", "F"))
-		const wantRE = "\\[`a.F` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/example.com\\?view=[0-9]+#F\\)" // no version
+		const wantRE = "\\[`a.F` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/example.com/a\\?view=[0-9]+#F\\)" // no version
 		if m, err := regexp.MatchString(wantRE, got.Value); err != nil {
 			t.Fatalf("bad regexp in test: %v", err)
 		} else if !m {
@@ -606,8 +688,6 @@ func main() {
 }
 
 func TestHoverBuiltinFile(t *testing.T) {
-	testenv.NeedsGo1Point(t, 21) // uses 'min'
-
 	// This test verifies that hovering in the builtin file provides the same
 	// hover content as hovering over a use of a builtin.
 
@@ -652,7 +732,8 @@ func (e) Error() string
 		for _, builtin := range tests {
 			useLocation := env.RegexpSearch("p.go", builtin)
 			calleeHover, _ := env.Hover(useLocation)
-			declLocation := env.GoToDefinition(useLocation)
+			declLocation := env.FirstDefinition(useLocation)
+			env.OpenFile(env.Sandbox.Workdir.URIToPath(declLocation.URI))
 			declHover, _ := env.Hover(declLocation)
 			if diff := cmp.Diff(calleeHover, declHover); diff != "" {
 				t.Errorf("Hover mismatch (-callee hover +decl hover):\n%s", diff)

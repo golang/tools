@@ -103,15 +103,9 @@ func tryChange(start, end int, repl string) error {
 	var p, q protocol.ParamInitialize
 	mod := input[:start] + repl + input[end:]
 	excerpt := func() (string, string) {
-		a := start - 5
-		if a < 0 {
-			a = 0
-		}
-		b := end + 5
-		if b > len(input) {
-			// trusting repl to be no longer than what it replaces
-			b = len(input)
-		}
+		a := max(start-5, 0)
+		// trusting repl to be no longer than what it replaces
+		b := min(end+5, len(input))
 		ma := input[a:b]
 		mb := mod[a:b]
 		return ma, mb

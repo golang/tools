@@ -11,7 +11,7 @@ func assert(cond bool, msg string) {
 	}
 }
 
-func tp0[T int | string | float64]() T { return T(0) }
+func tp0[T int | string | float64]() T { return T(byte(0)) }
 
 func tpFalse[T ~bool]() T { return T(false) }
 
@@ -27,7 +27,7 @@ func main() {
 
 	assert(zi == int(0), "zero value of int is int(0)")
 	assert(zf == float64(0), "zero value of float64 is float64(0)")
-	assert(zs != string(0), "zero value of string is not string(0)")
+	assert(zs != string(byte(0)), "zero value of string is not string(byte(0))")
 
 	assert(zi == tp0[int](), "zero value of int is int(0)")
 	assert(zf == tp0[float64](), "zero value of float64 is float64(0)")

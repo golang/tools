@@ -1,0 +1,23 @@
+This test exercises the "go_diagnostics" MCP tool.
+
+-- flags --
+-mcp
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":[]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{}`, output=diagnostics)
+
+-- main.go --
+package main
+
+func main() {
+	println("Hello world")
+}
+
+-- @diagnostics --
+No diagnostics.

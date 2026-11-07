@@ -22,10 +22,6 @@ func (s *server) Declaration(context.Context, *protocol.DeclarationParams) (*pro
 	return nil, notImplemented("Declaration")
 }
 
-func (s *server) Diagnostic(context.Context, *string) (*string, error) {
-	return nil, notImplemented("Diagnostic")
-}
-
 func (s *server) DiagnosticWorkspace(context.Context, *protocol.WorkspaceDiagnosticParams) (*protocol.WorkspaceDiagnosticReport, error) {
 	return nil, notImplemented("DiagnosticWorkspace")
 }
@@ -36,10 +32,6 @@ func (s *server) DidChangeNotebookDocument(context.Context, *protocol.DidChangeN
 
 func (s *server) DidCloseNotebookDocument(context.Context, *protocol.DidCloseNotebookDocumentParams) error {
 	return notImplemented("DidCloseNotebookDocument")
-}
-
-func (s *server) DidCreateFiles(context.Context, *protocol.CreateFilesParams) error {
-	return notImplemented("DidCreateFiles")
 }
 
 func (s *server) DidDeleteFiles(context.Context, *protocol.DeleteFilesParams) error {
@@ -82,10 +74,6 @@ func (s *server) OnTypeFormatting(context.Context, *protocol.DocumentOnTypeForma
 	return nil, notImplemented("OnTypeFormatting")
 }
 
-func (s *server) PrepareTypeHierarchy(context.Context, *protocol.TypeHierarchyPrepareParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("PrepareTypeHierarchy")
-}
-
 func (s *server) Progress(context.Context, *protocol.ProgressParams) error {
 	return notImplemented("Progress")
 }
@@ -118,20 +106,12 @@ func (s *server) ResolveWorkspaceSymbol(context.Context, *protocol.WorkspaceSymb
 	return nil, notImplemented("ResolveWorkspaceSymbol")
 }
 
-func (s *server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (interface{}, error) {
+func (s *server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (any, error) {
 	return nil, notImplemented("SemanticTokensFullDelta")
 }
 
 func (s *server) SetTrace(context.Context, *protocol.SetTraceParams) error {
 	return notImplemented("SetTrace")
-}
-
-func (s *server) Subtypes(context.Context, *protocol.TypeHierarchySubtypesParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("Subtypes")
-}
-
-func (s *server) Supertypes(context.Context, *protocol.TypeHierarchySupertypesParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("Supertypes")
 }
 
 func (s *server) WillCreateFiles(context.Context, *protocol.CreateFilesParams) (*protocol.WorkspaceEdit, error) {
@@ -152,6 +132,10 @@ func (s *server) WillSave(context.Context, *protocol.WillSaveTextDocumentParams)
 
 func (s *server) WillSaveWaitUntil(context.Context, *protocol.WillSaveTextDocumentParams) ([]protocol.TextEdit, error) {
 	return nil, notImplemented("WillSaveWaitUntil")
+}
+
+func (s *server) TextDocumentContent(context.Context, *protocol.TextDocumentContentParams) (*protocol.TextDocumentContentResult, error) {
+	return nil, notImplemented("TextDocumentContent")
 }
 
 func notImplemented(method string) error {

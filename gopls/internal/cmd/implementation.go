@@ -11,12 +11,11 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // implementation implements the implementation verb for gopls
 type implementation struct {
-	app *Application
+	app *application
 }
 
 func (i *implementation) Name() string      { return "implementation" }
@@ -36,17 +35,17 @@ Example:
 
 func (i *implementation) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("implementation expects 1 argument (position)")
+		return commandLineErrorf("implementation expects 1 argument (position)")
 	}
 
-	conn, err := i.app.connect(ctx)
+	cli, _, err := i.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -59,14 +58,14 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 	p := protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	implementations, err := conn.Implementation(ctx, &p)
+	implementations, err := cli.server.Implementation(ctx, &p)
 	if err != nil {
 		return err
 	}
 
 	var spans []string
 	for _, impl := range implementations {
-		f, err := conn.openFile(ctx, impl.URI)
+		f, err := cli.openFile(ctx, impl.URI)
 		if err != nil {
 			return err
 		}

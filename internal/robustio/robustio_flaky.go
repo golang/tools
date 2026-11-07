@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build windows || darwin
-// +build windows darwin
+//go:build windows || darwin || plan9
 
 package robustio
 
@@ -11,18 +10,17 @@ import (
 	"errors"
 	"math/rand"
 	"os"
-	"syscall"
 	"time"
 )
 
 const arbitraryTimeout = 2000 * time.Millisecond
 
 // retry retries ephemeral errors from f up to an arbitrary timeout
-// to work around filesystem flakiness on Windows and Darwin.
+// to work around filesystem flakiness on Windows, Darwin, and Plan 9.
 func retry(f func() (err error, mayRetry bool)) error {
 	var (
 		bestErr     error
-		lowestErrno syscall.Errno
+		lowestErrno uintptr
 		start       time.Time
 		nextSleep   time.Duration = 1 * time.Millisecond
 	)
@@ -32,8 +30,7 @@ func retry(f func() (err error, mayRetry bool)) error {
 			return err
 		}
 
-		var errno syscall.Errno
-		if errors.As(err, &errno) && (lowestErrno == 0 || errno < lowestErrno) {
+		if errno, ok := getErrno(err); ok && (lowestErrno == 0 || errno < lowestErrno) {
 			bestErr = err
 			lowestErrno = errno
 		} else if bestErr == nil {

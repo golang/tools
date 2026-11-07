@@ -40,7 +40,7 @@ type Package struct {
 	// transitively reachable through references, starting with the given decl.
 	transitiveRefs map[string]*typerefs.PackageSet
 
-	// ReachesViaDeps records the set of packages in the containing graph whose
+	// ReachesByDeps records the set of packages in the containing graph whose
 	// syntax may affect the current package's types. See the package
 	// documentation for more details of what this means.
 	ReachesByDeps *typerefs.PackageSet
@@ -84,7 +84,6 @@ func BuildPackageGraph(ctx context.Context, meta metadata.Source, ids []metadata
 	var eg errgroup.Group
 	eg.SetLimit(workers)
 	for _, id := range ids {
-		id := id
 		eg.Go(func() error {
 			_, err := g.Package(ctx, id)
 			return err

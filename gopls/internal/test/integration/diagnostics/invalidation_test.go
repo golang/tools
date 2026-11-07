@@ -80,9 +80,9 @@ func _() {
 		if len(d.Diagnostics) != 1 {
 			t.Fatalf("len(Diagnostics) = %d, want 1", len(d.Diagnostics))
 		}
-		msg := d.Diagnostics[0].Message
+		msg := d.Diagnostics[0].MessageString()
 
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			before := d.Version
 			env.RegexpReplace("main.go", "Irrelevant comment #.", fmt.Sprintf("Irrelevant comment #%d", i))
 			env.AfterChange(
@@ -97,7 +97,7 @@ func _() {
 			if len(d.Diagnostics) != 1 {
 				t.Fatalf("len(Diagnostics) = %d, want 1", len(d.Diagnostics))
 			}
-			newMsg := d.Diagnostics[0].Message
+			newMsg := d.Diagnostics[0].MessageString()
 			if newMsg != msg {
 				t.Errorf("after change, got message %q, want %q", newMsg, msg)
 			}

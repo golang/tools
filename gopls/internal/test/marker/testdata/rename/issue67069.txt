@@ -1,6 +1,9 @@
 This test verifies spurious pkgname conflicts.
 Issue golang/go#67069.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- go.mod --
 module example
 go 1.19

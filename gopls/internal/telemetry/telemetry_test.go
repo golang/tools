@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.21 && !openbsd && !js && !wasip1 && !solaris && !android && !386
-// +build go1.21,!openbsd,!js,!wasip1,!solaris,!android,!386
+//go:build !openbsd && !js && !wasip1 && !solaris && !android && !386 && !plan9
 
 package telemetry_test
 
@@ -32,7 +31,7 @@ func TestMain(m *testing.M) {
 	}
 	countertest.Open(tmp)
 	code := Main(m)
-	os.RemoveAll(tmp) // golang/go#68243: ignore error; cleanup fails on Windows
+	os.RemoveAll(tmp) // ignore error (cleanup fails on Windows; golang/go#68243)
 	os.Exit(code)
 }
 
@@ -119,12 +118,56 @@ func TestTelemetry(t *testing.T) {
 	}
 }
 
+func TestSettingTelemetry(t *testing.T) {
+	// counters that should be incremented by each session
+	sessionCounters := []*counter.Counter{
+		counter.New("gopls/setting/diagnosticsDelay"),
+		counter.New("gopls/setting/staticcheck:true"),
+		counter.New("gopls/setting/noSemanticString:true"),
+		counter.New("gopls/setting/analyses/deprecated:false"),
+	}
+
+	initialCounts := make([]uint64, len(sessionCounters))
+	for i, c := range sessionCounters {
+		count, err := countertest.ReadCounter(c)
+		if err != nil {
+			continue // counter db not open, or counter not found
+		}
+		initialCounts[i] = count
+	}
+
+	// Run gopls.
+	WithOptions(
+		Modes(Default),
+		Settings{
+			"staticcheck": true,
+			"analyses": map[string]bool{
+				"deprecated": false,
+			},
+			"diagnosticsDelay": "0s",
+			"noSemanticString": true,
+		},
+	).Run(t, "", func(_ *testing.T, env *Env) {
+	})
+
+	for i, c := range sessionCounters {
+		count, err := countertest.ReadCounter(c)
+		if err != nil {
+			t.Errorf("ReadCounter(%q) failed: %v", c.Name(), err)
+			continue
+		}
+		if count <= initialCounts[i] {
+			t.Errorf("ReadCounter(%q) = %d, want > %d", c.Name(), count, initialCounts[i])
+		}
+	}
+}
+
 func addForwardedCounters(env *Env, names []string, values []int64) {
 	args, err := command.MarshalArgs(command.AddTelemetryCountersArgs{
 		Names: names, Values: values,
 	})
 	if err != nil {
-		env.T.Fatal(err)
+		env.TB.Fatal(err)
 	}
 	var res error
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
@@ -132,7 +175,7 @@ func addForwardedCounters(env *Env, names []string, values []int64) {
 		Arguments: args,
 	}, &res)
 	if res != nil {
-		env.T.Errorf("%v failed - %v", command.AddTelemetryCounters, res)
+		env.TB.Errorf("%v failed - %v", command.AddTelemetryCounters, res)
 	}
 }
 
@@ -220,8 +263,8 @@ func _() {
 	).Run(t, files, func(_ *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		before := totalLatencySamples(t, "completion", false)
-		loc := env.RegexpSearch("a.go", "x")
-		for i := 0; i < 10; i++ {
+		loc := env.RegexpSearch("a.go", "()x")
+		for range 10 {
 			env.Completion(loc)
 		}
 		after := totalLatencySamples(t, "completion", false)

@@ -255,7 +255,7 @@ func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 }
 
 func TestWorkspaceVendoring(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
+	testenv.NeedsGoCommand1Point(t, 22)
 	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 	).Run(t, multiModule, func(t *testing.T, env *Env) {
@@ -265,7 +265,7 @@ func TestWorkspaceVendoring(t *testing.T) {
 		env.OpenFile("moda/a/a.go")
 		env.RunGoCommand("work", "vendor")
 		env.AfterChange()
-		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
+		loc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
 		const want = "vendor/b.com/b/b.go"
 		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
 			t.Errorf("Definition: got location %q, want %q", got, want)
@@ -309,9 +309,6 @@ module a.com
 require c.com v1.2.3
 
 exclude b.com v1.2.3
--- go.sum --
-c.com v1.2.3 h1:n07Dz9fYmpNqvZMwZi5NEqFcSHbvLa9lacMX+/g25tw=
-c.com v1.2.3/go.mod h1:/4TyYgU9Nu5tA4NymP5xyqE8R2VMzGD3TbJCwCOvHAg=
 -- main.go --
 package a
 
@@ -320,6 +317,7 @@ func main() {
 }
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OnceMet(
@@ -377,12 +375,11 @@ func Hello() int {
 		env.OpenFile("moda/a/a.go")
 		env.Await(env.DoneWithOpen())
 
-		originalLoc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		originalLoc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		original := env.Sandbox.Workdir.URIToPath(originalLoc.URI)
 		if want := "modb/b/b.go"; !strings.HasSuffix(original, want) {
 			t.Errorf("expected %s, got %v", want, original)
 		}
-		env.CloseBuffer(original)
 		env.AfterChange()
 
 		env.RemoveWorkspaceFile("modb/b/b.go")
@@ -390,7 +387,7 @@ func Hello() int {
 		env.WriteWorkspaceFile("go.work", "go 1.18\nuse moda/a")
 		env.AfterChange()
 
-		gotLoc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		gotLoc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		got := env.Sandbox.Workdir.URIToPath(gotLoc.URI)
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(got, want) {
 			t.Errorf("expected %s, got %v", want, got)
@@ -431,12 +428,11 @@ func main() {
 		ProxyFiles(workspaceModuleProxy),
 	).Run(t, multiModule, func(t *testing.T, env *Env) {
 		env.OpenFile("moda/a/a.go")
-		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		loc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		original := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(original, want) {
 			t.Errorf("expected %s, got %v", want, original)
 		}
-		env.CloseBuffer(original)
 		env.WriteWorkspaceFiles(map[string]string{
 			"go.work": `go 1.18
 
@@ -454,7 +450,7 @@ func Hello() int {
 `,
 		})
 		env.AfterChange(Diagnostics(env.AtRegexp("modb/b/b.go", "x")))
-		gotLoc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		gotLoc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		got := env.Sandbox.Workdir.URIToPath(gotLoc.URI)
 		if want := "modb/b/b.go"; !strings.HasSuffix(got, want) {
 			t.Errorf("expected %s, got %v", want, original)
@@ -589,7 +585,7 @@ use (
 		// To verify which modules are loaded, we'll jump to the definition of
 		// b.Hello.
 		checkHelloLocation := func(want string) error {
-			loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+			loc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 			file := env.Sandbox.Workdir.URIToPath(loc.URI)
 			if !strings.HasSuffix(file, want) {
 				return fmt.Errorf("expected %s, got %v", want, file)
@@ -649,7 +645,7 @@ use (
 		//
 		// TODO: should editing the go.work above cause modb diagnostics to be
 		// suppressed?
-		env.Await(env.DoneWithChange())
+		env.AfterChange()
 		if err := checkHelloLocation("modb/b/b.go"); err != nil {
 			t.Fatal(err)
 		}
@@ -660,12 +656,9 @@ use (
 			t.Fatal(err)
 		}
 
-		// This fails if guarded with a OnceMet(DoneWithSave(), ...), because it is
-		// delayed (and therefore not synchronous with the change).
-		//
-		// Note: this check used to assert on NoDiagnostics, but with zero-config
-		// gopls we still have diagnostics.
-		env.Await(Diagnostics(ForFile("modb/go.mod"), WithMessage("example.com is not used")))
+		// Since no file in modb is open, there should be no view containing
+		// modb/go.mod, and we should clear its diagnostics.
+		env.AfterChange(NoDiagnostics(ForFile("modb/go.mod")))
 
 		// Test Formatting.
 		env.SetBufferContent("go.work", `go 1.18
@@ -677,7 +670,7 @@ use (
 )
 `) // TODO(matloob): For some reason there's a "start position 7:0 is out of bounds" error when the ")" is on the last character/line in the file. Rob probably knows what's going on.
 		env.SaveBuffer("go.work")
-		env.Await(env.DoneWithSave())
+		env.AfterChange()
 		gotWorkContents := env.ReadWorkspaceFile("go.work")
 		wantWorkContents := `go 1.18
 
@@ -814,7 +807,7 @@ use (
 	).Run(t, workspace, func(t *testing.T, env *Env) {
 		env.OpenFile("moda/a/a.go")
 		env.Await(env.DoneWithOpen())
-		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		loc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		file := env.Sandbox.Workdir.URIToPath(loc.URI)
 		want := "modb/b/b.go"
 		if !strings.HasSuffix(file, want) {
@@ -859,7 +852,7 @@ const B = 0
 		WorkspaceFolders("a"),
 	).Run(t, workspace, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
-		loc := env.GoToDefinition(env.RegexpSearch("a/a.go", "b.(B)"))
+		loc := env.FirstDefinition(env.RegexpSearch("a/a.go", "b.(B)"))
 		got := env.Sandbox.Workdir.URIToPath(loc.URI)
 		want := "b/b.go"
 		if got != want {
@@ -888,7 +881,7 @@ var _ = fmt.Printf
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("outside/foo.go", "")
 		env.EditBuffer("outside/foo.go", fake.NewEdit(0, 0, 0, 0, code))
-		env.GoToDefinition(env.RegexpSearch("outside/foo.go", `Printf`))
+		env.FirstDefinition(env.RegexpSearch("outside/foo.go", `Printf`))
 	})
 }
 
@@ -1029,7 +1022,7 @@ func main() {
 			ReadDiagnostics("b/go.mod", params),
 		)
 		for _, d := range params.Diagnostics {
-			if !strings.Contains(d.Message, "go.sum is out of sync") {
+			if !strings.Contains(d.MessageString(), "go.sum is out of sync") {
 				continue
 			}
 			actions := env.GetQuickFixes("b/go.mod", []protocol.Diagnostic{d})
@@ -1056,7 +1049,7 @@ package main_test
 
 type Server struct{}
 
-const mainConst = otherConst
+const MainConst = otherConst
 -- other_test.go --
 package main_test
 
@@ -1085,7 +1078,7 @@ func (Server) Foo() {}
 		)
 
 		// This will cause a test failure if other_test.go is not in any package.
-		_ = env.GoToDefinition(env.RegexpSearch("other_test.go", "Server"))
+		_ = env.FirstDefinition(env.RegexpSearch("other_test.go", "Server"))
 	})
 }
 
@@ -1414,6 +1407,66 @@ func TestInitializeWithNonFileWorkspaceFolders(t *testing.T) {
 	}
 }
 
+// TestChangeAddedWorkspaceFolders tests issue71967 which an editor sends the following requests.
+//
+//  1. send an initialization request with rootURI but no workspaceFolders,
+//     which gopls helps to find a workspaceFolders for it.
+//  2. send a DidChangeWorkspaceFolders request with the exact the same folder gopls helps to find.
+//
+// It uses the same approach to simulate the scenario, and ensure we can skip the already added file.
+func TestChangeAddedWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		after         []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "add an already added file",
+			after:         []string{"modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "add an already added file but with an ending slash",
+			after:         []string{"modb/"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "add an already added file and a new file",
+			after:         []string{"modb", "moda/a"},
+			wantViewRoots: []string{"./modb", "moda/a"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), RootPath("modb"), NoDefaultWorkspaceFiles()}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.ChangeWorkspaceFolders(tt.after...)
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding the already added folder", 1, false),
+					NoOutstandingWork(IgnoreTelemetryPromptWork),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
+}
+
 // Test that non-file scheme Document URIs in ChangeWorkspaceFolders
 // notification does not produce errors.
 func TestChangeNonFileWorkspaceFolders(t *testing.T) {
@@ -1465,4 +1518,75 @@ func TestChangeNonFileWorkspaceFolders(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestRecoverFromLoadError_Issue81400 tests that a file that was marked
+// unloadable during a workspace load error is loaded again, inline, as soon as
+// a request needs it.
+func TestRecoverFromLoadError_Issue81400(t *testing.T) {
+	const (
+		goodMod   = "module mod.com\n\ngo 1.21\n"
+		brokenMod = goodMod + "\nrequire (\n" // unterminated require block
+	)
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- main.go --
+package main
+
+func main() {}
+-- tool/tool.go --
+//go:build ignore
+
+package main
+
+func Target() {}
+
+func main() { Target() }
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		// tool.go is a standalone file: the build constraint keeps it out of ./...,
+		// so the workspace load never gives it metadata and the inline load in
+		// Snapshot.MetadataForFile is the only thing that can. Without the fix the
+		// unloadable mark therefore survives the repair of go.mod for good, and the
+		// assertion at the end of this test describes a steady state rather than
+		// the state between snapshot invalidation and the end of the background reload.
+		// A test of that window would have to answer the request within a millisecond
+		// or so of the notification, and would pass vacuously as soon as anything else
+		// delayed it (e.g. debouncing go list, etc)
+		env.OpenFile("tool/tool.go")
+		env.AfterChange()
+		loc := env.RegexpSearch("tool/tool.go", "Target")
+
+		refs, err := env.Editor.References(env.Ctx, loc)
+		if err != nil {
+			t.Fatalf("References failed before the load error: %v", err)
+		}
+		if len(refs) != 2 {
+			t.Fatalf("got %d references before the load error, want 2 (%v)", len(refs), refs)
+		}
+
+		// Break go.mod: the load fails, and tool.go is marked unloadable.
+		env.WriteWorkspaceFile("go.mod", brokenMod)
+		env.AfterChange()
+		if _, err := env.Editor.References(env.Ctx, loc); err == nil {
+			t.Fatal("References unexpectedly succeeded while go.mod was broken")
+		}
+
+		// Repair go.mod, and let every change settle. The reload that follows
+		// loads ./..., which does not cover tool.go, so the mark must be
+		// cleared for the file to load again.
+		env.WriteWorkspaceFile("go.mod", goodMod)
+		env.AfterChange()
+
+		refs, err = env.Editor.References(env.Ctx, loc)
+		if err != nil {
+			t.Fatalf("References failed after go.mod was repaired: %v", err)
+		}
+		if len(refs) != 2 {
+			t.Errorf("got %d references after the repair, want 2 (%v)", len(refs), refs)
+		}
+	})
 }

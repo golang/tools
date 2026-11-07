@@ -1,0 +1,40 @@
+This test exercises verifies that the stubmethods quickfix does not shadow existing methods.
+See golang/go#77130.
+
+-- go.mod --
+module mod.com
+
+go 1.22
+
+-- main.go --
+package main
+
+type I interface {
+	Foo()
+	Bar()
+}
+
+type B struct {
+	*A
+}
+
+type A struct {
+}
+
+func (a *A) Foo() {
+}
+
+// Interface I requires implementing Foo() and Bar(). B embeds A, and A already
+// implements Foo. To avoid method shadowing, the stub for B should only
+// implement Bar and not Foo.
+var _ I = (*B)(nil) //@quickfix(re"..B..nil.", re"missing method", stub)
+
+-- @stub/main.go --
+@@ -12 +12,5 @@
++// Bar implements [I].
++func (b *B) Bar() {
++	panic("unimplemented")
++}
++
+@@ -22 +27 @@
+-

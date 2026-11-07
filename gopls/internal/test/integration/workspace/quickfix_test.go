@@ -92,7 +92,7 @@ use (
 `
 				got := env.ReadWorkspaceFile("go.work")
 				if diff := compare.Text(want, got); diff != "" {
-					t.Errorf("unexpeced go.work content:\n%s", diff)
+					t.Errorf("unexpected go.work content:\n%s", diff)
 				}
 			})
 		})
@@ -341,7 +341,7 @@ func main() {}
 }
 
 func TestStubMethods64087(t *testing.T) {
-	// We can't use the @fix or @suggestedfixerr or @codeactionerr
+	// We can't use the @fix or @quickfixerr or @codeaction
 	// because the error now reported by the corrected logic
 	// is internal and silently causes no fix to be offered.
 	//
@@ -382,8 +382,9 @@ type myerror struct{any}
 		// We check only for the first of these.
 		found := false
 		for i, diag := range d.Diagnostics {
-			t.Logf("Diagnostics[%d] = %q (%s)", i, diag.Message, diag.Source)
-			if strings.Contains(diag.Message, "too many return") {
+			msg := diag.MessageString()
+			t.Logf("Diagnostics[%d] = %q (%s)", i, msg, diag.Source)
+			if strings.Contains(msg, "too many return") {
 				found = true
 			}
 		}
@@ -404,7 +405,7 @@ type myerror struct{any}
 }
 
 func TestStubMethods64545(t *testing.T) {
-	// We can't use the @fix or @suggestedfixerr or @codeactionerr
+	// We can't use the @fix or @quickfixerr or @codeaction
 	// because the error now reported by the corrected logic
 	// is internal and silently causes no fix to be offered.
 	//
@@ -436,8 +437,9 @@ var _ [int("")]byte
 
 		found := false
 		for i, diag := range d.Diagnostics {
-			t.Logf("Diagnostics[%d] = %q (%s)", i, diag.Message, diag.Source)
-			if strings.Contains(diag.Message, "cannot convert") {
+			msg := diag.MessageString()
+			t.Logf("Diagnostics[%d] = %q (%s)", i, msg, diag.Source)
+			if strings.Contains(msg, "cannot convert") {
 				found = true
 			}
 		}
@@ -454,5 +456,55 @@ var _ [int("")]byte
 				t.Errorf("unexpected 'stub methods' fix: %#v", fix)
 			}
 		}
+	})
+}
+
+// quick fix didn't offer add imports
+func TestIssue70755(t *testing.T) {
+	files := `
+-- go.mod --
+module failure.com
+go 1.23
+-- bar/bar.go --
+package notbar
+type NotBar struct{}
+-- baz/baz.go --
+package baz
+type Baz struct{}
+-- foo/foo.go --
+package foo
+type foo struct {
+bar notbar.NotBar
+bzz baz.Baz
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo/foo.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(ReadDiagnostics("foo/foo.go", &d))
+		// should get two, one for undefined notbar
+		// and one for undefined baz
+		fixes := env.GetQuickFixes("foo/foo.go", d.Diagnostics)
+		if len(fixes) != 2 {
+			t.Fatalf("got %v, want 2 quick fixes", fixes)
+		}
+		good := 0
+		var failures strings.Builder
+		for _, f := range fixes {
+			ti := f.Title
+			// these may be overly white-space sensitive
+			if ti == "Add import: notbar \"failure.com/bar\"" ||
+				ti == "Add import:  \"failure.com/baz\"" {
+				good++
+			} else {
+				failures.WriteString(ti)
+			}
+		}
+		if good != 2 {
+			t.Errorf("failed to find\n%q, got\n%q\n%q", failures.String(), fixes[0].Title,
+				fixes[1].Title)
+		}
+
 	})
 }

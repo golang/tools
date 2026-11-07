@@ -10,38 +10,34 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
-	"go/parser"
-	"go/printer"
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"iter"
 	"math"
-	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/slices"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/stdlib"
@@ -61,6 +57,11 @@ type CompletionItem struct {
 	// Detail is supplemental information to present to the user.
 	// This often contains the type or return type of the completion item.
 	Detail string
+
+	// LabelDetails is the same information split into the two fields that
+	// LSP 3.17 gives defined positions. It is sent only to clients that
+	// advertise labelDetailsSupport, and is nil when there is nothing to say.
+	LabelDetails *protocol.CompletionItemLabelDetails
 
 	// InsertText is the text to insert if this item is selected.
 	// Any of the prefix that has already been typed is not trimmed.
@@ -136,16 +137,42 @@ func (i *CompletionItem) Snippet() string {
 	return i.InsertText
 }
 
+// addConversion wraps the existing completionItem in a conversion expression.
+// Only affects the receiver's InsertText and snippet fields, not the Label.
+// An empty conv argument has no effect.
+func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) {
+	if conv.prefix != "" {
+		// If we are in a selector, add an edit to place prefix before selector.
+		if sel := enclosingSelector(c.path, c.pos); sel != nil {
+			edits, err := c.editText(sel.Pos(), sel.Pos(), conv.prefix)
+			if err != nil {
+				// safetoken failed: invalid token.Pos information in AST.
+				return
+			}
+			i.AdditionalTextEdits = append(i.AdditionalTextEdits, edits...)
+		} else {
+			// If there is no selector, just stick the prefix at the start.
+			i.InsertText = conv.prefix + i.InsertText
+			i.snippet.PrependText(conv.prefix)
+		}
+	}
+
+	if conv.suffix != "" {
+		i.InsertText += conv.suffix
+		i.snippet.WriteText(conv.suffix)
+	}
+}
+
 // Scoring constants are used for weighting the relevance of different candidates.
 const (
+	// lowScore indicates an irrelevant or not useful completion item.
+	lowScore float64 = 0.01
+
 	// stdScore is the base score for all completion items.
 	stdScore float64 = 1.0
 
 	// highScore indicates a very relevant completion item.
 	highScore float64 = 10.0
-
-	// lowScore indicates an irrelevant or not useful completion item.
-	lowScore float64 = 0.01
 )
 
 // matcher matches a candidate's label against the user input. The
@@ -179,7 +206,7 @@ func (ipm insensitivePrefixMatcher) Score(candidateLabel string) float32 {
 type completer struct {
 	snapshot *cache.Snapshot
 	pkg      *cache.Package
-	qf       types.Qualifier          // for qualifying typed expressions
+	qual     types.Qualifier          // for qualifying typed expressions
 	mq       golang.MetadataQualifier // for syntactic qualifying
 	opts     *completionOptions
 
@@ -193,17 +220,16 @@ type completer struct {
 	// filename is the name of the file associated with this completion request.
 	filename string
 
-	// file is the AST of the file associated with this completion request.
-	file *ast.File
+	// pgf is the AST of the file associated with this completion request.
+	pgf *parsego.File // debugging
 
 	// goversion is the version of Go in force in the file, as
 	// defined by x/tools/internal/versions. Empty if unknown.
-	// TODO(adonovan): with go1.22+ it should always be known.
+	// Since go1.22 it should always be known.
 	goversion string
 
-	// (tokFile, pos) is the position at which the request was triggered.
-	tokFile *token.File
-	pos     token.Pos
+	// pos is the position at which the request was triggered.
+	pos token.Pos
 
 	// path is the path of AST nodes enclosing the position.
 	path []ast.Node
@@ -221,6 +247,10 @@ type completer struct {
 
 	// surrounding describes the identifier surrounding the position.
 	surrounding *Selection
+
+	// inferredSelectorLHS is the identifier before the dot in a selector
+	// expression, inferred from tokens when the AST is broken.
+	inferredSelectorLHS string
 
 	// inference contains information we've inferred about ideal
 	// candidates such as the candidate's type.
@@ -240,17 +270,17 @@ type completer struct {
 	// matcher matches the candidates against the surrounding prefix.
 	matcher matcher
 
-	// methodSetCache caches the types.NewMethodSet call, which is relatively
+	// methodSetCache caches the [types.NewMethodSet] call, which is relatively
 	// expensive and can be called many times for the same type while searching
 	// for deep completions.
+	// TODO(adonovan): use [typeutil.MethodSetCache], which exists for this purpose.
 	methodSetCache map[methodSetKey]*types.MethodSet
 
 	// tooNewSymbolsCache is a cache of
 	// [typesinternal.TooNewStdSymbols], recording for each std
 	// package which of its exported symbols are too new for
 	// the version of Go in force in the completion file.
-	// (The value is the minimum version in the form "go1.%d".)
-	tooNewSymbolsCache map[*types.Package]map[types.Object]string
+	tooNewSymbolsCache map[*types.Package]map[types.Object]stdlib.Symbol
 
 	// mapper converts the positions in the file from which the completion originated.
 	mapper *protocol.Mapper
@@ -268,6 +298,11 @@ type completer struct {
 	// including nil values for nodes that don't defined a scope. It
 	// also includes our package scope and the universal scope at the
 	// end.
+	//
+	// (It is tempting to replace this with fileScope.Innermost(pos)
+	// and simply follow the Scope.Parent chain, but we need to
+	// preserve the pairwise association of scopes[i] and path[i]
+	// because there is no way to get from the Scope to the Node.)
 	scopes []*types.Scope
 }
 
@@ -283,7 +318,7 @@ func (c *completer) tooNew(obj types.Object) bool {
 		disallowed = typesinternal.TooNewStdSymbols(pkg, c.goversion)
 		c.tooNewSymbolsCache[pkg] = disallowed
 	}
-	return disallowed[obj] != ""
+	return disallowed[obj] != stdlib.Symbol{}
 }
 
 // funcInfo holds info about a function object.
@@ -337,13 +372,20 @@ type completionContext struct {
 	// commentCompletion is true if we are completing a comment.
 	commentCompletion bool
 
+	// commentNeedsLeadingSpace is true when the completion edit range starts
+	// immediately after "//" with no intervening space. Completion items should
+	// prepend a space so that accepting a suggestion produces "// Name" rather
+	// than "//Name". This applies both when the cursor is right after "//" and
+	// when the user has partially typed an identifier (e.g. "//Fo").
+	commentNeedsLeadingSpace bool
+
 	// packageCompletion is true if we are completing a package name.
 	packageCompletion bool
 }
 
 // A Selection represents the cursor position and surrounding identifier.
 type Selection struct {
-	content            string
+	content            string // invariant: 0<=cursor-start<=len(content)
 	tokFile            *token.File
 	start, end, cursor token.Pos // relative to rng.TokFile
 	mapper             *protocol.Mapper
@@ -367,6 +409,19 @@ func (p Selection) Suffix() string {
 	return p.content[p.cursor-p.start:]
 }
 
+// check that Prefix and Suffix will succeed (golang/go#77050)
+// at the time a Selection is constructed.
+func (p Selection) check() {
+	offset := int(p.cursor - p.start)
+	// separate the cases so that they are distinguished in the stack trace
+	if offset < 0 {
+		bug.Reportf("Selection invariant, len(content)=%d cursor=%d start=%d", len(p.content), p.cursor, p.start)
+	}
+	if offset > len(p.content) {
+		bug.Reportf("Selection invariant, len(content)=%d cursor=%d start=%d", len(p.content), p.cursor, p.start)
+	}
+}
+
 func (c *completer) setSurrounding(ident *ast.Ident) {
 	if c.surrounding != nil {
 		return
@@ -379,11 +434,12 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 		content: ident.Name,
 		cursor:  c.pos,
 		// Overwrite the prefix only.
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   ident.Pos(),
 		end:     ident.End(),
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
 }
@@ -404,11 +460,12 @@ func (c *completer) getSurrounding() *Selection {
 		c.surrounding = &Selection{
 			content: "",
 			cursor:  c.pos,
-			tokFile: c.tokFile,
+			tokFile: c.pgf.Tok,
 			start:   c.pos,
 			end:     c.pos,
 			mapper:  c.mapper,
 		}
+		c.surrounding.check()
 	}
 	return c.surrounding
 }
@@ -458,12 +515,7 @@ type candidate struct {
 }
 
 func (c candidate) hasMod(mod typeModKind) bool {
-	for _, m := range c.mods {
-		if m == mod {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.mods, mod)
 }
 
 // Completion returns a list of possible candidates for completion, given a
@@ -479,7 +531,9 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	startTime := time.Now()
 
 	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
-	if err != nil || pgf.File.Package == token.NoPos {
+	if err != nil || !pgf.File.Package.IsValid() {
+		// Invalid package declaration
+		//
 		// If we can't parse this file or find position for the package
 		// keyword, it may be missing a package declaration. Try offering
 		// suggestions for the package declaration.
@@ -499,10 +553,12 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 	// Completion is based on what precedes the cursor.
 	// Find the path to the position before pos.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos-1, pos-1)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, pos-1, pos-1)
 	if path == nil {
 		return nil, nil, fmt.Errorf("cannot find node enclosing position")
 	}
+
+	info := pkg.TypesInfo()
 
 	// Check if completion at this position is valid. If not, return early.
 	switch n := path[0].(type) {
@@ -522,7 +578,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	case *ast.Ident:
 		// Don't offer completions for (most) defining identifiers.
-		if obj, ok := pkg.TypesInfo().Defs[n]; ok {
+		if obj, ok := info.Defs[n]; ok {
 			if v, ok := obj.(*types.Var); ok && v.IsField() && v.Embedded() {
 				// Allow completion of anonymous fields, since they may reference type
 				// names.
@@ -544,21 +600,25 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	// Collect all surrounding scopes, innermost first.
-	scopes := golang.CollectScopes(pkg.TypesInfo(), path, pos)
-	scopes = append(scopes, pkg.Types().Scope(), types.Universe)
-
-	var goversion string // "" => no version check
-	// Prior go1.22, the behavior of FileVersion is not useful to us.
-	if slices.Contains(build.Default.ReleaseTags, "go1.22") {
-		goversion = versions.FileVersion(pkg.TypesInfo(), pgf.File) // may be ""
+	// Collect all surrounding scopes, innermost first, inserting
+	// nils as needed to preserve the correspondence with path[i].
+	var scopes []*types.Scope
+	for _, n := range path {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			n = node.Type
+		case *ast.FuncLit:
+			n = node.Type
+		}
+		scopes = append(scopes, info.Scopes[n])
 	}
+	scopes = append(scopes, pkg.Types().Scope(), types.Universe)
 
 	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       typesutil.FileQualifier(pgf.File, pkg.Types(), pkg.TypesInfo()),
+		qual:     typesinternal.FileQualifier(pgf.File, pkg.Types()),
 		mq:       golang.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,
@@ -566,14 +626,13 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		},
 		fh:                        fh,
 		filename:                  fh.URI().Path(),
-		tokFile:                   pgf.Tok,
-		file:                      pgf.File,
-		goversion:                 goversion,
+		pgf:                       pgf,
+		goversion:                 versions.FileVersion(info, pgf.File), // may be "" => no version check
 		path:                      path,
 		pos:                       pos,
 		seen:                      make(map[types.Object]bool),
-		enclosingFunc:             enclosingFunction(path, pkg.TypesInfo()),
-		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, pkg.TypesInfo()),
+		enclosingFunc:             enclosingFunction(path, info),
+		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, info),
 		deepState: deepCompletionState{
 			enabled: opts.DeepCompletion,
 		},
@@ -591,7 +650,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		// default to a matcher that always matches
 		matcher:            prefixMatcher(""),
 		methodSetCache:     make(map[methodSetKey]*types.MethodSet),
-		tooNewSymbolsCache: make(map[*types.Package]map[types.Object]string),
+		tooNewSymbolsCache: make(map[*types.Package]map[types.Object]stdlib.Symbol),
 		mapper:             pgf.Mapper,
 		startTime:          startTime,
 		scopes:             scopes,
@@ -626,7 +685,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	err = c.collectCompletions(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to collect completions: %v", err)
 	}
 
 	// Deep search collected candidates and their members for more candidates.
@@ -646,7 +705,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, callback := range c.completionCallbacks {
 		if deadline == nil || time.Now().Before(*deadline) {
 			if err := c.snapshot.RunProcessEnvFunc(ctx, callback); err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("failed to run goimports callback: %v", err)
 			}
 		}
 	}
@@ -660,7 +719,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// depend on other candidates having already been collected.
 	c.addStatementCandidates()
 
-	c.sortItems()
+	sortItems(c.items)
 	return c.items, c.getSurrounding(), nil
 }
 
@@ -668,7 +727,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 // search queue or completion items directly for different completion contexts.
 func (c *completer) collectCompletions(ctx context.Context) error {
 	// Inside import blocks, return completions for unimported packages.
-	for _, importSpec := range c.file.Imports {
+	for _, importSpec := range c.pgf.File.Imports {
 		if !(importSpec.Path.Pos() <= c.pos && c.pos <= importSpec.Path.End()) {
 			continue
 		}
@@ -676,7 +735,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	// Inside comments, offer completions for the name of the relevant symbol.
-	for _, comment := range c.file.Comments {
+	for _, comment := range c.pgf.File.Comments {
 		if comment.Pos() < c.pos && c.pos <= comment.End() {
 			c.populateCommentCompletions(comment)
 			return nil
@@ -684,7 +743,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	// Struct literals are handled entirely separately.
-	if c.wantStructFieldCompletions() {
+	if wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		// If we are definitely completing a struct field name, deep completions
 		// don't make sense.
 		if c.enclosingCompositeLiteral.inKey {
@@ -706,33 +765,68 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 
 	switch n := c.path[0].(type) {
 	case *ast.Ident:
-		if c.file.Name == n {
+		if c.pgf.File.Name == n {
 			return c.packageNameCompletions(ctx, c.fh.URI(), n)
 		} else if sel, ok := c.path[1].(*ast.SelectorExpr); ok && sel.Sel == n {
-			// Is this the Sel part of a selector?
+			// We are in the Sel part of a selector (e.g. x.‸sel or x.sel‸).
 			return c.selector(ctx, sel)
 		}
 		return c.lexical(ctx)
-	// The function name hasn't been typed yet, but the parens are there:
-	//   recv.‸(arg)
+
 	case *ast.TypeAssertExpr:
+		// The function name hasn't been typed yet, but the parens are there:
+		//   recv.‸(arg)
 		// Create a fake selector expression.
-		//
+
 		// The name "_" is the convention used by go/parser to represent phantom
 		// selectors.
 		sel := &ast.Ident{NamePos: n.X.End() + token.Pos(len(".")), Name: "_"}
 		return c.selector(ctx, &ast.SelectorExpr{X: n.X, Sel: sel})
+
 	case *ast.SelectorExpr:
+		// We are in the X part of a selector (x‸.sel),
+		// or after the dot with a fixed/phantom Sel (x.‸_).
 		return c.selector(ctx, n)
-	// At the file scope, only keywords are allowed.
+
 	case *ast.BadDecl, *ast.File:
+		// At the file scope, only keywords are allowed.
 		c.addKeywordCompletions()
+
 	default:
+		if c.tryInferredSelector() {
+			return nil
+		}
 		// fallback to lexical completions
 		return c.lexical(ctx)
 	}
 
 	return nil
+}
+
+// tryInferredSelector attempts to complete members of an inferred selector LHS.
+// It returns true if it successfully added completion items.
+func (c *completer) tryInferredSelector() bool {
+	if c.inferredSelectorLHS == "" {
+		return false
+	}
+	for _, scope := range c.scopes {
+		if scope == nil {
+			continue
+		}
+		obj := scope.Lookup(c.inferredSelectorLHS)
+		if obj == nil {
+			continue
+		}
+		if pkgName, ok := obj.(*types.PkgName); ok {
+			c.packageMembers(pkgName.Imported(), stdScore, nil, c.deepState.enqueue)
+			return true
+		}
+		if typeIsValid(obj.Type()) {
+			c.methodsAndFields(obj.Type(), isVar(obj), nil, c.deepState.enqueue)
+			return true
+		}
+	}
+	return false
 }
 
 // containingIdent returns the *ast.Ident containing pos, if any. It
@@ -745,12 +839,14 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 	}
 
 	pos, tkn, lit := c.scanToken(src)
+	if ok, lhs := c.inferSelector(src); ok {
+		c.inferredSelectorLHS = lhs
+	}
 	if !pos.IsValid() {
 		return nil
 	}
 
 	fakeIdent := &ast.Ident{Name: lit, NamePos: pos}
-
 	if _, isBadDecl := c.path[0].(*ast.BadDecl); isBadDecl {
 		// You don't get *ast.Idents at the file level, so look for bad
 		// decls and use the manually extracted token.
@@ -765,6 +861,22 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		// is a keyword. This improves completion after an "accidental
 		// keyword", e.g. completing to "variance" in "someFunc(var<>)".
 		return fakeIdent
+	} else if tkn == token.IDENT {
+		// If the token is an identifier but was not parsed as an *ast.Ident
+		// (likely due to syntax errors), use the scanned token.
+		return fakeIdent
+	} else if block, ok := c.path[0].(*ast.BlockStmt); ok && len(block.List) != 0 {
+		last := block.List[len(block.List)-1]
+		// Handle incomplete AssignStmt with multiple left-hand vars:
+		//     var left, right int
+		//     left, ri‸                    -> "right"
+		if expr, ok := last.(*ast.ExprStmt); ok &&
+			(is[*ast.Ident](expr.X) ||
+				is[*ast.SelectorExpr](expr.X) ||
+				is[*ast.IndexExpr](expr.X) ||
+				is[*ast.StarExpr](expr.X)) {
+			return fakeIdent
+		}
 	}
 
 	return nil
@@ -775,6 +887,8 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 	tok := c.pkg.FileSet().File(c.pos)
 
 	var s scanner.Scanner
+	// TODO(adonovan): fix! this mutates the token.File borrowed from c.pkg,
+	// calling AddLine and AddLineColumnInfo. Not sound!
 	s.Init(tok, contents, nil, 0)
 	for {
 		tknPos, tkn, lit := s.Scan()
@@ -788,16 +902,60 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 	}
 }
 
-func (c *completer) sortItems() {
-	sort.SliceStable(c.items, func(i, j int) bool {
+// inferSelector attempts to infer if the cursor is at a selector expression
+// (IDENT . IDENT or IDENT .) in invalid code where the AST is broken.
+// It returns true and the literal of the LHS identifier if detected.
+func (c *completer) inferSelector(src []byte) (bool, string) {
+	offset, err := safetoken.Offset(c.pgf.Tok, c.pos)
+	if err != nil {
+		return false, ""
+	}
+
+	// scanBackIdent scans backward from src[:end] over valid Go identifier
+	// characters (Unicode letters, digits, '_') and returns the start offset.
+	scanBackIdent := func(end int) int {
+		i := end
+		for i > 0 {
+			r, size := utf8.DecodeLastRune(src[:i])
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+				break
+			}
+			i -= size
+		}
+		return i
+	}
+
+	// Skip past the identifier at cursor (if any).
+	beforeIdent := scanBackIdent(offset)
+
+	// Check for a dot.
+	if beforeIdent <= 0 || src[beforeIdent-1] != '.' {
+		return false, ""
+	}
+
+	// Find the identifier before the dot.
+	startOfLHS := scanBackIdent(beforeIdent - 1)
+	if startOfLHS == beforeIdent-1 {
+		return false, ""
+	}
+
+	lhs := string(src[startOfLHS : beforeIdent-1])
+	if !token.IsIdentifier(lhs) {
+		return false, ""
+	}
+	return true, lhs
+}
+
+func sortItems(items []CompletionItem) {
+	sort.SliceStable(items, func(i, j int) bool {
 		// Sort by score first.
-		if c.items[i].Score != c.items[j].Score {
-			return c.items[i].Score > c.items[j].Score
+		if items[i].Score != items[j].Score {
+			return items[i].Score > items[j].Score
 		}
 
 		// Then sort by label so order stays consistent. This also has the
 		// effect of preferring shorter candidates.
-		return c.items[i].Label < c.items[j].Label
+		return items[i].Label < items[j].Label
 	})
 }
 
@@ -878,14 +1036,15 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	c.surrounding = &Selection{
 		content: content,
 		cursor:  c.pos,
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   start,
 		end:     end,
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 
 	seenImports := make(map[string]struct{})
-	for _, importSpec := range c.file.Imports {
+	for _, importSpec := range c.pgf.File.Imports {
 		if importSpec.Path.Value == importPath {
 			continue
 		}
@@ -947,7 +1106,10 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
+		if err := imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.Types().Name(), opts.Env); err != nil {
+			return fmt.Errorf("getting import paths: %v", err)
+		}
+		return nil
 	})
 	return nil
 }
@@ -980,8 +1142,22 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 	// comment is valid, set surrounding as word boundaries around cursor
 	c.setSurroundingForComment(comment)
 
+	// If the edit range (what's being replaced) starts immediately after "//"
+	// with no space, completions must prepend a space to produce proper Go doc
+	// comment style ("// Name" rather than "//Name"). This covers both the case
+	// where the cursor is right after "//" and where the user has already typed
+	// some characters (e.g. "//Fo" completing to "// FooBar").
+	if c.surrounding != nil {
+		for _, cmt := range comment.List {
+			if c.surrounding.start == cmt.Slash+2 {
+				c.completionContext.commentNeedsLeadingSpace = true
+				break
+			}
+		}
+	}
+
 	// Using the next line pos, grab and parse the exported symbol on that line
-	for _, n := range c.file.Decls {
+	for _, n := range c.pgf.File.Decls {
 		declLine := safetoken.Line(file, n.Pos())
 		// if the comment is not in, directly above or on the same line as a declaration
 		if declLine != commentLine && declLine != commentLine+1 &&
@@ -1037,12 +1213,21 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 			// collect receiver struct fields
 			if node.Recv != nil {
-				sig := c.pkg.TypesInfo().Defs[node.Name].(*types.Func).Type().(*types.Signature)
-				_, named := typesinternal.ReceiverNamed(sig.Recv()) // may be nil if ill-typed
+				fn, ok := c.pkg.TypesInfo().Defs[node.Name].(*types.Func)
+				if !ok {
+					// A duplicate FuncDecl may lack a Defs entry.
+					// Avoid panicking in this case; see go.dev/issue/71273.
+					continue
+				}
+				sig := fn.Signature()
+				recv := sig.Recv()
+				if recv == nil {
+					continue // may be nil if ill-typed
+				}
+				_, named := typesinternal.RecvBase(fn)
 				if named != nil {
 					if recvStruct, ok := named.Underlying().(*types.Struct); ok {
-						for i := 0; i < recvStruct.NumFields(); i++ {
-							field := recvStruct.Field(i)
+						for field := range recvStruct.Fields() {
 							c.deepState.enqueue(candidate{obj: field, score: lowScore})
 						}
 					}
@@ -1090,11 +1275,12 @@ func (c *completer) setSurroundingForComment(comments *ast.CommentGroup) {
 	c.surrounding = &Selection{
 		content: cursorComment.Text[start:end],
 		cursor:  c.pos,
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   token.Pos(int(cursorComment.Slash) + start),
 		end:     token.Pos(int(cursorComment.Slash) + end),
 		mapper:  c.mapper,
 	}
+	c.surrounding.check()
 	c.setMatcherFromPrefix(c.surrounding.Prefix())
 }
 
@@ -1107,7 +1293,10 @@ func isValidIdentifierChar(char byte) bool {
 
 // adds struct fields, interface methods, function declaration fields to completion
 func (c *completer) addFieldItems(fields *ast.FieldList) {
-	if fields == nil {
+	// TODO: in golang/go#72828, we get here with a nil surrounding.
+	// This indicates a logic bug elsewhere: we should only be interrogating the
+	// surrounding if it is set.
+	if fields == nil || c.surrounding == nil {
 		return
 	}
 
@@ -1135,12 +1324,11 @@ func (c *completer) addFieldItems(fields *ast.FieldList) {
 	}
 }
 
-func (c *completer) wantStructFieldCompletions() bool {
-	clInfo := c.enclosingCompositeLiteral
-	if clInfo == nil {
+func wantStructFieldCompletions(enclosingCl *compLitInfo) bool {
+	if enclosingCl == nil {
 		return false
 	}
-	return is[*types.Struct](clInfo.clType) && (clInfo.inKey || clInfo.maybeInFieldName)
+	return is[*types.Struct](enclosingCl.clType) && (enclosingCl.inKey || enclosingCl.maybeInFieldName)
 }
 
 func (c *completer) wantTypeName() bool {
@@ -1150,15 +1338,17 @@ func (c *completer) wantTypeName() bool {
 // See https://golang.org/issue/36001. Unimported completions are expensive.
 const (
 	maxUnimportedPackageNames = 5
-	unimportedMemberTarget    = 100
 )
 
 // selector finds completions for the specified selector expression.
+//
+// The caller should ensure that sel.X has type information,
+// even if sel is synthetic.
 func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	c.inference.objChain = objChain(c.pkg.TypesInfo(), sel.X)
 
 	// True selector?
-	if tv, ok := c.pkg.TypesInfo().Types[sel.X]; ok {
+	if tv, ok := c.pkg.TypesInfo().Types[sel.X]; ok && tv.Type != types.Typ[types.Invalid] {
 		c.methodsAndFields(tv.Type, tv.Addressable(), nil, c.deepState.enqueue)
 		c.addPostfixSnippetCandidates(ctx, sel)
 		return nil
@@ -1170,8 +1360,6 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	}
 
 	// Treat sel as a qualified identifier.
-	var filter func(*metadata.Package) bool
-	needImport := false
 	if pkgName, ok := c.pkg.TypesInfo().Uses[id].(*types.PkgName); ok {
 		// Qualified identifier with import declaration.
 		imp := pkgName.Imported()
@@ -1182,19 +1370,6 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 			return nil
 		}
 
-		// Imported declaration with missing type information.
-		// Fall through to shallow completion of unimported package members.
-		// Match candidate packages by path.
-		filter = func(mp *metadata.Package) bool {
-			return strings.TrimPrefix(string(mp.PkgPath), "vendor/") == imp.Path()
-		}
-	} else {
-		// Qualified identifier without import declaration.
-		// Match candidate packages by name.
-		filter = func(mp *metadata.Package) bool {
-			return string(mp.Name) == id.Name
-		}
-		needImport = true
 	}
 
 	// Search unimported packages.
@@ -1204,273 +1379,23 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 	// -- completion of symbols in unimported packages --
 
-	// The deep completion algorithm is exceedingly complex and
-	// deeply coupled to the now obsolete notions that all
-	// token.Pos values can be interpreted by as a single FileSet
-	// belonging to the Snapshot and that all types.Object values
-	// are canonicalized by a single types.Importer mapping.
-	// These invariants are no longer true now that gopls uses
-	// an incremental approach, parsing and type-checking each
-	// package separately.
-	//
-	// Consequently, completion of symbols defined in packages that
-	// are not currently imported by the query file cannot use the
-	// deep completion machinery which is based on type information.
-	// Instead it must use only syntax information from a quick
-	// parse of top-level declarations (but not function bodies).
-	//
-	// TODO(adonovan): rewrite the deep completion machinery to
-	// not assume global Pos/Object realms and then use export
-	// data instead of the quick parse approach taken here.
+	// The user might have typed strings.TLower, so id.Name==strings, sel.Sel.Name == TLower,
+	// but the cursor might be inside TLower, so adjust the prefix
+	prefix := sel.Sel.Name
+	if c.surrounding != nil {
+		if c.surrounding.content != sel.Sel.Name {
+			if sel.Sel.Name != "_" && sel.Sel.Name != "" {
+				bug.Reportf("unexpected surrounding: %q != %q", c.surrounding.content, sel.Sel.Name)
 
-	// First, we search among packages in the forward transitive
-	// closure of the workspace.
-	// We'll use a fast parse to extract package members
-	// from those that match the name/path criterion.
-	all, err := c.snapshot.AllMetadata(ctx)
-	if err != nil {
-		return err
-	}
-	known := make(map[golang.PackagePath]*metadata.Package)
-	for _, mp := range all {
-		if mp.Name == "main" {
-			continue // not importable
-		}
-		if mp.IsIntermediateTestVariant() {
-			continue
-		}
-		// The only test variant we admit is "p [p.test]"
-		// when we are completing within "p_test [p.test]",
-		// as in that case we would like to offer completions
-		// of the test variants' additional symbols.
-		if mp.ForTest != "" && c.pkg.Metadata().PkgPath != mp.ForTest+"_test" {
-			continue
-		}
-		if !filter(mp) {
-			continue
-		}
-		// Prefer previous entry unless this one is its test variant.
-		if mp.ForTest != "" || known[mp.PkgPath] == nil {
-			known[mp.PkgPath] = mp
+			}
+			prefix = c.surrounding.Prefix()
+		} else {
+			prefix = sel.Sel.Name[:c.surrounding.cursor-c.surrounding.start]
 		}
 	}
-
-	paths := make([]string, 0, len(known))
-	for path := range known {
-		paths = append(paths, string(path))
-	}
-
-	// Rank import paths as goimports would.
-	var relevances map[string]float64
-	if len(paths) > 0 {
-		if err := c.snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
-			var err error
-			relevances, err = imports.ScoreImportPaths(ctx, opts.Env, paths)
-			return err
-		}); err != nil {
-			return err
-		}
-		sort.Slice(paths, func(i, j int) bool {
-			return relevances[paths[i]] > relevances[paths[j]]
-		})
-	}
-
-	// quickParse does a quick parse of a single file of package m,
-	// extracts exported package members and adds candidates to c.items.
-	// TODO(rfindley): synchronizing access to c here does not feel right.
-	// Consider adding a concurrency-safe API for completer.
-	var cMu sync.Mutex // guards c.items and c.matcher
-	var enough int32   // atomic bool
-	quickParse := func(uri protocol.DocumentURI, mp *metadata.Package, tooNew map[string]bool) error {
-		if atomic.LoadInt32(&enough) != 0 {
-			return nil
-		}
-
-		fh, err := c.snapshot.ReadFile(ctx, uri)
-		if err != nil {
-			return err
-		}
-		content, err := fh.Content()
-		if err != nil {
-			return err
-		}
-		path := string(mp.PkgPath)
-		forEachPackageMember(content, func(tok token.Token, id *ast.Ident, fn *ast.FuncDecl) {
-			if atomic.LoadInt32(&enough) != 0 {
-				return
-			}
-
-			if !id.IsExported() {
-				return
-			}
-
-			if tooNew[id.Name] {
-				return // symbol too new for requesting file's Go's version
-			}
-
-			cMu.Lock()
-			score := c.matcher.Score(id.Name)
-			cMu.Unlock()
-
-			if sel.Sel.Name != "_" && score == 0 {
-				return // not a match; avoid constructing the completion item below
-			}
-
-			// The only detail is the kind and package: `var (from "example.com/foo")`
-			// TODO(adonovan): pretty-print FuncDecl.FuncType or TypeSpec.Type?
-			// TODO(adonovan): should this score consider the actual c.matcher.Score
-			// of the item? How does this compare with the deepState.enqueue path?
-			item := CompletionItem{
-				Label:      id.Name,
-				Detail:     fmt.Sprintf("%s (from %q)", strings.ToLower(tok.String()), mp.PkgPath),
-				InsertText: id.Name,
-				Score:      float64(score) * unimportedScore(relevances[path]),
-			}
-			switch tok {
-			case token.FUNC:
-				item.Kind = protocol.FunctionCompletion
-			case token.VAR:
-				item.Kind = protocol.VariableCompletion
-			case token.CONST:
-				item.Kind = protocol.ConstantCompletion
-			case token.TYPE:
-				// Without types, we can't distinguish Class from Interface.
-				item.Kind = protocol.ClassCompletion
-			}
-
-			if needImport {
-				imp := &importInfo{importPath: path}
-				if imports.ImportPathToAssumedName(path) != string(mp.Name) {
-					imp.name = string(mp.Name)
-				}
-				item.AdditionalTextEdits, _ = c.importEdits(imp)
-			}
-
-			// For functions, add a parameter snippet.
-			if fn != nil {
-				paramList := func(list *ast.FieldList) []string {
-					var params []string
-					if list != nil {
-						var cfg printer.Config // slight overkill
-						param := func(name string, typ ast.Expr) {
-							var buf strings.Builder
-							buf.WriteString(name)
-							buf.WriteByte(' ')
-							cfg.Fprint(&buf, token.NewFileSet(), typ)
-							params = append(params, buf.String())
-						}
-
-						for _, field := range list.List {
-							if field.Names != nil {
-								for _, name := range field.Names {
-									param(name.Name, field.Type)
-								}
-							} else {
-								param("_", field.Type)
-							}
-						}
-					}
-					return params
-				}
-
-				// Ideally we would eliminate the suffix of type
-				// parameters that are redundant with inference
-				// from the argument types (#51783), but it's
-				// quite fiddly to do using syntax alone.
-				// (See inferableTypeParams in format.go.)
-				tparams := paramList(fn.Type.TypeParams)
-				params := paramList(fn.Type.Params)
-				var sn snippet.Builder
-				c.functionCallSnippet(id.Name, tparams, params, &sn)
-				item.snippet = &sn
-			}
-
-			cMu.Lock()
-			c.items = append(c.items, item)
-			if len(c.items) >= unimportedMemberTarget {
-				atomic.StoreInt32(&enough, 1)
-			}
-			cMu.Unlock()
-		})
-		return nil
-	}
-
-	var goversion string
-	// TODO(adonovan): after go1.21, replace with:
-	//    goversion = c.pkg.GetTypesInfo().FileVersions[c.file]
-	if v := reflect.ValueOf(c.pkg.TypesInfo()).Elem().FieldByName("FileVersions"); v.IsValid() {
-		goversion = v.Interface().(map[*ast.File]string)[c.file] // may be ""
-	}
-
-	// Extract the package-level candidates using a quick parse.
-	var g errgroup.Group
-	for _, path := range paths {
-		mp := known[golang.PackagePath(path)]
-
-		// For standard packages, build a filter of symbols that
-		// are too new for the requesting file's Go version.
-		var tooNew map[string]bool
-		if syms, ok := stdlib.PackageSymbols[path]; ok && goversion != "" {
-			tooNew = make(map[string]bool)
-			for _, sym := range syms {
-				if versions.Before(goversion, sym.Version.String()) {
-					tooNew[sym.Name] = true
-				}
-			}
-		}
-
-		for _, uri := range mp.CompiledGoFiles {
-			uri := uri
-			g.Go(func() error {
-				return quickParse(uri, mp, tooNew)
-			})
-		}
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	// In addition, we search in the module cache using goimports.
-	ctx, cancel := context.WithCancel(ctx)
-	var mu sync.Mutex
-	add := func(pkgExport imports.PackageExport) {
-		if ignoreUnimportedCompletion(pkgExport.Fix) {
-			return
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		// TODO(adonovan): what if the actual package has a vendor/ prefix?
-		if _, ok := known[golang.PackagePath(pkgExport.Fix.StmtInfo.ImportPath)]; ok {
-			return // We got this one above.
-		}
-
-		// Continue with untyped proposals.
-		pkg := types.NewPackage(pkgExport.Fix.StmtInfo.ImportPath, pkgExport.Fix.IdentName)
-		for _, symbol := range pkgExport.Exports {
-			if goversion != "" && versions.Before(goversion, symbol.Version.String()) {
-				continue // symbol too new for this file
-			}
-			score := unimportedScore(pkgExport.Fix.Relevance)
-			c.deepState.enqueue(candidate{
-				obj:   types.NewVar(0, pkg, symbol.Name, nil),
-				score: score,
-				imp: &importInfo{
-					importPath: pkgExport.Fix.StmtInfo.ImportPath,
-					name:       pkgExport.Fix.StmtInfo.Name,
-				},
-			})
-		}
-		if len(c.items) >= unimportedMemberTarget {
-			cancel()
-		}
-	}
-
-	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		defer cancel()
-		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.Types().Name(), opts.Env)
-	})
+	c.unimported(ctx, metadata.PackageName(id.Name), prefix)
 	return nil
+
 }
 
 // unimportedScore returns a score for an unimported package that is generally
@@ -1503,6 +1428,13 @@ func ignoreUnimportedCompletion(fix *imports.ImportFix) bool {
 }
 
 func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *importInfo, cb func(candidate)) {
+	if isStarTestingDotF(typ) {
+		// is that a sufficient test? (or is more care needed?)
+		if c.fuzz(typ, imp, cb) {
+			return
+		}
+	}
+
 	mset := c.methodSetCache[methodSetKey{typ, addressable}]
 	if mset == nil {
 		if addressable && !types.IsInterface(typ) && !isPointer(typ) {
@@ -1515,21 +1447,14 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 		c.methodSetCache[methodSetKey{typ, addressable}] = mset
 	}
 
-	if isStarTestingDotF(typ) && addressable {
-		// is that a sufficient test? (or is more care needed?)
-		if c.fuzz(mset, imp, cb) {
-			return
-		}
-	}
-
-	for i := 0; i < mset.Len(); i++ {
-		obj := mset.At(i).Obj()
+	for method := range mset.Methods() {
+		obj := method.Obj()
 		// to the other side of the cb() queue?
 		if c.tooNew(obj) {
 			continue // std method too new for file's Go version
 		}
 		cb(candidate{
-			obj:         mset.At(i).Obj(),
+			obj:         method.Obj(),
 			score:       stdScore,
 			imp:         imp,
 			addressable: addressable || isPointer(typ),
@@ -1592,7 +1517,7 @@ func (c *completer) lexical(ctx context.Context) error {
 		for _, name := range scope.Names() {
 			declScope, obj := scope.LookupParent(name, c.pos)
 			if declScope != scope {
-				continue // Name was declared in some enclosing scope, or not at all.
+				continue // scope of name starts after c.pos
 			}
 
 			// If obj's type is invalid, find the AST node that defines the lexical block
@@ -1646,7 +1571,7 @@ func (c *completer) lexical(ctx context.Context) error {
 	}
 
 	if c.inference.objType != nil {
-		if named, ok := aliases.Unalias(typesinternal.Unpointer(c.inference.objType)).(*types.Named); ok {
+		if named, ok := types.Unalias(typesinternal.Unpointer(c.inference.objType)).(*types.Named); ok {
 			// If we expected a named type, check the type's package for
 			// completion items. This is useful when the current file hasn't
 			// imported the type's package yet.
@@ -1657,7 +1582,7 @@ func (c *completer) lexical(ctx context.Context) error {
 				// Make sure the package name isn't already in use by another
 				// object, and that this file doesn't import the package yet.
 				// TODO(adonovan): what if pkg.Path has vendor/ prefix?
-				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.file, golang.ImportPath(pkg.Path())) {
+				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.pgf.File, golang.ImportPath(pkg.Path())) {
 					seen[pkg.Name()] = struct{}{}
 					obj := types.NewPkgName(0, nil, pkg.Name(), pkg)
 					imp := &importInfo{
@@ -1687,10 +1612,8 @@ func (c *completer) lexical(ctx context.Context) error {
 		// This ensures we suggest "[]int" and "[]float64" for a constraint
 		// with type union "[]int | []float64".
 		if t, ok := c.inference.objType.(*types.Interface); ok {
-			if terms, err := typeparams.InterfaceTermSet(t); err == nil {
-				for _, term := range terms {
-					c.injectType(ctx, term.Type())
-				}
+			for term := range typeparams.TypeSetOf(t).Terms() {
+				c.injectType(ctx, term.Type())
 			}
 		}
 	} else {
@@ -1720,7 +1643,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 	// considered via a lexical search, so we need to directly inject
 	// them. Also allow generic types since lexical search does not
 	// infer instantiated versions of them.
-	if named, ok := aliases.Unalias(t).(*types.Named); !ok || named.TypeParams().Len() > 0 {
+	if pnt, ok := t.(typesinternal.NamedOrAlias); !ok || pnt.TypeParams().Len() > 0 {
 		// If our expected type is "[]int", this will add a literal
 		// candidate of "[]int{}".
 		c.literal(ctx, t, nil)
@@ -1730,7 +1653,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 			// a named type whose name is literally "[]int". This allows
 			// us to reuse our object based completion machinery.
 			fakeNamedType := candidate{
-				obj:   types.NewTypeName(token.NoPos, nil, types.TypeString(t, c.qf), t),
+				obj:   types.NewTypeName(token.NoPos, nil, types.TypeString(t, c.qual), t),
 				score: stdScore,
 			}
 			// Make sure the type name matches before considering
@@ -1855,7 +1778,10 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
+		if err := imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.Types().Name(), opts.Env); err != nil {
+			return fmt.Errorf("getting completion candidates: %v", err)
+		}
+		return nil
 	})
 
 	return nil
@@ -1884,36 +1810,79 @@ func (c *completer) inConstDecl() bool {
 func (c *completer) structLiteralFieldName(ctx context.Context) error {
 	clInfo := c.enclosingCompositeLiteral
 
-	// Mark fields of the composite literal that have already been set,
-	// except for the current field.
-	addedFields := make(map[*types.Var]bool)
-	for _, el := range clInfo.cl.Elts {
-		if kvExpr, ok := el.(*ast.KeyValueExpr); ok {
-			if clInfo.kv == kvExpr {
-				continue
-			}
+	if t, ok := clInfo.clType.Underlying().(*types.Struct); ok {
 
-			if key, ok := kvExpr.Key.(*ast.Ident); ok {
-				if used, ok := c.pkg.TypesInfo().Uses[key]; ok {
-					if usedVar, ok := used.(*types.Var); ok {
-						addedFields[usedVar] = true
+		// Collect selection indices of all existing
+		// fields specified by the struct literal.
+		existing := make(map[types.Object][]int)
+		for _, elt := range clInfo.cl.Elts {
+			if kv, ok := elt.(*ast.KeyValueExpr); ok {
+				if key, ok := kv.Key.(*ast.Ident); ok && clInfo.kv != kv {
+					seln, ok := types.LookupSelection(clInfo.clType, true, c.pkg.Types(), key.Name)
+					if ok {
+						existing[seln.Obj()] = seln.Index()
 					}
 				}
 			}
 		}
-	}
 
-	// Add struct fields.
-	if t, ok := aliases.Unalias(clInfo.clType).(*types.Struct); ok {
-		const deltaScore = 0.0001
-		for i := 0; i < t.NumFields(); i++ {
-			field := t.Field(i)
-			if !addedFields[field] {
-				c.deepState.enqueue(candidate{
-					obj:   field,
-					score: highScore - float64(i)*deltaScore,
-				})
+		// fields returns the sequence of candidate fields of struct type t.
+		fields := func(t *types.Struct) iter.Seq[*types.Var] {
+			// go1.27 permits promoted fields in struct literals.
+			deep := versions.AtLeast(c.goversion, versions.Go1_27)
+
+			return func(yield func(*types.Var) bool) {
+				var collect func(t *types.Struct) bool
+				collect = func(t *types.Struct) bool {
+					for f := range t.Fields() {
+						if !yield(f) {
+							return false
+						}
+						if deep && f.Anonymous() {
+							if inner, ok := f.Type().Underlying().(*types.Struct); ok && !collect(inner) {
+								return false
+							}
+						}
+					}
+					return true
+				}
+				collect(t)
 			}
+		}
+
+		// conflict reports whether one field index
+		// sequence is a prefix (ancestor) of the other.
+		conflict := func(a, b []int) bool {
+			for i := range min(len(a), len(b)) {
+				if a[i] != b[i] {
+					return false
+				}
+			}
+			return true
+		}
+
+	fieldloop:
+		for f := range fields(t) {
+			seln, ok := types.LookupSelection(clInfo.clType, true, c.pkg.Types(), f.Name())
+			if !ok || seln.Obj() != f {
+				continue // candidate's name is shadowed or ambiguous here
+			}
+
+			// Reject candidates that conflict with existing fields.
+			for _, indices := range existing {
+				if conflict(seln.Index(), indices) {
+					continue fieldloop
+				}
+			}
+
+			const deltaScore = 0.0001
+			const depthPenalty = 0.01
+			depth := len(seln.Index())
+			fieldIdx := seln.Index()[depth-1]
+			c.deepState.enqueue(candidate{
+				obj:   seln.Obj(),
+				score: highScore - float64(depth-1)*depthPenalty - float64(fieldIdx)*deltaScore,
+			})
 		}
 
 		// Fall through and add lexical completions if we aren't
@@ -1928,6 +1897,8 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 
 // enclosingCompositeLiteral returns information about the composite literal enclosing the
 // position.
+// It returns nil on failure; for example, if there is no type information for a
+// node on path.
 func enclosingCompositeLiteral(path []ast.Node, pos token.Pos, info *types.Info) *compLitInfo {
 	for _, n := range path {
 		switch n := n.(type) {
@@ -2030,14 +2001,15 @@ func enclosingFunction(path []ast.Node, info *types.Info) *funcInfo {
 			}
 		case *ast.FuncLit:
 			if typ, ok := info.Types[t]; ok {
-				if sig, _ := typ.Type.(*types.Signature); sig == nil {
+				sig, ok := typ.Type.(*types.Signature)
+				if !ok {
 					// golang/go#49397: it should not be possible, but we somehow arrived
 					// here with a non-signature type, most likely due to AST mangling
 					// such that node.Type is not a FuncType.
 					return nil
 				}
 				return &funcInfo{
-					sig:  typ.Type.(*types.Signature),
+					sig:  sig,
 					body: t.Body,
 				}
 			}
@@ -2046,8 +2018,7 @@ func enclosingFunction(path []ast.Node, info *types.Info) *funcInfo {
 	return nil
 }
 
-func (c *completer) expectedCompositeLiteralType() types.Type {
-	clInfo := c.enclosingCompositeLiteral
+func expectedCompositeLiteralType(clInfo *compLitInfo, pos token.Pos) types.Type {
 	switch t := clInfo.clType.(type) {
 	case *types.Slice:
 		if clInfo.inKey {
@@ -2074,8 +2045,8 @@ func (c *completer) expectedCompositeLiteralType() types.Type {
 		// value side. The expected type of the value will be determined from the key.
 		if clInfo.kv != nil {
 			if key, ok := clInfo.kv.Key.(*ast.Ident); ok {
-				for i := 0; i < t.NumFields(); i++ {
-					if field := t.Field(i); field.Name() == key.Name {
+				for field := range t.Fields() {
+					if field.Name() == key.Name {
 						return field.Type()
 					}
 				}
@@ -2086,7 +2057,7 @@ func (c *completer) expectedCompositeLiteralType() types.Type {
 
 			// The order of the literal fields must match the order in the struct definition.
 			// Find the element that the position belongs to and suggest that field's type.
-			if i := exprAtPos(c.pos, clInfo.cl.Elts); i < t.NumFields() {
+			if i := exprAtPos(pos, clInfo.cl.Elts); i < t.NumFields() {
 				return t.Field(i).Type()
 			}
 		}
@@ -2171,6 +2142,25 @@ type candidateInference struct {
 	// convertibleTo is a type our candidate type must be convertible to.
 	convertibleTo types.Type
 
+	// needsExactType is true if the candidate type must be exactly the type of
+	// the objType, e.g. an interface rather than its implementors.
+	//
+	// This is necessary when objType is derived using reverse type inference:
+	// any different (but assignable) type may lead to different type inference,
+	// which may no longer be valid.
+	//
+	// For example, consider the following scenario:
+	//
+	//   func f[T any](x T) []T { return []T{x} }
+	//
+	//   var s []any = f(_)
+	//
+	// Reverse type inference would infer that the type at _ must be 'any', but
+	// that does not mean that any object in the lexical scope is valid: the type of
+	// the object must be *exactly* any, otherwise type inference will cause the
+	// slice assignment to fail.
+	needsExactType bool
+
 	// typeName holds information about the expected type name at
 	// position, if any.
 	typeName typeNameInference
@@ -2242,7 +2232,7 @@ func expectedCandidate(ctx context.Context, c *completer) (inf candidateInferenc
 	inf.typeName = expectTypeName(c)
 
 	if c.enclosingCompositeLiteral != nil {
-		inf.objType = c.expectedCompositeLiteralType()
+		inf.objType = expectedCompositeLiteralType(c.enclosingCompositeLiteral, c.pos)
 	}
 
 Nodes:
@@ -2266,34 +2256,21 @@ Nodes:
 				break Nodes
 			}
 		case *ast.AssignStmt:
-			// Only rank completions if you are on the right side of the token.
-			if c.pos > node.TokPos {
-				i := exprAtPos(c.pos, node.Rhs)
-				if i >= len(node.Lhs) {
-					i = len(node.Lhs) - 1
-				}
-				if tv, ok := c.pkg.TypesInfo().Types[node.Lhs[i]]; ok {
-					inf.objType = tv.Type
-				}
-
-				// If we have a single expression on the RHS, record the LHS
-				// assignees so we can favor multi-return function calls with
-				// matching result values.
-				if len(node.Rhs) <= 1 {
-					for _, lhs := range node.Lhs {
-						inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(lhs))
-					}
-				} else {
-					// Otherwise, record our single assignee, even if its type is
-					// not available. We use this info to downrank functions
-					// with the wrong number of result values.
-					inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(node.Lhs[i]))
-				}
-			}
+			objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
+			inf.objType = objType
+			inf.assignees = assignees
 			return inf
 		case *ast.ValueSpec:
-			if node.Type != nil && c.pos > node.Type.End() {
-				inf.objType = c.pkg.TypesInfo().TypeOf(node.Type)
+			inf.objType = expectedValueSpecType(c.pkg, node, c.pos)
+			return
+		case *ast.ReturnStmt:
+			if c.enclosingFunc != nil {
+				inf.objType = expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos)
+			}
+			return inf
+		case *ast.SendStmt:
+			if typ := expectedSendStmtType(c.pkg, node, c.pos); typ != nil {
+				inf.objType = typ
 			}
 			return inf
 		case *ast.CallExpr:
@@ -2306,22 +2283,29 @@ Nodes:
 					break Nodes
 				}
 
-				sig, _ := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature)
+				if sig, ok := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature); ok {
+					// Out of bounds arguments get no inference completion.
+					if !sig.Variadic() && exprAtPos(c.pos, node.Args) >= sig.Params().Len() {
+						return inf
+					}
 
-				if sig != nil && sig.TypeParams().Len() > 0 {
-					// If we are completing a generic func call, re-check the call expression.
-					// This allows type param inference to work in cases like:
-					//
-					// func foo[T any](T) {}
-					// foo[int](<>) // <- get "int" completions instead of "T"
-					//
-					// TODO: remove this after https://go.dev/issue/52503
-					info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
-					types.CheckExpr(c.pkg.FileSet(), c.pkg.Types(), node.Fun.Pos(), node.Fun, info)
-					sig, _ = info.Types[node.Fun].Type.(*types.Signature)
-				}
+					// Inference is necessary only when function results are generic.
+					var free typeparams.Free
+					if free.Has(sig.Results()) {
+						targs := c.getTypeArgs(node)
+						res := inferExpectedResultTypes(c, i)
+						substs := reverseInferTypeArgs(sig, targs, res)
+						inst := instantiate(sig, substs)
+						if inst != nil {
+							// TODO(jacobz): If partial signature instantiation becomes possible,
+							// make needsExactType only true if necessary.
+							// Currently, ambiguous cases always resolve to a conversion expression
+							// wrapping the completion, which is occasionally superfluous.
+							inf.needsExactType = true
+							sig = inst
+						}
+					}
 
-				if sig != nil {
 					inf = c.expectedCallParamType(inf, node, sig)
 				}
 
@@ -2351,17 +2335,6 @@ Nodes:
 
 				return inf
 			}
-		case *ast.ReturnStmt:
-			if c.enclosingFunc != nil {
-				sig := c.enclosingFunc.sig
-				// Find signature result that corresponds to our return statement.
-				if resultIdx := exprAtPos(c.pos, node.Results); resultIdx < len(node.Results) {
-					if resultIdx < sig.Results().Len() {
-						inf.objType = sig.Results().At(resultIdx).Type()
-					}
-				}
-			}
-			return inf
 		case *ast.CaseClause:
 			if swtch, ok := findSwitchStmt(c.path[i+1:], c.pos, node).(*ast.SwitchStmt); ok {
 				if tv, ok := c.pkg.TypesInfo().Types[swtch.Tag]; ok {
@@ -2405,6 +2378,9 @@ Nodes:
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
+						if typ := c.inferExpectedTypeArg(i+1, 0); typ != nil {
+							inf.objType = typ
+						}
 					}
 				}
 			}
@@ -2412,26 +2388,20 @@ Nodes:
 		case *ast.IndexListExpr:
 			if node.Lbrack < c.pos && c.pos <= node.Rbrack {
 				if tv, ok := c.pkg.TypesInfo().Types[node.X]; ok {
-					if ct := expectedConstraint(tv.Type, exprAtPos(c.pos, node.Indices)); ct != nil {
+					typeParamIdx := exprAtPos(c.pos, node.Indices)
+					if ct := expectedConstraint(tv.Type, typeParamIdx); ct != nil {
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
-					}
-				}
-			}
-			return inf
-		case *ast.SendStmt:
-			// Make sure we are on right side of arrow (e.g. "foo <- <>").
-			if c.pos > node.Arrow+1 {
-				if tv, ok := c.pkg.TypesInfo().Types[node.Chan]; ok {
-					if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
-						inf.objType = ch.Elem()
+						if typ := c.inferExpectedTypeArg(i+1, typeParamIdx); typ != nil {
+							inf.objType = typ
+						}
 					}
 				}
 			}
 			return inf
 		case *ast.RangeStmt:
-			if goplsastutil.NodeContains(node.X, c.pos) {
+			if astutil.NodeContainsPos(node.X, c.pos) {
 				inf.objKind |= kindSlice | kindArray | kindMap | kindString
 				if node.Key == nil && node.Value == nil {
 					inf.objKind |= kindRange0Func | kindRange1Func | kindRange2Func
@@ -2464,6 +2434,270 @@ Nodes:
 	return inf
 }
 
+// inferExpectedResultTypes takes the index of a call expression within the completion
+// path and uses its surroundings to infer the expected result tuple of the call's signature.
+// Returns the signature result tuple as a slice, or nil if reverse type inference fails.
+//
+// # For example
+//
+// func generic[T any, U any](a T, b U) (T, U) { ... }
+//
+// var x TypeA
+// var y TypeB
+// x, y := generic(<cursor>, <cursor>)
+//
+// inferExpectedResultTypes can determine that the expected result type of the function is (TypeA, TypeB)
+func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
+	callNode, ok := c.path[callNodeIdx].(*ast.CallExpr)
+	if !ok {
+		bug.Reportf("inferExpectedResultTypes given callNodeIndex: %v which is not a ast.CallExpr\n", callNodeIdx)
+		return nil
+	}
+
+	if len(c.path) <= callNodeIdx+1 {
+		return nil
+	}
+
+	var expectedResults []types.Type
+
+	// Check the parents of the call node to extract the expected result types of the call signature.
+	// Currently reverse inferences are only supported with the following parent expressions,
+	// however this list isn't exhaustive.
+	switch node := c.path[callNodeIdx+1].(type) {
+	case *ast.KeyValueExpr:
+		enclosingCompositeLiteral := enclosingCompositeLiteral(c.path[callNodeIdx:], callNode.Pos(), c.pkg.TypesInfo())
+		if enclosingCompositeLiteral != nil && !wantStructFieldCompletions(enclosingCompositeLiteral) {
+			expectedResults = append(expectedResults, expectedCompositeLiteralType(enclosingCompositeLiteral, callNode.Pos()))
+		}
+	case *ast.AssignStmt:
+		objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
+		if len(assignees) > 0 {
+			return assignees
+		} else if objType != nil {
+			expectedResults = append(expectedResults, objType)
+		}
+	case *ast.ValueSpec:
+		if resultType := expectedValueSpecType(c.pkg, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.SendStmt:
+		if resultType := expectedSendStmtType(c.pkg, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.ReturnStmt:
+		if c.enclosingFunc == nil {
+			return nil
+		}
+
+		// As a special case for reverse call inference in
+		//
+		// return foo(<cursor>)
+		//
+		// Pull the result type from the enclosing function
+		if exprAtPos(c.pos, node.Results) == 0 {
+			if callSig := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature); callSig != nil {
+				enclosingResults := c.enclosingFunc.sig.Results()
+				if callSig.Results().Len() == enclosingResults.Len() {
+					expectedResults = make([]types.Type, enclosingResults.Len())
+					for i := range enclosingResults.Len() {
+						expectedResults[i] = enclosingResults.At(i).Type()
+					}
+					return expectedResults
+				}
+			}
+		}
+
+		if resultType := expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.CallExpr:
+		// TODO(jacobz): This is a difficult case because the normal CallExpr candidateInference
+		// leans on control flow which is inaccessible in this helper function.
+		// It would probably take a significant refactor to a recursive solution to make this case
+		// work cleanly. For now it's unimplemented.
+	}
+	return expectedResults
+}
+
+// expectedSendStmtType return the expected type at the position.
+// Returns nil if unknown.
+func expectedSendStmtType(pkg *cache.Package, node *ast.SendStmt, pos token.Pos) types.Type {
+	// Make sure we are on right side of arrow (e.g. "foo <- <>").
+	if pos > node.Arrow+1 {
+		if tv, ok := pkg.TypesInfo().Types[node.Chan]; ok {
+			if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
+				return ch.Elem()
+			}
+		}
+	}
+	return nil
+}
+
+// expectedValueSpecType returns the expected type of a ValueSpec at the query
+// position.
+func expectedValueSpecType(pkg *cache.Package, node *ast.ValueSpec, pos token.Pos) types.Type {
+	if node.Type != nil && pos > node.Type.End() {
+		return pkg.TypesInfo().TypeOf(node.Type)
+	}
+	return nil
+}
+
+// expectedAssignStmtTypes analyzes the provided assignStmt, and checks
+// to see if the provided pos is within a RHS expression. If so, it report
+// the expected type of that expression, and the LHS type(s) to which it
+// is being assigned.
+func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token.Pos) (objType types.Type, assignees []types.Type) {
+	// Only rank completions if you are on the right side of the token.
+	if pos > node.TokPos {
+		i := exprAtPos(pos, node.Rhs)
+		if i >= len(node.Lhs) {
+			i = len(node.Lhs) - 1
+		}
+		if tv, ok := pkg.TypesInfo().Types[node.Lhs[i]]; ok {
+			objType = tv.Type
+		}
+
+		// If we have a single expression on the RHS, record the LHS
+		// assignees so we can favor multi-return function calls with
+		// matching result values.
+		if len(node.Rhs) <= 1 {
+			for _, lhs := range node.Lhs {
+				assignees = append(assignees, pkg.TypesInfo().TypeOf(lhs))
+			}
+		} else {
+			// Otherwise, record our single assignee, even if its type is
+			// not available. We use this info to downrank functions
+			// with the wrong number of result values.
+			assignees = append(assignees, pkg.TypesInfo().TypeOf(node.Lhs[i]))
+		}
+	}
+	return objType, assignees
+}
+
+// expectedReturnStmtType returns the expected type of a return statement.
+// Returns nil if enclosingSig is nil.
+func expectedReturnStmtType(enclosingSig *types.Signature, node *ast.ReturnStmt, pos token.Pos) types.Type {
+	if enclosingSig != nil {
+		if resultIdx := exprAtPos(pos, node.Results); resultIdx < enclosingSig.Results().Len() {
+			return enclosingSig.Results().At(resultIdx).Type()
+		}
+	}
+	return nil
+}
+
+// Returns the number of type arguments in a callExpr
+func (c *completer) getTypeArgs(callExpr *ast.CallExpr) []types.Type {
+	var targs []types.Type
+	switch fun := callExpr.Fun.(type) {
+	case *ast.IndexListExpr:
+		for i := range fun.Indices {
+			if typ, ok := c.pkg.TypesInfo().Types[fun.Indices[i]]; ok && typeIsValid(typ.Type) {
+				targs = append(targs, typ.Type)
+			}
+		}
+	case *ast.IndexExpr:
+		if typ, ok := c.pkg.TypesInfo().Types[fun.Index]; ok && typeIsValid(typ.Type) {
+			targs = []types.Type{typ.Type}
+		}
+	}
+	return targs
+}
+
+// reverseInferTypeArgs takes a generic signature, a list of passed type arguments, and the expected concrete return types
+// inferred from the signature's call site. If possible, it returns a list of types that could be used as the type arguments
+// to the signature. If not possible, it returns nil.
+//
+// Does not panic if any of the arguments are nil.
+func reverseInferTypeArgs(sig *types.Signature, typeArgs []types.Type, expectedResults []types.Type) []types.Type {
+	if len(expectedResults) == 0 || sig == nil || sig.TypeParams().Len() == 0 || sig.Results().Len() != len(expectedResults) {
+		return nil
+	}
+
+	tparams := make([]*types.TypeParam, sig.TypeParams().Len())
+	for i := range sig.TypeParams().Len() {
+		tparams[i] = sig.TypeParams().At(i)
+	}
+
+	for i := len(typeArgs); i < sig.TypeParams().Len(); i++ {
+		typeArgs = append(typeArgs, nil)
+	}
+
+	u := newUnifier(tparams, typeArgs)
+	for i, assignee := range expectedResults {
+		// Unify does not check the constraints of the type parameters.
+		// Checks must be applied after.
+		if !u.unify(sig.Results().At(i).Type(), assignee, unifyModeExact) {
+			return nil
+		}
+	}
+
+	substs := make([]types.Type, sig.TypeParams().Len())
+	for i := range sig.TypeParams().Len() {
+		if sub := u.handles[sig.TypeParams().At(i)]; sub != nil && *sub != nil {
+			// Ensure the inferred subst is assignable to the type parameter's constraint.
+			if !assignableTo(*sub, sig.TypeParams().At(i).Constraint()) {
+				return nil
+			}
+			substs[i] = *sub
+		}
+	}
+	return substs
+}
+
+// inferExpectedTypeArg gives a type param candidateInference based on the surroundings of its call site.
+// If successful, the inf parameter is returned with only it's objType field updated.
+//
+// callNodeIdx is the index within the completion path of the type parameter's parent call expression.
+// typeParamIdx is the index of the type parameter at the completion pos.
+func (c *completer) inferExpectedTypeArg(callNodeIdx int, typeParamIdx int) types.Type {
+	if len(c.path) <= callNodeIdx {
+		return nil
+	}
+
+	callNode, ok := c.path[callNodeIdx].(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+	sig, ok := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature)
+	if !ok {
+		return nil
+	}
+
+	// Infer the type parameters in a function call based on context
+	expectedResults := inferExpectedResultTypes(c, callNodeIdx)
+	if typeParamIdx < 0 || typeParamIdx >= sig.TypeParams().Len() {
+		return nil
+	}
+	substs := reverseInferTypeArgs(sig, nil, expectedResults)
+	if substs == nil || substs[typeParamIdx] == nil {
+		return nil
+	}
+
+	return substs[typeParamIdx]
+}
+
+// Instantiates a signature with a set of type parameters.
+// Wrapper around types.Instantiate but bad arguments won't cause a panic.
+func instantiate(sig *types.Signature, substs []types.Type) *types.Signature {
+	if substs == nil || sig == nil || len(substs) != sig.TypeParams().Len() {
+		return nil
+	}
+
+	for i := range substs {
+		if substs[i] == nil {
+			substs[i] = sig.TypeParams().At(i)
+		}
+	}
+
+	if inst, err := types.Instantiate(nil, sig, substs, true); err == nil {
+		if inst, ok := inst.(*types.Signature); ok {
+			return inst
+		}
+	}
+
+	return nil
+}
+
 func (c *completer) expectedCallParamType(inf candidateInference, node *ast.CallExpr, sig *types.Signature) candidateInference {
 	numParams := sig.Params().Len()
 	if numParams == 0 {
@@ -2478,8 +2712,8 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 	// call. Record the assignees so we can favor function
 	// calls that return matching values.
 	if len(node.Args) <= 1 && exprIdx == 0 {
-		for i := 0; i < sig.Params().Len(); i++ {
-			inf.assignees = append(inf.assignees, sig.Params().At(i).Type())
+		for v := range sig.Params().Variables() {
+			inf.assignees = append(inf.assignees, v.Type())
 		}
 
 		// Record that we may be completing into variadic parameters.
@@ -2493,7 +2727,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 		inf.objType = sig.Params().At(exprIdx).Type()
 	}
 
-	if sig.Variadic() && exprIdx >= (numParams-1) {
+	if sig.Variadic() && exprIdx >= (numParams-1) && !node.Ellipsis.IsValid() {
 		// If we are completing a variadic param, deslice the variadic type.
 		inf.objType = deslice(inf.objType)
 		// Record whether we are completing the initial variadic param.
@@ -2515,9 +2749,9 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 
 func expectedConstraint(t types.Type, idx int) types.Type {
 	var tp *types.TypeParamList
-	if named, _ := t.(*types.Named); named != nil {
-		tp = named.TypeParams()
-	} else if sig, _ := t.Underlying().(*types.Signature); sig != nil {
+	if pnt, ok := t.(typesinternal.NamedOrAlias); ok {
+		tp = pnt.TypeParams()
+	} else if sig, ok := t.Underlying().(*types.Signature); ok {
 		tp = sig.TypeParams()
 	}
 	if tp == nil || idx >= tp.Len() {
@@ -2559,9 +2793,7 @@ func objChain(info *types.Info, e ast.Expr) []types.Object {
 	}
 
 	// Reverse order so the layout matches the syntactic order.
-	for i := 0; i < len(objs)/2; i++ {
-		objs[i], objs[len(objs)-1-i] = objs[len(objs)-1-i], objs[i]
-	}
+	slices.Reverse(objs)
 
 	return objs
 }
@@ -2653,11 +2885,11 @@ func breaksExpectedTypeInference(n ast.Node, pos token.Pos) bool {
 	case *ast.CompositeLit:
 		// Doesn't break inference if pos is in type name.
 		// For example: "Foo<>{Bar: 123}"
-		return n.Type == nil || !goplsastutil.NodeContains(n.Type, pos)
+		return n.Type == nil || !astutil.NodeContainsPos(n.Type, pos)
 	case *ast.CallExpr:
 		// Doesn't break inference if pos is in func name.
 		// For example: "Foo<>(123)"
-		return !goplsastutil.NodeContains(n.Fun, pos)
+		return !astutil.NodeContainsPos(n.Fun, pos)
 	case *ast.FuncLit, *ast.IndexExpr, *ast.SliceExpr:
 		return true
 	default:
@@ -2770,7 +3002,7 @@ Nodes:
 		case *ast.MapType:
 			inf.wantTypeName = true
 			if n.Key != nil {
-				inf.wantComparable = goplsastutil.NodeContains(n.Key, c.pos)
+				inf.wantComparable = astutil.NodeContainsPos(n.Key, c.pos)
 			} else {
 				// If the key is empty, assume we are completing the key if
 				// pos is directly after the "map[".
@@ -2778,10 +3010,10 @@ Nodes:
 			}
 			break Nodes
 		case *ast.ValueSpec:
-			inf.wantTypeName = n.Type != nil && goplsastutil.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = n.Type != nil && astutil.NodeContainsPos(n.Type, c.pos)
 			break Nodes
 		case *ast.TypeSpec:
-			inf.wantTypeName = goplsastutil.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = astutil.NodeContainsPos(n.Type, c.pos)
 		default:
 			if breaksExpectedTypeInference(p, c.pos) {
 				return typeNameInference{}
@@ -2882,7 +3114,7 @@ func (c *completer) matchingCandidate(cand *candidate) bool {
 	}
 
 	// Bail out early if we are completing a field name in a composite literal.
-	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && c.wantStructFieldCompletions() {
+	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		return true
 	}
 
@@ -2977,6 +3209,14 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 
 			if expType == variadicType {
 				cand.mods = append(cand.mods, takeDotDotDot)
+			}
+
+			// Candidate matches, but isn't exactly identical to the expected type.
+			// Apply a conversion to allow it to match.
+			if ci.needsExactType && !types.Identical(candType, expType) {
+				cand.convertTo = expType
+				// Ranks barely lower if it needs a conversion, even though it's perfectly valid.
+				cand.score *= 0.95
 			}
 
 			// Lower candidate score for untyped conversions. This avoids
@@ -3137,7 +3377,7 @@ func (ci *candidateInference) assigneesMatch(cand *candidate, sig *types.Signatu
 	// assignees match the corresponding sig result value, the signature
 	// is a match.
 	allMatch := false
-	for i := 0; i < sig.Results().Len(); i++ {
+	for i := range sig.Results().Len() {
 		var assignee types.Type
 
 		// If we are completing into variadic parameters, deslice the
@@ -3168,6 +3408,9 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 		return false
 	}
 
+	wantExactTypeParam := c.inference.typeName.isTypeParam &&
+		c.inference.typeName.wantTypeName && c.inference.needsExactType
+
 	typeMatches := func(candType types.Type) bool {
 		// Take into account any type name modifier prefixes.
 		candType = c.inference.applyTypeNameModifiers(candType)
@@ -3184,6 +3427,13 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 					return false
 				}
 			}
+		}
+
+		// Suggest the exact type when performing reverse type inference.
+		// x = Foo[<>]()
+		// Where x is an interface kind, only suggest the interface type rather than its implementors
+		if wantExactTypeParam && types.Identical(candType, c.inference.objType) {
+			return true
 		}
 
 		if c.inference.typeName.wantComparable && !types.Comparable(candType) {
@@ -3325,8 +3575,8 @@ func rangeFuncParamCount(sig *types.Signature) int {
 		return -1
 	}
 
-	yieldSig, _ := sig.Params().At(0).Type().Underlying().(*types.Signature)
-	if yieldSig == nil {
+	yieldSig, ok := sig.Params().At(0).Type().Underlying().(*types.Signature)
+	if !ok {
 		return -1
 	}
 
@@ -3355,34 +3605,6 @@ func isSlice(obj types.Object) bool {
 		}
 	}
 	return false
-}
-
-// forEachPackageMember calls f(tok, id, fn) for each package-level
-// TYPE/VAR/CONST/FUNC declaration in the Go source file, based on a
-// quick partial parse. fn is non-nil only for function declarations.
-// The AST position information is garbage.
-func forEachPackageMember(content []byte, f func(tok token.Token, id *ast.Ident, fn *ast.FuncDecl)) {
-	purged := goplsastutil.PurgeFuncBodies(content)
-	file, _ := parser.ParseFile(token.NewFileSet(), "", purged, 0)
-	for _, decl := range file.Decls {
-		switch decl := decl.(type) {
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				switch spec := spec.(type) {
-				case *ast.ValueSpec: // var/const
-					for _, id := range spec.Names {
-						f(decl.Tok, id, nil)
-					}
-				case *ast.TypeSpec:
-					f(decl.Tok, spec.Name, nil)
-				}
-			}
-		case *ast.FuncDecl:
-			if decl.Recv == nil {
-				f(token.FUNC, decl.Name, decl)
-			}
-		}
-	}
 }
 
 func is[T any](x any) bool {

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// This code relies on pre-go1.28 string(integer) conversion rules;
+// the build tag downgrades the file to go1.21 (the oldest version
+// to which a build tag can downgrade).
+//go:build go1.21
+
 // This file contains tests for the stringintconv checker.
 
 package a

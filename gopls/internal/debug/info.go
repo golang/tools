@@ -6,7 +6,7 @@
 package debug
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,49 +53,48 @@ func VersionInfo() *ServerVersion {
 	}
 }
 
-// PrintServerInfo writes HTML debug info to w for the Instance.
-func (i *Instance) PrintServerInfo(ctx context.Context, w io.Writer) {
+// writeServerInfo writes HTML debug info to w for the instance.
+func (i *Instance) writeServerInfo(out *bytes.Buffer) {
 	workDir, _ := os.Getwd()
-	section(w, HTML, "Server Instance", func() {
-		fmt.Fprintf(w, "Start time: %v\n", i.StartTime)
-		fmt.Fprintf(w, "LogFile: %s\n", i.Logfile)
-		fmt.Fprintf(w, "pid: %d\n", os.Getpid())
-		fmt.Fprintf(w, "Working directory: %s\n", workDir)
-		fmt.Fprintf(w, "Address: %s\n", i.ServerAddress)
-		fmt.Fprintf(w, "Debug address: %s\n", i.DebugAddress())
+	section(out, HTML, "server instance", func() {
+		fmt.Fprintf(out, "Start time: %v\n", i.StartTime)
+		fmt.Fprintf(out, "LogFile: %s\n", i.Logfile)
+		fmt.Fprintf(out, "pid: %d\n", os.Getpid())
+		fmt.Fprintf(out, "Working directory: %s\n", workDir)
+		fmt.Fprintf(out, "Address: %s\n", i.ServerAddress)
+		fmt.Fprintf(out, "Debug address: %s\n", i.DebugAddress())
 	})
-	PrintVersionInfo(ctx, w, true, HTML)
-	section(w, HTML, "Command Line", func() {
-		fmt.Fprintf(w, "<a href=/debug/pprof/cmdline>cmdline</a>")
+	WriteVersionInfo(out, true, HTML)
+	section(out, HTML, "Command Line", func() {
+		fmt.Fprintf(out, "<a href=/debug/pprof/cmdline>cmdline</a>")
 	})
 }
 
-// PrintVersionInfo writes version information to w, using the output format
+// WriteVersionInfo writes version information to w, using the output format
 // specified by mode. verbose controls whether additional information is
 // written, including section headers.
-func PrintVersionInfo(_ context.Context, w io.Writer, verbose bool, mode PrintMode) error {
+func WriteVersionInfo(out *bytes.Buffer, verbose bool, mode PrintMode) {
 	info := VersionInfo()
 	if mode == JSON {
-		return printVersionInfoJSON(w, info)
+		writeVersionInfoJSON(out, info)
+		return
 	}
 
 	if !verbose {
-		printBuildInfo(w, info, false, mode)
-		return nil
+		writeBuildInfo(out, info, false, mode)
+		return
 	}
-	section(w, mode, "Build info", func() {
-		printBuildInfo(w, info, true, mode)
+	section(out, mode, "Build info", func() {
+		writeBuildInfo(out, info, true, mode)
 	})
-	return nil
 }
 
-func printVersionInfoJSON(w io.Writer, info *ServerVersion) error {
-	js, err := json.MarshalIndent(info, "", "\t")
+func writeVersionInfoJSON(out *bytes.Buffer, info *ServerVersion) {
+	data, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
-		return err
+		panic(err) // can't happen
 	}
-	_, err = fmt.Fprint(w, string(js))
-	return err
+	out.Write(data)
 }
 
 func section(w io.Writer, mode PrintMode, title string, body func()) {
@@ -115,7 +114,7 @@ func section(w io.Writer, mode PrintMode, title string, body func()) {
 	}
 }
 
-func printBuildInfo(w io.Writer, info *ServerVersion, verbose bool, mode PrintMode) {
+func writeBuildInfo(w io.Writer, info *ServerVersion, verbose bool, mode PrintMode) {
 	fmt.Fprintf(w, "%v %v\n", info.Path, version.Version())
 	if !verbose {
 		return

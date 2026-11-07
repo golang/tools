@@ -15,6 +15,7 @@ import (
 )
 
 func TestPrepareRenameMainPackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -51,6 +52,7 @@ func main() {
 
 // Test case for golang/go#56227
 func TestRenameWithUnsafeSlice(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -79,6 +81,7 @@ func _() {
 }
 
 func TestPrepareRenameWithNoPackageDeclaration(t *testing.T) {
+	t.Parallel()
 	const files = `
 go 1.14
 -- lib/a.go --
@@ -109,6 +112,7 @@ func main() {
 }
 
 func TestPrepareRenameFailWithUnknownModule(t *testing.T) {
+	t.Parallel()
 	const files = `
 go 1.14
 -- lib/a.go --
@@ -143,6 +147,7 @@ func main() {
 // This test ensures that each import of a renamed package
 // is also renamed if it would otherwise create a conflict.
 func TestRenamePackageWithConflicts(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -181,14 +186,30 @@ func main() {
 		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
 
 		// Check if the new package name exists.
+		// Don't rename subpackages.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", `nested2 "mod.com/nested"`)
+		env.RegexpSearch("main.go", "mod.com/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
+		env.RegexpSearch("main.go", `nested1 "mod.com/lib/x"`)
+	})
+
+	WithOptions(Settings{"renameMovesSubpackages": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("lib/a.go")
+		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
+
+		// Check if the new package name exists.
+		// Rename subpackages.
+		env.RegexpSearch("nested/a.go", "package nested")
+		env.RegexpSearch("main.go", `nested2 "mod.com/nested"`)
+		env.RegexpSearch("main.go", "mod.com/nested")
 		env.RegexpSearch("main.go", "mod.com/nested/nested")
 		env.RegexpSearch("main.go", `nested1 "mod.com/nested/x"`)
 	})
 }
 
 func TestRenamePackageWithAlias(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -223,11 +244,12 @@ func main() {
 		// Check if the new package name exists.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
-		env.RegexpSearch("main.go", `lib1 "mod.com/nested/nested"`)
+		env.RegexpSearch("main.go", `lib1 "mod.com/lib/nested"`)
 	})
 }
 
 func TestRenamePackageWithDifferentDirectoryPath(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -262,11 +284,24 @@ func main() {
 		// Check if the new package name exists.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `foo "mod.com/lib/nested"`)
+	})
+
+	WithOptions(Settings{"renameMovesSubpackages": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("lib/a.go")
+		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
+
+		// Check if the new package name exists.
+		env.RegexpSearch("nested/a.go", "package nested")
+		env.RegexpSearch("main.go", "mod.com/nested")
+		// Rename subpackages.
 		env.RegexpSearch("main.go", `foo "mod.com/nested/nested"`)
 	})
 }
 
 func TestRenamePackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -307,12 +342,13 @@ func main() {
 		env.RegexpSearch("lib1/a.go", "package lib1")
 		env.RegexpSearch("lib1/b.go", "package lib1")
 		env.RegexpSearch("main.go", "mod.com/lib1")
-		env.RegexpSearch("main.go", "mod.com/lib1/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
 	})
 }
 
 // Test for golang/go#47564.
 func TestRenameInTestVariant(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -359,6 +395,7 @@ func main() {
 
 // This is a test that rename operation initiated by the editor function as expected.
 func TestRenameFileFromEditor(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -418,6 +455,7 @@ package b
 }
 
 func TestRenamePackage_Tests(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -477,7 +515,7 @@ func main() {
 		env.RegexpSearch("lib1/a.go", "package lib1")
 		env.RegexpSearch("lib1/b.go", "package lib1")
 		env.RegexpSearch("main.go", "mod.com/lib1")
-		env.RegexpSearch("main.go", "mod.com/lib1/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
 
 		// Check if the test package is renamed
 		env.RegexpSearch("lib1/a_test.go", "package lib1_test")
@@ -486,6 +524,7 @@ func main() {
 }
 
 func TestRenamePackage_NestedModule(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.work --
 go 1.18
@@ -554,6 +593,24 @@ func main() {
 		env.Rename(env.RegexpSearch("foo/foo.go", "foo"), "foox")
 
 		env.RegexpSearch("foox/foo.go", "package foox")
+		// Don't rename subpackages.
+		env.OpenFile("foo/bar/bar.go")
+		env.OpenFile("foo/bar/go.mod")
+
+		env.RegexpSearch("main.go", "mod.com/foo/bar")
+		env.RegexpSearch("main.go", "mod.com/foox")
+		env.RegexpSearch("main.go", "foox.Bar()")
+
+		env.RegexpSearch("go.mod", "./foo/bar")
+		env.RegexpSearch("go.mod", "./foo/baz")
+	})
+
+	WithOptions(Settings{"renameMovesSubpackages": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo/foo.go")
+		env.Rename(env.RegexpSearch("foo/foo.go", "foo"), "foox")
+
+		env.RegexpSearch("foox/foo.go", "package foox")
+		// Rename subpackages.
 		env.OpenFile("foox/bar/bar.go")
 		env.OpenFile("foox/bar/go.mod")
 
@@ -567,6 +624,7 @@ func main() {
 }
 
 func TestRenamePackage_DuplicateImport(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -603,11 +661,25 @@ func main() {
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
 		env.RegexpSearch("main.go", `lib1 "mod.com/nested"`)
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `lib2 "mod.com/lib/nested"`)
+	})
+
+	WithOptions(Settings{"renameMovesSubpackages": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("lib/a.go")
+		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
+
+		// Check if the new package name exists.
+		env.RegexpSearch("nested/a.go", "package nested")
+		env.RegexpSearch("main.go", "mod.com/nested")
+		env.RegexpSearch("main.go", `lib1 "mod.com/nested"`)
+		// Rename subpackages.
 		env.RegexpSearch("main.go", `lib2 "mod.com/nested/nested"`)
 	})
 }
 
 func TestRenamePackage_DuplicateBlankImport(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -644,11 +716,25 @@ func main() {
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
 		env.RegexpSearch("main.go", `_ "mod.com/nested"`)
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `lib1 "mod.com/lib/nested"`)
+	})
+
+	WithOptions(Settings{"renameMovesSubpackages": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("lib/a.go")
+		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
+
+		// Check if the new package name exists.
+		env.RegexpSearch("nested/a.go", "package nested")
+		env.RegexpSearch("main.go", "mod.com/nested")
+		env.RegexpSearch("main.go", `_ "mod.com/nested"`)
+		// Rename subpackages.
 		env.RegexpSearch("main.go", `lib1 "mod.com/nested/nested"`)
 	})
 }
 
 func TestRenamePackage_TestVariant(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -692,6 +778,7 @@ const Baz = foox.Foo
 }
 
 func TestRenamePackage_IntermediateTestVariant(t *testing.T) {
+	t.Parallel()
 	// In this test set up, we have the following import edges:
 	//   bar_test -> baz -> foo -> bar
 	//   bar_test -> foo -> bar
@@ -772,6 +859,7 @@ const _ = bar.Bar + baz.Baz + foox.Foo
 }
 
 func TestRenamePackage_Nesting(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -799,7 +887,7 @@ const C = lib.A + nested.B
 -- testdata/libx/a.go --
 package libx
 
-import "mod.com/libx/nested"
+import "mod.com/lib/nested"
 
 const A = 1 + nested.B
 -- testdata/other/other.go --
@@ -807,7 +895,7 @@ package other
 
 import (
 	"mod.com/libx"
-	"mod.com/libx/nested"
+	"mod.com/lib/nested"
 )
 
 const C = libx.A + nested.B
@@ -821,6 +909,7 @@ const C = libx.A + nested.B
 }
 
 func TestRenamePackage_InvalidName(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -840,13 +929,14 @@ const A = 1 + nested.B
 
 		for _, badName := range []string{"$$$", "lib_test"} {
 			if err := env.Editor.Rename(env.Ctx, loc, badName); err == nil {
-				t.Errorf("Rename(lib, libx) succeeded, want non-nil error")
+				t.Errorf("Rename(lib, libx) succeeded unexpectedly")
 			}
 		}
 	})
 }
 
 func TestRenamePackage_InternalPackage(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -896,9 +986,44 @@ func main() {
 
 		// Check if the new package name exists.
 		env.RegexpSearch("lib1/a.go", "package lib1")
-		env.RegexpSearch("lib1/a.go", "mod.com/lib1/internal/utils")
+		// Don't rename subpackages.
+		env.RegexpSearch("lib1/a.go", "mod.com/lib/internal/utils")
 		env.RegexpSearch("main.go", `import "mod.com/lib1"`)
 		env.RegexpSearch("main.go", "lib1.print()")
+	})
+}
+func TestRenamePackage_InvalidPackageMove(t *testing.T) {
+	t.Parallel()
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- test1/test1.go --
+package test1
+
+-- test2/test2.go --
+package test2
+
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("test1/test1.go")
+		loc := env.RegexpSearch("test1/test1.go", "test1")
+		for _, test := range []struct{ badName, expectedErrMatch string }{
+			{"test2", "invalid package identifier"},
+			{"mod.com/test2", "not empty"},
+			{"differentmod.com/test2", "cannot move package across module boundary"},
+			{"mod.com/$$$", "invalid package name"},
+			{"mod*.$+", "invalid package path"},
+			{"mod.commmm", "cannot move package across module boundary"},
+		} {
+			err := env.Editor.Rename(env.Ctx, loc, test.badName)
+			if err == nil {
+				t.Errorf("Rename to %s succeeded unexpectedly", test.badName)
+			} else if !strings.Contains(err.Error(), test.expectedErrMatch) {
+				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", test.badName, err.Error(), test.expectedErrMatch)
+			}
+		}
 	})
 }
 
@@ -918,4 +1043,69 @@ func checkTestdata(t *testing.T, env *Env) {
 			t.Errorf("Rename: unexpected buffer content for %s (-want +got):\n%s", suffix, diff)
 		}
 	}
+}
+
+// TestRenameIssue71657 checks that a panic no longer occurs in Rename
+func TestRenameIssue71657(t *testing.T) {
+	t.Parallel()
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- dep/dep.go --
+package dep
+
+type U struct {
+	F nonexistentType
+}
+-- foo.go --
+package foo
+
+import "mod.com/dep"
+
+type I interface {
+	M()
+}
+
+type T struct{}
+func (T) M() {}
+
+var _ I = T{}
+
+func _(u dep.U) {
+	_ = u.F.M
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo.go")
+		// The rename operation should succeed despite type errors in dep,
+		// and it must not panic.
+		env.Rename(env.RegexpSearch("foo.go", "M"), "N")
+
+		// Verify that M was renamed to N in the interface and struct,
+		// but the invalid selection u.F.M was left untouched.
+		want := `package foo
+
+import "mod.com/dep"
+
+type I interface {
+	N()
+}
+
+type T struct{}
+func (T) N() {}
+
+var _ I = T{}
+
+func _(u dep.U) {
+	_ = u.F.M
+}
+`
+		got := env.BufferText("foo.go")
+		if got != want {
+			t.Errorf("unexpected content of foo.go after rename:\n%s", compare.Text(want, got))
+		}
+	})
 }

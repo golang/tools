@@ -1,0 +1,33 @@
+This test verifies that completion inside new() suggests value expressions
+in Go 1.26+, but only suggests type names prior to Go 1.26 (golang/go#80929).
+
+-- flags --
+-min_go_command=go1.26
+-ignore_extra_diags
+
+-- go125/go.mod --
+module example.com/go125
+
+go 1.25
+
+-- go125/a.go --
+package go125
+
+func _() {
+	var myVal int //@item(val125, "myVal", "int", "var")
+	_ = new()     //@rank(re"()\\)", "int", "!val125")
+}
+
+-- go126/go.mod --
+module example.com/go126
+
+go 1.26
+
+-- go126/a.go --
+package go126
+
+func _() {
+	var myVal int //@item(val126, "myVal", "int", "var")
+	_ = new()     //@rank(re"()\\)", val126)
+	var _ *int = new() //@rank(re"()\\)", val126, "int")
+}

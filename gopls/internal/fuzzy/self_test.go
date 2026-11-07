@@ -14,7 +14,7 @@ func BenchmarkSelf_Matcher(b *testing.B) {
 	idents := collectIdentifiers(b)
 	patterns := generatePatterns()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, pattern := range patterns {
 			sm := NewMatcher(pattern)
 			for _, ident := range idents {
@@ -28,7 +28,7 @@ func BenchmarkSelf_SymbolMatcher(b *testing.B) {
 	idents := collectIdentifiers(b)
 	patterns := generatePatterns()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, pattern := range patterns {
 			sm := NewSymbolMatcher(pattern)
 			for _, ident := range idents {

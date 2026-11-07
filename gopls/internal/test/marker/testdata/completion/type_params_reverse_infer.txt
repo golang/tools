@@ -1,0 +1,78 @@
+-- flags --
+-ignore_extra_diags
+
+-- declarations.go --
+package x
+
+import (
+	"cmp"
+	"io"
+	"os"
+)
+
+var File *os.File
+
+func A[T cmp.Ordered](T) int { return 0 }
+
+func B[T comparable](T) int { return 0 }
+
+func C[T int | string](T) int { return 0 }
+
+func D[T io.Reader](T) int { return 0 }
+
+-- a.go --
+package x
+
+func _(i int) {
+	i = A(File.Nam) //@acceptcompletion(re"Nam()", "Name", A)
+}
+
+-- @A/a.go --
+package x
+
+func _(i int) {
+	i = A(File.Name()) //@acceptcompletion(re"Nam()", "Name", A)
+}
+
+-- b.go --
+package x
+
+func _(i int) {
+	i = B(File.Nam) //@acceptcompletion(re"Nam()", "Name", B)
+}
+
+-- @B/b.go --
+package x
+
+func _(i int) {
+	i = B(File.Name()) //@acceptcompletion(re"Nam()", "Name", B)
+}
+
+-- c.go --
+package x
+
+func _(i int) {
+	i = C(File.Nam) //@acceptcompletion(re"Nam()", "Name", C)
+}
+
+-- @C/c.go --
+package x
+
+func _(i int) {
+	i = C(File.Name()) //@acceptcompletion(re"Nam()", "Name", C)
+}
+
+-- d.go --
+package x
+
+func _(i int) {
+	i = D(Fil) //@acceptcompletion(re"Fil()", "File", D)
+}
+
+-- @D/d.go --
+package x
+
+func _(i int) {
+	i = D(File) //@acceptcompletion(re"Fil()", "File", D)
+}
+

@@ -13,9 +13,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/ctrlflow"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/cfg"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -23,7 +24,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name: "lostcancel",
-	Doc:  analysisutil.MustExtractDoc(doc, "lostcancel"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "lostcancel"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel",
 	Run:  run,
 	Requires: []*analysis.Analyzer{
@@ -46,9 +47,9 @@ var contextPackage = "context"
 // containing the assignment, we assume that other uses exist.
 //
 // checkLostCancel analyzes a single named or literal function.
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Fast path: bypass check if file doesn't use context.WithCancel.
-	if !analysisutil.Imports(pass.Pkg, contextPackage) {
+	if !typesinternal.Imports(pass.Pkg, contextPackage) {
 		return nil, nil
 	}
 
@@ -82,30 +83,22 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 	// {FuncDecl,FuncLit,CallExpr,SelectorExpr}.
 
 	// Find the set of cancel vars to analyze.
-	stack := make([]ast.Node, 0, 32)
-	ast.Inspect(node, func(n ast.Node) bool {
-		switch n.(type) {
-		case *ast.FuncLit:
-			if len(stack) > 0 {
-				return false // don't stray into nested functions
-			}
-		case nil:
-			stack = stack[:len(stack)-1] // pop
-			return true
+	ast.PreorderStack(node, nil, func(n ast.Node, stack []ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok && len(stack) > 0 {
+			return false // don't stray into nested functions
 		}
-		stack = append(stack, n) // push
 
-		// Look for [{AssignStmt,ValueSpec} CallExpr SelectorExpr]:
+		// Look for n=SelectorExpr beneath stack=[{AssignStmt,ValueSpec} CallExpr]:
 		//
 		//   ctx, cancel    := context.WithCancel(...)
 		//   ctx, cancel     = context.WithCancel(...)
 		//   var ctx, cancel = context.WithCancel(...)
 		//
-		if !isContextWithCancel(pass.TypesInfo, n) || !isCall(stack[len(stack)-2]) {
+		if !isContextWithCancel(pass.TypesInfo, n) || !isCall(stack[len(stack)-1]) {
 			return true
 		}
 		var id *ast.Ident // id of cancel var
-		stmt := stack[len(stack)-3]
+		stmt := stack[len(stack)-2]
 		switch stmt := stmt.(type) {
 		case *ast.ValueSpec:
 			if len(stmt.Names) > 1 {
@@ -145,7 +138,8 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 	switch node := node.(type) {
 	case *ast.FuncDecl:
 		sig, _ = pass.TypesInfo.Defs[node.Name].Type().(*types.Signature)
-		if node.Name.Name == "main" && sig.Recv() == nil && pass.Pkg.Name() == "main" {
+		if sig != nil && sig.Recv() == nil &&
+			node.Name.Name == "main" && pass.Pkg.Name() == "main" {
 			// Returning from main.main terminates the process,
 			// so there's no need to cancel contexts.
 			return
@@ -157,7 +151,7 @@ func runFunc(pass *analysis.Pass, node ast.Node) {
 		g = cfgs.FuncLit(node)
 	}
 	if sig == nil {
-		return // missing type information
+		return // missing type information (can this happen?)
 	}
 
 	// Print CFG.
@@ -198,7 +192,9 @@ func isContextWithCancel(info *types.Info, n ast.Node) bool {
 		return false
 	}
 	switch sel.Sel.Name {
-	case "WithCancel", "WithTimeout", "WithDeadline":
+	case "WithCancel", "WithCancelCause",
+		"WithTimeout", "WithTimeoutCause",
+		"WithDeadline", "WithDeadlineCause":
 	default:
 		return false
 	}
@@ -320,8 +316,8 @@ outer:
 }
 
 func tupleContains(tuple *types.Tuple, v *types.Var) bool {
-	for i := 0; i < tuple.Len(); i++ {
-		if tuple.At(i) == v {
+	for v0 := range tuple.Variables() {
+		if v0 == v {
 			return true
 		}
 	}

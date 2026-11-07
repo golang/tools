@@ -14,8 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"golang.org/x/tools/internal/testenv"
 )
 
 // WriteModuleVersion creates a directory in the proxy dir for a module.
@@ -48,7 +46,7 @@ func WriteModuleVersion(rootDir, module, ver string, files map[string][]byte) (r
 	}
 
 	// info file, just the bare bones.
-	infoContents := []byte(fmt.Sprintf(`{"Version": "%v", "Time":"2017-12-14T13:08:43Z"}`, ver))
+	infoContents := fmt.Appendf(nil, `{"Version": "%v", "Time":"2017-12-14T13:08:43Z"}`, ver)
 	if err := os.WriteFile(filepath.Join(dir, ver+".info"), infoContents, 0644); err != nil {
 		return err
 	}
@@ -82,18 +80,10 @@ func checkClose(name string, closer io.Closer, err *error) {
 
 // ToURL returns the file uri for a proxy directory.
 func ToURL(dir string) string {
-	if testenv.Go1Point() >= 13 {
-		// file URLs on Windows must start with file:///. See golang.org/issue/6027.
-		path := filepath.ToSlash(dir)
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		return "file://" + path
-	} else {
-		// Prior to go1.13, the Go command on Windows only accepted GOPROXY file URLs
-		// of the form file://C:/path/to/proxy. This was incorrect: when parsed, "C:"
-		// is interpreted as the host. See golang.org/issue/6027. This has been
-		// fixed in go1.13, but we emit the old format for old releases.
-		return "file://" + filepath.ToSlash(dir)
+	// file URLs on Windows must start with file:///. See golang.org/issue/6027.
+	path := filepath.ToSlash(dir)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
 	}
+	return "file://" + path
 }

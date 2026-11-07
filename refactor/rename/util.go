@@ -5,7 +5,6 @@
 package rename
 
 import (
-	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
@@ -14,8 +13,6 @@ import (
 	"runtime"
 	"strings"
 	"unicode"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 func objectKind(obj types.Object) string {
@@ -29,7 +26,7 @@ func objectKind(obj types.Object) string {
 			return "field"
 		}
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
+		if obj.Signature().Recv() != nil {
 			return "method"
 		}
 	}
@@ -59,10 +56,6 @@ func isLocal(obj types.Object) bool {
 		depth++
 	}
 	return depth >= 4
-}
-
-func isPackageLevel(obj types.Object) bool {
-	return obj.Pkg().Scope().Lookup(obj.Name()) == obj
 }
 
 // -- Plundered from go/scanner: ---------------------------------------
@@ -96,8 +89,6 @@ func sameFile(x, y string) bool {
 	}
 	return false
 }
-
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
 
 func is[T any](x any) bool {
 	_, ok := x.(T)

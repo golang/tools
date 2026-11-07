@@ -15,28 +15,28 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/xcontext"
+	"golang.org/x/tools/internal/modindex"
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // A Folder represents an LSP workspace folder, together with its per-folder
@@ -68,6 +68,7 @@ type GoEnv struct {
 	GOFLAGS     string
 	GO111MODULE string
 	GOTOOLCHAIN string
+	GOROOT      string
 
 	// Go version output.
 	GoVersion       int    // The X in Go 1.X
@@ -104,7 +105,17 @@ type View struct {
 	// background contexts created for this view.
 	baseCtx context.Context
 
+	// importsState is for the old imports code
 	importsState *importsState
+
+	// modcacheState is the replacement for importsState, to be used for
+	// goimports operations when the imports source is "gopls".
+	//
+	// It may be nil, if the imports source is not "gopls".
+	modcacheState *modcacheState
+
+	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
+	pkgIndex *typerefs.PackageIndex
 
 	// parseCache holds an LRU cache of recently parsed files.
 	parseCache *parseCache
@@ -135,6 +146,14 @@ type View struct {
 	// initialization of snapshots. Do not change it without adjusting snapshot
 	// accordingly.
 	initializationSema chan struct{}
+
+	// reloadSema is used to limit concurrent package reloading of snapshots in
+	// the view. We use a channel instead of a mutex to avoid blocking when a
+	// context is canceled.
+	//
+	// This field (along with snapshot.shouldLoad) guards against duplicate
+	// reloading of packages.
+	reloadSema chan struct{}
 
 	// Document filters are constructed once, in View.filterFunc.
 	filterFuncOnce sync.Once
@@ -234,14 +253,10 @@ func (d viewDefinition) adjustedGO111MODULE() string {
 	return "auto"
 }
 
-// ModFiles are the go.mod files enclosed in the snapshot's view and known
-// to the snapshot.
+// ModFiles returns a new, sorted slice of go.mod files for main modules
+// enclosed in the snapshot's view and known to the snapshot.
 func (d viewDefinition) ModFiles() []protocol.DocumentURI {
-	var uris []protocol.DocumentURI
-	for modURI := range d.workspaceModFiles {
-		uris = append(uris, modURI)
-	}
-	return uris
+	return slices.Sorted(maps.Keys(d.workspaceModFiles))
 }
 
 // viewDefinitionsEqual reports whether x and y are equivalent.
@@ -253,7 +268,7 @@ func viewDefinitionsEqual(x, y *viewDefinition) bool {
 		if x.workspaceModFilesErr.Error() != y.workspaceModFilesErr.Error() {
 			return false
 		}
-	} else if !maps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
+	} else if !moremaps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
 		return false
 	}
 	if len(x.envOverlay) != len(y.envOverlay) {
@@ -349,6 +364,24 @@ func (v *View) GoCommandRunner() *gocommand.Runner {
 // Folder returns the folder at the base of this view.
 func (v *View) Folder() *Folder {
 	return v.folder
+}
+
+// Env returns the environment to use for running go commands in this view.
+func (v *View) Env() []string {
+	return slices.Concat(
+		os.Environ(),
+		v.folder.Options.EnvSlice(),
+		[]string{"GO111MODULE=" + v.adjustedGO111MODULE()},
+		v.EnvOverlay(),
+	)
+}
+
+// ModcacheIndex returns the module cache index
+func (v *View) ModcacheIndex() (*modindex.Index, error) {
+	if v.modcacheState == nil {
+		return nil, fmt.Errorf("view %q has no module cache", v.id)
+	}
+	return v.modcacheState.getIndex()
 }
 
 // UpdateFolders updates the set of views for the new folders.
@@ -452,15 +485,15 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 		gomodcache := v.folder.Env.GOMODCACHE
 		var filters []string
 		filters = append(filters, v.folder.Options.DirectoryFilters...)
-		if pref := strings.TrimPrefix(gomodcache, folderDir); pref != gomodcache {
+		if pref, ok := strings.CutPrefix(gomodcache, folderDir); ok {
 			modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
 			filters = append(filters, modcacheFilter)
 		}
-		filterer := NewFilterer(filters)
+		pathIncluded := PathIncludeFunc(filters)
 		v._filterFunc = func(uri protocol.DocumentURI) bool {
 			// Only filter relative to the configured root directory.
 			if pathutil.InDir(folderDir, uri.Path()) {
-				return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
+				return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), pathIncluded)
 			}
 			return false
 		}
@@ -473,6 +506,9 @@ func (v *View) shutdown() {
 	// Cancel the initial workspace load if it is still running.
 	v.cancelInitialWorkspaceLoad()
 	v.importsState.stopTimer()
+	if v.modcacheState != nil {
+		v.modcacheState.stopTimer()
+	}
 
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {
@@ -526,7 +562,7 @@ func newIgnoreFilter(dirs []string) *ignoreFilter {
 
 func (f *ignoreFilter) ignored(filename string) bool {
 	for _, prefix := range f.prefixes {
-		if suffix := strings.TrimPrefix(filename, prefix); suffix != filename {
+		if suffix, ok := strings.CutPrefix(filename, prefix); ok {
 			if checkIgnored(suffix) {
 				return true
 			}
@@ -543,7 +579,7 @@ func (f *ignoreFilter) ignored(filename string) bool {
 func checkIgnored(suffix string) bool {
 	// Note: this could be further optimized by writing a HasSegment helper, a
 	// segment-boundary respecting variant of strings.Contains.
-	for _, component := range strings.Split(suffix, string(filepath.Separator)) {
+	for component := range strings.SplitSeq(suffix, string(filepath.Separator)) {
 		if len(component) == 0 {
 			continue
 		}
@@ -658,11 +694,10 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 				addError(modURI, fmt.Errorf("no module path for %s", modURI))
 				continue
 			}
-			moduleDir := filepath.Dir(modURI.Path())
 			// Previously, we loaded <modulepath>/... for each module path, but that
 			// is actually incorrect when the pattern may match packages in more than
 			// one module. See golang/go#59458 for more details.
-			scopes = append(scopes, moduleLoadScope{dir: moduleDir, modulePath: parsed.File.Module.Mod.Path})
+			scopes = append(scopes, moduleLoadScope{dir: modURI.DirPath(), modulePath: parsed.File.Module.Mod.Path})
 		}
 	} else {
 		scopes = append(scopes, viewLoadScope{})
@@ -674,7 +709,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 	if len(scopes) > 0 {
 		scopes = append(scopes, packageLoadScope("builtin"))
 	}
-	loadErr := s.load(ctx, true, scopes...)
+	loadErr := s.load(ctx, NetworkOK, scopes...)
 
 	// A failure is retryable if it may have been due to context cancellation,
 	// and this is not the initial workspace load (firstAttempt==true).
@@ -698,7 +733,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		extractedDiags := s.extractGoCommandErrors(ctx, loadErr)
 		initialErr = &InitializationError{
 			MainError:   loadErr,
-			Diagnostics: maps.Group(extractedDiags, byURI),
+			Diagnostics: moremaps.Group(extractedDiags, byURI),
 		}
 	case s.view.workspaceModFilesErr != nil:
 		initialErr = &InitializationError{
@@ -706,7 +741,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		}
 	case len(modDiagnostics) > 0:
 		initialErr = &InitializationError{
-			MainError: fmt.Errorf(modDiagnostics[0].Message),
+			MainError: errors.New(modDiagnostics[0].Message),
 		}
 	}
 
@@ -722,11 +757,11 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 // By far the most common of these is a change to file state, but a query of
 // module upgrade information or vulnerabilities also affects gopls' behavior.
 type StateChange struct {
-	Modifications  []file.Modification // if set, the raw modifications originating this change
-	Files          map[protocol.DocumentURI]file.Handle
-	ModuleUpgrades map[protocol.DocumentURI]map[string]string
-	Vulns          map[protocol.DocumentURI]*vulncheck.Result
-	GCDetails      map[metadata.PackageID]bool // package -> whether or not we want details
+	Modifications      []file.Modification // if set, the raw modifications originating this change
+	Files              map[protocol.DocumentURI]file.Handle
+	ModuleUpgrades     map[protocol.DocumentURI]map[string]string
+	Vulns              map[protocol.DocumentURI]*vulncheck.Result
+	CompilerOptDetails map[protocol.DocumentURI]bool // package directory -> whether or not we want details
 }
 
 // InvalidateView processes the provided state change, invalidating any derived
@@ -757,7 +792,7 @@ func (s *Session) InvalidateView(ctx context.Context, view *View, changed StateC
 // s.viewMu must be held while calling this method.
 func (s *Session) invalidateViewLocked(ctx context.Context, v *View, changed StateChange) (*Snapshot, func(), bool) {
 	// Detach the context so that content invalidation cannot be canceled.
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 
 	// This should be the only time we hold the view's snapshot lock for any period of time.
 	v.snapshotMu.Lock()
@@ -795,9 +830,10 @@ func (s *Session) invalidateViewLocked(ctx context.Context, v *View, changed Sta
 // If forURI is non-empty, this view should be the best view including forURI.
 // Otherwise, it is the default view for the folder.
 //
-// defineView only returns an error in the event of context cancellation.
+// defineView may return an error if the context is cancelled, or the
+// workspace folder path is invalid.
 //
-// Note: keep this function in sync with bestView.
+// Note: keep this function in sync with [RelevantViews].
 //
 // TODO(rfindley): we should be able to remove the error return, as
 // findModules is going away, and all other I/O is memoized.
@@ -811,37 +847,40 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	}
 	dir := folder.Dir.Path()
 	if forFile != nil {
-		dir = filepath.Dir(forFile.URI().Path())
+		dir = forFile.URI().DirPath()
 	}
 
 	def := new(viewDefinition)
 	def.folder = folder
 
-	if forFile != nil && fileKind(forFile) == file.Go {
-		// If the file has GOOS/GOARCH build constraints that
-		// don't match the folder's environment (which comes from
-		// 'go env' in the folder, plus user options),
-		// add those constraints to the viewDefinition's environment.
+	if forFile != nil {
+		kind := fileKind(forFile)
+		if zeroConfigSupported(kind) {
+			// If the file has GOOS/GOARCH build constraints that
+			// don't match the folder's environment (which comes from
+			// 'go env' in the folder, plus user options),
+			// add those constraints to the viewDefinition's environment.
 
-		// Content trimming is nontrivial, so do this outside of the loop below.
-		// Keep this in sync with bestView.
-		path := forFile.URI().Path()
-		if content, err := forFile.Content(); err == nil {
-			// Note the err == nil condition above: by convention a non-existent file
-			// does not have any constraints. See the related note in bestView: this
-			// choice of behavior shouldn't actually matter. In this case, we should
-			// only call defineView with Overlays, which always have content.
-			content = trimContentForPortMatch(content)
-			viewPort := port{def.folder.Env.GOOS, def.folder.Env.GOARCH}
-			if !viewPort.matches(path, content) {
-				for _, p := range preferredPorts {
-					if p.matches(path, content) {
-						if def.envOverlay == nil {
-							def.envOverlay = make(map[string]string)
+			// Content trimming is nontrivial, so do this outside of the loop below.
+			// Keep this in sync with [RelevantViews].
+			path := forFile.URI().Path()
+			if content, err := forFile.Content(); err == nil {
+				// Note the err == nil condition above: by convention a non-existent file
+				// does not have any constraints. See the related note in [RelevantViews]: this
+				// choice of behavior shouldn't actually matter. In this case, we should
+				// only call defineView with Overlays, which always have content.
+				content = buildConstraintFile(kind, content)
+				viewPort := port{def.folder.Env.GOOS, def.folder.Env.GOARCH}
+				if !viewPort.matches(path, content) {
+					for _, p := range preferredPorts {
+						if p.matches(path, content) {
+							if def.envOverlay == nil {
+								def.envOverlay = make(map[string]string)
+							}
+							def.envOverlay["GOOS"] = p.GOOS
+							def.envOverlay["GOARCH"] = p.GOARCH
+							break
 						}
-						def.envOverlay["GOOS"] = p.GOOS
-						def.envOverlay["GOARCH"] = p.GOARCH
-						break
 					}
 				}
 			}
@@ -994,6 +1033,7 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 		"GOFLAGS":     &env.GOFLAGS,
 		"GO111MODULE": &env.GO111MODULE,
 		"GOTOOLCHAIN": &env.GOTOOLCHAIN,
+		"GOROOT":      &env.GOROOT,
 	}
 	if err := loadGoEnv(ctx, dir, opts.EnvSlice(), runner, envvars); err != nil {
 		return nil, err
@@ -1127,9 +1167,7 @@ func (s *Snapshot) ModuleUpgrades(modfile protocol.DocumentURI) map[string]strin
 	defer s.mu.Unlock()
 	upgrades := map[string]string{}
 	orig, _ := s.moduleUpgrades.Get(modfile)
-	for mod, ver := range orig {
-		upgrades[mod] = ver
-	}
+	maps.Copy(upgrades, orig)
 	return upgrades
 }
 
@@ -1155,7 +1193,7 @@ func (s *Snapshot) Vulnerabilities(modfiles ...protocol.DocumentURI) map[protoco
 	defer s.mu.Unlock()
 
 	if len(modfiles) == 0 { // empty means all modfiles
-		modfiles = s.vulns.Keys()
+		modfiles = slices.Collect(s.vulns.Keys())
 	}
 	for _, modfile := range modfiles {
 		vuln, _ := s.vulns.Get(modfile)
@@ -1208,7 +1246,7 @@ func globsMatchPath(globs, target string) bool {
 		n := strings.Count(glob, "/")
 		prefix := target
 		// Walk target, counting slashes, truncating at the N+1'th slash.
-		for i := 0; i < len(target); i++ {
+		for i := range len(target) {
 			if target[i] == '/' {
 				if n == 0 {
 					prefix = target[:i]
@@ -1229,8 +1267,6 @@ func globsMatchPath(globs, target string) bool {
 	return false
 }
 
-var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
-
 // TODO(rfindley): clean up the redundancy of allFilesExcluded,
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...
 func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool) bool {
@@ -1243,7 +1279,7 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 	return true
 }
 
-func relPathExcludedByFilter(path string, filterer *Filterer) bool {
+func relPathExcludedByFilter(path string, pathIncluded func(string) bool) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
-	return filterer.Disallow(path)
+	return !pathIncluded(path)
 }

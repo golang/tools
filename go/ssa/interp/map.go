@@ -17,7 +17,7 @@ import (
 
 type hashable interface {
 	hash(t types.Type) int
-	eq(t types.Type, x interface{}) bool
+	eq(t types.Type, x any) bool
 }
 
 type entry struct {

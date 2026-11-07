@@ -26,7 +26,7 @@ import (
 var analyzer = &analysis.Analyzer{
 	Name: "versiontest",
 	Doc:  "off",
-	Run: func(pass *analysis.Pass) (interface{}, error) {
+	Run: func(pass *analysis.Pass) (any, error) {
 		pass.Reportf(pass.Files[0].Package, "goversion=%s", pass.Pkg.GoVersion())
 		return nil, nil
 	},
@@ -71,7 +71,7 @@ func TestMultichecker(t *testing.T) {
 	cmd.Dir = testDir(t)
 	cmd.Env = append(os.Environ(), "VERSIONTEST_MULTICHECKER=1")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20\n") {
+	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20") {
 		t.Fatalf("multichecker: %v\n%s", err, out)
 	}
 }
@@ -87,7 +87,7 @@ func TestSinglechecker(t *testing.T) {
 	cmd.Dir = testDir(t)
 	cmd.Env = append(os.Environ(), "VERSIONTEST_SINGLECHECKER=1")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20\n") {
+	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20") {
 		t.Fatalf("multichecker: %v\n%s", err, out)
 	}
 }
@@ -103,7 +103,7 @@ func TestVettool(t *testing.T) {
 	cmd.Dir = testDir(t)
 	cmd.Env = append(os.Environ(), "VERSIONTEST_MULTICHECKER=1")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20\n") {
+	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20") {
 		t.Fatalf("vettool: %v\n%s", err, out)
 	}
 }

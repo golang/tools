@@ -6,8 +6,10 @@ package packages
 
 import (
 	"fmt"
+	"iter"
 	"os"
-	"sort"
+
+	"golang.org/x/tools/internal/moremaps"
 )
 
 // Visit visits all the packages in the import graph whose roots are
@@ -16,6 +18,20 @@ import (
 // package's dependencies have been visited (postorder).
 // The boolean result of pre(pkg) determines whether
 // the imports of package pkg are visited.
+//
+// Example:
+//
+//	pkgs, err := Load(...)
+//	if err != nil { ... }
+//	Visit(pkgs, nil, func(pkg *Package) {
+//		log.Println(pkg)
+//	})
+//
+// In most cases, it is more convenient to use [Postorder]:
+//
+//	for pkg := range Postorder(pkgs) {
+//		log.Println(pkg)
+//	}
 func Visit(pkgs []*Package, pre func(*Package) bool, post func(*Package)) {
 	seen := make(map[*Package]bool)
 	var visit func(*Package)
@@ -24,13 +40,8 @@ func Visit(pkgs []*Package, pre func(*Package) bool, post func(*Package)) {
 			seen[pkg] = true
 
 			if pre == nil || pre(pkg) {
-				paths := make([]string, 0, len(pkg.Imports))
-				for path := range pkg.Imports {
-					paths = append(paths, path)
-				}
-				sort.Strings(paths) // Imports is a map, this makes visit stable
-				for _, path := range paths {
-					visit(pkg.Imports[path])
+				for _, imp := range moremaps.Sorted(pkg.Imports) { // for determinism
+					visit(imp)
 				}
 			}
 
@@ -49,11 +60,49 @@ func Visit(pkgs []*Package, pre func(*Package) bool, post func(*Package)) {
 // PrintErrors returns the number of errors printed.
 func PrintErrors(pkgs []*Package) int {
 	var n int
-	Visit(pkgs, nil, func(pkg *Package) {
+	errModules := make(map[*Module]bool)
+	for pkg := range Postorder(pkgs) {
 		for _, err := range pkg.Errors {
 			fmt.Fprintln(os.Stderr, err)
 			n++
 		}
-	})
+
+		// Print pkg.Module.Error once if present.
+		mod := pkg.Module
+		if mod != nil && mod.Error != nil && !errModules[mod] {
+			errModules[mod] = true
+			fmt.Fprintln(os.Stderr, mod.Error.Err)
+			n++
+		}
+	}
 	return n
+}
+
+// Postorder returns an iterator over the packages in
+// the import graph whose roots are pkg.
+// Packages are enumerated in dependencies-first order.
+func Postorder(pkgs []*Package) iter.Seq[*Package] {
+	return func(yield func(*Package) bool) {
+		seen := make(map[*Package]bool)
+		var visit func(*Package) bool
+		visit = func(pkg *Package) bool {
+			if !seen[pkg] {
+				seen[pkg] = true
+				for _, imp := range moremaps.Sorted(pkg.Imports) { // for determinism
+					if !visit(imp) {
+						return false
+					}
+				}
+				if !yield(pkg) {
+					return false
+				}
+			}
+			return true
+		}
+		for _, pkg := range pkgs {
+			if !visit(pkg) {
+				break
+			}
+		}
+	}
 }

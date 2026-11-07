@@ -5,21 +5,22 @@
 package integration
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cmd"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/tool"
 )
 
 var (
@@ -97,12 +98,6 @@ func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
 // may be reconfigured by the tests themselves).
 func DefaultModes() Mode {
 	modes := Default
-	if !testing.Short() {
-		// TODO(rfindley): we should just run a few select integration tests in
-		// "Forwarded" mode, and call it a day. No need to run every single test in
-		// two ways.
-		modes |= Forwarded
-	}
 	if *runSubprocessTests {
 		modes |= SeparateProcess
 	}
@@ -141,7 +136,7 @@ func Main(m *testing.M) (code int) {
 	// If this magic environment variable is set, run gopls instead of the test
 	// suite. See the documentation for runTestAsGoplsEnvvar for more details.
 	if os.Getenv(runTestAsGoplsEnvvar) == "true" {
-		tool.Main(context.Background(), cmd.New(), os.Args[1:])
+		cmd.Main()
 		return 0
 	}
 
@@ -154,7 +149,7 @@ func Main(m *testing.M) (code int) {
 	flag.Parse()
 
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
-	os.Setenv("GOPACKAGESDRIVER", "off")
+	os.Setenv("GOPACKAGESDRIVER", "off") // ignore error
 
 	if skipReason := checkBuilder(); skipReason != "" {
 		fmt.Printf("Skipping all tests: %s\n", skipReason)
@@ -189,5 +184,56 @@ func Main(m *testing.M) (code int) {
 	}
 	runner.tempDir = dir
 
+	FilterToolchainPathAndGOROOT()
+
 	return m.Run()
+}
+
+// FilterToolchainPathAndGOROOT updates the PATH and GOROOT environment
+// variables for the current process to effectively revert the changes made by
+// the go command when performing a toolchain switch in the context of `go
+// test` (see golang/go#68005).
+//
+// It does this by looking through PATH for a go command that is NOT a
+// toolchain go command, and adjusting PATH to find that go command. Then it
+// unsets GOROOT in order to use the default GOROOT for that go command.
+//
+// TODO(rfindley): this is very much a hack, so that our 1.21 and 1.22 builders
+// actually exercise integration with older go commands. In golang/go#69321, we
+// hope to do better.
+func FilterToolchainPathAndGOROOT() {
+	if localGo, first := findLocalGo(); localGo != "" && !first {
+		dir := filepath.Dir(localGo)
+		path := os.Getenv("PATH")
+		os.Setenv("PATH", dir+string(os.PathListSeparator)+path) // ignore error
+		os.Unsetenv("GOROOT")                                    // Remove the GOROOT value that was added by toolchain switch.
+	}
+}
+
+// findLocalGo returns a path to a local (=non-toolchain) Go version, or the
+// empty string if none is found.
+//
+// The second result reports if path matches the result of exec.LookPath.
+func findLocalGo() (path string, first bool) {
+	paths := filepath.SplitList(os.Getenv("PATH"))
+	for _, path := range paths {
+		// Use a simple heuristic to filter out toolchain paths.
+		if strings.Contains(path, "toolchain@v0.0.1-go") && filepath.Base(path) == "bin" {
+			continue // toolchain path
+		}
+		fullPath := filepath.Join(path, "go")
+		fi, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&0111 != 0 {
+			first := false
+			pathGo, err := exec.LookPath("go")
+			if err == nil {
+				first = fullPath == pathGo
+			}
+			return fullPath, first
+		}
+	}
+	return "", false
 }

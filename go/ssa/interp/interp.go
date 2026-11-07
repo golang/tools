@@ -48,9 +48,11 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"log"
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	_ "unsafe"
 
@@ -85,7 +87,7 @@ type interpreter struct {
 	reflectPackage     *ssa.Package           // the fake reflect package
 	errorMethods       methodSet              // the method set of reflect.error, which implements the error interface.
 	rtypeMethods       methodSet              // the method set of rtype, which implements the reflect.Type interface.
-	runtimeErrorString types.Type             // the runtime.errorString type
+	runtimeErrorString types.Type             // the runtime.errorString type (iff "runtime" is present)
 	sizes              types.Sizes            // the effective type-sizing function
 	goroutines         int32                  // atomically updated
 }
@@ -107,7 +109,8 @@ type frame struct {
 	defers           *deferred
 	result           value
 	panicking        bool
-	panic            interface{}
+	panic            any
+	phitemps         []value // temporaries for parallel phi assignment
 }
 
 func (fr *frame) get(key ssa.Value) value {
@@ -316,7 +319,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.env[instr] = makeMap(instr.Type().Underlying().(*types.Map).Key(), reserve)
 
 	case *ssa.Range:
-		fr.env[instr] = rangeIter(fr.get(instr.X), instr.X.Type())
+		fr.env[instr] = rangeIter(fr.get(instr.X))
 
 	case *ssa.Next:
 		fr.env[instr] = fr.get(instr.Iter).(iter).next()
@@ -369,7 +372,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		}
 
 	case *ssa.TypeAssert:
-		fr.env[instr] = typeAssert(fr.i, instr, fr.get(instr.X).(iface))
+		fr.env[instr] = typeAssert(instr, fr.get(instr.X).(iface))
 
 	case *ssa.MakeClosure:
 		var bindings []value
@@ -379,12 +382,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.env[instr] = &closure{instr.Fn.(*ssa.Function), bindings}
 
 	case *ssa.Phi:
-		for i, pred := range instr.Block().Preds {
-			if fr.prevBlock == pred {
-				fr.env[instr] = fr.get(instr.Edges[i])
-				break
-			}
-		}
+		log.Fatal("unreachable") // phis are processed at block entry
 
 	case *ssa.Select:
 		var cases []reflect.SelectCase
@@ -481,7 +479,7 @@ func call(i *interpreter, caller *frame, callpos token.Pos, fn value, args []val
 	case *closure:
 		return callSSA(i, caller, callpos, fn.Fn, args, fn.Env)
 	case *ssa.Builtin:
-		return callBuiltin(caller, callpos, fn, args)
+		return callBuiltin(caller, fn, args)
 	}
 	panic(fmt.Sprintf("cannot call %T", fn))
 }
@@ -589,8 +587,9 @@ func runFrame(fr *frame) {
 		if fr.i.mode&EnableTracing != 0 {
 			fmt.Fprintf(os.Stderr, ".%s:\n", fr.block)
 		}
-	block:
-		for _, instr := range fr.block.Instrs {
+
+		nonPhis := executePhis(fr)
+		for _, instr := range nonPhis {
 			if fr.i.mode&EnableTracing != 0 {
 				if v, ok := instr.(ssa.Value); ok {
 					fmt.Fprintln(os.Stderr, "\t", v.Name(), "=", instr)
@@ -598,16 +597,47 @@ func runFrame(fr *frame) {
 					fmt.Fprintln(os.Stderr, "\t", instr)
 				}
 			}
-			switch visitInstr(fr, instr) {
-			case kReturn:
+			if visitInstr(fr, instr) == kReturn {
 				return
-			case kNext:
-				// no-op
-			case kJump:
-				break block
 			}
+			// Inv: kNext (continue) or kJump (last instr)
 		}
 	}
+}
+
+// executePhis executes the phi-nodes at the start of the current
+// block and returns the non-phi instructions.
+func executePhis(fr *frame) []ssa.Instruction {
+	firstNonPhi := -1
+	for i, instr := range fr.block.Instrs {
+		if _, ok := instr.(*ssa.Phi); !ok {
+			firstNonPhi = i
+			break
+		}
+	}
+	// Inv: 0 <= firstNonPhi; every block contains a non-phi.
+
+	nonPhis := fr.block.Instrs[firstNonPhi:]
+	if firstNonPhi > 0 {
+		phis := fr.block.Instrs[:firstNonPhi]
+		// Execute parallel assignment of phis.
+		//
+		// See "the swap problem" in Briggs et al's "Practical Improvements
+		// to the Construction and Destruction of SSA Form" for discussion.
+		predIndex := slices.Index(fr.block.Preds, fr.prevBlock)
+		fr.phitemps = fr.phitemps[:0]
+		for _, phi := range phis {
+			phi := phi.(*ssa.Phi)
+			if fr.i.mode&EnableTracing != 0 {
+				fmt.Fprintln(os.Stderr, "\t", phi.Name(), "=", phi)
+			}
+			fr.phitemps = append(fr.phitemps, fr.get(phi.Edges[predIndex]))
+		}
+		for i, phi := range phis {
+			fr.env[phi.(*ssa.Phi)] = fr.phitemps[i]
+		}
+	}
+	return nonPhis
 }
 
 // doRecover implements the recover() built-in.
@@ -662,10 +692,9 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 		goroutines: 1,
 	}
 	runtimePkg := i.prog.ImportedPackage("runtime")
-	if runtimePkg == nil {
-		panic("ssa.Program doesn't include runtime package")
+	if runtimePkg != nil {
+		i.runtimeErrorString = runtimePkg.Type("errorString").Object().Type()
 	}
-	i.runtimeErrorString = runtimePkg.Type("errorString").Object().Type()
 
 	initReflect(i)
 

@@ -7,12 +7,13 @@
 package a
 
 import (
-	"flag"
 	"go/scanner"
 	"go/token"
 	"image"
 	"sync"
 	"unicode"
+
+	"./flag"
 )
 
 var Okay1 = []string{

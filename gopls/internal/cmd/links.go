@@ -12,14 +12,13 @@ import (
 	"os"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // links implements the links verb for gopls.
 type links struct {
 	JSON bool `flag:"json" help:"emit document links in JSON format"`
 
-	app *Application
+	app *application
 }
 
 func (l *links) Name() string      { return "links" }
@@ -42,21 +41,21 @@ links-flags:
 // - otherwise, prints the a list of unique links
 func (l *links) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("links expects 1 argument")
+		return commandLineErrorf("links expects 1 argument")
 	}
-	conn, err := l.app.connect(ctx)
+	cli, _, err := l.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	uri := from.URI()
 
-	if _, err := conn.openFile(ctx, uri); err != nil {
+	if _, err := cli.openFile(ctx, uri); err != nil {
 		return err
 	}
-	results, err := conn.DocumentLink(ctx, &protocol.DocumentLinkParams{
+	results, err := cli.server.DocumentLink(ctx, &protocol.DocumentLinkParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},

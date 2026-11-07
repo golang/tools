@@ -12,18 +12,24 @@ import (
 	"go/ast"
 	"go/types"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
-// Index constructs a serializable index of outbound cross-references
-// for the specified type-checked package.
-func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
+// NewIndex constructs an index of outbound cross-references for the
+// specified type-checked package.
+//
+// Callers indexing many packages should share one objectpath Encoder
+// so that a heavily referenced package's object paths are encoded
+// once rather than once per referencing package.
+func NewIndex(enc *objectpath.Encoder, pkg *types.Package, info *types.Info, files []*parsego.File, asmFiles []*asm.File) *Index {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -41,19 +47,11 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 		return objects
 	}
 
-	objectpathFor := new(objectpath.Encoder).For
-
 	for fileIndex, pgf := range files {
-
-		nodeRange := func(n ast.Node) protocol.Range {
-			rng, err := pgf.PosRange(n.Pos(), n.End())
-			if err != nil {
-				panic(err) // can't fail
-			}
-			return rng
-		}
-
-		ast.Inspect(pgf.File, func(n ast.Node) bool {
+		// Avoid pgf.Cursor() here to prevent materialization
+		// of an Inspector during workspace reindexing, which
+		// increases peak and retained memory usage.
+		for n := range ast.Preorder(pgf.File) {
 			switch n := n.(type) {
 			case *ast.Ident:
 				// Report a reference for each identifier that
@@ -73,29 +71,34 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 						objects := getObjects(obj.Pkg())
 						gobObj, ok := objects[obj]
 						if !ok {
-							path, err := objectpathFor(obj)
+							path, err := enc.For(obj)
 							if err != nil {
 								// Capitalized but not exported
 								// (e.g. local const/var/type).
-								return true
+								continue
 							}
 							gobObj = &gobObject{Path: path}
 							objects[obj] = gobObj
 						}
 
-						gobObj.Refs = append(gobObj.Refs, gobRef{
-							FileIndex: fileIndex,
-							Range:     nodeRange(n),
-						})
+						// golang/go#66683: nodes can under/overflow the file.
+						// For example, "var _ = x." creates a SelectorExpr(Sel=Ident("_"))
+						// that is beyond EOF. (Arguably Ident.Name should be "".)
+						if rng, err := pgf.NodeRange(n); err == nil {
+							gobObj.Refs = append(gobObj.Refs, gobRef{
+								FileIndex: fileIndex,
+								Range:     rng,
+							})
+						}
 					}
 				}
 
 			case *ast.ImportSpec:
 				// Report a reference from each import path
 				// string to the imported package.
-				pkgname, ok := typesutil.ImportedPkgName(info, n)
-				if !ok {
-					return true // missing import
+				pkgname := info.PkgNameOf(n)
+				if pkgname == nil {
+					continue // missing import
 				}
 				objects := getObjects(pkgname.Imported())
 				gobObj, ok := objects[nil]
@@ -103,13 +106,78 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 					gobObj = &gobObject{Path: ""}
 					objects[nil] = gobObj
 				}
+				// golang/go#66683: nodes can under/overflow the file.
+				if rng, err := pgf.NodeRange(n.Path); err == nil {
+					gobObj.Refs = append(gobObj.Refs, gobRef{
+						FileIndex: fileIndex,
+						Range:     rng,
+					})
+				} else {
+					bug.Reportf("out of bounds import spec %+v", n.Path)
+				}
+			}
+		}
+	}
+
+	// For each asm file, record cross-package references.
+	// Within-package asm references are found by localReferences
+	// scanning syntax, not by the xrefs index.
+
+	// Build a mapping from import path to package, so that each
+	// cross-package identifier can be resolved without a linear
+	// scan of pkg.Imports() for every identifier.
+	importsByPath := make(map[string]*types.Package, len(pkg.Imports()))
+	for _, imp := range pkg.Imports() {
+		importsByPath[imp.Path()] = imp
+	}
+	for fileIndex, file := range asmFiles {
+		for _, id := range file.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
+				continue
+			}
+			pkgpath, name, ok := strings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			if pkgpath == "" || pkgpath == pkg.Path() {
+				// Within-package reference; skip (handled by localReferences).
+				continue
+			}
+			// Cross-package reference: find the dependency package.
+			//
+			// TODO(Groot Guo): assembly may legally reference
+			// non-dependencies (e.g. sync/atomic calls internal/runtime/atomic).
+			// Currently we only search direct imports; see goasm.Definition
+			// which searches the full metadata graph.
+			depPkg, ok := importsByPath[pkgpath]
+			if !ok {
+				continue
+			}
+			obj := depPkg.Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			objects := getObjects(depPkg)
+			gobObj, ok := objects[obj]
+			if !ok {
+				path, err := enc.For(obj)
+				if err != nil {
+					continue
+				}
+				gobObj = &gobObject{Path: path}
+				objects[obj] = gobObj
+			}
+			if rng, err := file.IdentRange(id); err == nil {
 				gobObj.Refs = append(gobObj.Refs, gobRef{
-					FileIndex: fileIndex,
-					Range:     nodeRange(n.Path),
+					// FileIndex for asm files is offset by len(files)
+					// (i.e. the number of compiledGoFiles).
+					// Lookup reverses this by comparing against
+					// len(mp.CompiledGoFiles); the two counts must be equal.
+					FileIndex: len(files) + fileIndex,
+					Range:     rng,
 				})
 			}
-			return true
-		})
+		}
 	}
 
 	// Flatten the maps into slices, and sort for determinism.
@@ -132,22 +200,44 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 		return packages[i].PkgPath < packages[j].PkgPath
 	})
 
-	return packageCodec.Encode(packages)
+	return &Index{packages: packages}
 }
 
-// Lookup searches a serialized index produced by an indexPackage
-// operation on m, and returns the locations of all references from m
-// to any object in the target set. Each object is denoted by a pair
-// of (package path, object path).
-func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
-	var packages []*gobPackage
-	packageCodec.Decode(data, &packages)
-	for _, gp := range packages {
+// An Index is an index of outbound symbol references for one
+// specific package.
+type Index struct {
+	packages []*gobPackage
+}
+
+// Encode encodes the index for storage.
+func (idx *Index) Encode() []byte {
+	return packageCodec.Encode(idx.packages)
+}
+
+// Decode decodes a serialized cross-reference index.
+// It is suitable for use as a filecache.Get decoder.
+func Decode(data []byte) *Index {
+	return &Index{packages: packageCodec.Decode(data)}
+}
+
+// Lookup searches the index for references to any object in the target set,
+// returning their locations within the package described by mp.
+// Each target object is denoted by a pair of (package path, object path).
+func (idx *Index) Lookup(mp *metadata.Package, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
+	for _, gp := range idx.packages {
 		if objectSet, ok := targets[gp.PkgPath]; ok {
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := mp.CompiledGoFiles[ref.FileIndex]
+						var uri protocol.DocumentURI
+						if asmIndex := ref.FileIndex - len(mp.CompiledGoFiles); asmIndex < 0 {
+							// CompiledGoFile reference.
+							// Invariant: len(files) passed to NewIndex
+							// equals len(mp.CompiledGoFiles).
+							uri = mp.CompiledGoFiles[ref.FileIndex]
+						} else {
+							uri = mp.AsmFiles[asmIndex]
+						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,
@@ -189,6 +279,6 @@ type gobObject struct {
 }
 
 type gobRef struct {
-	FileIndex int            // index of enclosing file within P's CompiledGoFiles
+	FileIndex int            // index of enclosing file within P's CompiledGoFiles + AsmFiles
 	Range     protocol.Range // source range of reference
 }

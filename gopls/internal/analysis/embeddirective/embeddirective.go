@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/aliases"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/refactor"
 )
 
 //go:embed doc.go
@@ -21,15 +21,13 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "embed",
-	Doc:              analysisinternal.MustExtractDoc(doc, "embed"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "embed"),
 	Run:              run,
 	RunDespiteErrors: true,
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",
 }
 
-const FixCategory = "addembedimport" // recognized by gopls ApplyFix
-
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		comments := embedDirectiveComments(f)
 		if len(comments) == 0 {
@@ -48,16 +46,19 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			pos, end := c.Pos(), c.Pos()+token.Pos(len("//go:embed"))
 
 			if !hasEmbedImport {
-				pass.Report(analysis.Diagnostic{
-					Pos:      pos,
-					End:      end,
-					Message:  `must import "embed" when using go:embed directives`,
-					Category: FixCategory,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: `Add missing "embed" import`,
-						// No TextEdits => computed by a gopls command.
-					}},
-				})
+				// Add blank import of "embed".
+				_, edits := refactor.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
+				if len(edits) > 0 {
+					pass.Report(analysis.Diagnostic{
+						Pos:     pos,
+						End:     end,
+						Message: `must import "embed" when using go:embed directives`,
+						SuggestedFixes: []analysis.SuggestedFix{{
+							Message:   `Add missing "embed" import`,
+							TextEdits: edits,
+						}},
+					})
+				}
 			}
 
 			var msg string
@@ -148,7 +149,7 @@ func embeddableType(o types.Object) bool {
 
 	// For embed.FS the underlying type is an implementation detail.
 	// As long as the named type resolves to embed.FS, it is OK.
-	if named, ok := aliases.Unalias(o.Type()).(*types.Named); ok {
+	if named, ok := types.Unalias(o.Type()).(*types.Named); ok {
 		obj := named.Obj()
 		if obj.Pkg() != nil && obj.Pkg().Path() == "embed" && obj.Name() == "FS" {
 			return true

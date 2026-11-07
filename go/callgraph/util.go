@@ -101,6 +101,7 @@ func (g *Graph) DeleteSyntheticNodes() {
 			edges[*e] = true
 		}
 	}
+	// Note: these cross-products can exceed 100 x 100.
 	for fn, cgn := range g.Nodes {
 		if cgn == g.Root || isInit(cgn.Func) || fn.Syntax() != nil {
 			continue // keep

@@ -1,0 +1,20 @@
+Test that an (ill-typed) redeclaration of a name, which causes
+types.Info.Defs to lack an entry, doesn't lead to gopls to crash in
+renaming. Now, it proceeds with a partial rename.
+
+See golang/go#70968
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type T int               //@ diag("T", re"T redeclared")
+type T struct { f int }  //@ diag("T", re"T redeclared"), rename("f", "g", out)
+
+-- @out/a/a.go --
+@@ -4 +4 @@
+-type T struct { f int }  //@ diag("T", re"T redeclared"), rename("f", "g", out)
++type T struct { g int }  //@ diag("T", re"T redeclared"), rename("f", "g", out)

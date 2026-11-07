@@ -9,6 +9,7 @@ package persistent
 
 import (
 	"fmt"
+	"iter"
 	"math/rand"
 	"strings"
 	"sync/atomic"
@@ -26,6 +27,9 @@ import (
 // `foo(arg1:+n1, arg2:+n2) (ret1:+n3)`.
 // Each argument is followed by a delta change to its reference counter.
 // In case if no change is expected, the delta will be `-0`.
+//
+// TODO(rfindley): add Update(K, func(V, bool) V), as we have several instances
+// of the Get-<check>-Set pattern that could be optimized.
 
 // Map is an associative mapping from keys to values.
 //
@@ -54,10 +58,10 @@ func (m *Map[K, V]) String() string {
 	var buf strings.Builder
 	buf.WriteByte('{')
 	var sep string
-	m.Range(func(k K, v V) {
+	for k, v := range m.All() {
 		fmt.Fprintf(&buf, "%s%v: %v", sep, k, v)
 		sep = ", "
-	})
+	}
 	buf.WriteByte('}')
 	return buf.String()
 }
@@ -146,29 +150,29 @@ func (pm *Map[K, V]) Clear() {
 	pm.root = nil
 }
 
-// Keys returns all keys present in the map.
-func (pm *Map[K, V]) Keys() []K {
-	var keys []K
-	pm.root.forEach(func(k, _ any) {
-		keys = append(keys, k.(K))
-	})
-	return keys
-}
-
-// Range calls f sequentially in ascending key order for all entries in the map.
-func (pm *Map[K, V]) Range(f func(key K, value V)) {
-	pm.root.forEach(func(k, v any) {
-		f(k.(K), v.(V))
-	})
-}
-
-func (node *mapNode) forEach(f func(key, value any)) {
-	if node == nil {
-		return
+// Keys returns the ascending sequence of keys present in the map.
+func (pm *Map[K, V]) Keys() iter.Seq[K] {
+	return func(yield func(K) bool) {
+		pm.root.forEach(func(k, _ any) bool {
+			return yield(k.(K))
+		})
 	}
-	node.left.forEach(f)
-	f(node.key, node.value.value)
-	node.right.forEach(f)
+}
+
+// All returns the sequence of map entries in ascending key order.
+func (pm *Map[K, V]) All() iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		pm.root.forEach(func(k, v any) bool {
+			return yield(k.(K), v.(V))
+		})
+	}
+}
+
+func (node *mapNode) forEach(yield func(key, value any) bool) bool {
+	return node == nil ||
+		node.left.forEach(yield) &&
+			yield(node.key, node.value.value) &&
+			node.right.forEach(yield)
 }
 
 // Get returns the map value associated with the specified key.
@@ -199,6 +203,8 @@ func (pm *Map[K, V]) SetAll(other *Map[K, V]) {
 // Set updates the value associated with the specified key.
 // If release is non-nil, it will be called with entry's key and value once the
 // key is no longer contained in the map or any clone.
+//
+// TODO(adonovan): fix release, which has the wrong type.
 func (pm *Map[K, V]) Set(key K, value V, release func(key, value any)) {
 	first := pm.root
 	second := newNodeWithRef(key, value, release)

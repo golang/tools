@@ -44,23 +44,38 @@ func _() {
 func (m *sync.Mutex) Lock()
 ```
 
+---
+
 Lock locks m.
 
+
+---
 
 [`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync#Mutex.Lock)
 -- @hoverName --
 ```go
-func (obj *types.object) Name() string
+func (obj *types.object) Name() string // through types.object
 ```
+
+---
 
 Name returns the object's (package-local, unqualified) name.
 
 
+---
+
 [`(types.TypeName).Name` on pkg.go.dev](https://pkg.go.dev/go/types#TypeName.Name)
 -- @hoverTypes --
 ```go
-package types ("go/types")
+package types
 ```
+
+---
+
+Package types declares the data types and implements the algorithms for type-checking of Go packages.
+
+
+---
 
 [`types` on pkg.go.dev](https://pkg.go.dev/go/types)
 -- @hovermake --
@@ -68,8 +83,12 @@ package types ("go/types")
 func make(t Type, size ...int) Type
 ```
 
+---
+
 The make built-in function allocates and initializes an object of type slice, map, or chan (only).
 
+
+---
 
 [`make` on pkg.go.dev](https://pkg.go.dev/builtin#make)
 -- @hoverstring --
@@ -77,7 +96,11 @@ The make built-in function allocates and initializes an object of type slice, ma
 type string string
 ```
 
+---
+
 string is the set of all strings of 8-bit bytes, conventionally but not necessarily representing UTF-8-encoded text.
 
+
+---
 
 [`string` on pkg.go.dev](https://pkg.go.dev/builtin#string)

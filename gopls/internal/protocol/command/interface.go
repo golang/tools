@@ -16,48 +16,67 @@ package command
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 )
 
+// ErrPendingAnswer reports that a command asked the user something and the
+// answer has not arrived. It is not a failure: the command has done nothing
+// yet, and runs again once the user has answered.
+//
+// The questions travel in the command's [*protocol.InteractiveParams]; see the
+// [Interface] contract below, and [protocol.Server.ResolveCommand] for the
+// handshake that collects the answers.
+var ErrPendingAnswer = errors.New("waiting for an answer")
+
 // Interface defines the interface gopls exposes for the
 // workspace/executeCommand request.
 //
-// This interface is used to generate marshaling/unmarshaling code, dispatch,
-// and documentation, and so has some additional restrictions:
-//  1. All method arguments must be JSON serializable.
+// This interface is used to generate logic for marshaling,
+// unmarshaling, and dispatch, so it has some additional restrictions:
+//
+//  1. All method arguments must be JSON serializable and strictly typed
+//     (infallible) so they can be safely unmarshaled from the JSON
+//     Arguments array. The only exception is the final input parameter,
+//     which may be exactly [*protocol.InteractiveParams]. While this type
+//     contains an 'any' slice, it is explicitly exempted by the code
+//     generator because it is passed directly from the top-level
+//     ExecuteCommandParams rather than unmarshaled from the Arguments
+//     array. Its dynamic values are validated manually by the command
+//     handlers at runtime.
+//
 //  2. Methods must return either error or (T, error), where T is a
 //     JSON serializable type.
+//
+//     T may instead be [Action], in which case the method reports no result
+//     to the client: the Action is performed by the dispatcher and is not
+//     marshaled. A command whose T is an Action must not mutate the user's
+//     workspace itself -- it must not apply edits or reveal documents -- but
+//     return an Action that does so. See [Action].
+//
+//     A command that cannot proceed until the user has answered something
+//     asks through its [*protocol.InteractiveParams] and returns
+//     [ErrPendingAnswer]. Asking is not a failure: the command has done
+//     nothing yet, and runs again once the answers arrive.
+//
 //  3. The first line of the doc string is special.
 //     Everything after the colon is considered the command 'Title'.
+//     For example:
 //
-// The doc comment on each method is eventually published at
-// https://github.com/golang/tools/blob/master/gopls/doc/commands.md,
-// so please be consistent in using this form:
+//     Command: Capitalized verb phrase with no period
 //
-//	Command: Capitalized verb phrase with no period
-//
-//	Longer description here...
+//     Longer description here...
 type Interface interface {
 	// ApplyFix: Apply a fix
 	//
 	// Applies a fix to a region of source code.
 	ApplyFix(context.Context, ApplyFixArgs) (*protocol.WorkspaceEdit, error)
 
-	// Test: Run test(s) (legacy)
-	//
-	// Runs `go test` for a specific set of test or benchmark functions.
-	//
-	// This command is asynchronous; wait for the 'end' progress notification.
-	//
-	// This command is an alias for RunTests; the only difference
-	// is the form of the parameters.
-	//
-	// TODO(adonovan): eliminate it.
-	Test(context.Context, protocol.DocumentURI, []string, []string) error
-
-	// Test: Run test(s)
+	// RunTests: Run tests
 	//
 	// Runs `go test` for a specific set of test or benchmark functions.
 	//
@@ -73,7 +92,12 @@ type Interface interface {
 	//
 	// Opens the Go package documentation page for the current
 	// package in a browser.
-	Doc(context.Context, protocol.Location) error
+	Doc(context.Context, DocArgs) (protocol.URI, error)
+
+	// SplitPackage: organize a package into two or more components
+	//
+	// Opens the "split package" tool in a web browser.
+	SplitPackage(ctx context.Context, viewID, packageID string) error
 
 	// RegenerateCgo: Regenerate cgo
 	//
@@ -130,17 +154,32 @@ type Interface interface {
 	// Runs `go get` to fetch a package.
 	GoGetPackage(context.Context, GoGetPackageArgs) error
 
-	// GCDetails: Toggle gc_details
+	// GCDetails: Toggle display of compiler optimization details
 	//
-	// Toggle the calculation of gc annotations.
+	// Toggle the per-package flag that causes Go compiler
+	// optimization decisions to be reported as diagnostics.
+	//
+	// (The name is a legacy of a time when the Go compiler was
+	// known as "gc". Renaming the command would break custom
+	// client-side logic in VS Code.)
 	GCDetails(context.Context, protocol.DocumentURI) error
 
-	// TODO: deprecate GCDetails in favor of ToggleGCDetails below.
-
-	// ToggleGCDetails: Toggle gc_details
+	// LSP is a command that functions as a generic dispatcher, allowing clients
+	// to execute any LSP RPC through the "workspace/executeCommand" request.
 	//
-	// Toggle the calculation of gc annotations.
-	ToggleGCDetails(context.Context, URIArg) error
+	// This serves two primary purposes:
+	//
+	// 1. It provides a unified endpoint for clients that are restricted from
+	//    making arbitrary LSP calls directly, giving them full access to the
+	//    server's capabilities.
+	//
+	// 2. It allows the client and server to extend the standard protocol. A
+	//    client can send custom parameters that are not part of the official
+	//    LSP, enabling richer functionality.
+	//
+	// The command takes the target LSP method name and its parameters as a
+	// [json.RawMessage], routing the call to the appropriate internal handler.
+	LSP(context.Context, LSPArgs) (any, error)
 
 	// ListKnownPackages: List known packages
 	//
@@ -186,16 +225,30 @@ type Interface interface {
 	// runner.
 	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
 
-	// RunGovulncheck: Run vulncheck
+	// Vulncheck: run vulncheck synchronously.
 	//
 	// Run vulnerability check (`govulncheck`).
 	//
-	// This command is asynchronous; clients must wait for the 'end' progress notification.
+	// This command is synchronous, and returns the govulncheck result.
+	Vulncheck(context.Context, VulncheckArgs) (VulncheckResult, error)
+
+	// RunGovulncheck: Run vulncheck asynchronously.
+	//
+	// Run vulnerability check (`govulncheck`).
+	//
+	// This command is asynchronous; clients must wait for the 'end' progress
+	// notification and then retrieve results using gopls.fetch_vulncheck_result.
+	//
+	// Deprecated: clients should call gopls.vulncheck instead, which returns the
+	// actual vulncheck result.
 	RunGovulncheck(context.Context, VulncheckArgs) (RunVulncheckResult, error)
 
 	// FetchVulncheckResult: Get known vulncheck result
 	//
 	// Fetch the result of latest vulnerability check (`govulncheck`).
+	//
+	// Deprecated: clients should call gopls.vulncheck instead, which returns the
+	// actual vulncheck result.
 	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error)
 
 	// MemStats: Fetch memory statistics
@@ -223,6 +276,9 @@ type Interface interface {
 	// Gopls will prepend "fwd/" to all the counters updated using this command
 	// to avoid conflicts with other counters gopls collects.
 	AddTelemetryCounters(context.Context, AddTelemetryCountersArgs) error
+
+	// AddTest: add test for the selected function
+	AddTest(context.Context, protocol.Location) (*protocol.WorkspaceEdit, error)
 
 	// MaybePromptForTelemetry: Prompt user to enable telemetry
 	//
@@ -265,7 +321,10 @@ type Interface interface {
 	// The machine architecture is determined by the view.
 	Assembly(_ context.Context, viewID, packageID, symbol string) error
 
-	// ScanImports: force a sychronous scan of the imports cache.
+	// ClientOpenURL: Request that the client open a URL in a browser.
+	ClientOpenURL(_ context.Context, url string) error
+
+	// ScanImports: force a synchronous scan of the imports cache.
 	//
 	// This command is intended for use by gopls tests only.
 	ScanImports(context.Context) error
@@ -279,11 +338,40 @@ type Interface interface {
 
 	// Modules: Return information about modules within a directory
 	//
-	// This command returns an empty result if there is no module,
-	// or if module mode is disabled.
-	// The result does not includes the modules that are not
-	// associated with any Views on the server yet.
+	// This command returns an empty result if there is no module, or if module
+	// mode is disabled. Modules will not cause any new views to be loaded and
+	// will only return modules associated with views that have already been
+	// loaded, regardless of how it is called. Given current usage (by the
+	// language server client), there should never be a case where Modules is
+	// called on a path that has not already been loaded.
 	Modules(context.Context, ModulesArgs) (ModulesResult, error)
+
+	// ResolveTarget: Resolve a target query to it's definition.
+	//
+	// This command will resolve targets for the closest & longest matching
+	// package in the workspace, returning multiple only if there is unresolvable
+	// ambiguity.
+	//
+	// See here for a full description of the query logic:
+	//  https://go.dev/gopls/design/design/gopls-cli#target-symbol-resolution
+	ResolveTarget(context.Context, ResolveTargetParams) (ResolveTargetResult, error)
+
+	// PackageSymbols: Return information about symbols in the given file's package.
+	PackageSymbols(context.Context, PackageSymbolsArgs) (PackageSymbolsResult, error)
+
+	// ModifyTags: Add or remove struct tags on a given node.
+	ModifyTags(context.Context, ModifyTagsArgs, *protocol.InteractiveParams) (Action, error)
+
+	// ImplementInterface: Add methods to a type to implement an interface.
+	ImplementInterface(context.Context, ImplementInterfaceArgs, *protocol.InteractiveParams) (Action, error)
+
+	// MoveDeclaration: Move a declaration to a different file.
+	MoveDeclaration(context.Context, MoveDeclarationArgs, *protocol.InteractiveParams) (Action, error)
+
+	// DragonSlayer: Slay the dragon
+	//
+	// Plays a tiny adventure game demonstrating interactive refactoring.
+	DragonSlayer(context.Context, DragonSlayerArgs, *protocol.InteractiveParams) (Action, error)
 }
 
 type RunTestsArgs struct {
@@ -305,6 +393,11 @@ type GenerateArgs struct {
 	Recursive bool
 }
 
+type DocArgs struct {
+	Location     protocol.Location
+	ShowDocument bool // in addition to returning the URL, send showDocument
+}
+
 // TODO(rFindley): document the rest of these once the docgen is fleshed out.
 
 type ApplyFixArgs struct {
@@ -318,10 +411,9 @@ type ApplyFixArgs struct {
 	// upon by the code action and golang.ApplyFix.
 	Fix string
 
-	// The file URI for the document to fix.
-	URI protocol.DocumentURI
-	// The document range to scan for fixes.
-	Range protocol.Range
+	// The portion of the document to fix.
+	Location protocol.Location
+
 	// Whether to resolve and return the edits.
 	ResolveEdits bool
 }
@@ -426,7 +518,7 @@ type DebuggingArgs struct {
 	// If Addr specifies a port, only the daemon will be able to bind to that
 	// port, and each intermediate gopls instance will fail to start debugging.
 	// For this reason it is recommended not to specify a port (or equivalently,
-	// to specify ":0").
+	// to specify "localhost:0").
 	//
 	// If the server was already debugging this field has no effect, and the
 	// result will contain the previously configured debug URL(s).
@@ -497,20 +589,14 @@ type RunVulncheckResult struct {
 	Token protocol.ProgressToken
 }
 
-// CallStack models a trace of function calls starting
-// with a client function or method and ending with a
-// call to a vulnerable symbol.
-type CallStack []StackEntry
-
-// StackEntry models an element of a call stack.
-type StackEntry struct {
-	// See golang.org/x/exp/vulncheck.StackEntry.
-
-	// User-friendly representation of function/method names.
-	// e.g. package.funcName, package.(recvType).methodName, ...
-	Name string
-	URI  protocol.DocumentURI
-	Pos  protocol.Position // Start position. (0-based. Column is always 0)
+// VulncheckResult holds the result of synchronously running the vulncheck
+// command.
+type VulncheckResult struct {
+	// Result holds the result of running vulncheck.
+	Result *vulncheck.Result
+	// Token holds the progress token used to report progress during back to the
+	// LSP client during vulncheck execution.
+	Token protocol.ProgressToken
 }
 
 // MemStatsResult holds selected fields from runtime.MemStats.
@@ -565,10 +651,66 @@ type AddTelemetryCountersArgs struct {
 }
 
 // ChangeSignatureArgs specifies a "change signature" refactoring to perform.
+//
+// The new signature is expressed via the NewParams and NewResults fields. The
+// elements of these lists each describe a new field of the signature, by
+// either referencing a field in the old signature or by defining a new field:
+//   - If the element is an integer, it references a positional parameter in the
+//     old signature.
+//   - If the element is a string, it is parsed as a new field to add.
+//
+// Suppose we have a function `F(a, b int) (string, error)`. Here are some
+// examples of refactoring this signature in practice, eliding the 'Location'
+// and 'ResolveEdits' fields.
+//   - `{ "NewParams": [0], "NewResults": [0, 1] }` removes the second parameter
+//   - `{ "NewParams": [1, 0], "NewResults": [0, 1] }` flips the parameter order
+//   - `{ "NewParams": [0, 1, "a int"], "NewResults": [0, 1] }` adds a new field
+//   - `{ "NewParams": [1, 2], "NewResults": [1] }` drops the `error` result
 type ChangeSignatureArgs struct {
-	RemoveParameter protocol.Location
+	// Location is any range inside the function signature. By convention, this
+	// is the same location provided in the codeAction request.
+	Location protocol.Location // a range inside of the function signature, as passed to CodeAction
+
+	// NewParams describes parameters of the new signature.
+	// An int value references a parameter in the old signature by index.
+	// A string value describes a new parameter field (e.g. "x int").
+	NewParams []ChangeSignatureParam
+
+	// NewResults describes results of the new signature (see above).
+	// An int value references a result in the old signature by index.
+	// A string value describes a new result field (e.g. "err error").
+	NewResults []ChangeSignatureParam
+
 	// Whether to resolve and return the edits.
 	ResolveEdits bool
+}
+
+// ChangeSignatureParam implements the API described in the doc string of
+// [ChangeSignatureArgs]: a union of JSON int | string.
+type ChangeSignatureParam struct {
+	OldIndex int
+	NewField string
+}
+
+func (a *ChangeSignatureParam) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		a.NewField = s
+		return nil
+	}
+	var i int
+	if err := json.Unmarshal(b, &i); err == nil {
+		a.OldIndex = i
+		return nil
+	}
+	return fmt.Errorf("must be int or string")
+}
+
+func (a ChangeSignatureParam) MarshalJSON() ([]byte, error) {
+	if a.NewField != "" {
+		return json.Marshal(a.NewField)
+	}
+	return json.Marshal(a.OldIndex)
 }
 
 // DiagnoseFilesArgs specifies a set of files for which diagnostics are wanted.
@@ -594,7 +736,7 @@ type PackagesArgs struct {
 	// the result may describe any of them.
 	Files []protocol.DocumentURI
 
-	// Enumerate all packages under the directry loadable with
+	// Enumerate all packages under the directory loadable with
 	// the ... pattern.
 	// The search does not cross the module boundaries and
 	// does not return packages that are not yet loaded.
@@ -620,7 +762,7 @@ type PackagesResult struct {
 	// Packages is an unordered list of package metadata.
 	Packages []Package
 
-	// Modules maps module path to module metadata for
+	// Module maps module path to module metadata for
 	// all the modules of the returned Packages.
 	Module map[string]Module
 }
@@ -632,6 +774,8 @@ type Package struct {
 	// Module path. Empty if the package doesn't
 	// belong to any module.
 	ModulePath string
+	// q in a "p [q.test]" package.
+	ForTest string
 
 	// Note: the result does not include the directory name
 	// of the package because mapping between a package and
@@ -678,7 +822,7 @@ type TestCase struct {
 	// analysis; if so, it should aim to simulate the actual computed
 	// name of the test, including any disambiguating suffix such as "#01".
 	// To run only this test, clients need to compute the -run, -bench, -fuzz
-	// flag values by first splitting the Name with “/” and
+	// flag values by first splitting the Name with "/" and
 	// quoting each element with "^" + regexp.QuoteMeta(Name) + "$".
 	// e.g. TestToplevel/Inner.Subtest → -run=^TestToplevel$/^Inner\.Subtest$
 	Name string
@@ -725,4 +869,126 @@ type ModulesArgs struct {
 
 type ModulesResult struct {
 	Modules []Module
+}
+
+type PackageSymbolsArgs struct {
+	URI protocol.DocumentURI
+}
+
+type PackageSymbolsResult struct {
+	PackageName string
+	// Files is a list of files in the given URI's package.
+	Files   []protocol.DocumentURI
+	Symbols []PackageSymbol
+}
+
+// PackageSymbol has the same fields as DocumentSymbol, with an additional int field "File"
+// which stores the index of the symbol's file in the PackageSymbolsResult.Files array
+type PackageSymbol struct {
+	Name string `json:"name"`
+
+	Detail string `json:"detail,omitempty"`
+
+	// protocol.SymbolKind maps an integer to an enum:
+	// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
+	// i.e. File = 1
+	Kind protocol.SymbolKind `json:"kind"`
+
+	Tags []protocol.SymbolTag `json:"tags,omitempty"`
+
+	Range protocol.Range `json:"range"`
+
+	SelectionRange protocol.Range `json:"selectionRange"`
+
+	Children []PackageSymbol `json:"children,omitempty"`
+
+	// Index of this symbol's file in PackageSymbolsResult.Files
+	File int `json:"file,omitempty"`
+}
+
+type ImplementInterfaceArgs struct {
+	// Location is the location where the user invoked the code action.
+	// This location must be within a type declaration.
+	Location protocol.Location
+
+	// Interface is the fully qualified name of pacakge-level interface type to
+	// implement. It must follow the pattern "path/to/package.InterfaceName"
+	// (e.g., "io.Reader").
+	Interface string
+}
+
+// DragonSlayerArgs holds the arguments to the DragonSlayer command.
+type DragonSlayerArgs struct {
+	// Location is the location where the user invoked the code action.
+	// This location must be within the name of a package-level variable
+	// named dragonSlayer.
+	Location protocol.Location
+}
+
+// ModifyTagsArgs holds variables that determine how struct tags are modified.
+type ModifyTagsArgs struct {
+	// NOTE(hxjiang): the mofidication field is important, when resolving a
+	// command, the title of the code action or code lenses is no longer available.
+	// The language server is not aware of the original user intention, whether
+	// the command is meant for tag addition or tag removal.
+	Modification         string
+	URI                  protocol.DocumentURI // uri of the file to be modified
+	Range                protocol.Range       // range in the file for where to modify struct tags
+	Add                  string               // comma-separated list of tags to add; i.e. "json,xml"
+	AddOptions           string               // comma-separated list of options to add, per tag; i.e. "json=omitempty"
+	Remove               string               // comma-separated list of tags to remove
+	RemoveOptions        string               // comma-separated list of options to remove
+	Clear                bool                 // if set, clear all tags. tags are cleared before any new tags are added
+	ClearOptions         bool                 // if set, clear all tag options; options are cleared before any new options are added
+	Overwrite            bool                 // if set, replace existing tags when adding
+	SkipUnexportedFields bool                 // if set, do not modify tags on unexported struct fields
+	Transform            string               // transform rule for adding tags; i.e. "snakecase"
+	ValueFormat          string               // format for the tag's value, after transformation; for example "column:{field}"
+}
+
+type LSPArgs struct {
+	Method string          `json:"method"`
+	Param  json.RawMessage `json:"param"`
+}
+
+// MoveDeclarationArgs specifies a "move declaration" refactoring to perform.
+type MoveDeclarationArgs struct {
+	// The location of the declaration to move.
+	Location protocol.Location
+}
+
+// ResolveTargetParams are the arguments for the ResolveTarget command.
+type ResolveTargetParams struct {
+	// TextDocument identifies the document context (e.g. CWD file or -pos file).
+	TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
+
+	// Target is the literal name or regex pattern (enclosed in slashes).
+	Target string `json:"target"`
+
+	// PkgScope optionally overrides the package search scope (from -pkg).
+	PkgScope string `json:"pkgScope,omitempty"`
+
+	// Range optionally restricts the search to a specific span within the file.
+	//
+	// TODO(aputman): Implement support for this.
+	Range protocol.Range `json:"range,omitempty"`
+}
+
+// ResolveTargetResult is the result of the ResolveTarget command.
+type ResolveTargetResult struct {
+	Matches []TargetMatch `json:"matches"`
+}
+
+// TargetMatch is a single match returned by the ResolveTarget command.
+type TargetMatch struct {
+	// Package is the Go package path of the symbol.
+	Package string `json:"package,omitempty"`
+
+	// Name is the name of the symbol.
+	Name string `json:"name"`
+
+	// Location is LSP protocol location because gopls.resolve_target
+	// is an internal utility command to map the target symbol position to
+	// LSP protocol locations.
+	Location protocol.Location `json:"location"`
 }

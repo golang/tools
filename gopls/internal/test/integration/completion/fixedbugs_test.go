@@ -21,7 +21,7 @@ module example.com
 
 go 1.18
 -- playdos/play.go --
-package  
+package   // comment (to preserve spaces)
 `
 
 	Run(t, files, func(t *testing.T, env *Env) {
@@ -32,9 +32,26 @@ package
 		if len(completions.Items) == 0 {
 			t.Fatal("Completion() returned empty results")
 		}
-		// Sanity check: we should get package clause compeltion.
+		// Sanity check: we should get package clause completion.
 		if got, want := completions.Items[0].Label, "package playdos"; got != want {
 			t.Errorf("Completion()[0].Label == %s, want %s", got, want)
 		}
+	})
+}
+
+func TestFixInitStatementCrash_Issue72026(t *testing.T) {
+	// This test checks that we don't crash when the if condition overflows the
+	// file (as is possible with a malformed struct type).
+
+	const files = `
+-- go.mod --
+module example.com
+
+go 1.18
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.CreateBuffer("p.go", "package p\nfunc _() {\n\tfor i := struct")
+		env.AfterChange()
 	})
 }

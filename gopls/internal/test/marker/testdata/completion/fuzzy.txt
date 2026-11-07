@@ -20,13 +20,13 @@ func _() {
 	a.fabar  //@item(fuzzFabarField, "a.fabar", "int", "field")
 	a.fooBar //@item(fuzzFooBarField, "a.fooBar", "string", "field")
 
-	afa //@complete(" //", fuzzFabarField, fuzzFooBarField)
-	afb //@complete(" //", fuzzFooBarField, fuzzFabarField)
+	afa //@complete(re"() \\/\\/", fuzzFabarField, fuzzFooBarField)
+	afb //@complete(re"() \\/\\/", fuzzFooBarField, fuzzFabarField)
 
-	fab //@complete(" //", fuzzFabarField)
+	fab //@complete(re"() \\/\\/", fuzzFabarField)
 
 	var myString string
-	myString = af //@complete(" //", fuzzFooBarField, fuzzFabarField)
+	myString = af //@complete(re"() \\/\\/", fuzzFooBarField, fuzzFabarField)
 
 	var b struct {
 		c struct {
@@ -47,9 +47,9 @@ func _() {
 	b.c.d.e.abc //@item(fuzzABCstring, "b.c.d.e.abc", "string", "field")
 
 	// in depth order by default
-	abc //@complete(" //", fuzzABCInt, fuzzABCbool, fuzzABCfloat)
+	abc //@complete(re"() \\/\\/", fuzzABCInt, fuzzABCbool, fuzzABCfloat)
 
 	// deep candidate that matches expected type should still ranked first
 	var s string
-	s = abc //@complete(" //", fuzzABCstring, fuzzABCInt, fuzzABCbool)
+	s = abc //@complete(re"() \\/\\/", fuzzABCstring, fuzzABCInt, fuzzABCbool)
 }

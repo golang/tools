@@ -10,6 +10,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
+
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const (
@@ -31,7 +34,7 @@ const (
 //	}
 //
 // is [1 0 -2 2], indicating reads of y and x, followed by the unknown
-// effects of the g() call. and finally the read of parameter z. This
+// effects of the g() call, and finally the read of parameter z. This
 // information is used during inlining to ascertain when it is safe
 // for parameter references to be replaced by their corresponding
 // argument expressions. Such substitutions are permitted only when
@@ -69,13 +72,19 @@ func calleefx(info *types.Info, body *ast.BlockStmt, paramInfos map[*types.Var]*
 		// unreferenced by the function body). This lets us
 		// not bother implementing the complete traversal into
 		// control structures.
-		//
-		// TODO(adonovan): add them in a deterministic order.
-		// (This is not a bug but determinism is good.)
-		for _, pinfo := range paramInfos {
+
+		// Sort params by Index for determinism
+		sortedParams := make([]*types.Var, 0, len(paramInfos))
+		for obj, pinfo := range paramInfos {
 			if !pinfo.IsResult && len(pinfo.Refs) > 0 {
-				effect(pinfo.Index)
+				sortedParams = append(sortedParams, obj)
 			}
+		}
+		slices.SortFunc(sortedParams, func(a, b *types.Var) int {
+			return paramInfos[a].Index - paramInfos[b].Index
+		})
+		for _, obj := range sortedParams {
+			effect(paramInfos[obj].Index)
 		}
 	}
 
@@ -180,7 +189,7 @@ func calleefx(info *types.Info, body *ast.BlockStmt, paramInfos map[*types.Var]*
 				// The pure built-ins have no effects beyond
 				// those of their operands (not even memory reads).
 				// All other calls have unknown effects.
-				if !callsPureBuiltin(info, n) {
+				if !typesinternal.CallsPureBuiltin(info, n) {
 					unknown() // arbitrary effects
 				}
 			}

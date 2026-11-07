@@ -1,0 +1,60 @@
+This test checks that completion gives correct completion for an incomplete struct field type.
+It ensures that completion in invalid code returns the correct replacement range and doesn't result in unwanted deletion.
+See https://github.com/golang/go/issues/77481.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test
+
+go 1.21
+
+-- simple.go --
+package editor
+
+type colorex struct{}
+
+type Theme struct {
+	MainTextColor colore //@acceptcompletion(re"colore()", "colorex", simple)
+	MenuHeight    float32
+}
+
+-- @simple/simple.go --
+package editor
+
+type colorex struct{}
+
+type Theme struct {
+	MainTextColor colorex //@acceptcompletion(re"colore()", "colorex", simple)
+	MenuHeight    float32
+}
+
+-- with_init.go --
+package editor
+
+type colorex2 struct{}
+
+type Theme2 struct {
+	MainTextColor colore //@acceptcompletion(re"colore()", "colorex2", with_init)
+
+	MenuHeight      float32 = 20
+	ToolbarHeight   float32 = 30
+	TabButtonWidth  float32 = 60
+	TabButtonHeight float32 = 30
+}
+
+-- @with_init/with_init.go --
+package editor
+
+type colorex2 struct{}
+
+type Theme2 struct {
+	MainTextColor colorex2 //@acceptcompletion(re"colore()", "colorex2", with_init)
+
+	MenuHeight      float32 = 20
+	ToolbarHeight   float32 = 30
+	TabButtonWidth  float32 = 60
+	TabButtonHeight float32 = 30
+}
+

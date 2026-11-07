@@ -1,0 +1,165 @@
+Tests of suggested fixes for "undeclared name" diagnostics,
+which are of ("compiler", "error") type.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- a.go --
+package undeclared_var
+
+func a() {
+	z, _ := 1+y, 11 //@quickfix("y", re"(undeclared name|undefined): y", a)
+	_ = z
+}
+
+-- @a/a.go --
+@@ -4 +4 @@
++	var y int
+-- b.go --
+package undeclared_var
+
+func b() {
+	if 100 < 90 {
+	} else if 100 > n+2 { //@quickfix("n", re"(undeclared name|undefined): n", b)
+	}
+}
+
+-- @b/b.go --
+@@ -4 +4 @@
++	var n int
+-- c.go --
+package undeclared_var
+
+func c() {
+	for i < 200 { //@quickfix("i", re"(undeclared name|undefined): i", c)
+	}
+	r() //@diag("r", re"(undeclared name|undefined): r")
+}
+
+-- @c/c.go --
+@@ -4 +4 @@
++	var i int
+-- add_colon.go --
+package undeclared_var
+
+func addColon() {
+	ac = 1 //@quickfix("ac", re"(undeclared name|undefined): ac", add_colon)
+}
+
+-- @add_colon/add_colon.go --
+@@ -4 +4 @@
+-	ac = 1 //@quickfix("ac", re"(undeclared name|undefined): ac", add_colon)
++	ac := 1 //@quickfix("ac", re"(undeclared name|undefined): ac", add_colon)
+-- add_colon_first.go --
+package undeclared_var
+
+func addColonAtFirstStmt() {
+	ac = 1
+	ac = 2
+	ac = 3
+	b := ac //@quickfix("ac", re"(undeclared name|undefined): ac", add_colon_first)
+}
+
+-- @add_colon_first/add_colon_first.go --
+@@ -4 +4 @@
+-	ac = 1
++	ac := 1
+-- self_assign.go --
+package undeclared_var
+
+func selfAssign() {
+	ac = ac + 1
+	ac = ac + 2 //@quickfix("ac", re"(undeclared name|undefined): ac", lhs)
+	ac = ac + 3 //@quickfix("ac + 3", re"(undeclared name|undefined): ac", rhs)
+}
+
+-- @lhs/self_assign.go --
+@@ -4 +4 @@
++	var ac any
+-- @rhs/self_assign.go --
+@@ -4 +4 @@
++	var ac int
+-- correct_type.go --
+package undeclared_var
+
+import "fmt"
+
+func selfAssign() {
+	fmt.Printf(ac) //@quickfix("ac", re"(undeclared name|undefined): ac", string)
+}
+
+-- @string/correct_type.go --
+@@ -6 +6 @@
++	var ac string
+-- ignore.go --
+package undeclared_var
+
+import "fmt"
+
+type Foo struct {
+	bar int
+}
+
+func selfAssign() {
+	f := Foo{}
+	b = f.bar
+	c := bar //@quickfix("bar", re"(undeclared name|undefined): bar", ignore)
+}
+
+-- @ignore/ignore.go --
+@@ -12 +12 @@
++	var bar any
+-- interface.go --
+package undeclared_var
+
+func f(...any) {}
+
+func _() {
+	f(d) //@quickfix("d", re"(undeclared|undefined)", interface)
+}
+
+-- @interface/interface.go --
+@@ -6 +6 @@
++	var d any
+-- pointer.go --
+package undeclared_var
+
+func _() {
+	var p *int
+	p = e //@quickfix("e", re"(undeclared|undefined)", pointer)
+	_ = p
+}
+
+-- @pointer/pointer.go --
+@@ -5 +5 @@
++	var e *int
+-- struct.go --
+package undeclared_var
+
+type S struct{}
+
+type T struct{ s S }
+
+func _() {
+	_ = T{s: g} //@quickfix("g", re"(undeclared|undefined)", struct)
+}
+
+-- @struct/struct.go --
+@@ -8 +8 @@
++	var g S
+-- void.go --
+package undeclared_var
+
+func voidFunc() {}
+
+func _() {
+	_ = voidFunc() + x //@quickfix("x", re"(undeclared name|undefined): x", void)
+}
+
+-- @void/void.go --
+@@ -6 +6 @@
++	var x any

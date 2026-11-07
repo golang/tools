@@ -13,8 +13,6 @@ import (
 	"log"
 	"os"
 	"reflect"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 // matchExpr reports whether pattern x matches y.
@@ -34,8 +32,8 @@ func (tr *Transformer) matchExpr(x, y ast.Expr) bool {
 	if x == nil || y == nil {
 		return false
 	}
-	x = unparen(x)
-	y = unparen(y)
+	x = ast.Unparen(x)
+	y = ast.Unparen(y)
 
 	// Is x a wildcard?  (a reference to a 'before' parameter)
 	if xobj, ok := tr.wildcardObj(x); ok {
@@ -76,8 +74,11 @@ func (tr *Transformer) matchExpr(x, y ast.Expr) bool {
 
 	case *ast.CompositeLit:
 		y := y.(*ast.CompositeLit)
+		// The literals must have identical types, whether explicit
+		// or (if Type is nil) inferred from the context, as in
+		// []T{{...}} or, since go1.28, f({...}).
 		return (x.Type == nil) == (y.Type == nil) &&
-			(x.Type == nil || tr.matchType(x.Type, y.Type)) &&
+			tr.matchType(x, y) &&
 			tr.matchExprs(x.Elts, y.Elts)
 
 	case *ast.SelectorExpr:
@@ -149,7 +150,7 @@ func (tr *Transformer) matchExprs(xx, yy []ast.Expr) bool {
 	return true
 }
 
-// matchType reports whether the two type ASTs denote identical types.
+// matchType reports whether the two operands (terms or types) have identical types.
 func (tr *Transformer) matchType(x, y ast.Expr) bool {
 	tx := tr.info.Types[x].Type
 	ty := tr.info.Types[y].Type
@@ -228,8 +229,6 @@ func (tr *Transformer) matchWildcard(xobj *types.Var, y ast.Expr) bool {
 }
 
 // -- utilities --------------------------------------------------------
-
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
 
 // isRef returns the object referred to by this (possibly qualified)
 // identifier, or nil if the node is not a referring identifier.

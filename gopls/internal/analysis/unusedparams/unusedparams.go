@@ -12,9 +12,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/slices"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreslices"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -22,7 +25,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "unusedparams",
-	Doc:      analysisinternal.MustExtractDoc(doc, "unusedparams"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "unusedparams"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
@@ -77,24 +80,9 @@ func run(pass *analysis.Pass) (any, error) {
 		inspect.Preorder(filter, func(n ast.Node) {
 			switch n := n.(type) {
 			case *ast.CallExpr:
-				// Strip off any generic instantiation.
-				fun := n.Fun
-				switch fun_ := fun.(type) {
-				case *ast.IndexExpr:
-					fun = fun_.X // f[T]()  (funcs[i]() is rejected below)
-				case *ast.IndexListExpr:
-					fun = fun_.X // f[K, V]()
-				}
-
+				id := typesinternal.UsedIdent(pass.TypesInfo, n.Fun)
 				// Find object:
 				// record non-exported function, method, or func-typed var.
-				var id *ast.Ident
-				switch fun := fun.(type) {
-				case *ast.Ident:
-					id = fun
-				case *ast.SelectorExpr:
-					id = fun.Sel
-				}
 				if id != nil && !id.IsExported() {
 					switch pass.TypesInfo.Uses[id].(type) {
 					case *types.Func, *types.Var:
@@ -108,8 +96,7 @@ func run(pass *analysis.Pass) (any, error) {
 				// generics makes it tricky, and this conservative
 				// heuristic is close enough.)
 				t := pass.TypesInfo.TypeOf(n).(*types.Interface)
-				for i := 0; i < t.NumExplicitMethods(); i++ {
-					m := t.ExplicitMethod(i)
+				for m := range t.ExplicitMethods() {
 					if !m.Exported() && m.Name() != "_" {
 						unexportedIMethodNames[m.Name()] = true
 					}
@@ -137,34 +124,25 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	// Check each non-address-taken function's parameters are all used.
-	filter := []ast.Node{
-		(*ast.FuncDecl)(nil),
-		(*ast.FuncLit)(nil),
-	}
-	inspect.WithStack(filter, func(n ast.Node, push bool, stack []ast.Node) bool {
-		// (We always return true so that we visit nested FuncLits.)
-
-		if !push {
-			return true
-		}
-
+funcloop:
+	for c := range inspect.Root().Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 		var (
 			fn    types.Object // function symbol (*Func, possibly *Var for a FuncLit)
 			ftype *ast.FuncType
 			body  *ast.BlockStmt
 		)
-		switch n := n.(type) {
+		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
 			// We can't analyze non-Go functions.
 			if n.Body == nil {
-				return true
+				continue
 			}
 
 			// Ignore exported functions and methods: we
 			// must assume they may be address-taken in
 			// another package.
 			if n.Name.IsExported() {
-				return true
+				continue
 			}
 
 			// Ignore methods that match the name of any
@@ -172,7 +150,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// as the method's signature may need to conform
 			// to the interface.
 			if n.Recv != nil && unexportedIMethodNames[n.Name.Name] {
-				return true
+				continue
 			}
 
 			fn = pass.TypesInfo.Defs[n.Name].(*types.Func)
@@ -182,28 +160,28 @@ func run(pass *analysis.Pass) (any, error) {
 			// Find the symbol for the variable (if any)
 			// to which the FuncLit is bound.
 			// (We don't bother to allow ParenExprs.)
-			switch parent := stack[len(stack)-2].(type) {
+			switch parent := c.Parent().Node().(type) {
 			case *ast.AssignStmt:
 				// f  = func() {...}
 				// f := func() {...}
-				for i, rhs := range parent.Rhs {
-					if rhs == n {
-						if id, ok := parent.Lhs[i].(*ast.Ident); ok {
-							fn = pass.TypesInfo.ObjectOf(id)
+				if ek, idx := c.ParentEdge(); ek == edge.AssignStmt_Rhs {
+					// Inv: n == AssignStmt.Rhs[idx]
+					if id, ok := parent.Lhs[idx].(*ast.Ident); ok {
+						fn = pass.TypesInfo.ObjectOf(id)
 
-							// Edge case: f = func() {...}
-							// should not count as a use.
-							if pass.TypesInfo.Uses[id] != nil {
-								usesOutsideCall[fn] = slices.Remove(usesOutsideCall[fn], id)
-							}
-
-							if fn == nil && id.Name == "_" {
-								// Edge case: _ = func() {...}
-								// has no var. Fake one.
-								fn = types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
-							}
+						// Edge case: f = func() {...}
+						// should not count as a use.
+						if pass.TypesInfo.Uses[id] != nil {
+							usesOutsideCall[fn] = moreslices.Remove(usesOutsideCall[fn], id)
 						}
-						break
+
+						if fn == nil && id.Name == "_" {
+							// Edge case: _ = func() {...}
+							// has no local var. Fake one.
+							v := types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
+							v.SetKind(types.LocalVar)
+							fn = v
+						}
 					}
 				}
 
@@ -227,12 +205,12 @@ func run(pass *analysis.Pass) (any, error) {
 		// Ignore address-taken functions and methods: unused
 		// parameters may be needed to conform to a func type.
 		if fn == nil || len(usesOutsideCall[fn]) > 0 {
-			return true
+			continue
 		}
 
 		// If there are no parameters, there are no unused parameters.
 		if ftype.Params.NumFields() == 0 {
-			return true
+			continue
 		}
 
 		// To reduce false positives, ignore functions with an
@@ -249,7 +227,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// Empty body. Although the parameter is
 			// unnecessary, it's pretty obvious to the
 			// reader that that's the case, so we allow it.
-			return true // func f() {}
+			continue // func f() {}
 		case 1:
 			if stmt, ok := body.List[0].(*ast.ExprStmt); ok {
 				// We allow a panic body, as it is often a
@@ -257,10 +235,16 @@ func run(pass *analysis.Pass) (any, error) {
 				// 	func f() { panic(...) }
 				if call, ok := stmt.X.(*ast.CallExpr); ok {
 					if fun, ok := call.Fun.(*ast.Ident); ok && fun.Name == "panic" {
-						return true
+						continue
 					}
 				}
 			}
+		}
+
+		// Don't report diagnostics on generated files.
+		// (We can't skip analysis of generated files, though.)
+		if ast.IsGenerated(astutil.EnclosingFile(c)) {
+			continue funcloop
 		}
 
 		// Report each unused parameter.
@@ -275,6 +259,7 @@ func run(pass *analysis.Pass) (any, error) {
 					if len(field.Names) > 1 {
 						start, end = id.Pos(), id.End()
 					}
+
 					// This diagnostic carries both an edit-based fix to
 					// rename the unused parameter, and a command-based fix
 					// to remove it (see golang.RemoveUnusedParameter).
@@ -301,8 +286,6 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		}
-
-		return true
-	})
+	}
 	return nil, nil
 }

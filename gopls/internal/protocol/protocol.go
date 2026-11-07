@@ -11,12 +11,9 @@ import (
 	"fmt"
 	"io"
 
-	"golang.org/x/telemetry/crashmonitor"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/xcontext"
 )
 
 var (
@@ -33,8 +30,8 @@ type ClientCloser interface {
 type connSender interface {
 	io.Closer
 
-	Notify(ctx context.Context, method string, params interface{}) error
-	Call(ctx context.Context, method string, params, result interface{}) error
+	Notify(ctx context.Context, method string, params any) error
+	Call(ctx context.Context, method string, params, result any) error
 }
 
 type clientDispatcher struct {
@@ -59,11 +56,11 @@ func (c clientConn) Close() error {
 	return c.conn.Close()
 }
 
-func (c clientConn) Notify(ctx context.Context, method string, params interface{}) error {
+func (c clientConn) Notify(ctx context.Context, method string, params any) error {
 	return c.conn.Notify(ctx, method, params)
 }
 
-func (c clientConn) Call(ctx context.Context, method string, params interface{}, result interface{}) error {
+func (c clientConn) Call(ctx context.Context, method string, params any, result any) error {
 	id, err := c.conn.Call(ctx, method, params, result)
 	if ctx.Err() != nil {
 		cancelCall(ctx, c, id)
@@ -83,15 +80,15 @@ func (c clientConnV2) Close() error {
 	return c.conn.Close()
 }
 
-func (c clientConnV2) Notify(ctx context.Context, method string, params interface{}) error {
+func (c clientConnV2) Notify(ctx context.Context, method string, params any) error {
 	return c.conn.Notify(ctx, method, params)
 }
 
-func (c clientConnV2) Call(ctx context.Context, method string, params interface{}, result interface{}) error {
+func (c clientConnV2) Call(ctx context.Context, method string, params any, result any) error {
 	call := c.conn.Call(ctx, method, params)
 	err := call.Await(ctx, result)
 	if ctx.Err() != nil {
-		detached := xcontext.Detach(ctx)
+		detached := context.WithoutCancel(ctx)
 		c.conn.Notify(detached, "$/cancelRequest", &CancelParams{ID: call.ID().Raw()})
 	}
 	return err
@@ -114,7 +111,7 @@ type serverDispatcher struct {
 func ClientHandler(client Client, handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		if ctx.Err() != nil {
-			ctx := xcontext.Detach(ctx)
+			ctx := context.WithoutCancel(ctx)
 			return reply(ctx, nil, RequestCancelledError)
 		}
 		handled, err := clientDispatch(ctx, client, reply, req)
@@ -126,16 +123,16 @@ func ClientHandler(client Client, handler jsonrpc2.Handler) jsonrpc2.Handler {
 }
 
 func ClientHandlerV2(client Client) jsonrpc2_v2.Handler {
-	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		if ctx.Err() != nil {
 			return nil, RequestCancelledErrorV2
 		}
 		req1 := req2to1(req)
 		var (
-			result interface{}
+			result any
 			resErr error
 		)
-		replier := func(_ context.Context, res interface{}, err error) error {
+		replier := func(_ context.Context, res any, err error) error {
 			if err != nil {
 				resErr = err
 				return nil
@@ -154,7 +151,7 @@ func ClientHandlerV2(client Client) jsonrpc2_v2.Handler {
 func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		if ctx.Err() != nil {
-			ctx := xcontext.Detach(ctx)
+			ctx := context.WithoutCancel(ctx)
 			return reply(ctx, nil, RequestCancelledError)
 		}
 		handled, err := serverDispatch(ctx, server, reply, req)
@@ -166,16 +163,16 @@ func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
 }
 
 func ServerHandlerV2(server Server) jsonrpc2_v2.Handler {
-	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		if ctx.Err() != nil {
 			return nil, RequestCancelledErrorV2
 		}
 		req1 := req2to1(req)
 		var (
-			result interface{}
+			result any
 			resErr error
 		)
-		replier := func(_ context.Context, res interface{}, err error) error {
+		replier := func(_ context.Context, res any, err error) error {
 			if err != nil {
 				resErr = err
 				return nil
@@ -232,12 +229,12 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 			// be careful about racing between the two paths.
 			// TODO(iancottrell): Add a test that watches the stream and verifies the response
 			// for the cancelled request flows.
-			replyWithDetachedContext := func(ctx context.Context, resp interface{}, err error) error {
+			replyWithDetachedContext := func(ctx context.Context, resp any, err error) error {
 				// https://microsoft.github.io/language-server-protocol/specifications/specification-current/#cancelRequest
 				if ctx.Err() != nil && err == nil {
 					err = RequestCancelledError
 				}
-				ctx = xcontext.Detach(ctx)
+				ctx = context.WithoutCancel(ctx)
 				return reply(ctx, resp, err)
 			}
 			return handler(ctx, replyWithDetachedContext, req)
@@ -257,7 +254,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	}
 }
 
-func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params interface{}, result interface{}) error {
+func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params any, result any) error {
 	id, err := conn.Call(ctx, method, params, result)
 	if ctx.Err() != nil {
 		cancelCall(ctx, clientConn{conn}, id)
@@ -266,7 +263,7 @@ func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params interfa
 }
 
 func cancelCall(ctx context.Context, sender connSender, id jsonrpc2.ID) {
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	ctx, done := event.Start(ctx, "protocol.canceller")
 	defer done()
 	// Note that only *jsonrpc2.ID implements json.Marshaler.
@@ -298,16 +295,7 @@ func NonNilSlice[T comparable](x []T) []T {
 	return x
 }
 
-func recoverHandlerPanic(method string) {
-	// Report panics in the handler goroutine,
-	// unless we have enabled the monitor,
-	// which reports all crashes.
-	if !crashmonitor.Supported() {
-		defer func() {
-			if x := recover(); x != nil {
-				bug.Reportf("panic in %s request", method)
-				panic(x)
-			}
-		}()
-	}
+// MessageString returns the string value of diag.Message.
+func (diag Diagnostic) MessageString() string {
+	return diag.Message.Value.(string) // gopls only produces strings
 }

@@ -56,7 +56,7 @@ func (b *ServerBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) j
 	serverHandler := protocol.ServerHandlerV2(server)
 	// Wrap the server handler to inject the client into each request context, so
 	// that log events are reflected back to the client.
-	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		ctx = protocol.WithClient(ctx, client)
 		return serverHandler.Handle(ctx, req)
 	})
@@ -105,7 +105,7 @@ func (e *TestEnv) dial(ctx context.Context, t *testing.T, dialer jsonrpc2_v2.Dia
 		l, _ := e.serve(ctx, t, NewForwardBinder(dialer))
 		dialer = l.Dialer()
 	}
-	conn, err := jsonrpc2_v2.Dial(ctx, dialer, client)
+	conn, err := jsonrpc2_v2.Dial(ctx, dialer, client, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,11 @@ func TestClientLoggingV2(t *testing.T) {
 				if !matched {
 					t.Errorf("got log %q, want a log containing %q", got, want)
 				}
-			case <-time.After(1 * time.Second):
+			case <-time.After(10 * time.Second):
+				// Any timeout we enforce here is at the mercy
+				// of the underlying operating system.
+				// 1s was occasionally flaky (see TestClientLogging in lsprpc_test.go);
+				// 10s should be better.
 				t.Error("timeout waiting for client log")
 			}
 		})

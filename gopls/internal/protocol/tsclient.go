@@ -6,211 +6,235 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
-// LSP metaData.version = 3.17.0.
+// Code generated from protocol/metaModel.json at ref release/protocol/3.18.2 (hash 20969f3e75cb3cd35c2bb794b1d15cc2dfbe4abb).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.18.2/protocol/metaModel.json
+// LSP metaData.version = 3.18.0.
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 type Client interface {
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#logTrace
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#logTrace
 	LogTrace(context.Context, *LogTraceParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progress
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#progress
 	Progress(context.Context, *ProgressParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#client_registerCapability
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#client_registerCapability
 	RegisterCapability(context.Context, *RegistrationParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#client_unregisterCapability
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#client_unregisterCapability
 	UnregisterCapability(context.Context, *UnregistrationParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#telemetry_event
-	Event(context.Context, *interface{}) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_publishDiagnostics
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#telemetry_event
+	Event(context.Context, *any) error
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#textDocument_publishDiagnostics
 	PublishDiagnostics(context.Context, *PublishDiagnosticsParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_logMessage
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_logMessage
 	LogMessage(context.Context, *LogMessageParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showDocument
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showDocument
 	ShowDocument(context.Context, *ShowDocumentParams) (*ShowDocumentResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showMessage
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showMessage
 	ShowMessage(context.Context, *ShowMessageParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_showMessageRequest
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_showMessageRequest
 	ShowMessageRequest(context.Context, *ShowMessageRequestParams) (*MessageActionItem, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_workDoneProgress_create
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#window_workDoneProgress_create
 	WorkDoneProgressCreate(context.Context, *WorkDoneProgressCreateParams) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_applyEdit
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_applyEdit
 	ApplyEdit(context.Context, *ApplyWorkspaceEditParams) (*ApplyWorkspaceEditResult, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_codeLens_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_codeLens_refresh
 	CodeLensRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_configuration
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_configuration
 	Configuration(context.Context, *ParamConfiguration) ([]LSPAny, error)
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_diagnostic_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_diagnostic_refresh
 	DiagnosticRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_foldingRange_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_foldingRange_refresh
 	FoldingRangeRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_inlayHint_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_inlayHint_refresh
 	InlayHintRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_inlineValue_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_inlineValue_refresh
 	InlineValueRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_semanticTokens_refresh
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_semanticTokens_refresh
 	SemanticTokensRefresh(context.Context) error
-	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_workspaceFolders
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_textDocumentContent_refresh
+	TextDocumentContentRefresh(context.Context, *TextDocumentContentRefreshParams) error
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification#workspace_workspaceFolders
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder, error)
 }
 
 func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
-	switch r.Method() {
+	resp, valid, err := ClientDispatchCall(ctx, client, r.Method(), r.Params())
+	if !valid {
+		return false, nil
+	}
+
+	if err != nil {
+		return valid, reply(ctx, nil, err)
+	} else {
+		return valid, reply(ctx, resp, nil)
+	}
+}
+
+func ClientDispatchCall(ctx context.Context, client Client, method string, raw json.RawMessage) (resp any, _ bool, err error) {
+	switch method {
 	case "$/logTrace":
 		var params LogTraceParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.LogTrace(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "$/progress":
 		var params ProgressParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.Progress(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "client/registerCapability":
 		var params RegistrationParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.RegisterCapability(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "client/unregisterCapability":
 		var params UnregistrationParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.UnregisterCapability(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "telemetry/event":
-		var params interface{}
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		var params any
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.Event(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "textDocument/publishDiagnostics":
 		var params PublishDiagnosticsParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.PublishDiagnostics(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "window/logMessage":
 		var params LogMessageParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.LogMessage(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "window/showDocument":
 		var params ShowDocumentParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		resp, err := client.ShowDocument(ctx, &params)
 		if err != nil {
-			return true, reply(ctx, nil, err)
+			return nil, true, err
 		}
-		return true, reply(ctx, resp, nil)
+		return resp, true, nil
 
 	case "window/showMessage":
 		var params ShowMessageParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.ShowMessage(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "window/showMessageRequest":
 		var params ShowMessageRequestParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		resp, err := client.ShowMessageRequest(ctx, &params)
 		if err != nil {
-			return true, reply(ctx, nil, err)
+			return nil, true, err
 		}
-		return true, reply(ctx, resp, nil)
+		return resp, true, nil
 
 	case "window/workDoneProgress/create":
 		var params WorkDoneProgressCreateParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		err := client.WorkDoneProgressCreate(ctx, &params)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/applyEdit":
 		var params ApplyWorkspaceEditParams
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		resp, err := client.ApplyEdit(ctx, &params)
 		if err != nil {
-			return true, reply(ctx, nil, err)
+			return nil, true, err
 		}
-		return true, reply(ctx, resp, nil)
+		return resp, true, nil
 
 	case "workspace/codeLens/refresh":
 		err := client.CodeLensRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/configuration":
 		var params ParamConfiguration
-		if err := UnmarshalJSON(r.Params(), &params); err != nil {
-			return true, sendParseError(ctx, reply, err)
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
 		resp, err := client.Configuration(ctx, &params)
 		if err != nil {
-			return true, reply(ctx, nil, err)
+			return nil, true, err
 		}
-		return true, reply(ctx, resp, nil)
+		return resp, true, nil
 
 	case "workspace/diagnostic/refresh":
 		err := client.DiagnosticRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/foldingRange/refresh":
 		err := client.FoldingRangeRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/inlayHint/refresh":
 		err := client.InlayHintRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/inlineValue/refresh":
 		err := client.InlineValueRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
 
 	case "workspace/semanticTokens/refresh":
 		err := client.SemanticTokensRefresh(ctx)
-		return true, reply(ctx, nil, err)
+		return nil, true, err
+
+	case "workspace/textDocumentContent/refresh":
+		var params TextDocumentContentRefreshParams
+		if err := UnmarshalJSON(raw, &params); err != nil {
+			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		err := client.TextDocumentContentRefresh(ctx, &params)
+		return nil, true, err
 
 	case "workspace/workspaceFolders":
 		resp, err := client.WorkspaceFolders(ctx)
 		if err != nil {
-			return true, reply(ctx, nil, err)
+			return nil, true, err
 		}
-		return true, reply(ctx, resp, nil)
+		return resp, true, nil
 
 	default:
-		return false, nil
+		return nil, false, nil
 	}
 }
 
@@ -226,7 +250,7 @@ func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *Regis
 func (s *clientDispatcher) UnregisterCapability(ctx context.Context, params *UnregistrationParams) error {
 	return s.sender.Call(ctx, "client/unregisterCapability", params, nil)
 }
-func (s *clientDispatcher) Event(ctx context.Context, params *interface{}) error {
+func (s *clientDispatcher) Event(ctx context.Context, params *any) error {
 	return s.sender.Notify(ctx, "telemetry/event", params)
 }
 func (s *clientDispatcher) PublishDiagnostics(ctx context.Context, params *PublishDiagnosticsParams) error {
@@ -286,6 +310,9 @@ func (s *clientDispatcher) InlineValueRefresh(ctx context.Context) error {
 }
 func (s *clientDispatcher) SemanticTokensRefresh(ctx context.Context) error {
 	return s.sender.Call(ctx, "workspace/semanticTokens/refresh", nil, nil)
+}
+func (s *clientDispatcher) TextDocumentContentRefresh(ctx context.Context, params *TextDocumentContentRefreshParams) error {
+	return s.sender.Call(ctx, "workspace/textDocumentContent/refresh", params, nil)
 }
 func (s *clientDispatcher) WorkspaceFolders(ctx context.Context) ([]WorkspaceFolder, error) {
 	var result []WorkspaceFolder

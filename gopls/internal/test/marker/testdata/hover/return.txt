@@ -1,0 +1,12 @@
+This test checks that hovering over a return statement reveals the result type.
+
+-- a.go --
+package a
+
+func _() int {
+    return 1 //@hover("return", "return 1", "returns (int)")
+}
+
+func _() (int, int) {
+    return 1, 2 //@hover("return", "return 1, 2", "returns (int, int)")
+}

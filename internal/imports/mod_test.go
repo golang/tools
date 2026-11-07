@@ -25,6 +25,8 @@ import (
 	"golang.org/x/tools/internal/proxydir"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
+	"maps"
+	"slices"
 )
 
 // Tests that we can find packages in the stdlib.
@@ -267,10 +269,7 @@ import _ "rsc.io/sampler"
 		t.Fatal(err)
 	}
 
-	wantDir := `pkg.*mod.*/sampler@.*$`
-	if testenv.Go1Point() >= 14 {
-		wantDir = `/vendor/`
-	}
+	wantDir := `/vendor/`
 
 	// Clear out the resolver's module info, since we've changed the environment.
 	// (the presence of a /vendor directory affects `go list -m`).
@@ -931,12 +930,7 @@ func scanToSlice(resolver Resolver, exclude []gopathwalk.RootType) ([]*pkg, erro
 	var result []*pkg
 	filter := &scanCallback{
 		rootFound: func(root gopathwalk.Root) bool {
-			for _, rt := range exclude {
-				if root.Type == rt {
-					return false
-				}
-			}
-			return true
+			return !slices.Contains(exclude, root.Type)
 		},
 		dirFound: func(pkg *pkg) bool {
 			return true
@@ -1026,9 +1020,7 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		WorkingDir:  filepath.Join(mainDir, wd),
 		GocmdRunner: &gocommand.Runner{},
 	}
-	for k, v := range extraEnv {
-		env.Env[k] = v
-	}
+	maps.Copy(env.Env, extraEnv)
 	if *testDebug {
 		env.Logf = log.Printf
 	}
@@ -1190,6 +1182,67 @@ import _ "rsc.io/quote"
 	}
 }
 
+// Tests that scanDirForPackage handles a root that is a dependency's module
+// directory within the module cache (as added by newModuleResolver), computing
+// the import path relative to the module cache rather than to the root.
+func TestScanDirForPackageDependencyRoot(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.mod --
+module x
+
+require rsc.io/quote v1.5.2
+-- x.go --
+package x
+import _ "rsc.io/quote"
+`, "")
+	defer mt.cleanup()
+
+	r := mt.env.resolver.(*ModuleResolver)
+	modDir := filepath.Join(r.moduleCacheDir, "rsc.io", "quote@v1.5.2")
+	root := gopathwalk.Root{Path: modDir, Type: gopathwalk.RootModuleCache}
+	for _, tt := range []struct {
+		dir  string
+		want string // nonCanonicalImportPath
+	}{
+		{modDir, "rsc.io/quote"},
+		{filepath.Join(modDir, "buggy"), "rsc.io/quote/buggy"},
+	} {
+		info := r.scanDirForPackage(root, tt.dir)
+		if info.err != nil {
+			t.Errorf("scanDirForPackage(%q, %q): %v", root.Path, tt.dir, info.err)
+			continue
+		}
+		if info.nonCanonicalImportPath != tt.want {
+			t.Errorf("scanDirForPackage(%q, %q).nonCanonicalImportPath = %q, want %q", root.Path, tt.dir, info.nonCanonicalImportPath, tt.want)
+		}
+	}
+}
+
+// Tests that packages in dependencies are found by scanning only the
+// dependencies' module directories, without scanning the whole module cache.
+func TestScanDependencyRoots(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.mod --
+module x
+
+require rsc.io/quote v1.5.2
+-- x.go --
+package x
+import _ "rsc.io/quote"
+`, "")
+	defer mt.cleanup()
+
+	// Remove the module cache root, leaving only the roots for the
+	// direct and indirect dependencies' directories within it.
+	r := mt.env.resolver.(*ModuleResolver)
+	r.roots = slices.DeleteFunc(r.roots, func(root gopathwalk.Root) bool {
+		return root.Path == r.moduleCacheDir
+	})
+
+	mt.assertScanFinds("rsc.io/quote", "quote")
+	mt.assertScanFinds("rsc.io/sampler", "sampler")
+}
+
 // Tests that crud in the module cache is ignored.
 func TestInvalidModCache(t *testing.T) {
 	testenv.NeedsTool(t, "go")
@@ -1303,15 +1356,15 @@ func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	start := time.Now()
 	scanToSlice(resolver, exclude)
 	b.Logf("warming the mod cache took %v", time.Since(start))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		scanToSlice(resolver, exclude)
 		resolver = resolver.ClearForNewScan()
 	}
 }
 
 func BenchmarkModuleResolver_InitialScan(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		env := &ProcessEnv{
 			GocmdRunner: &gocommand.Runner{},
 		}
@@ -1322,4 +1375,49 @@ func BenchmarkModuleResolver_InitialScan(b *testing.B) {
 		}
 		scanToSlice(resolver, exclude)
 	}
+}
+
+// Tests that go.work files and vendor directory are respected.
+func TestModWorkspaceVendoring(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.work --
+go 1.22
+
+use (
+	./a
+	./b
+)
+-- a/go.mod --
+module example.com/a
+
+go 1.22
+
+require rsc.io/sampler v1.3.1
+-- a/a.go --
+package a
+
+import _ "rsc.io/sampler"
+-- b/go.mod --
+module example.com/b
+
+go 1.22
+-- b/b.go --
+package b
+`, "")
+	defer mt.cleanup()
+
+	// generate vendor directory
+	if _, err := mt.env.invokeGo(context.Background(), "work", "vendor"); err != nil {
+		t.Fatal(err)
+	}
+
+	// update module resolver
+	mt.env.ClearModuleInfo()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
+
+	mt.assertModuleFoundInDir("example.com/a", "a", `main/a$`)
+	mt.assertScanFinds("example.com/a", "a")
+	mt.assertModuleFoundInDir("example.com/b", "b", `main/b$`)
+	mt.assertScanFinds("example.com/b", "b")
+	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }

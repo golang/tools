@@ -10,13 +10,18 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"slices"
 	"sync"
 
+	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // Convenient aliases for very heavily used types.
@@ -47,6 +52,7 @@ type syntaxPackage struct {
 	fset            *token.FileSet // for now, same as the snapshot's FileSet
 	goFiles         []*parsego.File
 	compiledGoFiles []*parsego.File
+	asmFiles        []*asm.File
 	diagnostics     []*Diagnostic
 	parseErrors     []scanner.ErrorList
 	typeErrors      []types.Error
@@ -56,24 +62,42 @@ type syntaxPackage struct {
 	importMap       map[PackagePath]*types.Package
 
 	xrefsOnce sync.Once
-	_xrefs    []byte // only used by the xrefs method
+	_xrefs    *xrefs.Index // only used by the xrefs method
 
 	methodsetsOnce sync.Once
 	_methodsets    *methodsets.Index // only used by the methodsets method
+
+	testsOnce sync.Once
+	_tests    *testfuncs.Index // only used by the tests method
 }
 
-func (p *syntaxPackage) xrefs() []byte {
+func (p *syntaxPackage) xrefs(enc *objectpath.Encoder) *xrefs.Index {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.NewIndex(enc, p.types, p.typesInfo, p.compiledGoFiles, p.asmFiles)
 	})
 	return p._xrefs
 }
 
-func (p *syntaxPackage) methodsets() *methodsets.Index {
+func (p *syntaxPackage) methodsets(enc *objectpath.Encoder) *methodsets.Index {
 	p.methodsetsOnce.Do(func() {
-		p._methodsets = methodsets.NewIndex(p.fset, p.types)
+		p._methodsets = methodsets.NewIndex(enc, p.fset, p.types)
 	})
 	return p._methodsets
+}
+
+func (p *syntaxPackage) tests() *testfuncs.Index {
+	p.testsOnce.Do(func() {
+		p._tests = testfuncs.NewIndex(p.compiledGoFiles, p.typesInfo)
+	})
+	return p._tests
+}
+
+// hasFixedFiles reports whether there are any 'fixed' compiled go files in the
+// package.
+//
+// Intended to be used to refine bug reports.
+func (p *syntaxPackage) hasFixedFiles() bool {
+	return slices.ContainsFunc(p.compiledGoFiles, (*parsego.File).Fixed)
 }
 
 func (p *Package) String() string { return string(p.metadata.ID) }
@@ -112,15 +136,26 @@ func (p *Package) File(uri protocol.DocumentURI) (*parsego.File, error) {
 	return p.pkg.File(uri)
 }
 
-func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) {
-	for _, cgf := range pkg.compiledGoFiles {
-		if cgf.URI == uri {
-			return cgf, nil
+// FileEnclosing returns the file of pkg that encloses the specified position,
+// which must be mapped by p.FileSet().
+func (p *Package) FileEnclosing(pos token.Pos) (*parsego.File, error) {
+	for _, files := range [...][]*parsego.File{p.pkg.compiledGoFiles, p.pkg.goFiles} {
+		for _, pgf := range files {
+			if pgf.File.FileStart <= pos && pos <= pgf.File.FileEnd {
+				return pgf, nil
+			}
 		}
 	}
-	for _, gf := range pkg.goFiles {
-		if gf.URI == uri {
-			return gf, nil
+	return nil, fmt.Errorf("no parsed file for position %d (%s) in %v",
+		pos, safetoken.StartPosition(p.FileSet(), pos), p.pkg.id)
+}
+
+func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) {
+	for _, files := range [...][]*parsego.File{pkg.compiledGoFiles, pkg.goFiles} {
+		for _, pgf := range files {
+			if pgf.URI == uri {
+				return pgf, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)
@@ -179,4 +214,21 @@ func (p *Package) ParseErrors() []scanner.ErrorList {
 // package, if any.
 func (p *Package) TypeErrors() []types.Error {
 	return p.pkg.typeErrors
+}
+
+func (p *Package) AsmFiles() []*asm.File {
+	return p.pkg.asmFiles
+}
+
+func (p *Package) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	return p.pkg.AsmFile(uri)
+}
+
+func (pkg *syntaxPackage) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	for _, af := range pkg.asmFiles {
+		if af.Mapper.URI == uri {
+			return af, nil
+		}
+	}
+	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)
 }

@@ -420,7 +420,7 @@ type rootData struct {
 	BasePath      string
 	GodocURL      string
 	AnalyticsHTML template.HTML
-	Data          interface{}
+	Data          any
 }
 
 // ServeHTTP serves the front, index, and article pages

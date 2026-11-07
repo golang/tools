@@ -15,6 +15,11 @@
 	}
 }
 
+-- go.mod --
+module example.com
+
+go 1.24
+
 -- composite_literals.go --
 package inlayHint //@inlayhints(complit)
 
@@ -159,12 +164,12 @@ const (
 )
 
 var (
-	varInt     = 3
-	varFloat   = 3.14
-	varBool    = true
-	varRune    = '3' + '4'
-	varComplex = 2.7i
-	varString  = "Hello, world!"
+	varInt< int>     = 3
+	varFloat< float64>   = 3.14
+	varBool< bool>    = true
+	varRune< rune>    = '3' + '4'
+	varComplex< complex128> = 2.7i
+	varString< string>  = "Hello, world!"
 )
 
 -- parameter_names.go --
@@ -274,6 +279,8 @@ func foobar() {
 -- type_params.go --
 package inlayHint //@inlayhints(typeparams)
 
+import "example.com/other"
+
 func main() {
 	ints := map[string]int64{
 		"first":  34,
@@ -291,8 +298,18 @@ func main() {
 	SumIntsOrFloats(ints)
 	SumIntsOrFloats(floats)
 
+	SumIntsOrFloats[string](ints)
+
 	SumNumbers(ints)
 	SumNumbers(floats)
+
+	Three[int, string](1, "s", true)
+
+	other.Bar(ints)
+	other.Bar(other.Foo{})
+
+	other.Three[int](1, "s", true)
+	other.Three[int, string](1, "s", true)
 }
 
 type Number interface {
@@ -315,8 +332,12 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 	return s
 }
 
+func Three[A, B, C any](a A, b B, c C) {}
+
 -- @typeparams --
 package inlayHint //@inlayhints(typeparams)
+
+import "example.com/other"
 
 func main() {
 	ints< map[string]int64> := map[string]int64{
@@ -335,8 +356,18 @@ func main() {
 	SumIntsOrFloats<[string, int64]>(<m: >ints)
 	SumIntsOrFloats<[string, float64]>(<m: >floats)
 
+	SumIntsOrFloats[string<, int64>](<m: >ints)
+
 	SumNumbers<[string, int64]>(<m: >ints)
 	SumNumbers<[string, float64]>(<m: >floats)
+
+	Three[int, string<, bool>](<a: >1, <b: >"s", <c: >true)
+
+	other.Bar<[map[string]int64]>(<x: >ints)
+	other.Bar<[other.Foo]>(<x: >other.Foo{})
+
+	other.Three[int<, string, bool>](<a: >1, <b: >"s", <c: >true)
+	other.Three[int, string<, bool>](<a: >1, <b: >"s", <c: >true)
 }
 
 type Number interface {
@@ -359,10 +390,14 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 	return s
 }
 
+func Three[A, B, C any](a A, b B, c C) {}
+
 -- variable_types.go --
 package inlayHint //@inlayhints(vartypes)
 
 func assignTypes() {
+	var x string
+	var y = ""
 	i, j := 0, len([]string{})-1
 	println(i, j)
 }
@@ -378,13 +413,15 @@ func funcLitType() {
 }
 
 func compositeLitType() {
-	foo := map[string]interface{}{"": ""}
+	foo := map[string]any{"": ""}
 }
 
 -- @vartypes --
 package inlayHint //@inlayhints(vartypes)
 
 func assignTypes() {
+	var x string
+	var y< string> = ""
 	i< int>, j< int> := 0, len([]string{})-1
 	println(i, j)
 }
@@ -400,6 +437,14 @@ func funcLitType() {
 }
 
 func compositeLitType() {
-	foo< map[string]interface{}> := map[string]interface{}{"": ""}
+	foo< map[string]any> := map[string]any{"": ""}
 }
 
+-- other/other.go --
+package other
+
+type Foo struct{}
+
+func Bar[T any](x T) {}
+
+func Three[A, B, C any](a A, b B, c C) {}

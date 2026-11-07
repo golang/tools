@@ -19,7 +19,12 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-var netFiles []*ast.File
+// net/http package
+var (
+	netFset    = token.NewFileSet()
+	netFiles   []*ast.File
+	netInspect *inspector.Inspector
+)
 
 func init() {
 	files, err := parseNetFiles()
@@ -27,6 +32,7 @@ func init() {
 		log.Fatal(err)
 	}
 	netFiles = files
+	netInspect = inspector.New(netFiles)
 }
 
 func parseNetFiles() ([]*ast.File, error) {
@@ -34,11 +40,10 @@ func parseNetFiles() ([]*ast.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	fset := token.NewFileSet()
 	var files []*ast.File
 	for _, filename := range pkg.GoFiles {
 		filename = filepath.Join(pkg.Dir, filename)
-		f, err := parser.ParseFile(fset, filename, nil, 0)
+		f, err := parser.ParseFile(netFset, filename, nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +165,8 @@ func TestInspectPruning(t *testing.T) {
 	compare(t, nodesA, nodesB)
 }
 
-func compare(t *testing.T, nodesA, nodesB []ast.Node) {
+// compare calls t.Error if !slices.Equal(nodesA, nodesB).
+func compare[N comparable](t *testing.T, nodesA, nodesB []N) {
 	if len(nodesA) != len(nodesB) {
 		t.Errorf("inconsistent node lists: %d vs %d", len(nodesA), len(nodesB))
 	} else {
@@ -247,19 +253,18 @@ func typeOf(n ast.Node) string {
 
 func BenchmarkNewInspector(b *testing.B) {
 	// Measure one-time construction overhead.
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		inspector.New(netFiles)
 	}
 }
 
 func BenchmarkInspect(b *testing.B) {
-	b.StopTimer()
+
 	inspect := inspector.New(netFiles)
-	b.StartTimer()
 
 	// Measure marginal cost of traversal.
 	var ndecls, nlits int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		inspect.Preorder(nil, func(n ast.Node) {
 			switch n.(type) {
 			case *ast.FuncDecl:
@@ -272,14 +277,13 @@ func BenchmarkInspect(b *testing.B) {
 }
 
 func BenchmarkInspectFilter(b *testing.B) {
-	b.StopTimer()
+
 	inspect := inspector.New(netFiles)
-	b.StartTimer()
 
 	// Measure marginal cost of traversal.
 	nodeFilter := []ast.Node{(*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)}
 	var ndecls, nlits int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		inspect.Preorder(nodeFilter, func(n ast.Node) {
 			switch n.(type) {
 			case *ast.FuncDecl:
@@ -291,25 +295,9 @@ func BenchmarkInspectFilter(b *testing.B) {
 	}
 }
 
-func BenchmarkInspectCalls(b *testing.B) {
-	b.StopTimer()
-	inspect := inspector.New(netFiles)
-	b.StartTimer()
-
-	// Measure marginal cost of traversal.
-	nodeFilter := []ast.Node{(*ast.CallExpr)(nil)}
-	var ncalls int
-	for i := 0; i < b.N; i++ {
-		inspect.Preorder(nodeFilter, func(n ast.Node) {
-			_ = n.(*ast.CallExpr)
-			ncalls++
-		})
-	}
-}
-
 func BenchmarkASTInspect(b *testing.B) {
 	var ndecls, nlits int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, f := range netFiles {
 			ast.Inspect(f, func(n ast.Node) bool {
 				switch n.(type) {

@@ -11,18 +11,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/server"
-	"golang.org/x/tools/gopls/internal/util/slices"
-	"golang.org/x/tools/internal/tool"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // execute implements the LSP ExecuteCommand verb for gopls.
 type execute struct {
 	EditFlags
-	app *Application
+	app *application
 }
 
 func (e *execute) Name() string      { return "execute" }
@@ -35,11 +35,9 @@ The execute command sends an LSP ExecuteCommand request to gopls,
 with a set of optional JSON argument values.
 Some commands return a result, also JSON.
 
-Available commands are documented at:
-
-	https://github.com/golang/tools/blob/master/gopls/doc/commands.md
-
-This interface is experimental and commands may change or disappear without notice.
+Gopls' command set is defined by the command.Interface type; see
+https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol/command#Interface.
+It is not a stable interface: commands may change or disappear without notice.
 
 Examples:
 
@@ -49,16 +47,26 @@ Examples:
 
 execute-flags:
 `)
+
 	printFlagDefaults(f)
 }
 
 func (e *execute) Run(ctx context.Context, args ...string) error {
+	// This undocumented environment variable allows
+	// the cmd integration test (and maintainers) to
+	// trigger a call to bug.Report.
+	if msg := os.Getenv("TEST_GOPLS_BUG"); msg != "" {
+		filecache.Start() // register bug handler
+		bug.Report(msg)
+		return nil
+	}
+
 	if len(args) == 0 {
-		return tool.CommandLineErrorf("execute requires a command name")
+		return commandLineErrorf("execute requires a command name")
 	}
 	cmd := args[0]
-	if !slices.Contains(command.Commands, command.Command(cmd)) {
-		return tool.CommandLineErrorf("unrecognized command: %s", cmd)
+	if !slices.Contains(protocolcommand.Commands, protocolcommand.Command(cmd)) {
+		return commandLineErrorf("unrecognized command: %s", cmd)
 	}
 
 	// A command may have multiple arguments, though the only one
@@ -75,13 +83,13 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 	e.app.editFlags = &e.EditFlags // in case command performs an edit
 
-	conn, err := e.app.connect(ctx)
+	cli, _, err := e.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
-	res, err := conn.executeCommand(ctx, &protocol.Command{
+	res, err := executeCommand(ctx, cli.server, &protocol.Command{
 		Command:   cmd,
 		Arguments: jsonArgs,
 	})
@@ -100,38 +108,9 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 // executeCommand executes a protocol.Command, displaying progress
 // messages and awaiting completion of asynchronous commands.
-func (conn *connection) executeCommand(ctx context.Context, cmd *protocol.Command) (any, error) {
-	endStatus := make(chan string, 1)
-	token, unregister := conn.client.registerProgressHandler(func(params *protocol.ProgressParams) {
-		switch v := params.Value.(type) {
-		case *protocol.WorkDoneProgressReport:
-			fmt.Fprintln(os.Stderr, v.Message) // combined std{out,err}
-
-		case *protocol.WorkDoneProgressEnd:
-			endStatus <- v.Message // = canceled | failed | completed
-		}
-	})
-	defer unregister()
-
-	res, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+func executeCommand(ctx context.Context, server protocol.Server, cmd *protocol.Command) (any, error) {
+	return server.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
 		Command:   cmd.Command,
 		Arguments: cmd.Arguments,
-		WorkDoneProgressParams: protocol.WorkDoneProgressParams{
-			WorkDoneToken: token,
-		},
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Some commands are asynchronous, so clients
-	// must wait for the "end" progress notification.
-	if command.Command(cmd.Command).IsAsync() {
-		status := <-endStatus
-		if status != server.CommandCompleted {
-			return nil, fmt.Errorf("command %s", status)
-		}
-	}
-
-	return res, nil
 }

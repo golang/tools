@@ -13,11 +13,11 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"slices"
 	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -35,7 +35,7 @@ type falconResult struct {
 // information but preserve type equivalence classes.
 //
 // Fresh names are deliberately obscure to avoid shadowing even if a
-// callee parameter has a nanme like "int" or "any".
+// callee parameter has a name like "int" or "any".
 type falconType struct {
 	Name string
 	Kind types.BasicKind // string/number/bool
@@ -125,10 +125,19 @@ func falcon(logf func(string, ...any), fset *token.FileSet, params map[*types.Va
 	// type mapping
 	st.int = st.typename(types.Typ[types.Int])
 	st.any = "interface{}" // don't use "any" as it may be shadowed
-	for obj, info := range st.params {
+
+	// Sort params by Index for determinism
+	sortedParams := make([]*types.Var, 0, len(st.params))
+	for obj := range st.params {
 		if isBasic(obj.Type(), types.IsConstType) {
-			info.FalconType = st.typename(obj.Type())
+			sortedParams = append(sortedParams, obj)
 		}
+	}
+	slices.SortFunc(sortedParams, func(a, b *types.Var) int {
+		return st.params[a].Index - st.params[b].Index
+	})
+	for _, obj := range sortedParams {
+		st.params[obj].FalconType = st.typename(obj.Type())
 	}
 
 	st.stmt(st.decl.Body)
@@ -423,13 +432,14 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if e.Type != nil {
 			_ = st.expr(e.Type)
 		}
-		t := aliases.Unalias(typeparams.Deref(tv.Type))
-		var uniques []ast.Expr
+		t := types.Unalias(typeparams.Deref(tv.Type))
+		ct := typeparams.CoreType(t)
+		var mapKeys []ast.Expr // map key expressions; must be distinct if constant
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if !is[*types.Struct](t) {
+				if is[*types.Map](ct) {
 					if k := st.expr(kv.Key); k != nil {
-						uniques = append(uniques, st.toExpr(k))
+						mapKeys = append(mapKeys, st.toExpr(k))
 					}
 				}
 				_ = st.expr(kv.Value)
@@ -437,38 +447,24 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 				_ = st.expr(elt)
 			}
 		}
-		if uniques != nil {
-			// Inv: not a struct.
-
-			// The type T in constraint T{...} depends on the CompLit:
-			// - for a basic-keyed map, use map[K]int;
-			// - for an interface-keyed map, use map[any]int;
-			// - for a slice, use []int;
-			// - for an array or *array, use [n]int.
-			// The last two entail progressively stronger index checks.
-			var ct ast.Expr // type syntax for constraint
-			switch t := t.(type) {
-			case *types.Map:
-				if types.IsInterface(t.Key()) {
-					ct = &ast.MapType{
-						Key:   makeIdent(st.any),
-						Value: makeIdent(st.int),
-					}
-				} else {
-					ct = &ast.MapType{
-						Key:   makeIdent(st.typename(t.Key())),
-						Value: makeIdent(st.int),
-					}
+		if len(mapKeys) > 0 {
+			// Inlining a map literal may replace variable key expressions by constants.
+			// All such constants must have distinct values.
+			// (Array and slice literals do not permit non-constant keys.)
+			t := ct.(*types.Map)
+			var typ ast.Expr
+			if types.IsInterface(t.Key()) {
+				typ = &ast.MapType{
+					Key:   makeIdent(st.any),
+					Value: makeIdent(st.int),
 				}
-			case *types.Array: // or *array
-				ct = &ast.ArrayType{
-					Len: makeIntLit(t.Len()),
-					Elt: makeIdent(st.int),
+			} else {
+				typ = &ast.MapType{
+					Key:   makeIdent(st.typename(t.Key())),
+					Value: makeIdent(st.int),
 				}
-			default:
-				panic(t)
 			}
-			st.emitUnique(ct, uniques)
+			st.emitUnique(typ, mapKeys)
 		}
 		// definitely non-constant
 

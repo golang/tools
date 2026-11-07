@@ -35,13 +35,15 @@ func Example() { //@loc(cgoexample, "Example"), item(cgoexampleItem, "Example", 
 }
 
 func _() {
-	Example() //@hover("ample", "Example", hoverExample), def("ample", cgoexample), complete("ample", cgoexampleItem)
+	Example() //@hover("ample", "Example", hoverExample), def("ample", cgoexample), complete(re"()ample", cgoexampleItem)
 }
 
 -- @hoverExample --
 ```go
 func Example()
 ```
+
+---
 
 [`cgo.Example` on pkg.go.dev](https://pkg.go.dev/cgo.test/cgo#Example)
 -- usecgo/usecgo.go --
@@ -52,11 +54,13 @@ import (
 )
 
 func _() {
-	cgo.Example() //@hover("ample", "Example", hoverImportedExample), def("ample", cgoexample), complete("ample", cgoexampleItem)
+	cgo.Example() //@hover("ample", "Example", hoverImportedExample), def("ample", cgoexample), complete(re"()ample", cgoexampleItem)
 }
 -- @hoverImportedExample --
 ```go
 func cgo.Example()
 ```
+
+---
 
 [`cgo.Example` on pkg.go.dev](https://pkg.go.dev/cgo.test/cgo#Example)

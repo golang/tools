@@ -4,7 +4,8 @@ For historical reasons, it also verifies general behavior of the symbol search.
 
 -- settings.json --
 {
-	"symbolMatcher": "casesensitive"
+	"symbolMatcher": "casesensitive",
+	"analyses": {"unusedfunc": false}
 }
 
 -- go.mod --
@@ -76,6 +77,8 @@ type embed struct {
 func Dunk() int { return 0 }
 
 func dunk() {}
+
+var _ = dunk
 
 -- p/p.go --
 package p

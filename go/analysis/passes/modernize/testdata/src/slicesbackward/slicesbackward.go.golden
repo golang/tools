@@ -1,0 +1,554 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package slicesbackward
+
+import (
+	"slices"
+	"sync"
+)
+
+var _ = slices.Backward[[]int] // force import of "slices" to avoid duplicate import edits
+
+// Basic: only use of i is s[i] — should suggest "for _, v := range slices.Backward(s)"
+func onlyIndexUse(s []int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+	}
+}
+
+// Tests for the heuristic that generates a name for the value variable.
+
+// Should use "name" for the value variable, and should remove the declaration.
+func firstUseName(s []int) {
+	for _, name := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+
+		println(name)
+		name2 := name
+		println(name2)
+	}
+}
+
+func useName(s []int) {
+	for i, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+		name := v
+		println(name)
+	}
+}
+
+// Can't use "name" because it is declared outside the block, and no singular
+// form of "arr", so use the first letter ("a").
+func firstLetter(arr []int) {
+	name := 2
+	for _, a := range slices.Backward(arr) { // want "backward loop over slice can be modernized using slices.Backward"
+		name = a
+	}
+	println(name)
+}
+
+// Slice expression is a selector and not a valid identifier.
+// Should fallback to "v" instead of trying to use "s.item".
+func indexUseSelector(s struct{ items []int }) {
+	for _, v := range slices.Backward(s.items) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+	}
+}
+
+// Slice name singular form is a Go keyword ("var").
+// Should fallback to first letter ("v").
+func keywordSingular(vars []int) {
+	for _, v := range slices.Backward(vars) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+	}
+}
+
+// Slice name singular form is the same as the index var ("i").
+// freshName should return "i0" for the slice var name.
+func indexNameSingular(is []int) {
+	for i, i0 := range slices.Backward(is) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i, i0)
+	}
+}
+
+// Slice name singular form is a predeclared identifier ("string").
+// Should fall back to first letter ("s"), not "string" or "string0".
+func universeSingular(strings []string) {
+	for _, s := range slices.Backward(strings) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(s)
+	}
+}
+
+// Slice name singular form is the same as the index var ("i"), but the index
+// var is dropped, so "i" can be used for the value var without renaming to "i0".
+func indexNameSingularDropped(is []int) {
+	for _, i := range slices.Backward(is) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+	}
+}
+
+// An inner declaration shadows the slice variable "s"; the second s[i]
+// indexes the inner slice, so it must not be replaced and i must be kept.
+func innerDeclShadowsSlice(s []int) {
+	for i, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+		s := []string{"a", "b", "c"}
+		println(s[i])
+	}
+}
+
+// The first statement "v := s[i]" cannot be adopted if "v" is modified
+// and s[i] is evaluated again later in the body.
+func firstAssignMutated(s []int) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v := v0
+		v++
+		println(v, v0)
+	}
+}
+
+// The first statement "v := s[i]" cannot be adopted if the array "v" is
+// modified through a slice and s[i] is evaluated again later in the body.
+func firstAssignMutatedViaSlice(s [][1]int) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v := v0
+		v[:][0]++
+		println(v[0], v0[0])
+	}
+}
+
+// The first statement "v := s[i]" cannot be adopted if a later short variable
+// declaration in the body block reassigns "v": lifting "v" to the range scope
+// would turn the reassignment into a redeclaration of an unused inner "v".
+func firstAssignRedeclaredInBody(s []int) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v := v0
+		println(v)
+		v, extra := v0+1, 2
+		println(extra)
+	}
+}
+
+// Don't choose the blank identifier for the slice var name.
+func indexNameBlank(_s []int) {
+	for _, v := range slices.Backward(_s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+	}
+}
+
+// A declaration within the body shadows the preferred name ("v") at the
+// second s[i], so a fresh name ("v0") must be chosen.
+func innerDeclShadowsLater(s []int) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v0)
+		v := "str"
+		println(v0, v)
+	}
+}
+
+// Same, but the shadowing declaration is in a nested block.
+func innerDeclShadowsNested(s []int, cond bool) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		if cond {
+			v := "str"
+			println(v0, v)
+		}
+	}
+}
+
+// A declaration within the body that does not shadow the preferred name at
+// any s[i] is fine; the range variable may be shadowed after its last use.
+func innerDeclAfterLastUse(s []int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(v)
+		v := "str"
+		println(v)
+	}
+}
+
+// The outer "v" is used in the body, so "v0" would be chosen, but "v0" is
+// itself declared within the body; must fall through to "v1".
+func freshNameCollidesInner(s []int) {
+	v := 1
+	for _, v1 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v0 := "str"
+		println(v1, v, v0)
+	}
+}
+
+// The adopted name "s" is the same as the slice variable. It must not be
+// renamed, since the body refers to it. The range expression is evaluated
+// before the range variables are in scope, so this is valid.
+func firstAssignShadowsSlice(s []int) {
+	for _, s := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+
+		println(s + 1)
+	}
+}
+
+// The adopted name "i" is the same as the index variable. It must not be
+// renamed, since the body refers to it. The index is dropped, since the
+// element variable shadows it for the rest of the body.
+func firstAssignShadowsIndex(s []int) {
+	for _, i := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+
+		println(i + 1)
+	}
+}
+
+// The adopted name "v" is shadowed by a nested declaration at the second
+// s[i], so it cannot be adopted; keep the declaration and choose a fresh
+// name ("v0") for the range variable.
+func firstAssignShadowedLater(s []int, cond bool) {
+	for _, v0 := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v := v0
+		if cond {
+			v := "str"
+			println(v0, v)
+		}
+		println(v)
+	}
+}
+
+// Index used for something other than s[i] — keep both i and v.
+func indexUsedElsewhere(s []int) {
+	for i, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i, v)
+	}
+}
+
+// Index used only for non-slice purpose (no s[i] at all).
+func indexNoSliceAccess(s []int) {
+	for i := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+	}
+}
+
+// Should NOT fire: the body reads neither i nor s[i], so the loop direction
+// is not observable.
+func indexUnused(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		println("hi")
+	}
+}
+
+// Should NOT fire: empty body, so neither i nor s[i] is read.
+func emptyBody(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+	}
+}
+
+// Should NOT fire: condition is i > 0, not i >= 0.
+func condGT(s []int) {
+	for i := len(s) - 1; i > 0; i-- {
+		println(s[i])
+	}
+}
+
+// Should NOT fire: post is i -= 2.
+func postNotDec(s []int) {
+	for i := len(s) - 1; i >= 0; i -= 2 {
+		println(s[i])
+	}
+}
+
+// Should NOT fire: init is not len(s) - 1.
+func initNotLenMinus1(s []int) {
+	for i := len(s) - 2; i >= 0; i-- {
+		println(s[i])
+	}
+}
+
+// Should NOT fire: i is assigned inside the body.
+func indexAssignedInBody(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		i = i - 1 // nolint: ignore for test
+		println(s[i])
+	}
+}
+
+// Should work with a named slice variable.
+func namedSlice() {
+	nums := []string{"a", "b", "c"}
+	for _, num := range slices.Backward(nums) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(num)
+	}
+}
+
+// Should NOT fire: init assigns to a pre-existing variable.
+func iDeclaredBeforeLoop(s []int) {
+	var i int
+	for i = len(s) - 1; i >= 0; i-- {
+		println(s[i])
+	}
+	_ = i
+}
+
+// Should NOT fire: the value of a pre-existing index variable is observable
+// after the loop and must remain -1 after the original loop.
+func preexistingIndexValue(s []int) int {
+	i := 123
+	for i = len(s) - 1; i >= 0; i-- {
+		println(s[i])
+	}
+	return i
+}
+
+// Should NOT fire: i is address-taken before the loop (init uses =, not :=).
+func iAddressTakenBeforeLoop(s []int) {
+	var i int
+	p := &i
+	for i = len(s) - 1; i >= 0; i-- {
+		println(s[i])
+	}
+	_ = p
+}
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprAssign(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i] = 0
+	}
+}
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprAssignWithOp(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i] += 1
+		s[i] -= 1
+		s[i] *= 1
+		s[i] /= 1
+	}
+}
+
+// Should NOT fire: an index expression is used as an lvalue (slice mutation)
+func indexExprIncDec(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = s[i]
+		s[i]++
+		s[i]--
+	}
+}
+
+// Should NOT fire: an index expression is address-taken
+func indexExprAddr(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = &s[i]
+	}
+}
+
+type item struct {
+	n int
+}
+
+// Should NOT fire: field mutation
+func indexExprMutated(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].n++
+	}
+}
+
+type outer struct {
+	inner item
+}
+
+// Should NOT fire: nested field mutation
+func indexExprNestedField(s []outer) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].inner.n++
+	}
+}
+
+// Should NOT fire: field assignment
+func indexExprFieldAssign(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].n = 5
+	}
+}
+
+// Should NOT fire: multi-field assignment
+func indexExprMultiAssign(s []int) {
+	for i := len(s) - 2; i >= 0; i-- {
+		s[i], s[i+1] = 1, 2
+	}
+}
+
+// Should NOT fire: parenthesized assignment
+func indexExprParenthesizedAssign(s []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		(s[i]) = 5
+	}
+}
+
+// Should NOT fire: address-taken
+func indexExprFieldAddr(s []item) {
+	for i := len(s) - 1; i >= 0; i-- {
+		_ = &s[i].n
+	}
+}
+
+// Should NOT fire: method call with pointer receiver may mutate element
+func indexExprMethodCall(s []sync.Mutex) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i].Lock()
+		s[i].Unlock()
+	}
+}
+
+type stringer struct{}
+
+func (stringer) String() string { return "" }
+
+func (*stringer) StringPtr() string { return "" }
+
+// SHOULD fire: method call with value receiver does not mutate element
+func indexExprValueReceiver(s []stringer) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		_ = v.String()
+	}
+}
+
+// SHOULD fire: method call with pointer receiver type and pointer receiver value does not mutate
+func indexExprPtrValueReceiver(s []*stringer) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		_ = v.StringPtr()
+	}
+}
+
+// Should NOT fire: range assignment mutating slice elements
+func indexExprRangeAssign(s []int, x []int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		for s[i] = range x {
+		}
+	}
+}
+
+// SHOULD fire: slice of slices is indirect reference
+func indexExprSliceOfSlices(s [][]int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v[0]++
+	}
+}
+
+// SHOULD fire: slice of pointers is indirect reference
+func indexExprPointerSlice(s []*item) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		v.n++
+	}
+}
+
+// Should NOT fire: slice of arrays, mutating array element is direct mutation
+func indexExprSliceOfArrays(s [][3]int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i][0]++
+	}
+}
+
+// Should NOT fire: slicing an array element takes its address, so the
+// array may be mutated through the resulting slice.
+func indexExprSliceOfArraysSliced(s [][3]int) {
+	for i := len(s) - 1; i >= 0; i-- {
+		s[i][:][0]++
+	}
+}
+
+// SHOULD fire: index expression used as index of another slice which is mutated
+func indexExprUsedAsIndex(s []int) {
+	for _, v := range slices.Backward(s) { // want "backward loop over slice can be modernized using slices.Backward"
+		s[v] = 5
+	}
+}
+
+// The declaration whose name is adopted for the value variable must be a
+// statement of the loop body itself. This one is executed once per inner
+// iteration, whereas the range variable is assigned once per outer
+// iteration, so deleting it would make "v *= 2" accumulate.
+func declInNestedLoop(items []int, n int) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		for j := 0; j < n; j++ {
+			v := item
+			v *= 2
+			println(v)
+		}
+	}
+}
+
+// Similarly for a declaration within a function literal, which may be
+// called any number of times per iteration.
+func declInFuncLit(items []int) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		f := func() {
+			v := item
+			v *= 2
+			println(v)
+		}
+		f()
+		f()
+	}
+}
+
+// A declaration in a nested block is not adopted either: it is executed at
+// most once per iteration, and never when the branch is not taken.
+func declInBlock(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+		if cond {
+			v := item
+			println(v)
+		}
+	}
+}
+
+// A backward goto may re-execute a declaration that is not the first
+// statement of the body, so it is not adopted either.
+func declAfterLabel(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		println("x")
+		v := item
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
+	}
+}
+
+// Nor is a labeled declaration, which is not a statement of the body but
+// the body of a LabeledStmt.
+func labeledDecl(items []int, cond bool) {
+	for _, item := range slices.Backward(items) { // want "backward loop over slice can be modernized using slices.Backward"
+	again:
+		v := item
+		v *= 2
+		println(v)
+		if cond {
+			goto again
+		}
+	}
+}
+
+var calls int
+
+func next() []int {
+	calls++
+	return nil
+}
+
+// Should NOT fire: the slice expression has side effects, and s[i]
+// evaluates it again in each iteration.
+func sliceExprWithSideEffects() {
+	for i := len(next()) - 1; i >= 0; i-- {
+		println(next()[i])
+	}
+}
+
+// SHOULD fire: the slice expression has side effects, but the body
+// does not index it, so it is still evaluated only once.
+func sliceExprWithSideEffectsNotIndexed() {
+	for i := range slices.Backward(next()) { // want "backward loop over slice can be modernized using slices.Backward"
+		println(i)
+	}
+}

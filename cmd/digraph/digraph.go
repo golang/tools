@@ -1,6 +1,7 @@
 // Copyright 2019 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
 package main // import "golang.org/x/tools/cmd/digraph"
 
 // TODO(adonovan):
@@ -17,12 +18,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/tools/internal/graph"
+	"golang.org/x/tools/internal/graph/graphfmt"
 )
 
 func usage() {
@@ -47,7 +54,7 @@ func main() {
 		usage()
 	}
 
-	if err := digraph(args[0], args[1:]); err != nil {
+	if err := doDigraph(args[0], args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "digraph: %s\n", err)
 		os.Exit(1)
 	}
@@ -78,16 +85,25 @@ func (s nodeset) sort() nodelist {
 	return nodes
 }
 
-func (s nodeset) addAll(x nodeset) {
-	for node := range x {
-		s[node] = true
-	}
+// A digraph maps nodes to the non-nil set of their immediate successors.
+type digraph map[string]nodeset
+
+func (g digraph) Nodes() iter.Seq[string] {
+	return slices.Values(slices.Sorted(maps.Keys(g)))
 }
 
-// A graph maps nodes to the non-nil set of their immediate successors.
-type graph map[string]nodeset
+func (g digraph) NumNodes() int {
+	return len(g)
+}
 
-func (g graph) addNode(node string) nodeset {
+func (g digraph) Out(node string) iter.Seq[string] {
+	// Out must be deterministic.
+	return slices.Values(slices.Sorted(maps.Keys(g[node])))
+}
+
+var _ graph.Graph[string] = digraph{}
+
+func (g digraph) addNode(node string) nodeset {
 	edges := g[node]
 	if edges == nil {
 		edges = make(nodeset)
@@ -96,7 +112,7 @@ func (g graph) addNode(node string) nodeset {
 	return edges
 }
 
-func (g graph) addEdges(from string, to ...string) {
+func (g digraph) addEdges(from string, to ...string) {
 	edges := g.addNode(from)
 	for _, to := range to {
 		g.addNode(to)
@@ -104,113 +120,27 @@ func (g graph) addEdges(from string, to ...string) {
 	}
 }
 
-func (g graph) nodelist() nodelist {
-	nodes := make(nodeset)
-	for node := range g {
-		nodes[node] = true
-	}
-	return nodes.sort()
+func (g digraph) nodelist() nodelist {
+	return nodelist(slices.Collect(g.Nodes()))
 }
 
-func (g graph) reachableFrom(roots nodeset) nodeset {
-	seen := make(nodeset)
-	var visit func(node string)
-	visit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			for e := range g[node] {
-				visit(e)
-			}
-		}
-	}
-	for root := range roots {
-		visit(root)
-	}
-	return seen
-}
-
-func (g graph) transpose() graph {
-	rev := make(graph)
-	for node, edges := range g {
-		rev.addNode(node)
-		for succ := range edges {
-			rev.addEdges(succ, node)
-		}
-	}
-	return rev
-}
-
-func (g graph) sccs() []nodeset {
-	// Kosaraju's algorithm---Tarjan is overkill here.
-
-	// Forward pass.
-	S := make(nodelist, 0, len(g)) // postorder stack
-	seen := make(nodeset)
-	var visit func(node string)
-	visit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			for e := range g[node] {
-				visit(e)
-			}
-			S = append(S, node)
-		}
-	}
-	for node := range g {
-		visit(node)
-	}
-
-	// Reverse pass.
-	rev := g.transpose()
-	var scc nodeset
-	seen = make(nodeset)
-	var rvisit func(node string)
-	rvisit = func(node string) {
-		if !seen[node] {
-			seen[node] = true
-			scc[node] = true
-			for e := range rev[node] {
-				rvisit(e)
-			}
-		}
-	}
+func (g digraph) sccs() []nodeset {
 	var sccs []nodeset
-	for len(S) > 0 {
-		top := S[len(S)-1]
-		S = S[:len(S)-1] // pop
-		if !seen[top] {
-			scc = make(nodeset)
-			rvisit(top)
-			if len(scc) == 1 && !g[top][top] {
-				continue
-			}
-			sccs = append(sccs, scc)
+	for _, comp := range graph.SCCs(g) {
+		scc := make(nodeset)
+		for _, node := range comp {
+			scc[node] = true
 		}
+		if len(scc) == 1 && !g[comp[0]][comp[0]] {
+			continue // trivial SCC without even a self-edge
+		}
+		sccs = append(sccs, scc)
 	}
 	return sccs
 }
 
-func (g graph) allpaths(from, to string) error {
-	// Mark all nodes to "to".
-	seen := make(nodeset) // value of seen[x] indicates whether x is on some path to "to"
-	var visit func(node string) bool
-	visit = func(node string) bool {
-		reachesTo, ok := seen[node]
-		if !ok {
-			reachesTo = node == to
-			seen[node] = reachesTo
-			for e := range g[node] {
-				if visit(e) {
-					reachesTo = true
-				}
-			}
-			if reachesTo && node != to {
-				seen[node] = true
-			}
-		}
-		return reachesTo
-	}
-	visit(from)
+func (g digraph) allpaths(from, to string) error {
+	seen := graph.AllPaths(g, from, to)
 
 	// For each marked node, collect its marked successors.
 	var edges []string
@@ -231,63 +161,19 @@ func (g graph) allpaths(from, to string) error {
 	return nil
 }
 
-func (g graph) somepath(from, to string) error {
-	// Search breadth-first so that we return a minimal path.
-
-	// A path is a linked list whose head is a candidate "to" node
-	// and whose tail is the path ending in the "from" node.
-	type path struct {
-		node string
-		tail *path
+func (g digraph) somepath(from, to string) error {
+	path := graph.ShortestPath(g, from, to)
+	if path == nil {
+		return fmt.Errorf("no path from %q to %q", from, to)
 	}
-
-	seen := nodeset{from: true}
-
-	var queue []*path
-	queue = append(queue, &path{node: from, tail: nil})
-	for len(queue) > 0 {
-		p := queue[0]
-		queue = queue[1:]
-
-		if p.node == to {
-			// Found a path. Print, tail first.
-			var print func(p *path)
-			print = func(p *path) {
-				if p.tail != nil {
-					print(p.tail)
-					fmt.Fprintln(stdout, p.tail.node+" "+p.node)
-				}
-			}
-			print(p)
-			return nil
-		}
-
-		for succ := range g[p.node] {
-			if !seen[succ] {
-				seen[succ] = true
-				queue = append(queue, &path{node: succ, tail: p})
-			}
-		}
+	for i := 0; i < len(path)-1; i++ {
+		fmt.Fprintln(stdout, path[i]+" "+path[i+1])
 	}
-	return fmt.Errorf("no path from %q to %q", from, to)
+	return nil
 }
 
-func (g graph) toDot(w *bytes.Buffer) {
-	fmt.Fprintln(w, "digraph {")
-	for _, src := range g.nodelist() {
-		for _, dst := range g[src].sort() {
-			// Dot's quoting rules appear to align with Go's for escString,
-			// which is the syntax of node IDs. Labels require significantly
-			// more quoting, but that appears not to be necessary if the node ID
-			// is implicitly used as the label.
-			fmt.Fprintf(w, "\t%q -> %q;\n", src, dst)
-		}
-	}
-	fmt.Fprintln(w, "}")
-}
-
-func parse(rd io.Reader) (graph, error) {
-	g := make(graph)
+func parse(rd io.Reader) (digraph, error) {
+	g := make(digraph)
 
 	var linenum int
 	// We avoid bufio.Scanner as it imposes a (configurable) limit
@@ -321,7 +207,7 @@ func parse(rd io.Reader) (graph, error) {
 var stdin io.Reader = os.Stdin
 var stdout io.Writer = os.Stdout
 
-func digraph(cmd string, args []string) error {
+func doDigraph(cmd string, args []string) error {
 	// Parse the input graph.
 	g, err := parse(stdin)
 	if err != nil {
@@ -344,9 +230,13 @@ func digraph(cmd string, args []string) error {
 		for node := range g {
 			nodes[node] = true
 		}
-		rev := g.transpose()
+		rev := graph.Transpose(g)
 		for _, node := range nodes.sort() {
-			fmt.Fprintf(stdout, "%d\t%d\t%s\n", len(rev[node]), len(g[node]), node)
+			inDegree := 0
+			for range rev.Out(node) {
+				inDegree++
+			}
+			fmt.Fprintf(stdout, "%d\t%d\t%s\n", inDegree, len(g[node]), node)
 		}
 
 	case "transpose":
@@ -354,8 +244,9 @@ func digraph(cmd string, args []string) error {
 			return fmt.Errorf("usage: digraph transpose")
 		}
 		var revEdges []string
-		for node, succs := range g.transpose() {
-			for succ := range succs {
+		rev := graph.Transpose(g)
+		for node := range rev.Nodes() {
+			for succ := range rev.Out(node) {
 				revEdges = append(revEdges, fmt.Sprintf("%s %s", node, succ))
 			}
 		}
@@ -368,17 +259,18 @@ func digraph(cmd string, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("usage: digraph %s <node> ... ", cmd)
 		}
-		g := g
+		var gr graph.Graph[string] = g
 		if cmd == "preds" {
-			g = g.transpose()
+			gr = graph.Transpose(g)
 		}
 		result := make(nodeset)
 		for _, root := range args {
-			edges := g[root]
-			if edges == nil {
+			if g[root] == nil {
 				return fmt.Errorf("no such node %q", root)
 			}
-			result.addAll(edges)
+			for succ := range gr.Out(root) {
+				result[succ] = true
+			}
 		}
 		result.sort().println("\n")
 
@@ -393,11 +285,11 @@ func digraph(cmd string, args []string) error {
 			}
 			roots[root] = true
 		}
-		g := g
+		var gr graph.Graph[string] = g
 		if cmd == "reverse" {
-			g = g.transpose()
+			gr = graph.Transpose(g)
 		}
-		g.reachableFrom(roots).sort().println("\n")
+		nodeset(graph.Reachable(gr, roots.sort()...)).sort().println("\n")
 
 	case "somepath":
 		if len(args) != 2 {
@@ -469,15 +361,15 @@ func digraph(cmd string, args []string) error {
 		}
 
 		edges := make(map[string]struct{})
-		for from := range g.reachableFrom(nodeset{node: true}) {
+		for from := range graph.Reachable(g, node) {
 			for to := range g[from] {
 				edges[fmt.Sprintf("%s %s", from, to)] = struct{}{}
 			}
 		}
 
-		gtrans := g.transpose()
-		for from := range gtrans.reachableFrom(nodeset{node: true}) {
-			for to := range gtrans[from] {
+		gtrans := graph.Transpose(g)
+		for from := range graph.Reachable(gtrans, node) {
+			for to := range gtrans.Out(from) {
 				edges[fmt.Sprintf("%s %s", to, from)] = struct{}{}
 			}
 		}
@@ -493,9 +385,7 @@ func digraph(cmd string, args []string) error {
 		if len(args) != 1 || args[0] != "dot" {
 			return fmt.Errorf("usage: digraph to dot")
 		}
-		var b bytes.Buffer
-		g.toDot(&b)
-		stdout.Write(b.Bytes())
+		stdout.Write([]byte(graphfmt.Dot[string]{}.Sprint(g)))
 
 	default:
 		return fmt.Errorf("no such command %q", cmd)

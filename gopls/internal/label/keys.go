@@ -15,7 +15,7 @@ var (
 	Package   = keys.NewString("package", "") // sorted comma-separated list of Package IDs
 	Query     = keys.New("query", "")
 	ViewID    = keys.NewString("view_id", "")
-	Snapshot  = keys.NewUInt64("snapshot", "")
+	Snapshot  = keys.NewUint("snapshot", "")
 	Operation = keys.NewString("operation", "")
 	Duration  = keys.New("duration", "Elapsed time")
 

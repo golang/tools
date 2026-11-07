@@ -10,12 +10,11 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // foldingRanges implements the folding_ranges verb for gopls
 type foldingRanges struct {
-	app *Application
+	app *application
 }
 
 func (r *foldingRanges) Name() string      { return "folding_ranges" }
@@ -33,17 +32,17 @@ Example:
 
 func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("folding_ranges expects 1 argument (file)")
+		return commandLineErrorf("folding_ranges expects 1 argument (file)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	if _, err := conn.openFile(ctx, from.URI()); err != nil {
+	if _, err := cli.openFile(ctx, from.URI()); err != nil {
 		return err
 	}
 
@@ -53,17 +52,18 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 		},
 	}
 
-	ranges, err := conn.FoldingRange(ctx, &p)
+	ranges, err := cli.server.FoldingRange(ctx, &p)
 	if err != nil {
 		return err
 	}
 
 	for _, r := range ranges {
+		// We assume our server always supplies these fields.
 		fmt.Printf("%v:%v-%v:%v\n",
-			r.StartLine+1,
-			r.StartCharacter+1,
-			r.EndLine+1,
-			r.EndCharacter+1,
+			*r.StartLine+1,
+			*r.StartCharacter+1,
+			*r.EndLine+1,
+			*r.EndCharacter+1,
 		)
 	}
 

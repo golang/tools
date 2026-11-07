@@ -1,0 +1,63 @@
+This test checks that failing to produce edits doesn't fail the
+codeAction/resolve operation. Instead, we simply return the action
+with its command, and let the action fail when its command is applied
+(golang/go#75442).
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/failedresolve
+
+go 1.18
+
+-- resolve.go --
+package extract
+
+func _() {
+	if x := 1; true {
+
+	} else if y := x + 1; true { //@codeaction("x + 1", "refactor.extract.variable", action=act)
+
+	}
+}
+
+-- apply.go --
+package extract
+
+func _() {
+	if x := 1; true {
+
+	} else if y := x + 1; true { //@codeaction("x + 1", "refactor.extract.variable", err=re"cannot find location to insert")
+
+	}
+}
+
+-- @act --
+{
+	"title": "Extract variable",
+	"kind": "refactor.extract.variable",
+	"command": {
+		"title": "Extract variable",
+		"command": "gopls.apply_fix",
+		"arguments": [
+			{
+				"Fix": "extract_variable",
+				"Location": {
+					"uri": "$WORKDIR/resolve.go",
+					"range": {
+						"start": {
+							"line": 5,
+							"character": 16
+						},
+						"end": {
+							"line": 5,
+							"character": 21
+						}
+					}
+				},
+				"ResolveEdits": true
+			}
+		]
+	}
+}

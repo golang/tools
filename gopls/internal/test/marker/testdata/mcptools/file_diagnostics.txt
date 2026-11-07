@@ -1,0 +1,77 @@
+This test exercises the "go_file_diagnostics" MCP tool.
+
+Some diagnostics from the "printf" analyzer carry fixes, and those fixes have edits.
+(Not all fixes have edits; some analyzers rely on gopls to compute them lazily.)
+
+The printf analyzer only reports a fix in files using >= go1.24.
+
+-- flags --
+-mcp
+-min_go_command=go1.24
+
+-- settings.json --
+{
+    "mcpTools": {
+        "go_file_diagnostics": true
+    }
+}
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- a/main.go --
+package main
+
+func foo() {} //@loc(foo, "foo")
+
+//@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
+//@diag(foo, re"unused")
+-- @unused --
+2:5-2:8: [Information] function "foo" is unused
+Fix:
+--- $WORKDIR/a/main.go
++++ $WORKDIR/a/main.go
+@@ -1,6 +1,6 @@
+ package main
+ 
+-func foo() {} //@loc(foo, "foo")
++
+ 
+ //@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
+ //@diag(foo, re"unused")
+
+
+-- b/main.go --
+package main
+
+import "fmt"
+
+// (diagnostic with fix)
+var (
+	msg string
+	_ = fmt.Sprintf(msg) //@ diag("msg", re"non-constant format string")
+)
+
+// (diagnostic without fix)
+var _ = fmt.Sprintf("%d", "hello") //@ diag("%d", re"%d .* wrong type string")
+
+//@ mcptool("go_file_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnosePrintf)
+
+-- @diagnosePrintf --
+7:17-7:20: [Warning] non-constant format string in call to fmt.Sprintf
+Fix:
+--- $WORKDIR/b/main.go
++++ $WORKDIR/b/main.go
+@@ -5,7 +5,7 @@
+ // (diagnostic with fix)
+ var (
+ 	msg string
+-	_ = fmt.Sprintf(msg) //@ diag("msg", re"non-constant format string")
++	_ = fmt.Sprintf("%s", msg) //@ diag("msg", re"non-constant format string")
+ )
+ 
+ // (diagnostic without fix)
+
+
+11:21-11:23: [Warning] fmt.Sprintf format %d has arg "hello" of wrong type string

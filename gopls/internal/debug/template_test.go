@@ -15,7 +15,6 @@ import (
 	"html/template"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"testing"
 
@@ -23,26 +22,25 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/testenv"
 )
 
 var templates = map[string]struct {
 	tmpl *template.Template
-	data interface{} // a value of the needed type
+	data any // a value of the needed type
 }{
-	"MainTmpl":    {debug.MainTmpl, &debug.Instance{}},
-	"DebugTmpl":   {debug.DebugTmpl, nil},
-	"RPCTmpl":     {debug.RPCTmpl, &debug.Rpcs{}},
-	"TraceTmpl":   {debug.TraceTmpl, debug.TraceResults{}},
-	"CacheTmpl":   {debug.CacheTmpl, &cache.Cache{}},
-	"SessionTmpl": {debug.SessionTmpl, &cache.Session{}},
-	"ClientTmpl":  {debug.ClientTmpl, &debug.Client{}},
-	"ServerTmpl":  {debug.ServerTmpl, &debug.Server{}},
-	"FileTmpl": {debug.FileTmpl, *new(interface {
-		file.Handle
-		Kind() file.Kind // (overlay files only)
-	})},
+	"MainTmpl":     {debug.MainTmpl, &debug.Instance{}},
+	"DebugTmpl":    {debug.DebugTmpl, nil},
+	"RPCTmpl":      {debug.RPCTmpl, &debug.Rpcs{}},
+	"TraceTmpl":    {debug.TraceTmpl, debug.TraceResults{}},
+	"CacheTmpl":    {debug.CacheTmpl, &cache.Cache{}},
+	"SessionTmpl":  {debug.SessionTmpl, &cache.Session{}},
+	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
+	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
+	"FileTmpl":     {debug.FileTmpl, *new(debug.FileWithKind)},
+	"MetadataTmpl": {debug.MetadataTmpl, new(debug.MetadataInfo)},
+	"PackageTmpl":  {debug.PackageTmpl, new(debug.PackageInfo)},
 	"InfoTmpl":     {debug.InfoTmpl, "something"},
 	"MemoryTmpl":   {debug.MemoryTmpl, runtime.MemStats{}},
 	"AnalysisTmpl": {debug.AnalysisTmpl, new(debug.State).Analysis()},
@@ -110,13 +108,7 @@ func TestTemplates(t *testing.T) {
 		}
 	}
 	// now check all the known templates, in alphabetic order, for determinacy
-	keys := []string{}
-	for k := range templates {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := templates[k]
+	for k, v := range moremaps.Sorted(templates) {
 		// the FuncMap is an annoyance; should not be necessary
 		if err := templatecheck.CheckHTML(v.tmpl, v.data); err != nil {
 			t.Errorf("%s: %v", k, err)

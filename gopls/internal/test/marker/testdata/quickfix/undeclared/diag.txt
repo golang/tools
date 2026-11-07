@@ -1,0 +1,97 @@
+This test checks @diag reports for undeclared variables and functions.
+
+-- x.go --
+package undeclared
+
+func x() int {
+	var z int
+	z = y //@diag("y", re"(undeclared name|undefined): y")
+	if z == m { //@diag("m", re"(undeclared name|undefined): m")
+		z = 1
+	}
+
+	if z == 1 {
+		z = 1
+	} else if z == n+1 { //@diag("n", re"(undeclared name|undefined): n")
+		z = 1
+	}
+
+	switch z {
+	case 10:
+		z = 1
+	case aa: //@diag("aa", re"(undeclared name|undefined): aa")
+		z = 1
+	}
+	return z
+}
+-- channels.go --
+package undeclared
+
+func channels(s string) {
+	undefinedChannels(c()) //@diag("undefinedChannels", re"(undeclared name|undefined): undefinedChannels")
+}
+
+func c() (<-chan string, chan string) {
+	return make(<-chan string), make(chan string)
+}
+-- consecutive_params.go --
+package undeclared
+
+func consecutiveParams() {
+	var s string
+	undefinedConsecutiveParams(s, s) //@diag("undefinedConsecutiveParams", re"(undeclared name|undefined): undefinedConsecutiveParams")
+}
+-- error_param.go --
+package undeclared
+
+func errorParam() {
+	var err error
+	undefinedErrorParam(err) //@diag("undefinedErrorParam", re"(undeclared name|undefined): undefinedErrorParam")
+}
+-- literals.go --
+package undeclared
+
+type T struct{}
+
+func literals() {
+	undefinedLiterals("hey compiler", T{}, &T{}) //@diag("undefinedLiterals", re"(undeclared name|undefined): undefinedLiterals")
+}
+-- operation.go --
+package undeclared
+
+import "time"
+
+func operation() {
+	undefinedOperation(10 * time.Second) //@diag("undefinedOperation", re"(undeclared name|undefined): undefinedOperation")
+}
+-- selector.go --
+package undeclared
+
+func selector() {
+	m := map[int]bool{}
+	undefinedSelector(m[1]) //@diag("undefinedSelector", re"(undeclared name|undefined): undefinedSelector")
+}
+-- slice.go --
+package undeclared
+
+func slice() {
+	undefinedSlice([]int{1, 2}) //@diag("undefinedSlice", re"(undeclared name|undefined): undefinedSlice")
+}
+-- tuple.go --
+package undeclared
+
+func tuple() {
+	undefinedTuple(b()) //@diag("undefinedTuple", re"(undeclared name|undefined): undefinedTuple")
+}
+
+func b() (string, error) {
+	return "", nil
+}
+-- unique.go --
+package undeclared
+
+func uniqueArguments() {
+	var s string
+	var i int
+	undefinedUniqueArguments(s, i, s) //@diag("undefinedUniqueArguments", re"(undeclared name|undefined): undefinedUniqueArguments")
+}

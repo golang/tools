@@ -30,7 +30,7 @@ var V int
 -- main.go --
 package main
 
-import () //@codeaction("import", "", "source.organizeImports", out)
+import () //@codeaction("import", "source.organizeImports", result=out)
 
 func main() {
 	complex128.V() //@diag("V", re"type complex128 has no field")
@@ -43,7 +43,7 @@ func _() {
 -- @out/main.go --
 package main
 
-import "example.com/complex127" //@codeaction("import", "", "source.organizeImports", out)
+import "example.com/complex127" //@codeaction("import", "source.organizeImports", result=out)
 
 func main() {
 	complex128.V() //@diag("V", re"type complex128 has no field")

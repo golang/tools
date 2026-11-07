@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-// selectionRange defines the textDocument/selectionRange feature,
+// SelectionRange defines the textDocument/selectionRange feature,
 // which, given a list of positions within a file,
 // reports a linked list of enclosing syntactic blocks, innermost first.
 //
@@ -27,10 +27,10 @@ import (
 // returned for each cursor to avoid multiple round-trips when the user is
 // likely to issue this command multiple times in quick succession.
 func (s *server) SelectionRange(ctx context.Context, params *protocol.SelectionRangeParams) ([]protocol.SelectionRange, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.selectionRange")
+	ctx, done := event.Start(ctx, "server.SelectionRange")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

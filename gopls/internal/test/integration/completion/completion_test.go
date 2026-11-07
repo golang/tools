@@ -7,6 +7,7 @@ package completion
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -53,6 +55,10 @@ func TestPackageCompletion(t *testing.T) {
 module mod.com
 
 go 1.12
+-- cmd/main.go --
+package main
+-- cmd/testfile.go --
+package
 -- fruits/apple.go --
 package apple
 
@@ -96,6 +102,13 @@ package
 		editRegexp    string
 	}{
 		{
+			name:          "main package completion after package keyword",
+			filename:      "cmd/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package main", "package cmd", "package cmd_test"},
+			editRegexp:    "package",
+		},
+		{
 			name:          "package completion at valid position",
 			filename:      "fruits/testfile.go",
 			triggerRegexp: "\n()",
@@ -105,7 +118,7 @@ package
 		{
 			name:          "package completion in a comment",
 			filename:      "fruits/testfile.go",
-			triggerRegexp: "th(i)s",
+			triggerRegexp: "th()is",
 			want:          nil,
 		},
 		{
@@ -246,6 +259,12 @@ package ma
 	})
 }
 
+// compareCompletionLabels returns a non-empty string reporting the
+// difference (if any) between the labels of the actual completion
+// items (gotItems) and the expected list (want).
+//
+// A want item with a "?" suffix is optional.
+//
 // TODO(rfindley): audit/clean up call sites for this helper, to ensure
 // consistent test errors.
 func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) string {
@@ -262,10 +281,66 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 		return "" // treat nil and the empty slice as equivalent
 	}
 
+	// A 'want' item with a '?' suffix is optional, to ease
+	// migration across versions. Remove any that are not present
+	// in the 'got' set.
+	var out []string
+	for _, item := range want {
+		item, optional := strings.CutSuffix(item, "?")
+		if optional && !slices.Contains(got, item) {
+			continue // optional item is missing
+		}
+		out = append(out, item)
+	}
+	want = out
+
 	if diff := cmp.Diff(want, got); diff != "" {
 		return fmt.Sprintf("completion item mismatch (-want +got):\n%s", diff)
 	}
 	return ""
+}
+
+func TestIssue74611(t *testing.T) {
+	// Completions should not offer symbols from unimported packages
+	// that cannot be imported because they are "internal".
+	//
+	// Ideally, we should test std case as well but because mocking
+	// a fake stdlib is hard, we just test the 3rd user case.
+	// std test is done interactively.
+	const files = `-- go.mod --
+module mod.com/cmd
+
+go 1.21
+
+-- a.go --
+package pkg
+import "fmt"
+
+func main() {
+	fmt.Println("call Println to use fmt")
+	_ = maps
+} // (completion requested at start of line)
+`
+
+	WithOptions().Run(t, files, func(t *testing.T, env *Env) {
+		filename := "a.go"
+		// Trigger unimported completions for the maps package.
+		env.OpenFile(filename)
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch(filename, `()\n\}`)
+		completions := env.Completion(loc)
+		if len(completions.Items) == 0 {
+			t.Fatalf("no completion items")
+		}
+		runtimeMaps := `"internal/runtime/maps"`
+		found := slices.ContainsFunc(completions.Items, func(item protocol.CompletionItem) bool {
+			return item.Detail == runtimeMaps
+		})
+
+		if found {
+			t.Fatalf("unwanted completion: %s", runtimeMaps)
+		}
+	})
 }
 
 func TestUnimportedCompletion(t *testing.T) {
@@ -276,9 +351,6 @@ module mod.com
 go 1.14
 
 require example.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- main.go --
 package main
 
@@ -295,6 +367,7 @@ func _() {
 }
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Make sure the dependency is in the module cache and accessible for
@@ -303,10 +376,16 @@ func _() {
 		env.RunGoCommand("mod", "tidy")
 		env.Await(env.DoneWithChangeWatchedFiles())
 
+		// assure that the module cache index exists
+		// (rather than hoping the background goroutine finishes)
+		if _, err := modindex.Update(env.Sandbox.GOMODCACHE()); err != nil {
+			t.Fatal(err)
+		}
+
 		// Trigger unimported completions for the example.com/blah package.
 		env.OpenFile("main.go")
 		env.Await(env.DoneWithOpen())
-		loc := env.RegexpSearch("main.go", "ah")
+		loc := env.RegexpSearch("main.go", "()ah")
 		completions := env.Completion(loc)
 		if len(completions.Items) == 0 {
 			t.Fatalf("no completion items")
@@ -317,7 +396,7 @@ func _() {
 		// Trigger completions once again for the blah.<> selector.
 		env.RegexpReplace("main.go", "_ = blah", "_ = blah.")
 		env.Await(env.DoneWithChange())
-		loc = env.RegexpSearch("main.go", "\n}")
+		loc = env.RegexpSearch("main.go", `()\n\}`)
 		completions = env.Completion(loc)
 		if len(completions.Items) != 1 {
 			t.Fatalf("expected 1 completion item, got %v", len(completions.Items))
@@ -347,9 +426,6 @@ module mod.com
 go 1.14
 
 require example.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- useblah.go --
 // +build hidden
 
@@ -361,7 +437,9 @@ package mainmod
 
 const Name = "mainmod"
 `
-	WithOptions(ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("import.go", "package pkg\nvar _ = mainmod.Name\n")
 		env.SaveBuffer("import.go")
 		content := env.ReadWorkspaceFile("import.go")
@@ -374,6 +452,10 @@ const Name = "mainmod"
 // Test that we can doctor the source code enough so the file is
 // parseable and completion works as expected.
 func TestSourceFixup(t *testing.T) {
+	// This example relies on the fixer to turn "s." into "s._" so
+	// that it parses as a SelectorExpr with only local problems,
+	// instead of snarfing up the following declaration of S
+	// looking for an identifier; thus completion offers s.i.
 	const files = `
 -- go.mod --
 module mod.com
@@ -471,12 +553,12 @@ module test.com
 go 1.16
 -- prog.go --
 package waste
-// Deprecated, use newFoof
+// Deprecated: use newFoof.
 func fooFunc() bool {
 	return false
 }
 
-// Deprecated
+// Deprecated: bad.
 const badPi = 3.14
 
 func doit() {
@@ -582,7 +664,9 @@ var Lower = ""
 	for _, supportInsertReplace := range []bool{true, false} {
 		t.Run(fmt.Sprintf("insertReplaceSupport=%v", supportInsertReplace), func(t *testing.T) {
 			capabilities := fmt.Sprintf(`{ "textDocument": { "completion": { "completionItem": {"insertReplaceSupport":%t, "snippetSupport": false } } } }`, supportInsertReplace)
-			runner := WithOptions(CapabilitiesJSON([]byte(capabilities)))
+			runner := WithOptions(
+				CapabilitiesJSON([]byte(capabilities)),
+			)
 			runner.Run(t, src, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
 				env.Await(env.DoneWithOpen())
@@ -622,20 +706,17 @@ var Lower = ""
 				}
 
 				for _, tc := range testcases {
-					t.Run(fmt.Sprintf("%v/%v", tc.mode, tc.accept), func(t *testing.T) {
-
-						env.SetSuggestionInsertReplaceMode(tc.mode == "replace")
-						env.SetBufferContent("main.go", orig)
-						loc := env.RegexpSearch("main.go", `Lower\)`)
-						completions := env.Completion(loc)
-						item := find(t, completions, tc.accept)
-						env.AcceptCompletion(loc, item)
-						env.Await(env.DoneWithChange())
-						got := env.BufferText("main.go")
-						if !strings.Contains(got, tc.want) {
-							t.Errorf("unexpected state after completion:\n%v\nwanted %v", got, tc.want)
-						}
-					})
+					t.Logf("mode=%q accept=%q", tc.mode, tc.accept)
+					env.SetSuggestionInsertReplaceMode(tc.mode == "replace")
+					env.SetBufferContent("main.go", orig)
+					loc := env.RegexpSearch("main.go", `()Lower\)`)
+					completions := env.Completion(loc)
+					item := find(t, completions, tc.accept)
+					env.AcceptCompletion(loc, item)
+					got := env.BufferText("main.go")
+					if !strings.Contains(got, tc.want) {
+						t.Errorf("unexpected state after completion:\n%v\nwanted %v", got, tc.want)
+					}
 				}
 			})
 		})
@@ -673,8 +754,8 @@ func F3[K comparable, V any](map[K]V, chan V) {}
 		for i, want := range []string{
 			common + "b.F0(${1:a int}, ${2:b int}, ${3:c float64})\r\n",
 			common + "b.F1(${1:_ int}, ${2:_ chan *string})\r\n",
-			common + "b.F2[${1:K any}, ${2:V any}](${3:_ map[K]V}, ${4:_ chan V})\r\n",
-			common + "b.F3[${1:K comparable}, ${2:V any}](${3:_ map[K]V}, ${4:_ chan V})\r\n",
+			common + "b.F2(${1:_ map[K]V}, ${2:_ chan V})\r\n",
+			common + "b.F3(${1:_ map[K]V}, ${2:_ chan V})\r\n",
 		} {
 			loc := env.RegexpSearch("a/a.go", "b.F()")
 			completions := env.Completion(loc)
@@ -689,47 +770,6 @@ func F3[K comparable, V any](map[K]V, chan V) {}
 				t.Errorf("%d: unimported completion (-want +got):\n%s", i, diff)
 			}
 			env.SetBufferContent("a/a.go", saved) // restore
-		}
-	})
-}
-
-func TestPackageMemberCompletionAfterSyntaxError(t *testing.T) {
-	// This test documents the current broken behavior due to golang/go#58833.
-	const src = `
--- go.mod --
-module mod.com
-
-go 1.14
-
--- main.go --
-package main
-
-import "math"
-
-func main() {
-	math.Sqrt(,0)
-	math.Ldex
-}
-`
-	Run(t, src, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-		env.Await(env.DoneWithOpen())
-		loc := env.RegexpSearch("main.go", "Ldex()")
-		completions := env.Completion(loc)
-		if len(completions.Items) == 0 {
-			t.Fatalf("no completion items")
-		}
-		env.AcceptCompletion(loc, completions.Items[0])
-		env.Await(env.DoneWithChange())
-		got := env.BufferText("main.go")
-		// The completion of math.Ldex after the syntax error on the
-		// previous line is not "math.Ldexp" but "math.Ldexmath.Abs".
-		// (In VSCode, "Abs" wrongly appears in the completion menu.)
-		// This is a consequence of poor error recovery in the parser
-		// causing "math.Ldex" to become a BadExpr.
-		want := "package main\n\nimport \"math\"\n\nfunc main() {\n\tmath.Sqrt(,0)\n\tmath.Ldexmath.Abs(${1:})\n}\n"
-		if diff := cmp.Diff(want, got); diff != "" {
-			t.Errorf("unimported completion (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -970,6 +1010,271 @@ use ./missing/
 	})
 }
 
+const reverseInferenceSrcPrelude = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+type InterfaceA interface {
+	implA()
+}
+
+type InterfaceB interface {
+	implB()
+}
+
+
+type TypeA struct{}
+
+func (TypeA) implA() {}
+
+type TypeX string
+
+func (TypeX) implB() {}
+
+type TypeB struct{}
+
+func (TypeB) implB() {}
+
+type TypeC struct{} // should have no impact
+
+type Wrap[T any] struct {
+	inner *T
+}
+
+func NewWrap[T any](x T) Wrap[T] {
+	return Wrap[T]{inner: &x}
+}
+
+func DoubleWrap[T any, U any](t T, u U) (Wrap[T], Wrap[U]) {
+	return Wrap[T]{inner: &t}, Wrap[U]{inner: &u}
+}
+
+func IntWrap[T int32 | int64](x T) Wrap[T] {
+	return Wrap[T]{inner: &x}
+}
+
+var ia InterfaceA
+var ib InterfaceB
+
+var avar TypeA
+var bvar TypeB
+
+var i int
+var i32 int32
+var i64 int64
+`
+
+func TestReverseInferCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var _ Wrap[int64] = IntWrap()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"i64", "i", "i32", "int64()"}
+
+		// only check the prefix due to formatting differences with escaped characters
+		wantText := []string{"i64", "int64(i", "int64(i32", "int64("}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+
+			if insertText, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit); ok {
+				if diff := cmp.Diff(wantText[i], insertText.NewText[:len(wantText[i])]); diff != "" {
+					t.Errorf("Completion: unexpected insertText mismatch (checks prefix only) (-want +got):\n%s", diff)
+				}
+			}
+		}
+	})
+}
+
+func TestInterfaceReverseInferCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+		wb = NewWrap() // wb is of type Wrap[InterfaceB]
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"ib", "bvar", "wb.inner", "TypeB{}", "TypeX()", "nil"}
+
+		// only check the prefix due to formatting differences with escaped characters
+		wantText := []string{"ib", "InterfaceB(", "*wb.inner", "InterfaceB(", "InterfaceB(", "nil"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+
+			if insertText, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit); ok {
+				if diff := cmp.Diff(wantText[i], insertText.NewText[:len(wantText[i])]); diff != "" {
+					t.Errorf("Completion: unexpected insertText mismatch (checks prefix only) (-want +got):\n%s", diff)
+				}
+			}
+		}
+	})
+}
+
+func TestInvalidReverseInferenceDefaultsToConstraintCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		// This is ambiguous, so default to the constraint rather the inference.
+		wa = IntWrap()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"i32", "i64", "nil"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestInterfaceReverseInferTypeParamCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+		wb = NewWrap[]()
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\[()\]\(\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+		want := []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestInvalidReverseInferenceTypeParamDefaultsToConstraintCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		// This is ambiguous, so default to the constraint rather the inference.
+		wb = IntWrap[]()
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\[()\]\(\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+		want := []string{"int32", "int64"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestReverseInferDoubleTypeParamCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+
+		wa, wb = DoubleWrap[]()
+		// _ is necessary to trick the parser into an index list expression
+		wa, wb = DoubleWrap[InterfaceA, _]()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		compl := env.RegexpSearch("a.go", `DoubleWrap\[()\]\(\)`)
+		result := env.Completion(compl)
+
+		wantLabel := []string{"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+
+		compl = env.RegexpSearch("a.go", `DoubleWrap\[InterfaceA, ()_\]\(\)`)
+		result = env.Completion(compl)
+
+		wantLabel = []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestDoubleParamReturnCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func concrete() (Wrap[InterfaceA], Wrap[InterfaceB]) {
+		return DoubleWrap[]()
+	}
+
+	func concrete2() (Wrap[InterfaceA], Wrap[InterfaceB]) {
+		return DoubleWrap[InterfaceA, _]()
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		tests := map[string][]string{
+			`DoubleWrap\[()\]\(\)`:               {"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"},
+			`DoubleWrap\[InterfaceA, ()\_\]\(\)`: {"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"},
+		}
+
+		for re, wantLabels := range tests {
+			compl := env.RegexpSearch("a.go", re)
+			result := env.Completion(compl)
+			if len(result.Items) < len(wantLabels) {
+				t.Fatalf("Completion(%q) returned mismatching labels: got %v, want at least labels %v", re, result.Items, wantLabels)
+			}
+			for i, item := range result.Items[:len(wantLabels)] {
+				if diff := cmp.Diff(wantLabels[i], item.Label); diff != "" {
+					t.Errorf("Completion(%q): unexpected label mismatch (-want +got):\n%s", re, diff)
+				}
+			}
+		}
+	})
+}
+
 func TestBuiltinCompletion(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -986,7 +1291,7 @@ func _() {
 
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
-		result := env.Completion(env.RegexpSearch("a.go", `// here`))
+		result := env.Completion(env.RegexpSearch("a.go", `()\/\/ here`))
 		builtins := []string{
 			"any", "append", "bool", "byte", "cap", "close",
 			"comparable", "complex", "complex128", "complex64", "copy", "delete",
@@ -1041,7 +1346,7 @@ func _() {
 	foo.Foo()
 }
 `)
-		list := env.Completion(env.RegexpSearch("nodisk/nodisk.go", "foo.(Foo)"))
+		list := env.Completion(env.RegexpSearch("nodisk/nodisk.go", "foo.()Foo"))
 		want := []string{"Foo"}
 		var got []string
 		for _, item := range list.Items {
@@ -1054,6 +1359,7 @@ func _() {
 }
 
 // Fix for golang/go#60062: unimported completion included "golang.org/toolchain" results.
+// and check that functions (from the standard library) have snippets
 func TestToolchainCompletions(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -1099,12 +1405,74 @@ func Join() {}
 				if strings.Contains(item.Detail, "golang.org/toolchain") {
 					t.Errorf("Completion(...) returned toolchain item %#v", item)
 				}
+				if strings.HasPrefix(item.Detail, "func") {
+					// check that there are snippets
+					x, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit)
+					if !ok {
+						t.Errorf("item.TextEdit.Value unexpected type %T", item.TextEdit.Value)
+					}
+					if !strings.Contains(x.NewText, "${1") {
+						t.Errorf("expected snippet in %q", x.NewText)
+					}
+				}
 			}
 		}
 	})
 }
 
-// show that the efficacy counters get exercised. Fortuntely a small program
+// when completing using the module cache, prefer things mentioned
+// in the go.mod file.
+func TestIssue61208(t *testing.T) {
+
+	const cache = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.22
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+-- random.org@v1.2.3/go.mod --
+module random.org
+
+go 1.22
+-- random.org@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Hello"
+`
+	const files = `
+-- go.mod --
+module mod.com
+go 1.22
+require random.org v1.2.3
+-- main.go --
+package main
+var _ = blah.
+`
+	WithOptions(
+		CacheFiles(cache),
+		WriteGoSum("."),
+		NoLogsOnError(),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", "blah.()")
+		completions := env.Completion(loc)
+		if len(completions.Items) != 1 {
+			t.Errorf("got %d, expected 1", len(completions.Items))
+			for _, x := range completions.Items {
+				t.Logf("%#v", x.AdditionalTextEdits[0].NewText)
+			}
+		}
+		if got := completions.Items[0].AdditionalTextEdits[0].NewText; !strings.Contains(got, `"random.org`) {
+			t.Errorf("got %q, expected a `random.org`", got)
+		}
+	})
+}
+
+// show that the efficacy counters get exercised. Fortunately a small program
 // exercises them all
 func TestCounters(t *testing.T) {
 	const files = `
@@ -1161,6 +1529,364 @@ func main() {
 			if after[c] <= before[c] {
 				t.Errorf("%s did not increase", c.Name())
 			}
+		}
+	})
+}
+
+// find import foo "bar" for foo.xxx
+func TestImportAlias(t *testing.T) {
+	testenv.NeedsGoCommand1Point(t, 24) // we will find math/rand/v2
+	const files = `
+-- a.go --
+package x
+var _ = xrand.
+-- b.go --
+package x
+
+import xrand "math/rand"
+
+var _ = xrand.Int()
+
+-- go.mod --
+module foo.com
+
+go 1.24.2
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("a.go", "xrand.()")
+		compls := env.Completion(loc)
+		if len(compls.Items) == 0 {
+			t.Fatal("no completions")
+		}
+		one := compls.Items[0].AdditionalTextEdits[0].NewText
+		if one != "\nimport xrand \"math/rand\"\n" {
+			t.Errorf("wrong import %q", one)
+		}
+	})
+}
+
+func TestModIndexDirEmpty(t *testing.T) {
+	// Test for issue #75505. Do not run this test in parallel.
+	// Test that if modindex.IndexDir is empty, we still get stdlib completions
+	// but not unimported completions from modules.
+
+	// Save/restore IndexDir, and set it to empty string.
+	// This simulates having no module cache.
+	old := modindex.IndexDir
+	modindex.IndexDir = ""
+	defer func() { modindex.IndexDir = old }()
+	// for the paranoid, with modindex.IndexDir = old here, the test fails
+
+	const mod = `
+-- go.mod --
+module mod.com
+go 1.22
+require example.com v1.2.3
+-- main.go --
+package main
+func main() {
+	_ = fmt.P
+	_ = blah.N
+}
+-- main2.go --
+package main
+import "example.com/blah"
+func _() {
+	_ = blah.Hello
+}
+`
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy), // providing example.com through GOPROXY to the go command
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		// We need example.com in the module cache, but not
+		// otherwise available to the completion logic.
+		env.RemoveWorkspaceFile("main2.go")
+		env.RunGoCommand("mod", "tidy")
+		env.Await(env.DoneWithChangeWatchedFiles())
+
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+
+		// 1. Check stdlib completion (should work)
+		loc := env.RegexpSearch("main.go", "fmt.P()")
+		completions := env.Completion(loc)
+		if len(completions.Items) == 0 {
+			t.Errorf("stdlib completion failed to find fmt.Print...")
+		}
+
+		// 2. Check unimported completion (should fail)
+		// We look for "blah.H" which is from example.com
+		loc = env.RegexpSearch("main.go", "blah.N()")
+		completions = env.Completion(loc)
+
+		// We expect NO unimported completions for blah.Name because modindex is disabled.
+		for _, item := range completions.Items {
+			// We shouldn't get candidate from example.com/blah.
+			if strings.Contains(item.Detail, "example.com/blah") {
+				t.Errorf("unexpected unimported completion for blah with empty IndexDir: %v", item)
+			}
+		}
+	})
+}
+
+// ensure that completion converts the array to a slice
+func TestIssue80268(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+go 1.22
+-- main.go --
+package example
+
+func foo(p *[10]int) {}
+
+func Bar() {
+	var array [10]int
+	foo(arr)
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `foo\(arr()\)`)
+		completions := env.Completion(loc)
+		if len(completions.Items) == 0 {
+			t.Fatal("no completions found")
+		}
+		env.AcceptCompletion(loc, completions.Items[0])
+		env.Await(env.DoneWithChange())
+
+		fmt.Printf("New main.go content:\n%s\n", env.BufferText("main.go"))
+
+		var diags protocol.PublishDiagnosticsParams
+		env.Await(ReadDiagnostics("main.go", &diags))
+		if len(diags.Diagnostics) != 0 {
+			t.Errorf("unexpected diagnostics:\n")
+			for _, d := range diags.Diagnostics {
+				t.Errorf("Diagnostic: %d:%d: %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Message)
+			}
+			for _, item := range completions.Items {
+				t.Errorf("Completion: %s (Kind: %v, Detail: %q)\n", item.Label, item.Kind, item.Detail)
+			}
+		}
+	})
+}
+
+// Check that the completion code no longer panics.
+func TestIssue75192(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+go 1.22
+-- main.go --
+package main
+
+func main() {
+	_ = notypeinfo.(type)
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `notypeinfo\.\(ty()pe\)`)
+		// this used to panic.
+		env.Completion(loc)
+	})
+}
+
+func TestIssue74564(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+go 1.22
+-- main.go --
+package main
+
+func f[T ~[]int](x T) {
+	var s string
+	_ = append(x, append(x, x...)...)
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		// Place cursor inside the first 'x' of the inner append call.
+		loc := env.RegexpSearch("main.go", `append\(x, append\(()x,`)
+		env.Completion(loc)
+	})
+}
+
+func TestCompletionLabelDetails(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- main.go --
+package main
+
+import "math"
+
+func main() {
+	math.Sqr
+}
+`
+	for _, supported := range []bool{true, false} {
+		t.Run(fmt.Sprintf("labelDetailsSupport=%v", supported), func(t *testing.T) {
+			capabilities := fmt.Sprintf(
+				`{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":%t}}}}`,
+				supported)
+			WithOptions(
+				CapabilitiesJSON([]byte(capabilities)),
+			).Run(t, src, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				env.Await(env.DoneWithOpen())
+				loc := env.RegexpSearch("main.go", "Sqr()")
+
+				var item *protocol.CompletionItem
+				for _, got := range env.Completion(loc).Items {
+					if got.Label == "Sqrt" {
+						item = &got
+						break
+					}
+				}
+				if item == nil {
+					t.Fatal("no completion item labelled Sqrt")
+				}
+
+				// Detail is unchanged, whether or not the client asked for
+				// label details.
+				if want := "func(x float64) float64"; item.Detail != want {
+					t.Errorf("Detail = %q, want %q", item.Detail, want)
+				}
+
+				if !supported {
+					if item.LabelDetails != nil {
+						t.Errorf("LabelDetails = %+v, want nil", *item.LabelDetails)
+					}
+					return
+				}
+				if item.LabelDetails == nil {
+					t.Fatal("LabelDetails = nil, want the signature")
+				}
+				if want := "(x float64) float64"; item.LabelDetails.Detail != want {
+					t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, want)
+				}
+				// math is already imported, so accepting the item adds nothing.
+				if item.LabelDetails.Description != "" {
+					t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, "")
+				}
+			})
+		})
+	}
+}
+
+func TestCompletionLabelDetailsUnimported(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- main.go --
+package main
+
+func main() {
+	math.Sqr
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", "Sqr()")
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "Sqrt" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled Sqrt")
+		}
+
+		if want := `func (from "math")`; item.Detail != want {
+			t.Errorf("Detail = %q, want %q", item.Detail, want)
+		}
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the signature and the import path")
+		}
+		if want := "(x float64) float64"; item.LabelDetails.Detail != want {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, want)
+		}
+		if want := "math"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
+		}
+	})
+}
+
+func TestCompletionLabelDetailsLiteral(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+
+-- point/point.go --
+package point
+
+type Point struct{}
+
+-- decl.go --
+package main
+
+import "mod.com/point"
+
+func f(p point.Point) {}
+
+-- main.go --
+package main
+
+func main() {
+	f(Poi)
+}
+`
+	const capabilities = `{"textDocument":{"completion":{"completionItem":{"labelDetailsSupport":true}}}}`
+	WithOptions(
+		CapabilitiesJSON([]byte(capabilities)),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", `f\(Poi()\)`)
+
+		var item *protocol.CompletionItem
+		for _, got := range env.Completion(loc).Items {
+			if got.Label == "point.Point{}" {
+				item = &got
+				break
+			}
+		}
+		if item == nil {
+			t.Fatal("no completion item labelled point.Point{}")
+		}
+
+		if item.LabelDetails == nil {
+			t.Fatal("LabelDetails = nil, want the import path")
+		}
+		// The label of a literal is already its type, so nothing goes beside it.
+		if item.LabelDetails.Detail != "" {
+			t.Errorf("LabelDetails.Detail = %q, want %q", item.LabelDetails.Detail, "")
+		}
+		if want := "mod.com/point"; item.LabelDetails.Description != want {
+			t.Errorf("LabelDetails.Description = %q, want %q", item.LabelDetails.Description, want)
 		}
 	})
 }

@@ -40,6 +40,7 @@ func main() {
 }`
 
 func TestDiagnosticErrorInEditedFile(t *testing.T) {
+	t.Parallel()
 	// This test is very basic: start with a clean Go program, make an error, and
 	// get a diagnostic for that error. However, it also demonstrates how to
 	// combine Expectations to await more complex state in the editor.
@@ -66,26 +67,35 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 }
 
 func TestMissingImportDiagsClearOnFirstFile(t *testing.T) {
+	t.Parallel()
 	const onlyMod = `
 -- go.mod --
 module mod.com
 
 go 1.12
 `
-	Run(t, onlyMod, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{
+			"pullDiagnostics": true,
+		},
+	).Run(t, onlyMod, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", `package main
 
-func m() {
+func _() {
 	log.Println()
 }
 `)
 		env.AfterChange(Diagnostics(env.AtRegexp("main.go", "log")))
 		env.SaveBuffer("main.go")
+		if got := env.Diagnostics("main.go"); len(got) != 0 {
+			t.Errorf("got %d diagnostics, want 0", len(got))
+		}
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 	})
 }
 
 func TestDiagnosticErrorInNewFile(t *testing.T) {
+	t.Parallel()
 	const brokenFile = `package main
 
 const Foo = "abc
@@ -104,7 +114,7 @@ const Foo = "abc
 	})
 }
 
-// badPackage contains a duplicate definition of the 'a' const.
+// badPackage contains a duplicate definition of the 'A' const.
 const badPackage = `
 -- go.mod --
 module mod.com
@@ -113,23 +123,39 @@ go 1.12
 -- a.go --
 package consts
 
-const a = 1
+const A = 1
 -- b.go --
 package consts
 
-const a = 2
+const A = 2
 `
 
 func TestDiagnosticClearingOnEdit(t *testing.T) {
-	Run(t, badPackage, func(t *testing.T, env *Env) {
+	t.Parallel()
+	WithOptions(
+		Settings{
+			"pullDiagnostics": true,
+		},
+	).Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("b.go")
+
+		for _, f := range []string{"a.go", "b.go"} {
+			if got := env.Diagnostics(f); len(got) != 1 {
+				t.Errorf("textDocument/diagnostic(%s) returned %d diagnostics, want 1. Got %v", f, len(got), got)
+			}
+		}
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 		)
 
-		// Fix the error by editing the const name in b.go to `b`.
-		env.RegexpReplace("b.go", "(a) = 2", "b")
+		// Fix the error by editing the const name A in b.go to `B`.
+		env.RegexpReplace("b.go", "(A) = 2", "B")
+		for _, f := range []string{"a.go", "b.go"} {
+			if got := env.Diagnostics(f); len(got) != 0 {
+				t.Errorf("textDocument/diagnostic(%s) returned %d diagnostics, want 0. Got %v", f, len(got), got)
+			}
+		}
 		env.AfterChange(
 			NoDiagnostics(ForFile("a.go")),
 			NoDiagnostics(ForFile("b.go")),
@@ -138,11 +164,12 @@ func TestDiagnosticClearingOnEdit(t *testing.T) {
 }
 
 func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
+	t.Parallel()
 	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 		)
 		env.RemoveWorkspaceFile("b.go")
 
@@ -154,19 +181,20 @@ func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
 }
 
 func TestDiagnosticClearingOnClose(t *testing.T) {
+	t.Parallel()
 	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.CreateBuffer("c.go", `package consts
 
-const a = 3`)
+const A = 3`)
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
-			Diagnostics(env.AtRegexp("c.go", "a = 3")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
+			Diagnostics(env.AtRegexp("c.go", "A = 3")),
 		)
 		env.CloseBuffer("c.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 			NoDiagnostics(ForFile("c.go")),
 		)
 	})
@@ -174,6 +202,7 @@ const a = 3`)
 
 // Tests golang/go#37978.
 func TestIssue37978(t *testing.T) {
+	t.Parallel()
 	Run(t, exampleProgram, func(t *testing.T, env *Env) {
 		// Create a new workspace-level directory and empty file.
 		env.CreateBuffer("c/c.go", "")
@@ -182,7 +211,7 @@ func TestIssue37978(t *testing.T) {
 		env.EditBuffer("c/c.go", protocol.TextEdit{
 			NewText: `package c
 
-const a = http.MethodGet
+const A = http.MethodGet
 `,
 		})
 		env.AfterChange(
@@ -225,6 +254,7 @@ func TestA(t *testing.T) {
 // Tests golang/go#38878: deleting a test file should clear its errors, and
 // not break the workspace.
 func TestDeleteTestVariant(t *testing.T) {
+	t.Parallel()
 	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.AfterChange(Diagnostics(env.AtRegexp("a_test.go", `f\((3)\)`)))
 		env.RemoveWorkspaceFile("a_test.go")
@@ -241,10 +271,11 @@ func TestDeleteTestVariant(t *testing.T) {
 // Tests golang/go#38878: deleting a test file on disk while it's still open
 // should not clear its errors.
 func TestDeleteTestVariant_DiskOnly(t *testing.T) {
+	t.Parallel()
 	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.OpenFile("a_test.go")
 		env.AfterChange(Diagnostics(AtPosition("a_test.go", 5, 3)))
-		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go")
+		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go") // ignore error
 		env.AfterChange(Diagnostics(AtPosition("a_test.go", 5, 3)))
 	})
 }
@@ -252,6 +283,7 @@ func TestDeleteTestVariant_DiskOnly(t *testing.T) {
 // TestNoMod confirms that gopls continues to work when a user adds a go.mod
 // file to their workspace.
 func TestNoMod(t *testing.T) {
+	t.Parallel()
 	const noMod = `
 -- main.go --
 package main
@@ -313,7 +345,7 @@ func Hello() {
 				InitialWorkspaceLoad,
 				Diagnostics(env.AtRegexp("main.go", `"mod.com/bob"`)),
 			)
-			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
+			if _, err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 				t.Fatal(err)
 			}
 			env.AfterChange(
@@ -326,6 +358,7 @@ func Hello() {
 
 // Tests golang/go#38267.
 func TestIssue38267(t *testing.T) {
+	t.Parallel()
 	const testPackage = `
 -- go.mod --
 module mod.com
@@ -374,6 +407,7 @@ func TestHello(t *testing.T) {
 
 // Tests golang/go#38328.
 func TestPackageChange_Issue38328(t *testing.T) {
+	t.Parallel()
 	const packageChange = `
 -- go.mod --
 module fake
@@ -399,9 +433,6 @@ module mod.com
 go 1.12
 
 require foo.test v1.2.3
--- go.sum --
-foo.test v1.2.3 h1:TMA+lyd1ck0TqjSFpNe4T6cf/K6TYkoHwOOcMBMjaEw=
-foo.test v1.2.3/go.mod h1:Ij3kyLIe5lzjycjh13NL8I2gX0quZuTdW0MnmlwGBL4=
 -- print.go --
 package lib
 
@@ -428,7 +459,9 @@ const Answer = 42
 `
 
 func TestResolveDiagnosticWithDownload(t *testing.T) {
+	t.Parallel()
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(testPackageWithRequireProxy),
 	).Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
@@ -436,7 +469,7 @@ func TestResolveDiagnosticWithDownload(t *testing.T) {
 		// diagnostic for the wrong formatting type.
 		env.AfterChange(
 			Diagnostics(
-				env.AtRegexp("print.go", "fmt.Printf"),
+				env.AtRegexp("print.go", "%s"),
 				WithMessage("wrong type int"),
 			),
 		)
@@ -444,6 +477,7 @@ func TestResolveDiagnosticWithDownload(t *testing.T) {
 }
 
 func TestMissingDependency(t *testing.T) {
+	t.Parallel()
 	Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
 		env.Await(
@@ -456,6 +490,7 @@ func TestMissingDependency(t *testing.T) {
 
 // Tests golang/go#36951.
 func TestAdHocPackages_Issue36951(t *testing.T) {
+	t.Parallel()
 	const adHoc = `
 -- b/b.go --
 package b
@@ -474,6 +509,7 @@ func Hello() {
 
 // Tests golang/go#37984: GOPATH should be read from the go command.
 func TestNoGOPATH_Issue37984(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- main.go --
 package main
@@ -497,6 +533,7 @@ func _() {
 
 // Tests golang/go#38669.
 func TestEqualInEnv_Issue38669(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -522,27 +559,35 @@ var X = 0
 
 // Tests golang/go#38467.
 func TestNoSuggestedFixesForGeneratedFiles_Issue38467(t *testing.T) {
+	t.Parallel()
+	// This test ensures that gopls' CodeAction handler suppresses
+	// diagnostics in generated code. Beware that many analyzers
+	// themselves suppress diagnostics in generated files, in
+	// particular the low-status "simplifiers" (modernize,
+	// simplify{range,slice,compositelit}), so we use the hostport
+	// analyzer here.
 	const generated = `
 -- go.mod --
 module mod.com
 
 go 1.12
 -- main.go --
-package main
-
 // Code generated by generator.go. DO NOT EDIT.
 
+package main
+
+import ("fmt"; "net")
+
 func _() {
-	for i, _ := range []string{} {
-		_ = i
-	}
+	addr := fmt.Sprintf("%s:%d", "localhost", 12345)
+	net.Dial("tcp", addr)
 }
 `
 	Run(t, generated, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
-			Diagnostics(AtPosition("main.go", 5, 8)),
+			Diagnostics(AtPosition("main.go", 7, 21)),
 			ReadDiagnostics("main.go", &d),
 		)
 		if fixes := env.GetQuickFixes("main.go", d.Diagnostics); len(fixes) != 0 {
@@ -554,6 +599,7 @@ func _() {
 // Expect a module/GOPATH error if there is an error in the file at startup.
 // Tests golang/go#37279.
 func TestBrokenWorkspace_OutsideModule(t *testing.T) {
+	t.Parallel()
 	const noModule = `
 -- a.go --
 package foo
@@ -585,6 +631,7 @@ func f() {
 }
 
 func TestNonGoFolder(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- hello.txt --
 hi mom
@@ -606,6 +653,7 @@ hi mom
 // Tests the repro case from golang/go#38602. Diagnostics are now handled properly,
 // which blocks type checking.
 func TestConflictingMainPackageErrors(t *testing.T) {
+	t.Parallel()
 	const collision = `
 -- x/x.go --
 package x
@@ -654,8 +702,96 @@ var ErrHelpWanted error
 `
 
 // Test for golang/go#38211.
-func Test_Issue38211(t *testing.T) {
+func Test_issue38211(t *testing.T) {
+	t.Parallel()
 	const ardanLabs = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- main.go --
+package main
+
+import "github.com/ardanlabs/conf"
+
+func main() {
+	_ = conf.ErrHelpWanted
+}
+`
+
+	WithOptions(
+		// for the go get executed by the quick fix.
+		ProxyFiles(ardanLabsProxy),
+		CacheFiles(ardanLabsProxy),
+	).Run(t, ardanLabs, func(t *testing.T, env *Env) {
+		// Expect a "no module provides package" diagnostic.
+		env.OpenFile("go.mod")
+		env.OpenFile("main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
+			ReadDiagnostics("main.go", &d),
+		)
+
+		// Apply the suggested fix to make the go.mod file
+		// require "github.com/ardanlabs/conf".
+		env.ApplyQuickFixes("main.go", d.Diagnostics)
+		env.SaveBuffer("go.mod")
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+		)
+
+		// Comment out the sole use of conf,
+		// causing an "unused import" diagnostic.
+		env.RegexpReplace("main.go", "_ = conf.ErrHelpWanted", "//_ = conf.ErrHelpWanted")
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("imported and not used")),
+		)
+
+		// Remove the import using OrganizeImports, leading
+		// to an "unused require" diagnostic in the go.mod.
+		env.SaveBuffer("main.go") // => OrganizeImports
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+			Diagnostics(
+				env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"),
+				WithMessage("not used in this module")),
+			ReadDiagnostics("go.mod", &d),
+		)
+
+		// Apply the suggested fix to remove the "require" directive.
+		env.ApplyQuickFixes("go.mod", d.Diagnostics)
+		env.SaveBuffer("go.mod")
+		env.AfterChange(
+			NoDiagnostics(ForFile("go.mod")),
+		)
+
+		// Uncomment the use of the import.
+		// OrganizeImports should add the import.
+		// Expect another "no required module provides package"
+		// diagnostic, bringing us full circle.
+		env.RegexpReplace("main.go", "//_ = conf.ErrHelpWanted", "_ = conf.ErrHelpWanted")
+		env.SaveBuffer("main.go") // => OrganizeImports
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
+		)
+	})
+}
+
+// Test for go.dev/issue/82027: go mod tidy diagnostics reflect unsaved
+// edits, and are unaffected by saving.
+//
+// Previously, go mod tidy read Go files from disk, so its results
+// depended on whether (and when) buffers were saved.
+func TestModTidyUnsavedEdits_Issue82027(t *testing.T) {
+	t.Parallel()
+	const files = `
 -- go.mod --
 module mod.com
 
@@ -671,50 +807,132 @@ func main() {
 `
 	WithOptions(
 		ProxyFiles(ardanLabsProxy),
-	).Run(t, ardanLabs, func(t *testing.T, env *Env) {
-		// Expect a diagnostic with a suggested fix to add
-		// "github.com/ardanlabs/conf" to the go.mod file.
+		CacheFiles(ardanLabsProxy),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		// Add the requirement (and go.sum) using the "go get" quick fix.
 		env.OpenFile("go.mod")
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
 			ReadDiagnostics("main.go", &d),
 		)
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		env.SaveBuffer("go.mod")
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-		)
-		// Comment out the line that depends on conf and expect a
-		// diagnostic and a fix to remove the import.
-		env.RegexpReplace("main.go", "_ = conf.ErrHelpWanted", "//_ = conf.ErrHelpWanted")
-		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
-		)
-		env.SaveBuffer("main.go")
-		// Expect a diagnostic and fix to remove the dependency in the go.mod.
-		env.AfterChange(
-			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"), WithMessage("not used in this module")),
-			ReadDiagnostics("go.mod", &d),
-		)
-		env.ApplyQuickFixes("go.mod", d.Diagnostics)
-		env.SaveBuffer("go.mod")
-		env.AfterChange(
 			NoDiagnostics(ForFile("go.mod")),
 		)
-		// Uncomment the lines and expect a new diagnostic for the import.
-		env.RegexpReplace("main.go", "//_ = conf.ErrHelpWanted", "_ = conf.ErrHelpWanted")
-		env.SaveBuffer("main.go")
+
+		// Remove the import and its use in the buffer only.
+		// The requirement is reported as unused, even though
+		// the on-disk main.go still imports conf.
+		env.RegexpReplace("main.go", `import "github.com/ardanlabs/conf"`, "")
+		env.RegexpReplace("main.go", `_ = conf.ErrHelpWanted`, "")
+		unused := Diagnostics(
+			env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"),
+			WithMessage("not used in this module"))
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
+			NoDiagnostics(ForFile("main.go")),
+			unused,
 		)
+
+		// Saving the buffer doesn't change anything.
+		env.SaveBufferWithoutActions("main.go")
+		env.AfterChange(unused)
+
+		// Restore the import and its use in the buffer only.
+		// The requirement is no longer reported as unused, even
+		// though the on-disk main.go doesn't import conf.
+		env.RegexpReplace("main.go", `package main`, `package main; import "github.com/ardanlabs/conf"`)
+		env.RegexpReplace("main.go", `func main\(\) {`, "func main() { _ = conf.ErrHelpWanted")
+		env.AfterChange(
+			NoDiagnostics(ForFile("main.go")),
+			NoDiagnostics(ForFile("go.mod")),
+		)
+	})
+}
+
+// Test that go mod tidy diagnostics reflect unsaved edits to the go.mod
+// file of a replaced module (go.dev/issue/82027, go.dev/issue/53881).
+//
+// The replaced module's package is in subdirectory a/sub so that no Go
+// file shares a directory with a/go.mod. Otherwise the same-directory
+// heuristic of invalidatedPackageIDs would invalidate package example.com/a
+// and trigger re-diagnosis even if invalidating the tidy result did not.
+func TestModTidyUnsavedReplacedGoMod(t *testing.T) {
+	t.Parallel()
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+
+require (
+	example.com/a v0.0.0
+	example.com/b v0.0.0
+)
+
+replace (
+	example.com/a => ./a
+	example.com/b => ./b
+)
+
+-- main.go --
+package main
+
+import _ "example.com/a/sub"
+
+func main() {}
+
+-- a/go.mod --
+module example.com/a
+
+go 1.14
+
+require example.com/b v0.0.0
+
+-- a/sub/a.go --
+package sub
+
+import _ "example.com/b"
+
+-- b/go.mod --
+module example.com/b
+
+go 1.14
+
+-- b/b.go --
+package b
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		// Module a requires b, so the main module's
+		// requirement on b is redundant.
+		env.OpenFile("go.mod")
+		unusedB := Diagnostics(
+			env.AtRegexp("go.mod", `example.com/b v0.0.0`),
+			WithMessage("not used in this module"))
+		env.AfterChange(unusedB)
+
+		// Remove a's requirement on b, in the buffer only.
+		// Now the main module must require b.
+		env.OpenFile("a/go.mod")
+		env.RegexpReplace("a/go.mod", `require example.com/b v0.0.0`, "")
+		env.AfterChange(
+			NoDiagnostics(ForFile("go.mod"), WithMessage("not used in this module")),
+		)
+
+		// Restore it, again in the buffer only.
+		env.RegexpReplace("a/go.mod", `go 1.14`, "go 1.14\n\nrequire example.com/b v0.0.0")
+		env.AfterChange(unusedB)
 	})
 }
 
 // Test for golang/go#38207.
 func TestNewModule_Issue38207(t *testing.T) {
+	t.Parallel()
 	const emptyFile = `
 -- go.mod --
 module mod.com
@@ -748,6 +966,7 @@ func main() {
 
 // Test for golang/go#36960.
 func TestNewFileBadImports_Issue36960(t *testing.T) {
+	t.Parallel()
 	const simplePackage = `
 -- go.mod --
 module mod.com
@@ -779,6 +998,7 @@ func _() {
 // This test tries to replicate the workflow of a user creating a new x test.
 // It also tests golang/go#39315.
 func TestManuallyCreatingXTest(t *testing.T) {
+	t.Parallel()
 	// Create a package that already has a test variant (in-package test).
 	const testVariant = `
 -- go.mod --
@@ -846,6 +1066,7 @@ func TestHello(t *testing.T) {
 
 // Reproduce golang/go#40690.
 func TestCreateOnlyXTest(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -874,6 +1095,7 @@ func TestX(t *testing.T) {
 }
 
 func TestChangePackageName(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -896,6 +1118,7 @@ package foo_
 }
 
 func TestIgnoredFiles(t *testing.T) {
+	t.Parallel()
 	const ws = `
 -- go.mod --
 module mod.com
@@ -918,6 +1141,7 @@ var _ = foo.Bar
 // It also gets hit by some go command bug fixed in 1.15, but we don't
 // care about that so much here.
 func TestDeletePackage(t *testing.T) {
+	t.Parallel()
 	const ws = `
 -- go.mod --
 module mod.com
@@ -959,6 +1183,7 @@ const C = a.A
 // This is a copy of the scenario_default/quickfix_empty_files.txt test from
 // govim. Reproduces golang/go#39646.
 func TestQuickFixEmptyFiles(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1045,6 +1270,7 @@ func TestDoIt(t *testing.T) {
 }
 
 func TestSingleFile(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1071,6 +1297,7 @@ func _() {
 // Reproduces the case described in
 // https://github.com/golang/go/issues/39296#issuecomment-652058883.
 func TestPkgm(t *testing.T) {
+	t.Parallel()
 	const basic = `
 -- go.mod --
 module mod.com
@@ -1098,6 +1325,7 @@ func main() {
 }
 
 func TestClosingBuffer(t *testing.T) {
+	t.Parallel()
 	const basic = `
 -- go.mod --
 module mod.com
@@ -1109,7 +1337,7 @@ package main
 func main() {}
 `
 	Run(t, basic, func(t *testing.T, env *Env) {
-		env.Editor.CreateBuffer(env.Ctx, "foo.go", `package main`)
+		env.CreateBuffer("foo.go", `package main`)
 		env.AfterChange()
 		env.CloseBuffer("foo.go")
 		env.AfterChange(NoLogMatching(protocol.Info, "packages=0"))
@@ -1118,6 +1346,7 @@ func main() {}
 
 // Reproduces golang/go#38424.
 func TestCutAndPaste(t *testing.T) {
+	t.Parallel()
 	const basic = `
 -- go.mod --
 module mod.com
@@ -1160,6 +1389,7 @@ func main() {
 
 // Reproduces golang/go#39763.
 func TestInvalidPackageName(t *testing.T) {
+	t.Parallel()
 	const pkgDefault = `
 -- go.mod --
 module mod.com
@@ -1184,6 +1414,7 @@ func main() {}
 // This test verifies that the workspace scope is effectively limited to the
 // workspace folder, if expandWorkspaceToModule is set.
 func TestExpandWorkspaceToModule(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1225,6 +1456,7 @@ func main() {
 // We should not get diagnostics or file watching patterns for paths outside of
 // the active workspace.
 func TestWorkspaceModules(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.work --
 go 1.18
@@ -1269,6 +1501,7 @@ func _() {
 }
 
 func TestSimplifyCompositeLitDiagnostic(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1288,10 +1521,7 @@ func main() {
 	fmt.Println(x)
 }
 `
-
-	WithOptions(
-		Settings{"staticcheck": true},
-	).Run(t, files, func(t *testing.T, env *Env) {
+	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
@@ -1308,6 +1538,7 @@ func main() {
 
 // Test some secondary diagnostics
 func TestSecondaryDiagnostics(t *testing.T) {
+	t.Parallel()
 	const dir = `
 -- go.mod --
 module mod.com
@@ -1349,6 +1580,7 @@ func main() {}
 }
 
 func TestOrphanedFiles(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1399,6 +1631,7 @@ func _() {
 }
 
 func TestSwig(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("swig"); err != nil {
 		t.Skip("skipping test: swig not available")
 	}
@@ -1453,6 +1686,7 @@ func main() {
 // have no more complaints about it.
 // https://github.com/golang/go/issues/41061
 func TestRenamePackage(t *testing.T) {
+	t.Parallel()
 	const proxy = `
 -- example.com@v1.2.3/go.mod --
 module example.com
@@ -1514,6 +1748,7 @@ package foo_
 // TestProgressBarErrors confirms that critical workspace load errors are shown
 // and updated via progress reports.
 func TestProgressBarErrors(t *testing.T) {
+	t.Parallel()
 	const pkg = `
 -- go.mod --
 modul mod.com
@@ -1546,6 +1781,7 @@ go 1.hello
 }
 
 func TestDeleteDirectory(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- bob/bob.go --
 package bob
@@ -1586,6 +1822,7 @@ func main() {
 
 // Confirms that circular imports are tested and reported.
 func TestCircularImports(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1630,6 +1867,7 @@ import _ "mod.com/triple/a"
 // Tests golang/go#46667: deleting a problematic import path should resolve
 // import cycle errors.
 func TestResolveImportCycle(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.test
@@ -1678,6 +1916,7 @@ const B = a.B
 }
 
 func TestBadImport(t *testing.T) {
+	t.Parallel()
 	const mod = `
 -- go.mod --
 module mod.com
@@ -1713,6 +1952,7 @@ import (
 }
 
 func TestNestedModules(t *testing.T) {
+	t.Parallel()
 	const proxy = `
 -- nested.com@v1.0.0/go.mod --
 module nested.com
@@ -1731,9 +1971,6 @@ module mod.com
 go 1.12
 
 require nested.com v1.0.0
--- go.sum --
-nested.com v1.0.0 h1:I6spLE4CgFqMdBPc+wTV2asDO2QJ3tU0YAT+jkLeN1I=
-nested.com v1.0.0/go.mod h1:ly53UzXQgVjSlV7wicdBB4p8BxfytuGT1Xcyv0ReJfI=
 -- main.go --
 package main
 
@@ -1757,6 +1994,7 @@ package hello
 func helloHelper() {}
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 		Modes(Default),
 	).Run(t, nested, func(t *testing.T, env *Env) {
@@ -1765,7 +2003,7 @@ func helloHelper() {}
 		env.AfterChange(
 			NoDiagnostics(ForFile("nested/hello/hello.go")),
 		)
-		loc := env.GoToDefinition(env.RegexpSearch("nested/hello/hello.go", "helloHelper"))
+		loc := env.FirstDefinition(env.RegexpSearch("nested/hello/hello.go", "helloHelper"))
 		want := "nested/hello/hello_helper.go"
 		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
 			t.Errorf("Definition() returned %q, want %q", got, want)
@@ -1774,6 +2012,7 @@ func helloHelper() {}
 }
 
 func TestAdHocPackagesReloading(t *testing.T) {
+	t.Parallel()
 	const nomod = `
 -- main.go --
 package main
@@ -1788,6 +2027,7 @@ func main() {}
 }
 
 func TestBuildTagChange(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1815,6 +2055,7 @@ var Bar = Foo
 }
 
 func TestIssue44736(t *testing.T) {
+	t.Parallel()
 	const files = `
 	-- go.mod --
 module blah.com
@@ -1851,6 +2092,7 @@ package main
 }
 
 func TestInitialization(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1873,6 +2115,7 @@ package main
 // This test confirms that the view does not reinitialize when a go.mod file is
 // opened.
 func TestNoReinitialize(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1895,6 +2138,7 @@ func main() {}
 }
 
 func TestLangVersion(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1918,6 +2162,7 @@ const C = 0b10
 }
 
 func TestNoQuickFixForUndeclaredConstraint(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1944,6 +2189,7 @@ func F[T C](_ T) {
 }
 
 func TestEditGoDirective(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -1971,6 +2217,7 @@ func F[T any](_ T) {
 }
 
 func TestEditGoDirectiveWorkspace(t *testing.T) {
+	t.Parallel()
 	const files = `
 -- go.mod --
 module mod.com
@@ -2010,6 +2257,7 @@ func F[T any](_ T) {
 // This test demonstrates that analysis facts are correctly propagated
 // across packages.
 func TestInterpackageAnalysis(t *testing.T) {
+	t.Parallel()
 	const src = `
 -- go.mod --
 module example.com
@@ -2046,7 +2294,7 @@ func MyPrintf(format string, args ...interface{}) {
 		env.OpenFile("a/a.go")
 		env.AfterChange(
 			Diagnostics(
-				env.AtRegexp("a/a.go", "new.*Printf"),
+				env.AtRegexp("a/a.go", "%d"),
 				WithMessage("format %d has arg \"s\" of wrong type string"),
 			),
 		)
@@ -2057,6 +2305,7 @@ func MyPrintf(format string, args ...interface{}) {
 // are invoked on a package that would not compile, even if the errors
 // are distant and localized.
 func TestErrorsThatPreventAnalysis(t *testing.T) {
+	t.Parallel()
 	const src = `
 -- go.mod --
 module example.com
@@ -2121,6 +2370,7 @@ var _ = 1 / "" // type error
 // This test demonstrates the deprecated symbol analyzer
 // produces deprecation notices with expected severity and tags.
 func TestDeprecatedAnalysis(t *testing.T) {
+	t.Parallel()
 	const src = `
 -- go.mod --
 module example.com
@@ -2156,6 +2406,7 @@ func (B) New() {}
 }
 
 func TestDiagnosticsOnlyOnSaveFile(t *testing.T) {
+	t.Parallel()
 	// This functionality is broken because the new orphaned file diagnostics
 	// logic wants to publish diagnostics for changed files, independent of any
 	// snapshot diagnostics pass, and this causes stale diagnostics to be
@@ -2205,5 +2456,30 @@ func Foo() {}
 
 		env.SaveBuffer("main.go")
 		env.AfterChange(NoDiagnostics())
+	})
+}
+
+func TestOrphanedFileDiagnostics_Shutdown(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+func _() {}
+`
+	WithOptions(
+		Settings{
+			"diagnosticsDelay": "100ms",
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.RegexpReplace("a.go", "func _", "func f")
+		if err := env.Editor.Shutdown(env.Ctx); err != nil {
+			t.Fatal(err)
+		}
+		env.Await(NoErrorLogs())
 	})
 }

@@ -104,7 +104,7 @@ type Package struct {
 	DerivedSymbols []string `yaml:"derived_symbols,omitempty"`
 }
 
-// Version is an SemVer 2.0.0 semantic version with no leading "v" prefix,
+// Version is a SemVer 2.0.0 semantic version with no leading "v" prefix,
 // as used by OSV.
 type Version string
 
@@ -128,37 +128,13 @@ func (v Version) Canonical() string {
 	return strings.TrimPrefix(semver.Canonical(v.V()), "v")
 }
 
-// Reference type is a reference (link) type.
-type ReferenceType string
-
-const (
-	ReferenceTypeAdvisory = ReferenceType("ADVISORY")
-	ReferenceTypeArticle  = ReferenceType("ARTICLE")
-	ReferenceTypeReport   = ReferenceType("REPORT")
-	ReferenceTypeFix      = ReferenceType("FIX")
-	ReferenceTypePackage  = ReferenceType("PACKAGE")
-	ReferenceTypeEvidence = ReferenceType("EVIDENCE")
-	ReferenceTypeWeb      = ReferenceType("WEB")
-)
-
-// ReferenceTypes is the set of reference types defined in OSV.
-var ReferenceTypes = []ReferenceType{
-	ReferenceTypeAdvisory,
-	ReferenceTypeArticle,
-	ReferenceTypeReport,
-	ReferenceTypeFix,
-	ReferenceTypePackage,
-	ReferenceTypeEvidence,
-	ReferenceTypeWeb,
-}
-
 // A Reference is a link to some external resource.
 //
 // For ease of typing, References are represented in the YAML as a
 // single-element mapping of type to URL.
 type Reference osv.Reference
 
-func (r *Reference) MarshalYAML() (interface{}, error) {
+func (r *Reference) MarshalYAML() (any, error) {
 	return map[string]string{
 		strings.ToLower(string(r.Type)): r.URL,
 	}, nil

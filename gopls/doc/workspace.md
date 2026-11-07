@@ -1,4 +1,6 @@
-# Gopls: Setting up your workspace
+---
+title: "Gopls: Setting up your workspace"
+---
 
 In the language server protocol, a "workspace" consists of a folder along with
 per-folder configuration. Some LSP clients such as VS Code allow configuring
@@ -39,7 +41,7 @@ and `modc`, and a `go.work` file using modules `moda` and `modb`. If we open
 the files `moda/a.go`, `modb/b.go`, `moda/a_windows.go`, and `modc/c.go`, gopls
 will automatically create three builds:
 
-![Zero Config gopls](zeroconfig.png)
+![Zero Config gopls](assets/zeroconfig.png)
 
 This allows gopls to _just work_ when you open a Go file, but it does come with
 several caveats:

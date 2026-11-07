@@ -7,27 +7,15 @@ package golang
 import (
 	"context"
 	"fmt"
+	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
-
-// NarrowestMetadataForFile returns metadata for the narrowest package
-// (the one with the fewest files) that encloses the specified file.
-// The result may be a test variant, but never an intermediate test variant.
-func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*metadata.Package, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
-	if err != nil {
-		return nil, err
-	}
-	metadata.RemoveIntermediateTestVariants(&mps)
-	if len(mps) == 0 {
-		return nil, fmt.Errorf("no package metadata for file %s", uri)
-	}
-	return mps[0], nil
-}
 
 // NarrowestPackageForFile is a convenience function that selects the narrowest
 // non-ITV package to which this file belongs, type-checks it in the requested
@@ -66,12 +54,32 @@ func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri pro
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[len(metas)-1] })
 }
 
+// NarrowestDeclaringPackage facilitates cross-package analysis by "jumping"
+// from the current package context to the package that declares the given object.
+//
+// This is essential when the object of interest is defined in a different
+// package than the one currently being type-checked.
+//
+// This function performs the context switch: it locates the file declaring
+// the object, loads its narrowest package (see [NarrowestPackageForFile]),
+// and returns the type-checked result.
+//
+// It returns the new package, the file, and the object's position translated
+// to be valid within the new package's file set.
+func NarrowestDeclaringPackage(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, obj types.Object) (*cache.Package, *parsego.File, token.Pos, error) {
+	posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(posn.Filename))
+	if err != nil {
+		return nil, nil, token.NoPos, err
+	}
+	return pkg, pgf, pgf.Tok.Pos(posn.Offset), nil
+}
+
 func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *parsego.File, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
+	mps, err := snapshot.MetadataForFile(ctx, uri, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	metadata.RemoveIntermediateTestVariants(&mps)
 	if len(mps) == 0 {
 		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
 	}

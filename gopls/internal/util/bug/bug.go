@@ -50,13 +50,13 @@ type Bug struct {
 }
 
 // Reportf reports a formatted bug message.
-func Reportf(format string, args ...interface{}) {
+func Reportf(format string, args ...any) {
 	report(fmt.Sprintf(format, args...))
 }
 
 // Errorf calls fmt.Errorf for the given arguments, and reports the resulting
 // error message as a bug.
-func Errorf(format string, args ...interface{}) error {
+func Errorf(format string, args ...any) error {
 	err := fmt.Errorf(format, args...)
 	report(err.Error())
 	return err

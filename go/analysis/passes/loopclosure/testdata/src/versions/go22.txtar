@@ -1,13 +1,13 @@
 Test loopclosure at go version go1.22.
 
-The go1.19 build tag is necessary to force the file version.
+The go1.21 build tag is necessary to force the file version.
 
 -- go.mod --
 module golang.org/fake/versions
 
 go 1.22
 -- pre.go --
-//go:build go1.19
+//go:build go1.21
 
 package versions
 

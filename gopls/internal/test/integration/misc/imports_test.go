@@ -7,11 +7,14 @@ package misc
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/internal/modindex"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -65,7 +68,7 @@ package main
 import "fmt"
 
 //this comment is necessary for failure
-func a() {
+func _() {
 	fmt.Println("hello")
 }
 `
@@ -95,7 +98,7 @@ func f(x float64) float64 {
 -- b.go --
 package foo
 
-func g() {
+func _() {
 	_ = rand.Int63()
 }
 `
@@ -195,8 +198,7 @@ func main() {
 	})
 }
 
-func TestGOMODCACHE(t *testing.T) {
-	const proxy = `
+const exampleProxy = `
 -- example.com@v1.2.3/go.mod --
 module example.com
 
@@ -210,6 +212,8 @@ package y
 
 const Y = 2
 `
+
+func TestGOMODCACHE(t *testing.T) {
 	const files = `
 -- go.mod --
 module mod.com
@@ -217,9 +221,6 @@ module mod.com
 go 1.12
 
 require example.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:6vTQqzX+pnwngZF1+5gcO3ZEWmix1jJ/h+pWS8wUxK0=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- main.go --
 package main
 
@@ -227,24 +228,239 @@ import "example.com/x"
 
 var _, _ = x.X, y.Y
 `
-	modcache, err := os.MkdirTemp("", "TestGOMODCACHE-modcache")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(modcache)
 	WithOptions(
-		EnvVars{"GOMODCACHE": modcache},
-		ProxyFiles(proxy),
+		// go list needs to compute go.sum
+		ProxyFiles(exampleProxy),
+		CacheFiles(exampleProxy),
+		WriteGoSum("."),
 	).Run(t, files, func(t *testing.T, env *Env) {
+		// Expect y is undefined.
 		env.OpenFile("main.go")
-		env.AfterChange(Diagnostics(env.AtRegexp("main.go", `y.Y`)))
-		env.SaveBuffer("main.go")
-		env.AfterChange(NoDiagnostics(ForFile("main.go")))
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `y.(Y)`))
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `y.Y`),
+				WithMessage("undefined")),
+		)
+
+		// Apply suggested fix via OrganizeImports.
+		env.SaveBuffer("main.go") // => OrganizeImports
+
+		// Verify that y.Y is defined within the module cache.
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
 		path := env.Sandbox.Workdir.URIToPath(loc.URI)
+		modcache := env.Sandbox.GOMODCACHE()
 		if !strings.HasPrefix(path, filepath.ToSlash(modcache)) {
 			t.Errorf("found module dependency outside of GOMODCACHE: got %v, wanted subdir of %v", path, filepath.ToSlash(modcache))
 		}
+	})
+}
+
+// make sure it gets the v2
+/* marker test?
+
+Add proxy data with the special proxy/ prefix (see gopls/internal/test/marker/testdata/quickfix/unusedrequire.txt).
+Invoke the organizeImports codeaction directly (see gopls/internal/test/marker/testdata/codeaction/imports.txt, but use the edit=golden named argument instead of result= to minimize the size of the golden output.
+*/
+func Test58382(t *testing.T) {
+	files := `-- main.go --
+package main
+import "fmt"
+func main() {
+	fmt.Println(xurls.Relaxed().FindAllString())
+}
+-- go.mod --
+module demo
+go 1.20
+`
+	cache := `-- mvdan.cc/xurls@v2.5.0/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+--  github.com/mvdan/xurls/v2@v1.1.0/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+`
+	WithOptions(
+		CacheFiles(cache),
+		WriteGoSum("."),
+		NoLogsOnError(),
+	).Run(t, files, func(t *testing.T, env *Env) {
+
+		env.OpenFile("main.go")
+		env.SaveBuffer("main.go")
+		out := env.BufferText("main.go")
+		if !strings.Contains(out, "xurls/v2") {
+			t.Errorf("did not get v2 in %q", out)
+		}
+	})
+}
+
+// get the version requested in the go.mod file, not /v2
+func Test61208(t *testing.T) {
+	files := `-- main.go --
+package main
+import "fmt"
+func main() {
+	fmt.Println(xurls.Relaxed().FindAllString())
+}
+-- go.mod --
+module demo
+go 1.20
+require github.com/mvdan/xurls v1.1.0
+`
+	cache := `-- mvdan.cc/xurls/v2@v2.5.0/a/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+--  github.com/mvdan/xurls@v1.1.0/a/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+`
+	WithOptions(
+		CacheFiles(cache),
+		WriteGoSum("."),
+		NoLogsOnError(),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.SaveBuffer("main.go")
+		out := env.BufferText("main.go")
+		if !strings.Contains(out, "github.com/mvdan/xurls") {
+			t.Errorf("did not get github.com/mvdan/xurls in %q", out)
+		}
+	})
+}
+
+// get the version already used in the module
+func Test60663(t *testing.T) {
+	files := `-- main.go --
+package main
+import "fmt"
+func main() {
+	fmt.Println(xurls.Relaxed().FindAllString())
+}
+-- go.mod --
+module demo
+go 1.20
+-- a.go --
+package main
+import "github.com/mvdan/xurls"
+var _ = xurls.Relaxed()
+`
+	cache := `-- mvdan.cc/xurls/v2@v2.5.0/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+--  github.com/mvdan/xurls@v1.1.0/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+`
+
+	WithOptions(
+		CacheFiles(cache),
+		WriteGoSum("."),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.SaveBuffer("main.go")
+		out := env.BufferText("main.go")
+		if !strings.Contains(out, "github.com/mvdan/xurls") {
+			t.Errorf("did not get github.com/mvdan/xurls in %q", out)
+		}
+	})
+}
+
+// use the import from a different package in the same module
+func Test44510(t *testing.T) {
+	const files = `-- go.mod --
+module test
+go 1.19
+-- foo/foo.go --
+package main
+import strs "strings"
+var _ = strs.Count
+-- bar/bar.go --
+package main
+var _ = strs.Builder
+`
+	WithOptions(
+		WriteGoSum("."),
+	).Run(t, files, func(T *testing.T, env *Env) {
+		env.OpenFile("bar/bar.go")
+		env.SaveBuffer("bar/bar.go")
+		buf := env.BufferText("bar/bar.go")
+		if !strings.Contains(buf, "strs") {
+			t.Error(buf)
+		}
+	})
+}
+
+func TestIssue67156(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com/a
+
+go 1.20
+
+require example.com v1.2.3
+
+-- main.go --
+package main
+
+import "example.com/x"
+
+var _, _ = x.X, y.Y
+`
+	tmpdir := t.TempDir()
+	// The go command creates read-only files and directories in the module cache.
+	// Since this test tests a custom unclean path and cannot use CacheFiles,
+	// make directories writable before removing tmpdir.
+	defer func() {
+		filepath.Walk(tmpdir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() {
+				os.Chmod(path, 0777)
+			}
+			return nil
+		})
+		os.RemoveAll(tmpdir)
+	}()
+	base := filepath.Base(tmpdir)
+
+	// Construct a very unclean module cache whose length exceeds the length of
+	// the clean directory path, to reproduce the crash in golang/go#67156
+	const sep = string(filepath.Separator)
+	modcache := tmpdir + strings.Repeat(sep+".."+sep+base, 10)
+
+	opts := []RunOption{
+		EnvVars{"GOMODCACHE": modcache},
+		ProxyFiles(exampleProxy),
+		WriteGoSum("."),
+	}
+
+	t.Run("setup", func(t *testing.T) {
+		// Force go list to populate GOMODCACHE.
+		WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {})
+
+		// Update module index.
+		if ix, err := modindex.Update(modcache); err != nil {
+			t.Fatalf("failed to obtain updated module index: %v", err)
+		} else if len(ix.Entries) != 2 {
+			t.Fatalf("got %v, want 2 entries", ix)
+		}
+	})
+
+	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.AfterChange(Diagnostics(env.AtRegexp("main.go", `y.Y`)))
+		env.SaveBuffer("main.go") // => OrganizeImports
+		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 	})
 }
 
@@ -292,6 +508,40 @@ func TestA(t *testing.T) {
 	})
 }
 
+// Test of golang/go#70755
+func TestQuickFixIssue70755(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+go 1.19.0 // with go 1.23.0 this fails on some builders
+-- bar/bar.go --
+package notbar
+type NotBar struct {}
+-- baz/baz.go --
+package baz
+type Baz struct {}
+-- foo/foo.go --
+package foo
+type Foo struct {
+	Bar notbar.NotBar
+	Baz baz.Baz
+}`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("foo/foo.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(ReadDiagnostics("foo/foo.go", &d))
+		env.ApplyQuickFixes("foo/foo.go", d.Diagnostics)
+		// at this point 'import notbar "mod.com/bar"' has been added
+		// but it's still missing the import of "mod.com/baz"
+		y := env.BufferText("foo/foo.go")
+		if !strings.Contains(y, `notbar "mod.com/bar"`) {
+			t.Error("quick fix did not find notbar")
+		}
+		env.SaveBuffer("foo/foo.go")
+		env.AfterChange(NoDiagnostics(ForFile("foo/foo.go")))
+	})
+}
+
 // Test for golang/go#52784
 func TestGoWorkImports(t *testing.T) {
 	const pkg = `
@@ -335,4 +585,204 @@ func Test() {
 		env.SaveBuffer("caller/caller.go")
 		env.AfterChange(NoDiagnostics(ForFile("caller/caller.go")))
 	})
+}
+
+// prefer the undeprecated alternative 70736
+func TestDeprecated70736(t *testing.T) {
+	t.Logf("GOOS %s, GARCH %s version %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
+	files := `-- main.go --
+package main
+func main() {
+	var v = xurls.Relaxed().FindAllString()
+	var w = xurls.A
+}
+-- go.mod --
+module demo
+go 1.20
+`
+	cache := `-- mvdan.cc/xurls/v2@v2.5.0/xurls.go --
+package xurls
+// Deprecated:
+func Relaxed() *regexp.Regexp {
+return nil
+}
+var A int
+--  github.com/mvdan/xurls@v1.1.0/xurls.go --
+package xurls
+func Relaxed() *regexp.Regexp {
+return nil
+}
+var A int
+`
+	WithOptions(
+		CacheFiles(cache),
+		WriteGoSum("."),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.SaveBuffer("main.go")
+		out := env.BufferText("main.go")
+		if strings.Contains(out, "xurls/v2") {
+			t.Errorf("chose deprecated v2 in %q", out)
+		}
+	})
+}
+
+// Find the non-test package asked for in a test
+func TestTestImports(t *testing.T) {
+	const pkg = `
+-- go.work --
+go 1.19
+
+use (
+        ./caller
+        ./mod
+		./xxx
+)
+-- caller/go.mod --
+module caller.com
+
+go 1.18
+
+require mod.com v0.0.0
+require xxx.com v0.0.0
+
+replace mod.com => ../mod
+replace xxx.com => ../xxx
+-- caller/caller_test.go --
+package main
+
+var _ = a.Test
+-- xxx/go.mod --
+module xxx.com
+
+go 1.18
+-- xxx/a/a_test.go --
+package a
+
+func Test() {
+}
+-- mod/go.mod --
+module mod.com
+
+go 1.18
+-- mod/a/a.go --
+package a
+
+func Test() {
+}
+`
+	WithOptions(Modes(Default)).Run(t, pkg, func(t *testing.T, env *Env) {
+		env.OpenFile("caller/caller_test.go")
+		env.AfterChange(Diagnostics(env.AtRegexp("caller/caller_test.go", "a.Test")))
+
+		// Saving caller_test.go should trigger goimports, which should find a.Test in
+		// the mod.com module, thanks to the go.work file.
+		env.SaveBuffer("caller/caller_test.go")
+		env.AfterChange(NoDiagnostics(ForFile("caller/caller_test.go")))
+		buf := env.BufferText("caller/caller_test.go")
+		if !strings.Contains(buf, "mod.com/a") {
+			t.Errorf("got %q, expected a mod.com/a", buf)
+		}
+	})
+}
+
+// this test replaces 'package bar' with 'package foo'
+// saves the file, and then looks for the import in the main package.s
+func Test67973(t *testing.T) {
+	const files = `-- go.mod --
+module hello
+go 1.19
+-- hello.go --
+package main
+var _ = foo.Bar
+-- internal/foo/foo.go --
+package bar
+func Bar() {}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("hello.go")
+		env.AfterChange(env.DoneWithOpen())
+		env.SaveBuffer("hello.go")
+		env.OpenFile("internal/foo/foo.go")
+		env.RegexpReplace("internal/foo/foo.go", "bar", "foo")
+		env.SaveBuffer("internal/foo/foo.go")
+		env.SaveBuffer("hello.go")
+		buf := env.BufferText("hello.go")
+		if !strings.Contains(buf, "internal/foo") {
+			t.Errorf(`expected import "hello/internal/foo" but got %q`, buf)
+		}
+	})
+}
+
+// Test behavior if there is no module cache index.
+// There are two cases, one where the index dir is
+// unwritable, and one where it doesn't exist.
+// In both cases, import "fmt" should be found,
+// a missing import should run to completion and not crash.
+func TestNoIndex(t *testing.T) {
+	const files = `-- go.mod --
+module foo
+go 1.24
+-- ok.go --
+package main
+var x = fmt.Println
+-- fail.go --
+package main
+var x = foo.Var
+`
+	modcache := t.TempDir()
+	// make it unwritable
+	if err := os.Chmod(modcache, 0555); err != nil {
+		t.Fatal(err)
+	}
+	// a function testing that std lib imports are found
+	ok := func(t *testing.T, env *Env) {
+		env.OpenFile("ok.go")
+		env.AfterChange(env.DoneWithOpen())
+		env.OrganizeImports("ok.go")
+		env.AfterChange(NoDiagnostics(ForFile("a.go")))
+		buf := env.BufferText("ok.go")
+		if !strings.Contains(buf, `import "fmt"`) {
+			t.Errorf(`expected import "fmt" but got %q`, buf)
+		}
+	}
+	// a function testing missing imports don't crash
+	notok := func(t *testing.T, env *Env) {
+		env.OpenFile("fail.go")
+		env.AfterChange(env.DoneWithOpen())
+		obuf := env.BufferText("fail.go")
+		env.OrganizeImports("fail.go")
+		buf := env.BufferText("fail.go")
+		if !cmp.Equal(buf, obuf) {
+			t.Errorf("unexpected change %q\n%s", obuf, cmp.Diff(obuf, buf))
+		}
+	}
+
+	dir := t.TempDir()
+
+	// create an unwritable index dir
+	modindex.IndexDir = filepath.Join(dir, "nope")
+	if err := os.MkdirAll(modindex.IndexDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+
+	// This should pass
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, ok)
+	// This should do nothing and not crash
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, notok)
+
+	// now with empty index dir
+	modindex.IndexDir = ""
+
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, ok)
+	// This should do nothing and not crash
+	WithOptions(Modes(Default),
+		EnvVars{"GOMODCACHE": modcache},
+	).Run(t, files, notok)
 }

@@ -14,7 +14,10 @@ import (
 	"go/types"
 	"io"
 	"os"
+	"slices"
 	"strings"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 type sanity struct {
@@ -26,9 +29,10 @@ type sanity struct {
 }
 
 // sanityCheck performs integrity checking of the SSA representation
-// of the function fn and returns true if it was valid.  Diagnostics
-// are written to reporter if non-nil, os.Stderr otherwise.  Some
-// diagnostics are only warnings and do not imply a negative result.
+// of the function fn (which must have been "built") and returns true
+// if it was valid. Diagnostics are written to reporter if non-nil,
+// os.Stderr otherwise. Some diagnostics are only warnings and do not
+// imply a negative result.
 //
 // Sanity-checking is intended to facilitate the debugging of code
 // transformation passes.
@@ -48,7 +52,7 @@ func mustSanityCheck(fn *Function, reporter io.Writer) {
 	}
 }
 
-func (s *sanity) diagnostic(prefix, format string, args ...interface{}) {
+func (s *sanity) diagnostic(prefix, format string, args ...any) {
 	fmt.Fprintf(s.reporter, "%s: function %s", prefix, s.fn)
 	if s.block != nil {
 		fmt.Fprintf(s.reporter, ", block %s", s.block)
@@ -58,12 +62,12 @@ func (s *sanity) diagnostic(prefix, format string, args ...interface{}) {
 	io.WriteString(s.reporter, "\n")
 }
 
-func (s *sanity) errorf(format string, args ...interface{}) {
+func (s *sanity) errorf(format string, args ...any) {
 	s.insane = true
 	s.diagnostic("Error", format, args...)
 }
 
-func (s *sanity) warnf(format string, args ...interface{}) {
+func (s *sanity) warnf(format string, args ...any) {
 	s.diagnostic("Warning", format, args...)
 }
 
@@ -119,13 +123,7 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 
 	case *Alloc:
 		if !instr.Heap {
-			found := false
-			for _, l := range s.fn.Locals {
-				if l == instr {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(s.fn.Locals, instr)
 			if !found {
 				s.errorf("local alloc %s = %s does not appear in Function.Locals", instr.Name(), instr)
 			}
@@ -142,8 +140,8 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *ChangeType:
 	case *SliceToArrayPointer:
 	case *Convert:
-		if from := instr.X.Type(); !isBasicConvTypes(typeSetOf(from)) {
-			if to := instr.Type(); !isBasicConvTypes(typeSetOf(to)) {
+		if from := instr.X.Type(); !isBasicConvTypes(from) {
+			if to := instr.Type(); !isBasicConvTypes(to) {
 				s.errorf("convert %s -> %s: at least one type must be basic (or all basic, []byte, or []rune)", from, to)
 			}
 		}
@@ -158,12 +156,17 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *Lookup:
 	case *MakeChan:
 	case *MakeClosure:
-		numFree := len(instr.Fn.(*Function).FreeVars)
-		numBind := len(instr.Bindings)
-		if numFree != numBind {
+		fn := instr.Fn.(*Function)
+		if numFree, numBind := len(fn.FreeVars), len(instr.Bindings); numFree != numBind {
 			s.errorf("MakeClosure has %d Bindings for function %s with %d free vars",
 				numBind, instr.Fn, numFree)
-
+		} else {
+			for i, fv := range fn.FreeVars {
+				if !types.Identical(instr.Bindings[i].Type(), fv.Type()) {
+					s.errorf("MakeClosure binding %d for %s has type %s, expected %s",
+						i, fv.Name(), instr.Bindings[i].Type(), fv.Type())
+				}
+			}
 		}
 		if recv := instr.Type().(*types.Signature).Recv(); recv != nil {
 			s.errorf("MakeClosure's type includes receiver %s", recv.Type())
@@ -174,12 +177,42 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *MakeSlice:
 	case *MapUpdate:
 	case *Next:
+		rng, ok := instr.Iter.(*Range)
+		if !ok {
+			s.errorf("Next: Iter is %T, not *Range", instr.Iter)
+		}
+		if rng.Type() != tRangeIter {
+			s.errorf("Next: Iter has type %s, expected %s", rng.Type(), tRangeIter)
+		}
+		var ek, ev types.Type
+		switch xt := typeparams.CoreType(rng.X.Type()).(type) {
+		case *types.Basic:
+			if types.Default(xt) != tString {
+				s.errorf("Next: basic operand of Next.Iter (Range) is %s, want string or untyped string", xt)
+			}
+			ek, ev = tInt, tRune
+		case *types.Map:
+			ek, ev = xt.Key(), xt.Elem()
+		}
+
+		res := instr.Type().(*types.Tuple) // (ok bool, k K, v V), but K or V may be invalid if unused
+		if !types.Identical(res.At(1).Type(), ek) && res.At(1).Type() != tInvalid {
+			s.errorf("Next: key type %s does not match map key type %s", res.At(1).Type(), ek)
+		}
+		if !types.Identical(res.At(2).Type(), ev) && res.At(2).Type() != tInvalid {
+			s.errorf("Next: value type %s does not match map value type %s", res.At(2).Type(), ev)
+		}
+
 	case *Range:
 	case *RunDefers:
 	case *Select:
 	case *Send:
 	case *Slice:
 	case *Store:
+		if !types.Identical(instr.Val.Type(), typeparams.CoreType(instr.Addr.Type()).(*types.Pointer).Elem()) {
+			s.errorf("Store: value type %s does not match address type %s",
+				instr.Val.Type(), instr.Addr.Type())
+		}
 	case *TypeAssert:
 	case *UnOp:
 	case *DebugRef:
@@ -200,8 +233,6 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 		t := v.Type()
 		if t == nil {
 			s.errorf("no type: %s = %s", v.Name(), v)
-		} else if t == tRangeIter || t == tDeferStack {
-			// not a proper type; ignore.
 		} else if b, ok := t.Underlying().(*types.Basic); ok && b.Info()&types.IsUntyped != 0 {
 			s.errorf("instruction has 'untyped' result: %s = %s : %s", v.Name(), v, t)
 		}
@@ -282,13 +313,7 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 	// Check predecessor and successor relations are dual,
 	// and that all blocks in CFG belong to same function.
 	for _, a := range b.Preds {
-		found := false
-		for _, bb := range a.Succs {
-			if bb == b {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(a.Succs, b)
 		if !found {
 			s.errorf("expected successor edge in predecessor %s; found only: %s", a, a.Succs)
 		}
@@ -297,13 +322,7 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 		}
 	}
 	for _, c := range b.Succs {
-		found := false
-		for _, bb := range c.Preds {
-			if bb == b {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(c.Preds, b)
 		if !found {
 			s.errorf("expected predecessor edge in successor %s; found only: %s", c, c.Preds)
 		}
@@ -407,14 +426,87 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
+func (s *sanity) checkFunctionParams() {
+	signature := s.fn.Signature
+	params := s.fn.Params
+
+	// startSigParams is the start of signature.Params() within params.
+	startSigParams := 0
+	if signature.Recv() != nil {
+		startSigParams = 1
+	}
+
+	if startSigParams+signature.Params().Len() != len(params) {
+		s.errorf("function has %d parameters in signature but has %d after building",
+			startSigParams+signature.Params().Len(), len(params))
+		return
+	}
+
+	for i, param := range params {
+		var sigType types.Type
+		si := i - startSigParams
+		if si < 0 {
+			sigType = signature.Recv().Type()
+		} else {
+			sigType = signature.Params().At(si).Type()
+		}
+
+		if !types.Identical(sigType, param.Type()) {
+			s.errorf("expect type %s in signature but got type %s in param %d", sigType, param.Type(), i)
+		}
+	}
+}
+
+// checkTransientFields checks whether all transient fields of Function are cleared.
+func (s *sanity) checkTransientFields() {
+	fn := s.fn
+	if fn.build != nil {
+		s.errorf("function transient field 'build' is not nil")
+	}
+	if fn.currentBlock != nil {
+		s.errorf("function transient field 'currentBlock' is not nil")
+	}
+	if fn.vars != nil {
+		s.errorf("function transient field 'vars' is not nil")
+	}
+	if fn.results != nil {
+		s.errorf("function transient field 'results' is not nil")
+	}
+	if fn.returnVars != nil {
+		s.errorf("function transient field 'returnVars' is not nil")
+	}
+	if fn.targets != nil {
+		s.errorf("function transient field 'targets' is not nil")
+	}
+	if fn.lblocks != nil {
+		s.errorf("function transient field 'lblocks' is not nil")
+	}
+	if fn.subst != nil {
+		s.errorf("function transient field 'subst' is not nil")
+	}
+	if fn.jump != nil {
+		s.errorf("function transient field 'jump' is not nil")
+	}
+	if fn.deferstack != nil {
+		s.errorf("function transient field 'deferstack' is not nil")
+	}
+	if fn.source != nil {
+		s.errorf("function transient field 'source' is not nil")
+	}
+	if fn.exits != nil {
+		s.errorf("function transient field 'exits' is not nil")
+	}
+	if fn.uniq != 0 {
+		s.errorf("function transient field 'uniq' is not zero")
+	}
+}
+
 func (s *sanity) checkFunction(fn *Function) bool {
-	// TODO(adonovan): check Function invariants:
-	// - check params match signature
-	// - check transient fields are nil
-	// - warn if any fn.Locals do not appear among block instructions.
+	s.fn = fn
+	s.checkFunctionParams()
+	s.checkTransientFields()
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
-	s.fn = fn
 	if fn.Prog == nil {
 		s.errorf("nil Prog")
 	}
@@ -435,16 +527,16 @@ func (s *sanity) checkFunction(fn *Function) bool {
 			strings.HasSuffix(fn.name, "Error") ||
 			strings.HasPrefix(fn.Synthetic, "instance ") ||
 			strings.HasPrefix(fn.Synthetic, "instantiation ") ||
-			(fn.parent != nil && len(fn.typeargs) > 0) /* anon fun in instance */ {
+			fn.parent != nil && fn.parent.hasTypeArgs() /* anon fun in instance */ {
 			// ok
 		} else {
 			s.errorf("nil Pkg")
 		}
 	}
 	if src, syn := fn.Synthetic == "", fn.Syntax() != nil; src != syn {
-		if len(fn.typeargs) > 0 && fn.Prog.mode&InstantiateGenerics != 0 {
+		if fn.hasTypeArgs() && fn.Prog.mode&InstantiateGenerics != 0 {
 			// ok (instantiation with InstantiateGenerics on)
-		} else if fn.topLevelOrigin != nil && len(fn.typeargs) > 0 {
+		} else if fn.hasTypeArgs() && fn.topLevelOrigin != nil {
 			// ok (we always have the syntax set for instantiation)
 		} else if _, rng := fn.syntax.(*ast.RangeStmt); rng && fn.Synthetic == "range-over-func yield" {
 			// ok (range-func-yields are both synthetic and keep syntax)
@@ -452,19 +544,26 @@ func (s *sanity) checkFunction(fn *Function) bool {
 			s.errorf("got fromSource=%t, hasSyntax=%t; want same values", src, syn)
 		}
 	}
+
+	// Build the set of valid referrers.
+	s.instrs = make(map[Instruction]unit)
+
+	// instrs are the instructions that are present in the function.
+	for instr := range fn.instrs() {
+		s.instrs[instr] = unit{}
+	}
+
+	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {
+		if _, present := s.instrs[l]; !present {
+			s.warnf("function doesn't contain Local alloc %s", l.Name())
+		}
+
 		if l.Parent() != fn {
 			s.errorf("Local %s at index %d has wrong parent", l.Name(), i)
 		}
 		if l.Heap {
 			s.errorf("Local %s at index %d has Heap flag set", l.Name(), i)
-		}
-	}
-	// Build the set of valid referrers.
-	s.instrs = make(map[Instruction]unit)
-	for _, b := range fn.Blocks {
-		for _, instr := range b.Instrs {
-			s.instrs[instr] = unit{}
 		}
 	}
 	for i, p := range fn.Params {
@@ -527,6 +626,19 @@ func sanityCheckPackage(pkg *Package) {
 	if pkg.Pkg == nil {
 		panic(fmt.Sprintf("Package %s has no Object", pkg))
 	}
+	if pkg.info != nil {
+		panic(fmt.Sprintf("package %s field 'info' is not cleared", pkg))
+	}
+	if pkg.files != nil {
+		panic(fmt.Sprintf("package %s field 'files' is not cleared", pkg))
+	}
+	if pkg.created != nil {
+		panic(fmt.Sprintf("package %s field 'created' is not cleared", pkg))
+	}
+	if pkg.initVersion != nil {
+		panic(fmt.Sprintf("package %s field 'initVersion' is not cleared", pkg))
+	}
+
 	_ = pkg.String() // must not crash
 
 	for name, mem := range pkg.Members {

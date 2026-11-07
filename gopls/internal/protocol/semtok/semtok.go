@@ -5,104 +5,202 @@
 // The semtok package provides an encoder for LSP's semantic tokens.
 package semtok
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 // A Token provides the extent and semantics of a token.
 type Token struct {
-	Line, Start uint32
-	Len         uint32
-	Type        TokenType
-	Modifiers   []string
+	Line, Start uint32 // 0-based UTF-16 index
+	Len         uint32 // in UTF-16 codes
+	Type        Type
+	Modifiers   []Modifier
 }
 
-type TokenType string
+type Type string
 
 const (
-	// These are the tokens defined by LSP 3.17, but a client is
+	// These are the tokens defined by LSP 3.18, but a client is
 	// free to send its own set; any tokens that the server emits
 	// that are not in this set are simply not encoded in the bitfield.
-	TokNamespace TokenType = "namespace"
-	TokType      TokenType = "type"
-	TokInterface TokenType = "interface"
-	TokTypeParam TokenType = "typeParameter"
-	TokParameter TokenType = "parameter"
-	TokVariable  TokenType = "variable"
-	TokMethod    TokenType = "method"
-	TokFunction  TokenType = "function"
-	TokKeyword   TokenType = "keyword"
-	TokComment   TokenType = "comment"
-	TokString    TokenType = "string"
-	TokNumber    TokenType = "number"
-	TokOperator  TokenType = "operator"
-	TokMacro     TokenType = "macro" // for templates
-
-	// not part of LSP 3.17 (even though JS has labels)
-	// https://github.com/microsoft/vscode-languageserver-node/issues/1422
-	TokLabel TokenType = "label"
+	TokComment   Type = "comment"       // for a comment
+	TokFunction  Type = "function"      // for a function
+	TokKeyword   Type = "keyword"       // for a keyword
+	TokLabel     Type = "label"         // for a control label (LSP 3.18)
+	TokMacro     Type = "macro"         // for text/template tokens
+	TokMethod    Type = "method"        // for a method
+	TokNamespace Type = "namespace"     // for an imported package name
+	TokNumber    Type = "number"        // for a numeric literal
+	TokOperator  Type = "operator"      // for an operator
+	TokParameter Type = "parameter"     // for a parameter variable
+	TokProperty  Type = "property"      // for a struct field
+	TokString    Type = "string"        // for a string literal
+	TokType      Type = "type"          // for a type name (plus other uses)
+	TokTypeParam Type = "typeParameter" // for a type parameter
+	TokVariable  Type = "variable"      // for a var or const
+	// The section below defines a subset of token types in standard token types
+	// that gopls does not use.
+	//
+	// If you move types to above, document it in
+	// gopls/doc/features/passive.md#semantic-tokens.
+	//
+	// Sync any changes below with the vscode-go custom token type list.
+	// See: extension/src/language/goSemanticTokens.ts
+	// TokClass      Type = "class"
+	// TokDecorator  Type = "decorator"
+	// TokEnum       Type = "enum"
+	// TokEnumMember Type = "enumMember"
+	// TokEvent      Type = "event"
+	// TokInterface  Type = "interface"
+	// TokModifier   Type = "modifier"
+	// TokRegexp     Type = "regexp"
+	// TokStruct     Type = "struct"
 )
 
+// Types is a slice of types gopls will return as its server capabilities.
+var Types = []Type{
+	TokNamespace,
+	TokType,
+	TokTypeParam,
+	TokParameter,
+	TokProperty,
+	TokVariable,
+	TokFunction,
+	TokMethod,
+	TokMacro,
+	TokKeyword,
+	TokComment,
+	TokString,
+	TokNumber,
+	TokOperator,
+	TokLabel,
+}
+
+type Modifier string
+
+const (
+	// LSP 3.18 standard modifiers
+	// As with Types, clients get only the modifiers they request.
+	//
+	// The section below defines a subset of modifiers in standard modifiers
+	// that gopls understand.
+	ModDefaultLibrary Modifier = "defaultLibrary" // for predeclared symbols
+	ModDefinition     Modifier = "definition"     // for the declaring identifier of a symbol
+	ModReadonly       Modifier = "readonly"       // for constants (TokVariable)
+	ModStatic         Modifier = "static"         // for package-level variables
+	// The section below defines the rest of the modifiers in standard modifiers
+	// that gopls does not use.
+	//
+	// If you move modifiers to above, document it in
+	// gopls/doc/features/passive.md#semantic-tokens.
+	// ModAbstract      Modifier = "abstract"
+	// ModAsync         Modifier = "async"
+	// ModDeclaration   Modifier = "declaration"
+	// ModDeprecated    Modifier = "deprecated"
+	// ModDocumentation Modifier = "documentation"
+	// ModModification  Modifier = "modification"
+
+	// non-standard modifiers
+	//
+	// Since the type of a symbol is orthogonal to its kind,
+	// (e.g. a variable can have function type),
+	// we use modifiers for the top-level type constructor.
+	//
+	// Sync any changes below with the vscode-go custom token modifier list.
+	// See: extension/src/language/goSemanticTokens.ts
+	ModArray     Modifier = "array"
+	ModBool      Modifier = "bool"
+	ModChan      Modifier = "chan"
+	ModFormat    Modifier = "format" // for format string directives such as "%s"
+	ModInterface Modifier = "interface"
+	ModMap       Modifier = "map"
+	ModNumber    Modifier = "number"
+	ModPointer   Modifier = "pointer"
+	ModSignature Modifier = "signature" // for function types
+	ModSlice     Modifier = "slice"
+	ModString    Modifier = "string"
+	ModStruct    Modifier = "struct"
+	ModShadowing Modifier = "shadowing" // shadowing definition
+)
+
+// Modifiers is a slice of modifiers gopls will return as its server capabilities.
+var Modifiers = []Modifier{
+	// LSP 3.18 standard modifiers.
+	ModDefinition,
+	ModReadonly,
+	ModDefaultLibrary,
+	ModStatic,
+	// Additional custom modifiers.
+	ModArray,
+	ModBool,
+	ModChan,
+	ModFormat,
+	ModInterface,
+	ModMap,
+	ModNumber,
+	ModPointer,
+	ModSignature,
+	ModSlice,
+	ModString,
+	ModStruct,
+	ModShadowing,
+}
+
 // Encode returns the LSP encoding of a sequence of tokens.
-// The noStrings, noNumbers options cause strings, numbers to be skipped.
-// The lists of types and modifiers determines the bitfield encoding.
+// encodeType and encodeModifier maps control which types and modifiers are
+// included in the response. A type or modifier must exist in the map and map
+// to true to be included in the output.
 func Encode(
 	tokens []Token,
-	noStrings, noNumbers bool,
-	types, modifiers []string) []uint32 {
+	encodeType map[Type]bool,
+	encodeModifier map[Modifier]bool) []uint32 {
 
-	// binary operators, at least, will be out of order
-	sort.Slice(tokens, func(i, j int) bool {
-		if tokens[i].Line != tokens[j].Line {
-			return tokens[i].Line < tokens[j].Line
+	// Binary operators, at least, will be out of order.
+	slices.SortFunc(tokens, func(x, y Token) int {
+		if d := cmp.Compare(x.Line, y.Line); d != 0 {
+			return d
 		}
-		return tokens[i].Start < tokens[j].Start
+		return cmp.Compare(x.Start, y.Start)
 	})
 
-	typeMap := make(map[TokenType]int)
-	for i, t := range types {
-		typeMap[TokenType(t)] = i
+	typeMap := make(map[Type]uint32)
+	for i, t := range Types {
+		if enable, ok := encodeType[t]; ok && enable {
+			typeMap[Type(t)] = uint32(i)
+		}
 	}
 
-	modMap := make(map[string]int)
-	for i, m := range modifiers {
-		modMap[m] = 1 << uint(i) // go 1.12 compatibility
+	modMap := make(map[Modifier]uint32)
+	for i, m := range Modifiers {
+		if enable, ok := encodeModifier[m]; ok && enable {
+			modMap[Modifier(m)] = 1 << i
+		}
 	}
 
-	// each semantic token needs five values
-	// (see Integer Encoding for Tokens in the LSP spec)
-	x := make([]uint32, 5*len(tokens))
-	var j int
-	var last Token
-	for i := 0; i < len(tokens); i++ {
-		item := tokens[i]
-		typ, ok := typeMap[item.Type]
+	// Each semantic token needs five values but some tokens might be skipped.
+	// See "Integer Encoding for Tokens":
+	// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens
+	code := make([]uint32, 0, 5*len(tokens))
+	var prev Token // Line=Start=0
+	for _, token := range tokens {
+		tokenType, ok := typeMap[token.Type]
 		if !ok {
-			continue // client doesn't want typeStr
+			continue // client explicitly disabled this type
 		}
-		if item.Type == TokString && noStrings {
-			continue
+		var (
+			deltaLine      = token.Line - prev.Line
+			deltaStart     = token.Start - prev.Start // same line: delta encoding of start
+			tokenModifiers uint32
+		)
+		if deltaLine > 0 {
+			deltaStart = token.Start // new line: absolute encoding of start
 		}
-		if item.Type == TokNumber && noNumbers {
-			continue
+		for _, s := range token.Modifiers {
+			tokenModifiers |= modMap[s] // zero if client explicitly disabled this modifier
 		}
-		if j == 0 {
-			x[0] = tokens[0].Line
-		} else {
-			x[j] = item.Line - last.Line
-		}
-		x[j+1] = item.Start
-		if j > 0 && x[j] == 0 {
-			x[j+1] = item.Start - last.Start
-		}
-		x[j+2] = item.Len
-		x[j+3] = uint32(typ)
-		mask := 0
-		for _, s := range item.Modifiers {
-			// modMap[s] is 0 if the client doesn't want this modifier
-			mask |= modMap[s]
-		}
-		x[j+4] = uint32(mask)
-		j += 5
-		last = item
+		code = append(code, deltaLine, deltaStart, token.Len, tokenType, tokenModifiers)
+		prev = token
 	}
-	return x[:j]
+	return code
 }

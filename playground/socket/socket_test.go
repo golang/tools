@@ -52,7 +52,7 @@ func TestLimiter(t *testing.T) {
 	ch := make(chan *Message)
 	go func() {
 		var m Message
-		for i := 0; i < msgLimit+10; i++ {
+		for range msgLimit + 10 {
 			ch <- &m
 		}
 		ch <- &Message{Kind: "end"}

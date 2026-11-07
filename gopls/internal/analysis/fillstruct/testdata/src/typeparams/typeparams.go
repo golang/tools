@@ -42,7 +42,7 @@ func Test() {
 	var tests = []struct {
 		a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p string
 	}{
-		{}, // want "anonymous struct{ a: string, b: string, c: string, ... } literal has missing fields"
+		{}, // want "anonymous struct{ a: string; b: string; ... } literal has missing fields"
 	}
 	for _, test := range tests {
 		_ = test

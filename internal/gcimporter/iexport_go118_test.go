@@ -96,18 +96,15 @@ func testExportSrc(t *testing.T, src []byte) {
 	testPkgData(t, fset, version, pkg, data)
 }
 
-func TestImportTypeparamTests(t *testing.T) {
+func TestIndexedImportTypeparamTests(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	testenv.NeedsGOROOTDir(t, "test")
 
 	// Check go files in test/typeparam.
 	rootDir := filepath.Join(runtime.GOROOT(), "test", "typeparam")
 	list, err := os.ReadDir(rootDir)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if isUnifiedBuilder() {
-		t.Skip("unified export data format is currently unsupported")
 	}
 
 	for _, entry := range list {
@@ -248,7 +245,7 @@ func (t *testImporter) Import(path string) (*types.Package, error) {
 	}
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		return nil, err
 	}

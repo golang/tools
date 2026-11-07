@@ -36,7 +36,7 @@ func RuneRoles(candidate []byte, reuse []RuneRole) []RuneRole {
 	}
 
 	prev, prev2 := rtNone, rtNone
-	for i := 0; i < len(candidate); i++ {
+	for i := range candidate {
 		r := rune(candidate[i])
 
 		role := RNone
@@ -122,7 +122,7 @@ func LastSegment(input string, roles []RuneRole) string {
 func fromChunks(chunks []string, buffer []byte) []byte {
 	ii := 0
 	for _, chunk := range chunks {
-		for i := 0; i < len(chunk); i++ {
+		for i := range len(chunk) {
 			if ii >= cap(buffer) {
 				break
 			}
@@ -143,7 +143,7 @@ func toLower(input []byte, reuse []byte) []byte {
 		output = make([]byte, len(input))
 	}
 
-	for i := 0; i < len(input); i++ {
+	for i := range input {
 		r := rune(input[i])
 		if input[i] <= unicode.MaxASCII {
 			if 'A' <= r && r <= 'Z' {

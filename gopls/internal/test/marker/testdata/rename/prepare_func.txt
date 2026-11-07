@@ -1,0 +1,44 @@
+This test verifies the behavior of textDocument/prepareRename on function declarations.
+
+-- settings.json --
+{
+	"deepCompletion": false
+}
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.18
+
+-- main.go --
+package main
+
+func _(i int) //@ preparerename("unc", "func(i int)", span="func")
+
+func _(i int) //@ preparerename("func", "func(i int)")
+
+func _(a, b int) //@ preparerename("func", "func(a, b int)")
+
+func _(a, _ int) //@ preparerename("func", "func(a, _0 int)")
+
+func _(a, _, _ int) //@ preparerename("func", "func(a, _0, _1 int)")
+
+func _(a, _, _, d int, _ string) //@ preparerename("func", "func(a, _0, _1, d int, _2 string)")
+
+func _(a int, b string) //@ preparerename("func", "func(a int, b string)")
+
+func _(a int, b ...string) //@ preparerename("func", "func(a int, b ...string)")
+
+func _(a int, b string) error //@ preparerename("func", "func(a int, b string) error")
+
+func _(a int, b string) (int, error) //@ preparerename("func", "func(a int, b string) (int, error)")
+
+func _( //@ preparerename("func", "func(a int, b string)")
+  a int,
+	b string,
+)
+
+func _( //@ preparerename("func", "func(a int, b string) (int, error)")
+  a int,
+	b string,
+) (int, error)

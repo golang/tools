@@ -28,9 +28,9 @@ The supported commands are:
 	reverse <node> ...
 		the set of nodes that transitively reach the specified nodes
 	somepath <node> <node>
-		the list of nodes on some arbitrary path from the first node to the second
+		the list of edges on some arbitrary path from the first node to the second
 	allpaths <node> <node>
-		the set of nodes on all paths from the first node to the second
+		the set of edges on all paths from the first node to the second
 	sccs
 		all strongly connected components (one per line)
 	scc <node>

@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
+	"go/parser"
+	"go/token"
 	"log"
 	"os"
 	"path"
@@ -20,8 +22,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/stdlib"
 )
 
@@ -1596,14 +1598,15 @@ func TestFindStdlib(t *testing.T) {
 		{"ioutil", []string{"Discard"}, "io/ioutil"},
 	}
 	for _, tt := range tests {
-		input := "package p\n"
+		var input strings.Builder
+		input.WriteString("package p\n")
 		for _, sym := range tt.symbols {
-			input += fmt.Sprintf("var _ = %s.%s\n", tt.pkg, sym)
+			fmt.Fprintf(&input, "var _ = %s.%s\n", tt.pkg, sym)
 		}
 		testConfig{
 			module: packagestest.Module{
 				Name:  "foo.com",
-				Files: fm{"x.go": input},
+				Files: fm{"x.go": input.String()},
 			},
 		}.test(t, func(t *goimportTest) {
 			buf, err := t.process("foo.com", "x.go", nil, nil)
@@ -1611,7 +1614,7 @@ func TestFindStdlib(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := string(buf); !strings.Contains(got, tt.want) {
-				t.Errorf("Process(%q) = %q, wanted it to contain %q", input, buf, tt.want)
+				t.Errorf("Process(%q) = %q, wanted it to contain %q", input.String(), buf, tt.want)
 			}
 		})
 	}
@@ -1652,9 +1655,9 @@ var _ = bytes.Buffer
 }
 
 func TestStdlibSelfImports(t *testing.T) {
-	const input = `package ecdsa
+	const input = `package rc4
 
-var _ = ecdsa.GenerateKey
+var _ = rc4.NewCipher
 `
 
 	testConfig{
@@ -1663,7 +1666,7 @@ var _ = ecdsa.GenerateKey
 			Files: fm{"x.go": "package x"},
 		},
 	}.test(t, func(t *goimportTest) {
-		got, err := t.processNonModule(filepath.Join(t.goroot, "src/crypto/ecdsa/foo.go"), []byte(input), nil)
+		got, err := t.processNonModule(filepath.Join(t.goroot, "src/crypto/rc4/foo.go"), []byte(input), nil)
 		if err != nil {
 			t.Fatalf("Process() = %v", err)
 		}
@@ -1673,6 +1676,174 @@ var _ = ecdsa.GenerateKey
 	})
 }
 
+// A file with a //go:embed directive must import "embed"; goimports adds a
+// blank import when the embedded variable's type does not reference the
+// package. See golang/go#50414.
+func TestEmbedDirective(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string // if empty, the input is expected to be unchanged
+	}{
+		{
+			name: "blank import added when unreferenced",
+			input: `package p
+
+//go:embed data.txt
+var s string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			// The directive may be separated from its patterns by a tab.
+			name:  "tab-separated directive",
+			input: "package p\n\n//go:embed\tdata.txt\nvar s string\n",
+			want:  "package p\n\nimport _ \"embed\"\n\n//go:embed\tdata.txt\nvar s string\n",
+		},
+		{
+			// A comment that merely mentions the directive text, or one
+			// without the required trailing whitespace, is not a directive.
+			name: "non-directive comment is ignored",
+			input: `package p
+
+// we don't need //go:embed here
+var s string
+`,
+		},
+		{
+			// An embed.FS variable references the package, so it is imported
+			// through the normal mechanism; no duplicate blank import is added.
+			name: "embed.FS imported normally",
+			input: `package p
+
+//go:embed data.txt
+var f embed.FS
+`,
+			want: `package p
+
+import "embed"
+
+//go:embed data.txt
+var f embed.FS
+`,
+		},
+		{
+			// An existing import of "embed" under any name already satisfies
+			// the compiler.
+			name: "existing named import unchanged",
+			input: `package p
+
+import embed2 "embed"
+
+//go:embed data.txt
+var f embed2.FS
+`,
+		},
+		{
+			name: "existing blank import unchanged",
+			input: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			// A plain unused import would otherwise be deleted, leaving the
+			// directive without its import; it is made blank instead.
+			name: "unused import converted to blank",
+			input: `package p
+
+import "embed"
+
+//go:embed data.txt
+var s string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+`,
+		},
+		{
+			name: "multiple directives add a single import",
+			input: `package p
+
+//go:embed data.txt
+var s string
+
+//go:embed other.txt
+var u string
+`,
+			want: `package p
+
+import _ "embed"
+
+//go:embed data.txt
+var s string
+
+//go:embed other.txt
+var u string
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.want
+			if want == "" {
+				want = tt.input
+			}
+			testConfig{
+				module: packagestest.Module{
+					Name:  "golang.org/fake",
+					Files: fm{"x.go": tt.input, "data.txt": "hello", "other.txt": "world"},
+				},
+			}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
+		})
+	}
+}
+
+// TestEnsureEmbedImport checks that when a file already imports "embed" but the
+// import is unused (and would be deleted), ensureEmbedImport replaces the
+// delete with a single fix that makes the import blank, rather than deleting
+// and re-adding it.
+func TestEnsureEmbedImport(t *testing.T) {
+	const src = `package p
+
+import "embed"
+
+//go:embed data.txt
+var s string
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "x.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fix goimports computes on its own for the unused import.
+	deleteEmbed := &ImportFix{
+		StmtInfo:  ImportInfo{ImportPath: "embed"},
+		IdentName: "embed",
+		FixType:   DeleteImport,
+	}
+	got := ensureEmbedImport(f, []*ImportFix{deleteEmbed})
+	if len(got) != 1 {
+		t.Fatalf("ensureEmbedImport returned %d fixes, want 1: %+v", len(got), got)
+	}
+	if fix := got[0]; fix.FixType != SetImportName || fix.StmtInfo.ImportPath != "embed" || fix.StmtInfo.Name != "_" {
+		t.Errorf("got fix %+v; want a SetImportName of \"embed\" to \"_\"", fix)
+	}
+}
+
 type testConfig struct {
 	gopathOnly bool
 	module     packagestest.Module
@@ -1680,7 +1851,7 @@ type testConfig struct {
 }
 
 // fm is the type for a packagestest.Module's Files, abbreviated for shorter lines.
-type fm map[string]interface{}
+type fm map[string]any
 
 func (c testConfig) test(t *testing.T, fn func(*goimportTest)) {
 	t.Helper()
@@ -1934,6 +2105,39 @@ var _ = []interface{}{bar.X, v1.Y, a.A, v2.V2, other.V3, thing.Thing, gow.Wrong}
 				"go-thing/b.go": "package thing \n const Thing = 1",
 				"go-wrong/b.go": "package gow \n const Wrong = 1",
 				"test/t.go":     input,
+			},
+		},
+	}.processTest(t, "foo.com", "test/t.go", nil, nil, want)
+}
+
+// Tests that an existing import with mismatched path/name that happens to match
+// a standard library package name (such as "rpc") is not overshadowed by adding
+// the stdlib import. See #46574.
+func TestExistingImportShadowsStdlib(t *testing.T) {
+	const input = `package main
+
+import (
+	"foo.com/go-libp2p-gorpc"
+)
+
+var _ = rpc.NewServer
+`
+
+	const want = `package main
+
+import (
+	rpc "foo.com/go-libp2p-gorpc"
+)
+
+var _ = rpc.NewServer
+`
+
+	testConfig{
+		module: packagestest.Module{
+			Name: "foo.com",
+			Files: fm{
+				"go-libp2p-gorpc/x.go": "package rpc\nfunc NewServer() {}",
+				"test/t.go":            input,
 			},
 		},
 	}.processTest(t, "foo.com", "test/t.go", nil, nil, want)
@@ -2513,7 +2717,7 @@ func TestPkgIsCandidate(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			refs := references{tt.pkgIdent: nil}
+			refs := References{tt.pkgIdent: nil}
 			got := pkgIsCandidate(tt.filename, refs, tt.pkg)
 			if got != tt.want {
 				t.Errorf("test %d. pkgIsCandidate(%q, %q, %+v) = %v; want %v",
@@ -2912,7 +3116,7 @@ func _() {
 			wg sync.WaitGroup
 		)
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for range n {
 			go func() {
 				defer wg.Done()
 				_, err := t.process("foo.com", "p/first.go", nil, nil)
@@ -2983,7 +3187,7 @@ func TestSymbolSearchStarvation(t *testing.T) {
 	}
 
 	var candidates []pkgDistance
-	for i := 0; i < candCount; i++ {
+	for i := range candCount {
 		name := fmt.Sprintf("bar%d", i)
 		candidates = append(candidates, pkgDistance{
 			pkg: &pkg{
@@ -3075,7 +3279,7 @@ func BenchmarkMatchesPath(b *testing.B) {
 
 	for name, tests := range tests {
 		b.Run(name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				for _, test := range tests {
 					if got := matchesPath(test.ident, test.path); got != test.want {
 						b.Errorf("matchesPath(%q, %q) = %v, want %v", test.ident, test.path, got, test.want)

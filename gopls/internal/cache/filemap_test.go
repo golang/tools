@@ -83,9 +83,9 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotFiles []string
-			m.foreach(func(uri protocol.DocumentURI, _ file.Handle) {
+			for uri := range m.all() {
 				gotFiles = append(gotFiles, normalize(uri.Path()))
-			})
+			}
 			sort.Strings(gotFiles)
 			if diff := cmp.Diff(test.wantFiles, gotFiles); diff != "" {
 				t.Errorf("Files mismatch (-want +got):\n%s", diff)
@@ -100,9 +100,9 @@ func TestFileMap(t *testing.T) {
 			}
 
 			var gotDirs []string
-			m.getDirs().Range(func(dir string) {
+			for dir := range m.getDirs().All() {
 				gotDirs = append(gotDirs, normalize(dir))
-			})
+			}
 			sort.Strings(gotDirs)
 			if diff := cmp.Diff(test.wantDirs, gotDirs); diff != "" {
 				t.Errorf("Dirs mismatch (-want +got):\n%s", diff)

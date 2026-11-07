@@ -20,17 +20,17 @@ func _() {
 	{
 		type myChan chan int
 		var mc myChan
-		mc <- a //@complete(" //", channelAB, channelAA)
+		mc <- a //@complete(re"() \\/\\/", channelAB, channelAA)
 	}
 
 	{
 		var ac chan int //@item(channelAC, "ac", "chan int", "var")
-		a <- a //@complete(" <-", channelAC, channelAA, channelAB)
+		a <- a //@complete(re"() <-", channelAC, channelAA, channelAB)
 	}
 
 	{
 		var foo chan int //@item(channelFoo, "foo", "chan int", "var")
 		wantsInt := func(int) {} //@item(channelWantsInt, "wantsInt", "func(int)", "var")
-		wantsInt(<-) //@rank(")", channelFoo, channelAB)
+		wantsInt(<-) //@rank(re"()\\)", channelFoo, channelAB)
 	}
 }

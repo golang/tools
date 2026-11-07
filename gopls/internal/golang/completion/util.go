@@ -8,12 +8,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -48,8 +48,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 				return
 			}
 
-			for i := 0; i < T.NumFields(); i++ {
-				f := T.Field(i)
+			for f := range T.Fields() {
 				fn(f)
 				if f.Anonymous() {
 					seen.Set(T, true)
@@ -65,7 +64,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 func typeIsValid(typ types.Type) bool {
 	// Check named types separately, because we don't want
 	// to call Underlying() on them to avoid problems with recursive types.
-	if _, ok := aliases.Unalias(typ).(*types.Named); ok {
+	if _, ok := types.Unalias(typ).(*types.Named); ok {
 		return true
 	}
 
@@ -85,8 +84,8 @@ func typeIsValid(typ types.Type) bool {
 	case *types.Signature:
 		return typeIsValid(typ.Params()) && typeIsValid(typ.Results())
 	case *types.Tuple:
-		for i := 0; i < typ.Len(); i++ {
-			if !typeIsValid(typ.At(i).Type()) {
+		for v := range typ.Variables() {
+			if !typeIsValid(v.Type()) {
 				return false
 			}
 		}
@@ -127,7 +126,9 @@ func resolveInvalid(fset *token.FileSet, obj types.Object, node ast.Node, info *
 	// Construct a fake type for the object and return a fake object with this type.
 	typename := golang.FormatNode(fset, resultExpr)
 	typ := types.NewNamed(types.NewTypeName(token.NoPos, obj.Pkg(), typename, nil), types.Typ[types.Invalid], nil)
-	return types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
+	v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
+	v.SetKind(types.PackageVar)
+	return v
 }
 
 // TODO(adonovan): inline these.
@@ -138,9 +139,7 @@ func isPkgName(obj types.Object) bool  { return is[*types.PkgName](obj) }
 
 // isPointer reports whether T is a Pointer, or an alias of one.
 // It returns false for a Named type whose Underlying is a Pointer.
-//
-// TODO(adonovan): shouldn't this use CoreType(T)?
-func isPointer(T types.Type) bool { return is[*types.Pointer](aliases.Unalias(T)) }
+func isPointer(T types.Type) bool { return is[*types.Pointer](types.Unalias(T)) }
 
 // isEmptyInterface whether T is a (possibly Named or Alias) empty interface
 // type, such that every type is assignable to T.
@@ -156,7 +155,7 @@ func isEmptyInterface(T types.Type) bool {
 }
 
 func isUntyped(T types.Type) bool {
-	if basic, ok := aliases.Unalias(T).(*types.Basic); ok {
+	if basic, ok := types.Unalias(T).(*types.Basic); ok {
 		return basic.Info()&types.IsUntyped > 0
 	}
 	return false
@@ -169,7 +168,7 @@ func deslice(T types.Type) types.Type {
 	return nil
 }
 
-// isSelector returns the enclosing *ast.SelectorExpr when pos is in the
+// enclosingSelector returns the enclosing *ast.SelectorExpr when pos is in the
 // selector.
 func enclosingSelector(path []ast.Node, pos token.Pos) *ast.SelectorExpr {
 	if len(path) == 0 {
@@ -240,8 +239,7 @@ func typeConversion(call *ast.CallExpr, info *types.Info) types.Type {
 
 // fieldsAccessible returns whether s has at least one field accessible by p.
 func fieldsAccessible(s *types.Struct, p *types.Package) bool {
-	for i := 0; i < s.NumFields(); i++ {
-		f := s.Field(i)
+	for f := range s.Fields() {
 		if f.Exported() || f.Pkg() == p {
 			return true
 		}
@@ -269,35 +267,13 @@ func prevStmt(pos token.Pos, path []ast.Node) ast.Stmt {
 		}
 	}
 
-	for i := len(blockLines) - 1; i >= 0; i-- {
-		if blockLines[i].End() < pos {
-			return blockLines[i]
+	for _, stmt := range slices.Backward(blockLines) {
+		if stmt.End() < pos {
+			return stmt
 		}
 	}
 
 	return nil
-}
-
-// formatZeroValue produces Go code representing the zero value of T. It
-// returns the empty string if T is invalid.
-func formatZeroValue(T types.Type, qf types.Qualifier) string {
-	switch u := T.Underlying().(type) {
-	case *types.Basic:
-		switch {
-		case u.Info()&types.IsNumeric > 0:
-			return "0"
-		case u.Info()&types.IsString > 0:
-			return `""`
-		case u.Info()&types.IsBoolean > 0:
-			return "false"
-		default:
-			return ""
-		}
-	case *types.Pointer, *types.Interface, *types.Chan, *types.Map, *types.Slice, *types.Signature:
-		return "nil"
-	default:
-		return types.TypeString(T, qf) + "{}"
-	}
 }
 
 // isBasicKind returns whether t is a basic type of kind k.
@@ -307,7 +283,7 @@ func isBasicKind(t types.Type, k types.BasicInfo) bool {
 }
 
 func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.TextEdit, error) {
-	start, end, err := safetoken.Offsets(c.tokFile, from, to)
+	start, end, err := safetoken.Offsets(c.pgf.Tok, from, to)
 	if err != nil {
 		return nil, err // can't happen: from/to came from c
 	}
@@ -321,8 +297,8 @@ func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.Tex
 // assignableTo is like types.AssignableTo, but returns false if
 // either type is invalid.
 func assignableTo(x, to types.Type) bool {
-	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
-		aliases.Unalias(to) == types.Typ[types.Invalid] {
+	if types.Unalias(x) == types.Typ[types.Invalid] ||
+		types.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 
@@ -332,8 +308,8 @@ func assignableTo(x, to types.Type) bool {
 // convertibleTo is like types.ConvertibleTo, but returns false if
 // either type is invalid.
 func convertibleTo(x, to types.Type) bool {
-	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
-		aliases.Unalias(to) == types.Typ[types.Invalid] {
+	if types.Unalias(x) == types.Typ[types.Invalid] ||
+		types.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 

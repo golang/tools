@@ -22,20 +22,21 @@ import (
 // As such it indicates that other definitions could be worth checking.
 var ErrNoEmbed = errors.New("no embed directive found")
 
-var errStopWalk = errors.New("stop walk")
-
 // embedDefinition finds a file matching the embed directive at pos in the mapped file.
-// If there is no embed directive at pos, returns ErrNoEmbed.
+// If there is no embed directive at pos, returns [ErrNoEmbed].
 // If multiple files match the embed pattern, one is picked at random.
-func embedDefinition(m *protocol.Mapper, pos protocol.Position) ([]protocol.Location, error) {
-	pattern, _ := parseEmbedDirective(m, pos)
+func embedDefinition(m *protocol.Mapper, rng protocol.Range) ([]protocol.Location, error) {
+	pattern, _ := parseEmbedDirective(m, rng)
 	if pattern == "" {
 		return nil, ErrNoEmbed
 	}
+	pattern = filepath.FromSlash(pattern) // Match requires OS separators
+
+	errFound := errors.New("found")
 
 	// Find the first matching file.
 	var match string
-	dir := filepath.Dir(m.URI.Path())
+	dir := m.URI.DirPath()
 	err := filepath.WalkDir(dir, func(abs string, d fs.DirEntry, e error) error {
 		if e != nil {
 			return e
@@ -50,34 +51,33 @@ func embedDefinition(m *protocol.Mapper, pos protocol.Position) ([]protocol.Loca
 		}
 		if ok && !d.IsDir() {
 			match = abs
-			return errStopWalk
+			return errFound
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errStopWalk) {
-		return nil, err
+	if err != nil && !errors.Is(err, errFound) {
+		return nil, err // bad pattern or I/O error
 	}
 	if match == "" {
 		return nil, fmt.Errorf("%q does not match any files in %q", pattern, dir)
 	}
-
-	loc := protocol.Location{
-		URI: protocol.URIFromPath(match),
-		Range: protocol.Range{
-			Start: protocol.Position{Line: 0, Character: 0},
-		},
-	}
-	return []protocol.Location{loc}, nil
+	return []protocol.Location{{URI: protocol.URIFromPath(match)}}, nil
 }
 
-// parseEmbedDirective attempts to parse a go:embed directive argument at pos.
-// If successful it return the directive argument and its range, else zero values are returned.
-func parseEmbedDirective(m *protocol.Mapper, pos protocol.Position) (string, protocol.Range) {
-	lineStart, err := m.PositionOffset(protocol.Position{Line: pos.Line, Character: 0})
+// parseEmbedDirective attempts to parse a go:embed directive argument that
+// contains the given range.
+// If successful it returns the directive argument (a UNIX-style glob
+// pattern) and its range, else zero values are returned.
+func parseEmbedDirective(m *protocol.Mapper, rng protocol.Range) (string, protocol.Range) {
+	if rng.Start.Line != rng.End.Line {
+		return "", protocol.Range{}
+	}
+
+	lineStart, err := m.PositionOffset(protocol.Position{Line: rng.Start.Line, Character: 0})
 	if err != nil {
 		return "", protocol.Range{}
 	}
-	lineEnd, err := m.PositionOffset(protocol.Position{Line: pos.Line + 1, Character: 0})
+	lineEnd, err := m.PositionOffset(protocol.Position{Line: rng.Start.Line + 1, Character: 0})
 	if err != nil {
 		return "", protocol.Range{}
 	}
@@ -90,16 +90,18 @@ func parseEmbedDirective(m *protocol.Mapper, pos protocol.Position) (string, pro
 	offset := lineStart + len("//go:embed")
 
 	// Find the first pattern in text that covers the offset of the pos we are looking for.
-	findOffset, err := m.PositionOffset(pos)
+	startOffset, endOffset, err := m.RangeOffsets(rng)
 	if err != nil {
 		return "", protocol.Range{}
 	}
+
 	patterns, err := parseGoEmbed(text, offset)
 	if err != nil {
 		return "", protocol.Range{}
 	}
+
 	for _, p := range patterns {
-		if p.startOffset <= findOffset && findOffset <= p.endOffset {
+		if p.startOffset <= startOffset && endOffset <= p.endOffset {
 			// Found our match.
 			rng, err := m.OffsetRange(p.startOffset, p.endOffset)
 			if err != nil {

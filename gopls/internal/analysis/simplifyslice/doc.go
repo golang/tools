@@ -19,4 +19,6 @@
 //	s[a:]
 //
 // This is one of the simplifications that "gofmt -s" applies.
+//
+// This analyzer ignores generated code.
 package simplifyslice

@@ -17,30 +17,35 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"sort"
 	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/asm"
+	"golang.org/x/tools/internal/cursorutil"
+
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+
 	"golang.org/x/tools/internal/event"
 )
 
 // References returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
-	references, err := references(ctx, snapshot, fh, pp, includeDeclaration)
+func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, includeDeclaration bool) ([]protocol.Location, error) {
+	references, err := references(ctx, snapshot, fh, rng, includeDeclaration)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +67,12 @@ type reference struct {
 // references returns a list of all references (sorted with
 // definitions before uses) to the object denoted by the identifier at
 // the given file/position, searching the entire workspace.
-func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, includeDeclaration bool) ([]reference, error) {
+func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, rng protocol.Range, includeDeclaration bool) ([]reference, error) {
 	ctx, done := event.Start(ctx, "golang.references")
 	defer done()
 
 	// Is the cursor within the package name declaration?
-	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, pp)
+	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +81,7 @@ func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp
 	if inPackageName {
 		refs, err = packageReferences(ctx, snapshot, f.URI())
 	} else {
-		refs, err = ordinaryReferences(ctx, snapshot, f.URI(), pp)
+		refs, err = ordinaryReferences(ctx, snapshot, f.URI(), rng)
 	}
 	if err != nil {
 		return nil, err
@@ -110,7 +115,7 @@ func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp
 // import declarations of all packages that directly import the target
 // package.
 func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]reference, error) {
-	metas, err := snapshot.MetadataForFile(ctx, uri)
+	metas, err := snapshot.MetadataForFile(ctx, uri, false)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +217,7 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 }
 
 // ordinaryReferences computes references for all ordinary objects (not package declarations).
-func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pp protocol.Position) ([]reference, error) {
+func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, rng protocol.Range) ([]reference, error) {
 	// Strategy: use the reference information computed by the
 	// type checker to find the declaration. First type-check this
 	// package to find the declaration, then type check the
@@ -231,25 +236,20 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 
 	// Find the selected object (declaration or reference).
 	// For struct{T}, we choose the field (Def) over the type (Use).
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
-	candidates, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
-	if err != nil {
-		return nil, err
-	}
+	cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 
+	candidates, err := objectsAt(pkg.TypesInfo(), cur)
+	if err != nil {
+		return nil, err
+	}
 	// Pick first object arbitrarily.
 	// The case variables of a type switch have different
 	// types but that difference is immaterial here.
-	var obj types.Object
-	for obj = range candidates {
-		break
-	}
-	if obj == nil {
-		return nil, ErrNoIdentFound // can't happen
-	}
+	obj := candidates[0].obj
 
 	// nil, error, error.Error, iota, or other built-in?
 	if isBuiltin(obj) {
@@ -260,7 +260,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	// This may include the query pkg, and possibly other variants.
 	declPosn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
 	declURI := protocol.URIFromPath(declPosn.Filename)
-	variants, err := snapshot.MetadataForFile(ctx, declURI)
+	variants, err := snapshot.MetadataForFile(ctx, declURI, false)
 	if err != nil {
 		return nil, err
 	}
@@ -416,21 +416,23 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			if err != nil {
 				return err
 			}
-			objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+			cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
+
+			objects, err := objectsAt(pkg.TypesInfo(), cur)
 			if err != nil {
 				return err // unreachable? (probably caught earlier)
 			}
 
 			// Report the locations of the declaration(s).
 			// TODO(adonovan): what about for corresponding methods? Add tests.
-			for _, node := range objects {
-				report(mustLocation(pgf, node), true)
+			for _, o := range objects {
+				report(mustLocation(pgf, o.cur.Node()), true)
 			}
 
-			// Convert targets map to set.
+			// Convert objects list to targets set.
 			targets := make(map[types.Object]bool)
-			for obj := range objects {
-				targets[obj] = true
+			for _, o := range objects {
+				targets[o.obj] = true
 			}
 
 			return localReferences(pkg, targets, true, report)
@@ -441,7 +443,6 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	// corresponding methods (see above), which expand the global search.
 	// The target objects are identified by (PkgPath, objectpath).
 	for id := range expansions {
-		id := id
 		group.Go(func() error {
 			// TODO(adonovan): opt: batch these TypeChecks.
 			pkgs, err := snapshot.TypeCheck(ctx, id)
@@ -508,7 +509,10 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 	// Compute the method-set fingerprint used as a key to the global search.
 	key, hasMethods := methodsets.KeyOf(recv)
 	if !hasMethods {
-		return bug.Errorf("KeyOf(%s)={} yet %s is a method", recv, method)
+		// The query object was method T.m, but methodset(T)={}:
+		// this indicates that ill-typed T has conflicting fields and methods.
+		// Rather than bug-report (#67978), treat the empty method set at face value.
+		return nil
 	}
 	// Search the methodset index of each package in the workspace.
 	indexes, err := snapshot.MethodSets(ctx, workspaceIDs...)
@@ -518,11 +522,10 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 	var mu sync.Mutex // guards addRdeps, targets, expansions
 	var group errgroup.Group
 	for i, index := range indexes {
-		i := i
-		index := index
 		group.Go(func() error {
-			// Consult index for matching methods.
-			results := index.Search(key, method.Name())
+			// Consult index for matching (super/sub) methods.
+			const want = methodsets.Supertype | methodsets.Subtype
+			results := index.Search(key, want, method)
 			if len(results) == 0 {
 				return nil
 			}
@@ -577,8 +580,10 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		}
 	}
 
+	var msets typeutil.MethodSetCache
+
 	// matches reports whether obj either is or corresponds to a target.
-	// (Correspondence is defined as usual for interface methods.)
+	// (Correspondence is defined as usual for interface methods: super/subtype.)
 	matches := func(obj types.Object) bool {
 		if containsOrigin(targets, obj) {
 			return true
@@ -586,7 +591,8 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		if methodRecvs != nil && obj.Name() == methodName {
 			if orecv := effectiveReceiver(obj); orecv != nil {
 				for _, mrecv := range methodRecvs {
-					if concreteImplementsIntf(orecv, mrecv) {
+					if implements(&msets, orecv, mrecv) ||
+						implements(&msets, mrecv, orecv) {
 						return true
 					}
 				}
@@ -595,16 +601,53 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		return false
 	}
 
+	// Collect target names for fast pre-filtering:
+	// skip identifiers whose name can't match any target.
+	targetNames := make(map[string]struct{}, len(targets))
+	for obj := range targets {
+		targetNames[obj.Name()] = struct{}{}
+	}
+
 	// Scan through syntax looking for uses of one of the target objects.
 	for _, pgf := range pkg.CompiledGoFiles() {
-		ast.Inspect(pgf.File, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok {
-				if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
-					report(mustLocation(pgf, id), false)
-				}
+		for curId := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {
+			id := curId.Node().(*ast.Ident)
+			if _, ok := targetNames[id.Name]; !ok {
+				continue
 			}
-			return true
-		})
+			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
+				report(mustLocation(pgf, id), false)
+			}
+		}
+	}
+
+	// Scan assembly files for references to the target objects.
+	for _, af := range pkg.AsmFiles() {
+		for _, id := range af.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
+				continue
+			}
+			pkgpath, name, ok := strings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			if pkgpath != "" && pkgpath != pkg.Types().Path() {
+				continue
+			}
+			obj := pkg.Types().Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			if !matches(obj) {
+				continue
+			}
+			if rng, err := af.IdentRange(id); err == nil {
+				report(protocol.Location{
+					URI:   af.Mapper.URI,
+					Range: rng,
+				}, false)
+			}
+		}
 	}
 	return nil
 }
@@ -613,70 +656,150 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 // comparisons for obj, if it is a method, or nil otherwise.
 func effectiveReceiver(obj types.Object) types.Type {
 	if fn, ok := obj.(*types.Func); ok {
-		if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+		if recv := fn.Signature().Recv(); recv != nil {
 			return methodsets.EnsurePointer(recv.Type())
 		}
 	}
 	return nil
 }
 
-// objectsAt returns the non-empty set of objects denoted (def or use)
-// by the specified position within a file syntax tree, or an error if
-// none were found.
+type objectAt struct {
+	obj types.Object     // symbol
+	cur inspector.Cursor // associated syntax (Ident | ImportSpec)
+}
+
+// objectsAt returns the non-empty list of objects referenced (defined
+// or used) at or near the position specified by cur. It returns an
+// error if none were found.
+//
+// The implementation may look "nearby", for example at x when given
+// a cursor to an expression "*x", i.e. the cursor was at the star.
 //
 // The result may contain more than one element because all case
 // variables of a type switch appear to be declared at the same
-// position.
+// identifier.
 //
-// Each object is mapped to the syntax node that was treated as an
-// identifier, which is not always an ast.Ident. The second component
-// of the result is the innermost node enclosing pos.
+// Each object is paired with a cursor for the syntax node that was
+// treated as an identifier, which is not always an ast.Ident.
+func objectsAt(info *types.Info, cur inspector.Cursor) ([]objectAt, error) {
+
+	// Within an ImportSpec, return the PkgName
+	// and its .Name (if explicit) or the spec if not.
+	if cur.ParentEdgeKind() == edge.ImportSpec_Path {
+		cur = cur.Parent() // ImportSpec
+		spec := cur.Node().(*ast.ImportSpec)
+		pkgname := info.PkgNameOf(spec)
+		if pkgname == nil {
+			return nil, fmt.Errorf("%w for import %s", errNoObjectFound, metadata.UnquoteImportPath(spec))
+		}
+		if spec.Name != nil { // explicit?
+			cur = cur.ChildAt(edge.ImportSpec_Name, -1) // Ident
+		}
+		return []objectAt{{pkgname, cur}}, nil
+	}
+
+	// If the selection is the * of *T or *ptr,
+	// nudge it to the T or ptr operand in the hope
+	// that it is an Ident. This makes (e.g.) Hover and
+	// Definition more flexible w.r.t selections:
+	if is[*ast.StarExpr](cur.Node()) {
+		cur, _ = cur.FirstChild() // can't fail
+	}
+
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return nil, ErrNoIdentFound
+	}
+
+	// If id is a reference to a special var v in
+	//  switch v := expr.(type) { case T: use(v); ... }
+	// then return all the implicit case vars.
+	objects, _ := typeSwitchVars(info, cur)
+	if len(objects) > 0 {
+		return objects, nil
+	}
+
+	// All other identifiers.
+	// For struct{T}, we prefer the defined field Var over the used TypeName.
+	obj := info.ObjectOf(id)
+	if obj == nil {
+		return nil, fmt.Errorf("%w for %q", errNoObjectFound, id.Name)
+	}
+	return []objectAt{{obj, cur}}, nil
+}
+
+// typeSwitchVars returns information about type switch local variables.
 //
-// TODO(adonovan): factor in common with referencedObject.
-func objectsAt(info *types.Info, file *ast.File, pos token.Pos) (map[types.Object]ast.Node, ast.Node, error) {
-	path := pathEnclosingObjNode(file, pos)
-	if path == nil {
-		return nil, nil, ErrNoIdentFound
+// Given the cursor for an identifier that refers to a variable v
+// declared by a type switch of this form:
+//
+//	switch v := expr.(type) {
+//	case T: use(v)
+//	...
+//	}
+//
+// it returns:
+//
+//   - the (possibly empty) list of variables implicitly declared for
+//     each case type; and
+//
+//   - the identifier's effective type, which is either the case type
+//     (for an occurrence in a case), or the type of 'expr' for the
+//     occurrence in "switch v".
+//
+// The identifier may be v in "switch v", or a use of it in one of the
+// cases. typeSwitchVars returns zero for all other identifiers.
+func typeSwitchVars(info *types.Info, curIdent inspector.Cursor) ([]objectAt, types.Type) {
+	sw, curSwitch := cursorutil.FirstEnclosing[*ast.TypeSwitchStmt](curIdent)
+	if sw == nil {
+		return nil, nil
+	}
+	assign, ok := sw.Assign.(*ast.AssignStmt)
+	if !(ok &&
+		len(assign.Lhs) == 1 &&
+		is[*ast.Ident](assign.Lhs[0]) &&
+		len(assign.Rhs) == 1 &&
+		is[*ast.TypeAssertExpr](assign.Rhs[0])) {
+		return nil, nil
+	}
+	// Have: switch v := expr.(type)
+
+	id := curIdent.Node().(*ast.Ident)
+
+	match := false
+
+	// Is selected ident "switch v" var?
+	// Since it has no object, use the type of 'expr'.
+	var t types.Type
+	if id == assign.Lhs[0] {
+		match = true
+		t = info.TypeOf(assign.Rhs[0].(*ast.TypeAssertExpr).X) // may be nil
 	}
 
-	targets := make(map[types.Object]ast.Node)
-
-	switch leaf := path[0].(type) {
-	case *ast.Ident:
-		// If leaf represents an implicit type switch object or the type
-		// switch "assign" variable, expand to all of the type switch's
-		// implicit objects.
-		if implicits, _ := typeSwitchImplicits(info, path); len(implicits) > 0 {
-			for _, obj := range implicits {
-				targets[obj] = leaf
+	// Gather the switch's implicit variables.
+	var objects []objectAt
+	for curCase := range curSwitch.ChildAt(edge.TypeSwitchStmt_Body, -1).Children() {
+		clause := curCase.Node().(*ast.CaseClause)
+		v, ok := info.Implicits[clause]
+		if ok {
+			if v == info.Uses[id] {
+				// Selected ident is one of the case vars.
+				t = v.Type()
+				match = true
 			}
-		} else {
-			// Note: prior to go1.21, go/types issue #60372 causes the position
-			// a field Var T created for struct{*p.T} to be recorded at the
-			// start of the field type ("*") not the location of the T.
-			// This affects references and other gopls operations (issue #60369).
-			// TODO(adonovan): delete this comment when we drop support for go1.20.
-
-			// For struct{T}, we prefer the defined field Var over the used TypeName.
-			obj := info.ObjectOf(leaf)
-			if obj == nil {
-				return nil, nil, fmt.Errorf("%w for %q", errNoObjectFound, leaf.Name)
-			}
-			targets[obj] = leaf
+			objects = append(objects, objectAt{v, curIdent})
 		}
-	case *ast.ImportSpec:
-		// Look up the implicit *types.PkgName.
-		obj := info.Implicits[leaf]
-		if obj == nil {
-			return nil, nil, fmt.Errorf("%w for import %s", errNoObjectFound, metadata.UnquoteImportPath(leaf))
-		}
-		targets[obj] = leaf
 	}
 
-	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("objectAt: internal error: no targets") // can't happen
+	if !match {
+		// Type switch is unrelated to ident.
+		return nil, nil
 	}
-	return targets, path[0], nil
+
+	// Note: match does not imply t != nil,
+	// as type information may be incomplete.
+
+	return objects, t
 }
 
 // mustLocation reports the location interval a syntax node,

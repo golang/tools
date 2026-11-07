@@ -1,0 +1,61 @@
+This test checks for the correct suppression (or activation) of the
+non-constant format string check (golang/go#60529), in a go1.23 module.
+
+See golang/go#71485 for details.
+
+-- go.mod --
+module example.com/nonconst
+
+go 1.23
+
+-- nonconst.go --
+package nonconst
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+func _(s string) {
+	fmt.Printf(s)
+	fmt.Printf(s, "arg")
+	fmt.Fprintf(os.Stderr, s)
+	log.Printf(s)
+}
+
+-- nonconst_go124.go --
+//go:build go1.24
+package nonconst
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+// With Go 1.24, the analyzer should be activated, as this is a go1.24 file.
+func _(s string) {
+	fmt.Printf(s) // want `non-constant format string in call to fmt.Printf`
+	fmt.Printf(s, "arg")
+	fmt.Fprintf(os.Stderr, s) // want `non-constant format string in call to fmt.Fprintf`
+	log.Printf(s)             // want `non-constant format string in call to log.Printf`
+}
+
+-- nonconst_go124.go.golden --
+//go:build go1.24
+package nonconst
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+// With Go 1.24, the analyzer should be activated, as this is a go1.24 file.
+func _(s string) {
+	fmt.Printf("%s", s) // want `non-constant format string in call to fmt.Printf`
+	fmt.Printf(s, "arg")
+	fmt.Fprintf(os.Stderr, "%s", s) // want `non-constant format string in call to fmt.Fprintf`
+	log.Printf("%s", s)             // want `non-constant format string in call to log.Printf`
+}

@@ -1,0 +1,26 @@
+This test verifies that textDocument/foldingRange does not panic
+and produces no folding ranges if a file contains errors.
+
+-- flags --
+-ignore_extra_diags
+
+-- a.go --
+package folding //@foldingrange(raw)
+
+// No comma.
+func _(
+	a string
+) {}
+
+// Extra brace.
+func _() {}}
+-- @raw --
+package folding //@foldingrange(raw)
+
+// No comma.
+func _(
+	a string
+) {}
+
+// Extra brace.
+func _() {}}

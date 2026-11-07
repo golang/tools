@@ -1,4 +1,6 @@
-# Gopls: Passive features
+---
+title: "Gopls: Passive features"
+---
 
 This page documents the fundamental LSP features of gopls that may be
 described as "passive", since many editors use them to continuously
@@ -13,15 +15,15 @@ considered passive features.
 ## Hover
 
 The LSP [`textDocument/hover`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover)
-query returns description of the code currently under the cursor, such
+query returns a	description of the code currently under the cursor, such
 as its name, kind, type, value (for a constant), abbreviated
-declaration (for a type), its doc comment, if any, and a link to the
+declaration (for a type), doc comment (if any), and a link to the
 symbol's documentation on `pkg.go.dev`. The client may request either
 plain text or Markdown.
 
 <img src='../assets/hover-basic.png'>
 
-Depending on the selection, it may include additional information.
+Depending on the selection, the response may include additional information.
 For example, hovering over a type shows its declared methods,
 plus any methods promoted from embedded fields.
 
@@ -45,8 +47,11 @@ This information may be useful when optimizing the layout of your data
 structures, or when reading assembly files or stack traces that refer
 to each field by its cryptic byte offset.
 
-In addition, Hover reports the percentage of wasted space due to
-suboptimal ordering of struct fields, if this figure is 20% or higher:
+In addition, Hover reports:
+- the struct's size class, which is the number of bytes actually
+  allocated by the Go runtime for a single object of this type; and
+- the percentage of wasted space due to suboptimal ordering of struct
+  fields, if this figure is 20% or higher:
 
 <img title="a struct with wasted space" src="../assets/hover-size-wasteful.png">
 
@@ -70,6 +75,14 @@ expands.
 Hovering over the directive shows information about the other symbol.
 
 <img src='../assets/hover-linkname.png'>
+
+**Type switch cases**: hovering over the `case` or `default` keyword
+in a type switch reveals any types handled by that case that are
+declared in the same package as the switch operand's interface type.
+Hovering over the `default` case may thus reveal unhandled types
+in a switch intended to be exhaustive.
+Information is displayed for a non-interface type case
+only if it is unreachable due to preceding clauses.
 
 The hover information for symbols from the standard library added
 after Go 1.0 states the Go release that added the symbol.
@@ -107,6 +120,10 @@ function call.
 
 <img src='../assets/signature-help.png'>
 
+Call parens are not necessary if the cursor is within an identifier
+that denotes a function or method. For example, Signature Help at
+`once.Do(initialize‸)` will describe `initialize`, not `once.Do`.
+
 Client support:
 - **VS Code**: enabled by default.
   Also known as "[parameter hints](https://code.visualstudio.com/api/references/vscode-api#SignatureHelpProvider)" in the [IntelliSense settings](https://code.visualstudio.com/docs/editor/intellisense#_settings).
@@ -132,8 +149,11 @@ select any one member, gopls will highlight the complete set:
 - the `switch` and `break` tokens of the same switch statement;
 - the `func` keyword of a function and all of its `return` statements.
 
-More than one of these rules may be activated by the same selection,
-for example, an identifier that is also a return operand.
+More than one of these rules may be activated by a single selection,
+for example, by an identifier that is also a return operand.
+
+Different occurrences of the same identifier may be color-coded to distinguish
+"read" from "write" references to a given variable symbol.
 
 <img src='../assets/document-highlight.png'>
 
@@ -155,7 +175,7 @@ that reveal implicit information.
 
 Examples:
 
-- In a function call `f(1, 2)`, gopls will provide hints for the
+- In a function call `f(1, 2)`, hints provide the
   names of the parameters (`parameterNames`), as in the screenshot above.
 - In a call to a generic function, hints provide the type arguments
   (`functionTypeParameters`).
@@ -172,10 +192,12 @@ Examples:
 
 See [Inlay hints](../inlayHints.md) for a complete list with examples.
 
+<!--
 TODO: Do we really need that separate doc? We could put all the
      information here with much less fuss. It changes so rarely that a
      culture of "update the tests and docs in every CL" should be sufficient.
      IIUC, VS Code needs only the api-json representation.
+-->
 
 Settings:
 - The [`hints`](../settings.md#hints) setting indicates the desired set of hints.
@@ -202,7 +224,50 @@ a portion of it.
 The client may use this information to provide syntax highlighting
 that conveys semantic distinctions between, for example, functions and
 types, constants and variables, or library functions and built-ins.
-The client specifies the sets of types and modifiers they are interested in.
+
+The client must specify the sets of types and modifiers it is interested in.
+
+Gopls reports the following token types:
+
+- `"comment"`: a comment
+- `"function"`: a function
+- `"keyword"`: a keyword
+- `"label"`: a control label (not an LSP standard type)
+- `"macro"`: text/template tokens
+- `"method"`: a method
+- `"namespace"`: an imported package name
+- `"number"`: a numeric literal
+- `"operator"`: an operator
+- `"parameter"`: a parameter variable
+- `"string"`:  a string literal
+- `"type"`: a type name (plus other uses)
+- `"typeParameter"`: a type parameter
+- `"variable"`: a var or const (see `readonly` modifier)
+
+Gopls also reports the following standard modifiers:
+
+- `"defaultLibrary"`: predeclared symbols
+- `"definition"`: the declaring identifier of a symbol
+- `"readonly"`: for constants
+
+plus these non-standard modifiers each representing the top-level
+constructor of each symbols's type:
+
+- `"array"`
+- `"bool"`
+- `"chan"`
+- `"interface"`
+- `"map"`
+- `"number"`
+- `"pointer"`
+- `"signature"`
+- `"slice"`
+- `"string"`
+- `"struct"`
+
+Each identifier that refers to a symbol that shadows an existing symbol
+from an outer scope is marked with a non-standard `"shadowing"` modifier.
+This modifier allows editors to provide visual hints for shadowing declarations.
 
 Settings:
 - The [`semanticTokens`](../settings.md#semanticTokens) setting determines whether
@@ -210,20 +275,17 @@ Settings:
   semantic tokens even when their client provides no client-side control over the
   feature. Because gopls' semantic-tokens algorithm depends on type checking,
   which adds a tangible latency, this feature is currently disabled by default
-  to avoid any delay in syntax highlighting; see golang/go#45313, golang/go#47465.
+  to avoid any delay in syntax highlighting; see https://go.dev/issue/#45313, https://go.dev/issue/#47465.
 - The experimental [`noSemanticString`](../settings.md#noSemanticString) and
   [`noSemanticNumber`](../settings.md#noSemanticNumber) settings cause the server
   to exclude the `string` and `number` kinds from the response, as some clients
-  may do a more colorful job highlighting these tokens; see golang/go#45753.
+  may do a more colorful job highlighting these tokens; see https://go.dev/issue/45753.
 
 Client Support:
 - **VS Code**: See [Semantic Highlighting Guide](https://code.visualstudio.com/api/language-extensions/semantic-highlight-guide).
 - **Emacs + eglot**: Not supported; see joaotavora/eglot#615.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls semtok file.go`
-
-For internal details of gopls' implementation of semantic tokens,
-see [semantic tokens](../semantictokens.md).
 
 ## Folding Range
 
@@ -249,7 +311,7 @@ Client support:
 
 The LSP [`textDocument/documentLink`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentLink)
 query uses heuristics to extracts URLs from doc comments and string
-literals in the current file so that client can present them as
+literals in the current file so that the client can present them as
 clickable links.
 
 <img src='../assets/documentlink.png'>

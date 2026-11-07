@@ -22,7 +22,7 @@ func Baz(a A) {
 // func Baz(a A):
 //   t0 = (A).foo(a)
 //   t1 = Bar()
-//   t2 = Baz(struct{}{}:A)
+//   t2 = Baz(A{}:A)
 
 // WANT:
-// Baz: (A).foo(a) -> A.foo; Bar() -> Bar; Baz(struct{}{}:A) -> Baz
+// Baz: (A).foo(a) -> A.foo; Bar() -> Bar; Baz(A{}:A) -> Baz

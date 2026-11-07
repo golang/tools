@@ -8,10 +8,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
@@ -23,17 +25,9 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
-	var found bool
-	for _, uri := range snapshot.View().ModFiles() {
-		if fh.URI() == uri {
-			found = true
-			break
-		}
-	}
-
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.Hover, error) {
 	// We only provide hover information for the view's go.mod files.
-	if !found {
+	if !slices.Contains(snapshot.View().ModFiles(), fh.URI()) {
 		return nil, nil
 	}
 
@@ -45,22 +39,22 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	if err != nil {
 		return nil, fmt.Errorf("getting modfile handle: %w", err)
 	}
-	offset, err := pm.Mapper.PositionOffset(position)
+	startOffset, endOffset, err := pm.Mapper.RangeOffsets(rng)
 	if err != nil {
 		return nil, fmt.Errorf("computing cursor position: %w", err)
 	}
 
 	// If the cursor position is on a module statement
-	if hover, ok := hoverOnModuleStatement(ctx, pm, offset, snapshot, fh); ok {
+	if hover, ok := hoverOnModuleStatement(ctx, pm, startOffset, endOffset, snapshot, fh); ok {
 		return hover, nil
 	}
-	return hoverOnRequireStatement(ctx, pm, offset, snapshot, fh)
+	return hoverOnRequireStatement(ctx, pm, startOffset, endOffset, snapshot, fh)
 }
 
-func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
+func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, startOffset, endOffset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, error) {
 	// Confirm that the cursor is at the position of a require statement.
 	var req *modfile.Require
-	var startOffset, endOffset int
+	var depStartOffset, depEndOffset int
 	for _, r := range pm.File.Require {
 		dep := []byte(r.Mod.Path)
 		s, e := r.Syntax.Start.Byte, r.Syntax.End.Byte
@@ -70,8 +64,8 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 		}
 		// Shift the start position to the location of the
 		// dependency within the require statement.
-		startOffset, endOffset = s+i, e
-		if startOffset <= offset && offset <= endOffset {
+		depStartOffset, depEndOffset = s+i, e
+		if depStartOffset <= startOffset && endOffset <= depEndOffset {
 			req = r
 			break
 		}
@@ -116,7 +110,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 	options := snapshot.Options()
 	isPrivate := snapshot.IsGoPrivatePath(req.Mod.Path)
 	header := formatHeader(req.Mod.Path, options)
-	explanation = formatExplanation(explanation, req, options, isPrivate)
+	explanation = formatExplanation(explanation, pm.ReplaceMap, req, options, isPrivate)
 	vulns := formatVulnerabilities(affecting, nonaffecting, osvs, options, fromGovulncheck)
 
 	return &protocol.Hover{
@@ -128,12 +122,12 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 	}, nil
 }
 
-func hoverOnModuleStatement(ctx context.Context, pm *cache.ParsedModule, offset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
+func hoverOnModuleStatement(ctx context.Context, pm *cache.ParsedModule, startOffset, endOffset int, snapshot *cache.Snapshot, fh file.Handle) (*protocol.Hover, bool) {
 	module := pm.File.Module
 	if module == nil {
 		return nil, false // no module stmt
 	}
-	if offset < module.Syntax.Start.Byte || offset > module.Syntax.End.Byte {
+	if endOffset < module.Syntax.Start.Byte || startOffset > module.Syntax.End.Byte {
 		return nil, false // cursor not in module stmt
 	}
 
@@ -327,7 +321,7 @@ func vulnerablePkgsInfo(findings []*govulncheck.Finding, useMarkdown bool) strin
 	return b.String()
 }
 
-func formatExplanation(text string, req *modfile.Require, options *settings.Options, isPrivate bool) string {
+func formatExplanation(text string, replaceMap map[module.Version]module.Version, req *modfile.Require, options *settings.Options, isPrivate bool) string {
 	text = strings.TrimSuffix(text, "\n")
 	splt := strings.Split(text, "\n")
 	length := len(splt)
@@ -348,7 +342,17 @@ func formatExplanation(text string, req *modfile.Require, options *settings.Opti
 	if !isPrivate && options.PreferredContentFormat == protocol.Markdown {
 		target := imp
 		if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
-			target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
+			mod := req.Mod
+			// respect the replacement when constructing a module link.
+			if m, ok := replaceMap[req.Mod]; ok {
+				// Have: 'replace A v1.2.3 => A vx.x.x' or 'replace A v1.2.3 => B vx.x.x'.
+				mod = m
+			} else if m, ok := replaceMap[module.Version{Path: req.Mod.Path}]; ok &&
+				!modfile.IsDirectoryPath(m.Path) { // exclude local replacement.
+				// Have: 'replace A => A vx.x.x' or 'replace A => B vx.x.x'.
+				mod = m
+			}
+			target = strings.Replace(target, req.Mod.Path, mod.String(), 1)
 		}
 		reference = fmt.Sprintf("[%s](%s)", imp, cache.BuildLink(options.LinkTarget, target, ""))
 	}
@@ -370,10 +374,10 @@ func formatExplanation(text string, req *modfile.Require, options *settings.Opti
 	// rsc.io/sampler
 	// golang.org/x/text/language
 	b.WriteString(":\n```text")
-	dash := ""
+	var dash strings.Builder
 	for _, imp := range splt[1 : length-1] {
-		dash += "-"
-		b.WriteString("\n" + dash + " " + imp)
+		dash.WriteString("-")
+		b.WriteString("\n" + dash.String() + " " + imp)
 	}
 	b.WriteString("\n```")
 	return b.String()

@@ -20,7 +20,7 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.symbol")
+	ctx, done := event.Start(ctx, "server.Symbol")
 	defer done()
 
 	views := s.session.Views()
@@ -37,5 +37,5 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 		defer release()
 		snapshots = append(snapshots, snapshot)
 	}
-	return golang.WorkspaceSymbols(ctx, matcher, style, snapshots, params.Query)
+	return golang.WorkspaceSymbols(ctx, snapshots, params.Query, golang.WorkspaceSymbolsOptions{Matcher: matcher, Style: style})
 }

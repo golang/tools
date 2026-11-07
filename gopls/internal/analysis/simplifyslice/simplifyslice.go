@@ -10,11 +10,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/printer"
+	"go/token"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 )
 
 //go:embed doc.go
@@ -22,7 +23,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "simplifyslice",
-	Doc:      analysisinternal.MustExtractDoc(doc, "simplifyslice"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "simplifyslice"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice",
@@ -36,12 +37,24 @@ var Analyzer = &analysis.Analyzer{
 // An example where it does not:
 //       x, y := b[:n], b[n:]
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
+	// Gather information whether file is generated or not
+	generated := make(map[*token.File]bool)
+	for _, file := range pass.Files {
+		if ast.IsGenerated(file) {
+			generated[pass.Fset.File(file.FileStart)] = true
+		}
+	}
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.SliceExpr)(nil),
 	}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		if _, ok := generated[pass.Fset.File(n.Pos())]; ok {
+			return // skip checking if it's generated code
+		}
+
 		expr := n.(*ast.SliceExpr)
 		// - 3-index slices always require the 2nd and 3rd index
 		if expr.Max != nil {
@@ -69,7 +82,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 		var b bytes.Buffer
-		printer.Fprint(&b, pass.Fset, expr.High)
+		printer.Fprint(&b, pass.Fset, expr.High) // ignore error
 		pass.Report(analysis.Diagnostic{
 			Pos:     expr.High.Pos(),
 			End:     expr.High.End(),

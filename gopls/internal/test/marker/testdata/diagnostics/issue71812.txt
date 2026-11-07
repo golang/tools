@@ -1,0 +1,17 @@
+This input causes the unreachable analyzer to report a diagnostic
+about the var decl statement. Since the computed End pos of
+ast.StructType is beyond EOF, validation of SuggestedFixes fails.
+This used to trigger an assertion in gopls' analysis driver.
+
+See golang/go#71659 (and also #71812).
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+func _() { return; var x struct{

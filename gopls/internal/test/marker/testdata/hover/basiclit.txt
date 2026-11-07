@@ -13,6 +13,7 @@ func _() {
 	_ = 0x61 //@hover("0x61", "0x61", latinAHex)
 
 	_ = '\u2211' //@hover("'\\u2211'", "'\\u2211'", summation)
+	_ = '\u2211' //@hover(re"u22()11", "'\\u2211'", summation)
 	_ = 0x2211 //@hover("0x2211", "0x2211", summationHex)
 	_ = "foo \u2211 bar" //@hover("\\u2211", "\\u2211", summation)
 
@@ -28,12 +29,23 @@ func _() {
 	_ = "foo \x7E bar" //@hover("\\x7E", "\\x7E", tilde)
 	_ = "foo \a bar" //@hover("\\a", "\\a", control)
 
+	_ = '\xc6' //@hover("'\\xc6'", "'\\xc6'", latinAE)
+	_ = '\306' //@hover("'\\306'", "'\\306'", latinAE)
+
+	_ = '\x00' //@hover("'\\x00'", "'\\x00'", nullChar)
+	_ = '\000' //@hover("'\\000'", "'\\000'", nullChar)
+	_ = '\u0000' //@hover("'\\u0000'", "'\\u0000'", nullChar)
+	_ = "foo \x00 bar" //@hover("\\x00", "\\x00", nullChar)
+
 	_ = '\173' //@hover("'\\173'", "'\\173'", leftCurly)
 	_ = "foo \173 bar" //@hover("\\173","\\173", leftCurly)
 	_ = "foo \173 bar \u2211 baz" //@hover("\\173","\\173", leftCurly)
 	_ = "foo \173 bar \u2211 baz" //@hover("\\u2211","\\u2211", summation)
 	_ = "foo\173bar\u2211baz" //@hover("\\173","\\173", leftCurly)
 	_ = "foo\173bar\u2211baz" //@hover("\\u2211","\\u2211", summation)
+
+	// incorrect position
+	_ = "foo\173bar\u2211baz" //@hover("az",_,_)
 
 	// search for runes in string only if there is an escaped sequence
 	_ = "hello" //@hover(`"hello"`, _, _)
@@ -58,7 +70,7 @@ func _() {
 	_ = 0x1234567890 //@hover("0x1234567890", "0x1234567890", hexNumber)
 	_ = 0X1234567890 //@hover("0X1234567890", "0X1234567890", hexNumber)
 	_ = 0x1000000000000000000 //@hover("0x1", "0x1000000000000000000", bigHex)
-)
+}
 -- @bigHex --
 4722366482869645213696
 -- @binaryNumber --
@@ -69,10 +81,14 @@ U+0007, control
 78187493520
 -- @latinA --
 'a', U+0061, LATIN SMALL LETTER A
+-- @latinAE --
+'Æ', U+00C6, LATIN CAPITAL LETTER AE
 -- @latinAHex --
 97, 'a', U+0061, LATIN SMALL LETTER A
 -- @leftCurly --
 '{', U+007B, LEFT CURLY BRACKET
+-- @nullChar --
+U+0000, control
 -- @octalNumber --
 63
 -- @summation --

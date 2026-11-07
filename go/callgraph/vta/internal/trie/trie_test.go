@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build go1.13
-// +build go1.13
 
 package trie
 
@@ -35,8 +34,8 @@ func TestScope(t *testing.T) {
 }
 
 func TestCollision(t *testing.T) {
-	var x interface{} = 1
-	var y interface{} = 2
+	var x any = 1
+	var y any = 2
 
 	if v := TakeLhs(x, y); v != x {
 		t.Errorf("TakeLhs(%s, %s) got %s. want %s", x, y, v, x)
@@ -58,7 +57,7 @@ func TestDefault(t *testing.T) {
 	if v, ok := def.Lookup(123); !(v == nil && !ok) {
 		t.Errorf("Scope{}.Lookup() = (%s, %v) not (nil, false)", v, ok)
 	}
-	if !def.Range(func(k uint64, v interface{}) bool {
+	if !def.Range(func(k uint64, v any) bool {
 		t.Errorf("Scope{}.Range() called it callback on %d:%s", k, v)
 		return true
 	}) {
@@ -115,7 +114,7 @@ func TestEmpty(t *testing.T) {
 	if l := e.n.find(123); l != nil {
 		t.Errorf("empty.find(123) got %v. want nil", l)
 	}
-	e.Range(func(k uint64, v interface{}) bool {
+	e.Range(func(k uint64, v any) bool {
 		t.Errorf("empty.Range() called it callback on %d:%s", k, v)
 		return true
 	})
@@ -130,23 +129,23 @@ func TestCreate(t *testing.T) {
 	// The node orders are printed in lexicographic little-endian.
 	b := NewBuilder()
 	for _, c := range []struct {
-		m    map[uint64]interface{}
+		m    map[uint64]any
 		want string
 	}{
 		{
-			map[uint64]interface{}{},
+			map[uint64]any{},
 			"{}",
 		},
 		{
-			map[uint64]interface{}{1: "a"},
+			map[uint64]any{1: "a"},
 			"{1: a}",
 		},
 		{
-			map[uint64]interface{}{2: "b", 1: "a"},
+			map[uint64]any{2: "b", 1: "a"},
 			"{1: a, 2: b}",
 		},
 		{
-			map[uint64]interface{}{1: "x", 4: "y", 5: "z"},
+			map[uint64]any{1: "x", 4: "y", 5: "z"},
 			"{1: x, 4: y, 5: z}",
 		},
 	} {
@@ -159,7 +158,7 @@ func TestCreate(t *testing.T) {
 
 func TestElems(t *testing.T) {
 	b := NewBuilder()
-	for _, orig := range []map[uint64]interface{}{
+	for _, orig := range []map[uint64]any{
 		{},
 		{1: "a"},
 		{1: "a", 2: "b"},
@@ -175,10 +174,10 @@ func TestElems(t *testing.T) {
 
 func TestRange(t *testing.T) {
 	b := NewBuilder()
-	m := b.Create(map[uint64]interface{}{1: "x", 3: "y", 5: "z", 6: "stop", 8: "a"})
+	m := b.Create(map[uint64]any{1: "x", 3: "y", 5: "z", 6: "stop", 8: "a"})
 
 	calls := 0
-	cb := func(k uint64, v interface{}) bool {
+	cb := func(k uint64, v any) bool {
 		t.Logf("visiting (%d, %v)", k, v)
 		calls++
 		return k%2 != 0 // stop after the first even number.
@@ -196,7 +195,7 @@ func TestRange(t *testing.T) {
 }
 
 func TestDeepEqual(t *testing.T) {
-	for _, m := range []map[uint64]interface{}{
+	for _, m := range []map[uint64]any{
 		{},
 		{1: "x"},
 		{1: "x", 2: "y"},
@@ -211,32 +210,32 @@ func TestDeepEqual(t *testing.T) {
 
 func TestNotDeepEqual(t *testing.T) {
 	for _, c := range []struct {
-		left  map[uint64]interface{}
-		right map[uint64]interface{}
+		left  map[uint64]any
+		right map[uint64]any
 	}{
 		{
-			map[uint64]interface{}{1: "x"},
-			map[uint64]interface{}{},
+			map[uint64]any{1: "x"},
+			map[uint64]any{},
 		},
 		{
-			map[uint64]interface{}{},
-			map[uint64]interface{}{1: "y"},
+			map[uint64]any{},
+			map[uint64]any{1: "y"},
 		},
 		{
-			map[uint64]interface{}{1: "x"},
-			map[uint64]interface{}{1: "y"},
+			map[uint64]any{1: "x"},
+			map[uint64]any{1: "y"},
 		},
 		{
-			map[uint64]interface{}{1: "x"},
-			map[uint64]interface{}{1: "x", 2: "Y"},
+			map[uint64]any{1: "x"},
+			map[uint64]any{1: "x", 2: "Y"},
 		},
 		{
-			map[uint64]interface{}{1: "x", 2: "Y"},
-			map[uint64]interface{}{1: "x"},
+			map[uint64]any{1: "x", 2: "Y"},
+			map[uint64]any{1: "x"},
 		},
 		{
-			map[uint64]interface{}{1: "x", 2: "y"},
-			map[uint64]interface{}{1: "x", 2: "Y"},
+			map[uint64]any{1: "x", 2: "y"},
+			map[uint64]any{1: "x", 2: "Y"},
 		},
 	} {
 		l := NewBuilder().Create(c.left)
@@ -250,97 +249,97 @@ func TestNotDeepEqual(t *testing.T) {
 func TestMerge(t *testing.T) {
 	b := NewBuilder()
 	for _, c := range []struct {
-		left  map[uint64]interface{}
-		right map[uint64]interface{}
+		left  map[uint64]any
+		right map[uint64]any
 		want  string
 	}{
 		{
-			map[uint64]interface{}{},
-			map[uint64]interface{}{},
+			map[uint64]any{},
+			map[uint64]any{},
 			"{}",
 		},
 		{
-			map[uint64]interface{}{},
-			map[uint64]interface{}{1: "a"},
+			map[uint64]any{},
+			map[uint64]any{1: "a"},
 			"{1: a}",
 		},
 		{
-			map[uint64]interface{}{1: "a"},
-			map[uint64]interface{}{},
+			map[uint64]any{1: "a"},
+			map[uint64]any{},
 			"{1: a}",
 		},
 		{
-			map[uint64]interface{}{1: "a", 2: "b"},
-			map[uint64]interface{}{},
+			map[uint64]any{1: "a", 2: "b"},
+			map[uint64]any{},
 			"{1: a, 2: b}",
 		},
 		{
-			map[uint64]interface{}{1: "x"},
-			map[uint64]interface{}{1: "y"},
+			map[uint64]any{1: "x"},
+			map[uint64]any{1: "y"},
 			"{1: x}", // default collision is left
 		},
 		{
-			map[uint64]interface{}{1: "x"},
-			map[uint64]interface{}{2: "y"},
+			map[uint64]any{1: "x"},
+			map[uint64]any{2: "y"},
 			"{1: x, 2: y}",
 		},
 		{
-			map[uint64]interface{}{4: "y", 5: "z"},
-			map[uint64]interface{}{1: "x"},
+			map[uint64]any{4: "y", 5: "z"},
+			map[uint64]any{1: "x"},
 			"{1: x, 4: y, 5: z}",
 		},
 		{
-			map[uint64]interface{}{1: "x", 5: "z"},
-			map[uint64]interface{}{4: "y"},
+			map[uint64]any{1: "x", 5: "z"},
+			map[uint64]any{4: "y"},
 			"{1: x, 4: y, 5: z}",
 		},
 		{
-			map[uint64]interface{}{1: "x", 4: "y"},
-			map[uint64]interface{}{5: "z"},
+			map[uint64]any{1: "x", 4: "y"},
+			map[uint64]any{5: "z"},
 			"{1: x, 4: y, 5: z}",
 		},
 		{
-			map[uint64]interface{}{1: "a", 4: "c"},
-			map[uint64]interface{}{2: "b", 5: "d"},
+			map[uint64]any{1: "a", 4: "c"},
+			map[uint64]any{2: "b", 5: "d"},
 			"{1: a, 2: b, 4: c, 5: d}",
 		},
 		{
-			map[uint64]interface{}{1: "a", 4: "c"},
-			map[uint64]interface{}{2: "b", 5 + 8: "d"},
+			map[uint64]any{1: "a", 4: "c"},
+			map[uint64]any{2: "b", 5 + 8: "d"},
 			"{1: a, 2: b, 4: c, 13: d}",
 		},
 		{
-			map[uint64]interface{}{2: "b", 5 + 8: "d"},
-			map[uint64]interface{}{1: "a", 4: "c"},
+			map[uint64]any{2: "b", 5 + 8: "d"},
+			map[uint64]any{1: "a", 4: "c"},
 			"{1: a, 2: b, 4: c, 13: d}",
 		},
 		{
-			map[uint64]interface{}{1: "a", 4: "c"},
-			map[uint64]interface{}{2: "b", 5 + 8: "d"},
+			map[uint64]any{1: "a", 4: "c"},
+			map[uint64]any{2: "b", 5 + 8: "d"},
 			"{1: a, 2: b, 4: c, 13: d}",
 		},
 		{
-			map[uint64]interface{}{2: "b", 5 + 8: "d"},
-			map[uint64]interface{}{1: "a", 4: "c"},
+			map[uint64]any{2: "b", 5 + 8: "d"},
+			map[uint64]any{1: "a", 4: "c"},
 			"{1: a, 2: b, 4: c, 13: d}",
 		},
 		{
-			map[uint64]interface{}{2: "b", 5 + 8: "d"},
-			map[uint64]interface{}{2: "", 3: "a"},
+			map[uint64]any{2: "b", 5 + 8: "d"},
+			map[uint64]any{2: "", 3: "a"},
 			"{2: b, 3: a, 13: d}",
 		},
 
 		{
 			// crafted for `!prefixesOverlap(p, m, q, n)`
-			left:  map[uint64]interface{}{1: "a", 2 + 1: "b"},
-			right: map[uint64]interface{}{4 + 1: "c", 4 + 2: "d"},
+			left:  map[uint64]any{1: "a", 2 + 1: "b"},
+			right: map[uint64]any{4 + 1: "c", 4 + 2: "d"},
 			// p: 5, m: 2 q: 1, n: 2
 			want: "{1: a, 3: b, 5: c, 6: d}",
 		},
 		{
 			// crafted for `ord(m, n) && !zeroBit(q, m)`
-			left:  map[uint64]interface{}{8 + 2 + 1: "a", 16 + 4: "b"},
-			right: map[uint64]interface{}{16 + 8 + 2 + 1: "c", 16 + 8 + 4 + 2 + 1: "d"},
+			left:  map[uint64]any{8 + 2 + 1: "a", 16 + 4: "b"},
+			right: map[uint64]any{16 + 8 + 2 + 1: "c", 16 + 8 + 4 + 2 + 1: "d"},
 			// left: p: 15, m: 16
 			// right: q: 27, n: 4
 			want: "{11: a, 20: b, 27: c, 31: d}",
@@ -348,8 +347,8 @@ func TestMerge(t *testing.T) {
 		{
 			// crafted for `ord(n, m) && !zeroBit(p, n)`
 			// p: 6, m: 1 q: 5, n: 2
-			left:  map[uint64]interface{}{4 + 2: "b", 4 + 2 + 1: "c"},
-			right: map[uint64]interface{}{4: "a", 4 + 2 + 1: "dropped"},
+			left:  map[uint64]any{4 + 2: "b", 4 + 2 + 1: "c"},
+			right: map[uint64]any{4: "a", 4 + 2 + 1: "dropped"},
 			want:  "{4: a, 6: b, 7: c}",
 		},
 	} {
@@ -365,65 +364,65 @@ func TestIntersect(t *testing.T) {
 	// Most of the test cases go after specific branches of intersect.
 	b := NewBuilder()
 	for _, c := range []struct {
-		left  map[uint64]interface{}
-		right map[uint64]interface{}
+		left  map[uint64]any
+		right map[uint64]any
 		want  string
 	}{
 		{
-			left:  map[uint64]interface{}{10: "a", 39: "b"},
-			right: map[uint64]interface{}{10: "A", 39: "B", 75: "C"},
+			left:  map[uint64]any{10: "a", 39: "b"},
+			right: map[uint64]any{10: "A", 39: "B", 75: "C"},
 			want:  "{10: a, 39: b}",
 		},
 		{
-			left:  map[uint64]interface{}{10: "a", 39: "b"},
-			right: map[uint64]interface{}{},
+			left:  map[uint64]any{10: "a", 39: "b"},
+			right: map[uint64]any{},
 			want:  "{}",
 		},
 		{
-			left:  map[uint64]interface{}{},
-			right: map[uint64]interface{}{10: "A", 39: "B", 75: "C"},
+			left:  map[uint64]any{},
+			right: map[uint64]any{10: "A", 39: "B", 75: "C"},
 			want:  "{}",
 		},
 		{ // m == n && p == q  && left.(*empty) case
-			left:  map[uint64]interface{}{4: 1, 6: 3, 10: 8, 15: "on left"},
-			right: map[uint64]interface{}{0: 8, 7: 6, 11: 0, 15: "on right"},
+			left:  map[uint64]any{4: 1, 6: 3, 10: 8, 15: "on left"},
+			right: map[uint64]any{0: 8, 7: 6, 11: 0, 15: "on right"},
 			want:  "{15: on left}",
 		},
 		{ // m == n && p == q  && right.(*empty) case
-			left:  map[uint64]interface{}{0: "on left", 1: 2, 2: 3, 3: 1, 7: 3},
-			right: map[uint64]interface{}{0: "on right", 5: 1, 6: 8},
+			left:  map[uint64]any{0: "on left", 1: 2, 2: 3, 3: 1, 7: 3},
+			right: map[uint64]any{0: "on right", 5: 1, 6: 8},
 			want:  "{0: on left}",
 		},
 		{ // m == n && p == q  &&  both left and right are not empty
-			left:  map[uint64]interface{}{1: "a", 2: "b", 3: "c"},
-			right: map[uint64]interface{}{0: "A", 1: "B", 2: "C"},
+			left:  map[uint64]any{1: "a", 2: "b", 3: "c"},
+			right: map[uint64]any{0: "A", 1: "B", 2: "C"},
 			want:  "{1: a, 2: b}",
 		},
 		{ // m == n && p == q  &&  both left and right are not empty
-			left:  map[uint64]interface{}{1: "a", 2: "b", 3: "c"},
-			right: map[uint64]interface{}{0: "A", 1: "B", 2: "C"},
+			left:  map[uint64]any{1: "a", 2: "b", 3: "c"},
+			right: map[uint64]any{0: "A", 1: "B", 2: "C"},
 			want:  "{1: a, 2: b}",
 		},
 		{ // !prefixesOverlap(p, m, q, n)
 			// p = 1, m = 2, q = 5, n = 2
-			left:  map[uint64]interface{}{0b001: 1, 0b011: 3},
-			right: map[uint64]interface{}{0b100: 4, 0b111: 7},
+			left:  map[uint64]any{0b001: 1, 0b011: 3},
+			right: map[uint64]any{0b100: 4, 0b111: 7},
 			want:  "{}",
 		},
 		{ // ord(m, n) && zeroBit(q, m)
 			// p = 3, m = 4, q = 0, n = 1
-			left:  map[uint64]interface{}{0b010: 2, 0b101: 5},
-			right: map[uint64]interface{}{0b000: 0, 0b001: 1},
+			left:  map[uint64]any{0b010: 2, 0b101: 5},
+			right: map[uint64]any{0b000: 0, 0b001: 1},
 			want:  "{}",
 		},
 
 		{ // ord(m, n) && !zeroBit(q, m)
 			// p = 29, m = 2, q = 30, n = 1
-			left: map[uint64]interface{}{
+			left: map[uint64]any{
 				0b11101: "29",
 				0b11110: "30",
 			},
-			right: map[uint64]interface{}{
+			right: map[uint64]any{
 				0b11110: "30 on right",
 				0b11111: "31",
 			},
@@ -431,14 +430,14 @@ func TestIntersect(t *testing.T) {
 		},
 		{ // ord(n, m) && zeroBit(p, n)
 			// p = 5, m = 2, q = 3, n = 4
-			left:  map[uint64]interface{}{0b000: 0, 0b001: 1},
-			right: map[uint64]interface{}{0b010: 2, 0b101: 5},
+			left:  map[uint64]any{0b000: 0, 0b001: 1},
+			right: map[uint64]any{0b010: 2, 0b101: 5},
 			want:  "{}",
 		},
 		{ // default case
 			// p = 5, m = 2, q = 3, n = 4
-			left:  map[uint64]interface{}{0b100: 1, 0b110: 3},
-			right: map[uint64]interface{}{0b000: 8, 0b111: 6},
+			left:  map[uint64]any{0b100: 1, 0b110: 3},
+			right: map[uint64]any{0b000: 8, 0b111: 6},
 			want:  "{}",
 		},
 	} {
@@ -452,10 +451,10 @@ func TestIntersect(t *testing.T) {
 
 func TestIntersectWith(t *testing.T) {
 	b := NewBuilder()
-	l := b.Create(map[uint64]interface{}{10: 2.0, 39: 32.0})
-	r := b.Create(map[uint64]interface{}{10: 6.0, 39: 10.0, 75: 1.0})
+	l := b.Create(map[uint64]any{10: 2.0, 39: 32.0})
+	r := b.Create(map[uint64]any{10: 6.0, 39: 10.0, 75: 1.0})
 
-	prodIfDifferent := func(x interface{}, y interface{}) interface{} {
+	prodIfDifferent := func(x any, y any) any {
 		if x, ok := x.(float64); ok {
 			if y, ok := y.(float64); ok {
 				if x == y {
@@ -479,24 +478,24 @@ func TestRemove(t *testing.T) {
 	// Most of the test cases go after specific branches of intersect.
 	b := NewBuilder()
 	for _, c := range []struct {
-		m    map[uint64]interface{}
+		m    map[uint64]any
 		key  uint64
 		want string
 	}{
-		{map[uint64]interface{}{}, 10, "{}"},
-		{map[uint64]interface{}{10: "a"}, 10, "{}"},
-		{map[uint64]interface{}{39: "b"}, 10, "{39: b}"},
+		{map[uint64]any{}, 10, "{}"},
+		{map[uint64]any{10: "a"}, 10, "{}"},
+		{map[uint64]any{39: "b"}, 10, "{39: b}"},
 		// Branch cases:
 		// !matchPrefix(kp, br.prefix, br.branching)
-		{map[uint64]interface{}{10: "a", 39: "b"}, 128, "{10: a, 39: b}"},
+		{map[uint64]any{10: "a", 39: "b"}, 128, "{10: a, 39: b}"},
 		// case: left == br.left && right == br.right
-		{map[uint64]interface{}{10: "a", 39: "b"}, 16, "{10: a, 39: b}"},
+		{map[uint64]any{10: "a", 39: "b"}, 16, "{10: a, 39: b}"},
 		// left updated and is empty.
-		{map[uint64]interface{}{10: "a", 39: "b"}, 10, "{39: b}"},
+		{map[uint64]any{10: "a", 39: "b"}, 10, "{39: b}"},
 		// right updated and is empty.
-		{map[uint64]interface{}{10: "a", 39: "b"}, 39, "{10: a}"},
+		{map[uint64]any{10: "a", 39: "b"}, 39, "{10: a}"},
 		// final b.mkBranch(...) case.
-		{map[uint64]interface{}{10: "a", 39: "b", 128: "c"}, 39, "{10: a, 128: c}"},
+		{map[uint64]any{10: "a", 39: "b", 128: "c"}, 39, "{10: a, 128: c}"},
 	} {
 		pre := b.Create(c.m)
 		post := b.Remove(pre, c.key)
@@ -508,8 +507,8 @@ func TestRemove(t *testing.T) {
 
 func TestRescope(t *testing.T) {
 	b := NewBuilder()
-	l := b.Create(map[uint64]interface{}{10: "a", 39: "b"})
-	r := b.Create(map[uint64]interface{}{10: "A", 39: "B", 75: "C"})
+	l := b.Create(map[uint64]any{10: "a", 39: "b"})
+	r := b.Create(map[uint64]any{10: "A", 39: "B", 75: "C"})
 
 	b.Rescope()
 
@@ -527,8 +526,8 @@ func TestRescope(t *testing.T) {
 
 func TestSharing(t *testing.T) {
 	b := NewBuilder()
-	l := b.Create(map[uint64]interface{}{0: "a", 1: "b"})
-	r := b.Create(map[uint64]interface{}{1: "B", 2: "C"})
+	l := b.Create(map[uint64]any{0: "a", 1: "b"})
+	r := b.Create(map[uint64]any{1: "B", 2: "C"})
 
 	rleftold := r.n.(*branch).left
 

@@ -39,7 +39,7 @@ var (
 
 func initGenerator() {
 	var rngSeed int64
-	for _, p := range []interface{}{
+	for _, p := range []any{
 		&rngSeed, &traceIDAdd, &nextSpanID, &spanIDInc,
 	} {
 		binary.Read(crand.Reader, binary.LittleEndian, p)

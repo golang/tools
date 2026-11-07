@@ -15,13 +15,15 @@ package folding //@foldingrange(raw)
 import (
 	"fmt"
 	_ "log"
+	"sort"
+	"time"
 )
 
 import _ "os"
 
-// bar is a function.
+// Bar is a function.
 // With a multiline doc comment.
-func bar() string {
+func Bar() string {
 	/* This is a single line comment */
 	switch {
 	case true:
@@ -85,19 +87,72 @@ func bar() string {
 this string
 is not indented`
 }
+
+func _() {
+	slice := []int{1, 2, 3}
+	sort.Slice(slice, func(i, j int) bool {
+		a, b := slice[i], slice[j]
+		return a > b
+	})
+
+	sort.Slice(slice, func(i, j int) bool { return slice[i] > slice[j] })
+
+	sort.Slice(
+		slice,
+		func(i, j int) bool {
+			return slice[i] > slice[j]
+		},
+	)
+
+	fmt.Println(
+		1, 2, 3,
+		4,
+	)
+
+	fmt.Println(1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(
+		"test %d %d",
+		[]any{1, 2, 3}...,
+	)
+
+	// Check multiline string.
+	fmt.Println(
+		`multi
+		line
+		string
+		`,
+		1, 2, 3,
+	)
+
+	// Call without arguments.
+	_ = time.Now()
+}
+
+func _(
+	a int, b int,
+	c int,
+) {
+}
 -- @raw --
 package folding //@foldingrange(raw)
 
 import (<0 kind="imports">
 	"fmt"
-	_ "log"</0>
+	_ "log"
+	"sort"
+	"time"</0>
 )
 
 import _ "os"
 
-// bar is a function.<1 kind="comment">
+// Bar is a function.<1 kind="comment">
 // With a multiline doc comment.</1>
-func bar() string {<2 kind="">
+func Bar() string {<2 kind="">
 	/* This is a single line comment */
 	switch {<3 kind="">
 	case true:<4 kind="">
@@ -122,42 +177,93 @@ func bar() string {<2 kind="">
 	_ = []int{<11 kind="">
 		1,
 		2,
-		3</11>,
+		3,</11>
 	}
-	_ = [2]string{"d",
-		"e",
+	_ = [2]string{<12 kind="">"d",
+		"e",</12>
 	}
-	_ = map[string]int{<12 kind="">
+	_ = map[string]int{<13 kind="">
 		"a": 1,
 		"b": 2,
-		"c": 3</12>,
+		"c": 3,</13>
 	}
-	type T struct {<13 kind="">
+	type T struct {<14 kind="">
 		f string
 		g int
-		h string</13>
+		h string</14>
 	}
-	_ = T{<14 kind="">
+	_ = T{<15 kind="">
 		f: "j",
 		g: 4,
-		h: "i"</14>,
+		h: "i",</15>
 	}
 	x, y := make(chan bool), make(chan bool)
-	select {<15 kind="">
-	case val := <-x:<16 kind="">
-		if val {<17 kind="">
-			fmt.Println("true from x")</17>
-		} else {<18 kind="">
-			fmt.Println("false from x")</18>
-		}</16>
-	case <-y:<19 kind="">
-		fmt.Println("y")</19>
-	default:<20 kind="">
-		fmt.Println("default")</15></20>
+	select {<16 kind="">
+	case val := <-x:<17 kind="">
+		if val {<18 kind="">
+			fmt.Println("true from x")</18>
+		} else {<19 kind="">
+			fmt.Println("false from x")</19>
+		}</17>
+	case <-y:<20 kind="">
+		fmt.Println("y")</20>
+	default:<21 kind="">
+		fmt.Println("default")</16></21>
 	}
-	// This is a multiline comment<21 kind="comment">
-	// that is not a doc comment.</21>
-	return <22 kind="">`
+	// This is a multiline comment<22 kind="comment">
+	// that is not a doc comment.</22>
+	return <23 kind="">`
 this string
-is not indented`</2></22>
+is not indented`</2></23>
+}
+
+func _() {<24 kind="">
+	slice := []int{1, 2, 3}
+	sort.Slice(<25 kind="">slice, func(i, j int) bool {<26 kind="">
+		a, b := slice[i], slice[j]
+		return a > b</25></26>
+	})
+
+	sort.Slice(slice, func(i, j int) bool { return slice[i] > slice[j] })
+
+	sort.Slice(<27 kind="">
+		slice,
+		func(i, j int) bool {<28 kind="">
+			return slice[i] > slice[j]</28>
+		},</27>
+	)
+
+	fmt.Println(<29 kind="">
+		1, 2, 3,
+		4,</29>
+	)
+
+	fmt.Println(<30 kind="">1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,</30>
+		10)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(<31 kind="">
+		"test %d %d",
+		[]any{1, 2, 3}...,</31>
+	)
+
+	// Check multiline string.
+	fmt.Println(<32 kind="">
+		<33 kind="">`multi
+		line
+		string
+		`</33>,
+		1, 2, 3,</32>
+	)
+
+	// Call without arguments.
+	_ = time.Now()</24>
+}
+
+func _(<34 kind="">
+	a int, b int,
+	c int,</34>
+) {
 }

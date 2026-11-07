@@ -9,6 +9,10 @@ import (
 	"go/types"
 	"strings"
 	"time"
+
+	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // MaxDeepCompletions limits deep completion results because in most cases
@@ -159,6 +163,10 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 				continue
 			}
 
+			if cand.imp != nil && !packagepath.CanImport(string(c.pkg.Metadata().PkgPath), cand.imp.importPath) {
+				continue // inaccessible internal package
+			}
+
 			// If we want a type name, don't offer non-type name candidates.
 			// However, do offer package names since they can contain type names,
 			// and do offer any candidate without a type since we aren't sure if it
@@ -249,6 +257,9 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 // its members for more candidates.
 func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 	obj := cand.obj
+	if obj != nil && obj.Name() == "_" {
+		return
+	}
 	if c.matchingCandidate(cand) {
 		cand.score *= highScore
 
@@ -259,8 +270,9 @@ func (c *completer) addCandidate(ctx context.Context, cand *candidate) {
 		// If obj is a *types.TypeName that didn't otherwise match, check
 		// if a literal object of this type makes a good candidate.
 
-		// We only care about named types (i.e. don't want builtin types).
-		if _, isNamed := obj.Type().(*types.Named); isNamed {
+		// We only care about named or alias types without unspecified type
+		// params: instantiated generic types are already handled by injectType.
+		if pnt, ok := obj.Type().(typesinternal.NamedOrAlias); ok && pnt.TypeParams().Len() == 0 {
 			c.literal(ctx, obj.Type(), cand.imp)
 		}
 	}
@@ -312,6 +324,9 @@ func deepCandName(cand *candidate) string {
 
 	for i, obj := range cand.path {
 		buf.WriteString(obj.Name())
+		if fn, ok := obj.(*types.Func); ok {
+			buf.WriteString(typesutil.FormatTypeParams(fn.Signature().TypeParams()))
+		}
 		if cand.pathInvokeMask&(1<<uint16(i)) > 0 {
 			buf.WriteByte('(')
 			buf.WriteByte(')')

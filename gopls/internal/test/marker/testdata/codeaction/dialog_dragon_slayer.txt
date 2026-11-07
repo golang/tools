@@ -1,0 +1,27 @@
+This test checks that the "Slay the dragon" code action is offered only on
+the name of a package-level variable named dragonSlayer.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["enum"]}}
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.20
+
+-- a.go --
+package a
+
+var dragonSlayer = "sword" //@codeaction("dragonSlayer", "gopls.dragonSlayer", title="Slay the dragon"), codeaction("sword", "gopls.dragonSlayer", err=re"found 0 CodeActions")
+
+var notTheSword int //@codeaction("notTheSword", "gopls.dragonSlayer", err=re"found 0 CodeActions")
+
+func _() {
+	var dragonSlayer int //@codeaction("dragonSlayer", "gopls.dragonSlayer", err=re"found 0 CodeActions")
+	_ = dragonSlayer
+}

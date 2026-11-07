@@ -13,9 +13,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/diff"
@@ -97,14 +99,11 @@ func TestEverything(t *testing.T) {
 		// Find all static function calls in the package.
 		for _, callerFile := range callerPkg.Syntax {
 			noMutCheck := checkNoMutation(callerFile)
-			ast.Inspect(callerFile, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
+			for curCall := range inspector.New([]*ast.File{callerFile}).Root().Preorder((*ast.CallExpr)(nil)) {
+				call := curCall.Node().(*ast.CallExpr)
 				fn := typeutil.StaticCallee(callerPkg.TypesInfo, call)
 				if fn == nil {
-					return true
+					continue
 				}
 
 				// Prepare caller info.
@@ -114,12 +113,10 @@ func TestEverything(t *testing.T) {
 					t.Fatal(err)
 				}
 				caller := &inline.Caller{
-					Fset:    callerPkg.Fset,
-					Types:   callerPkg.Types,
-					Info:    callerPkg.TypesInfo,
-					File:    callerFile,
-					Call:    call,
-					Content: callerContent,
+					Fset:  callerPkg.Fset,
+					Types: callerPkg.Types,
+					Info:  callerPkg.TypesInfo,
+					Call:  curCall,
 				}
 
 				// Analyze callee.
@@ -145,7 +142,7 @@ func TestEverything(t *testing.T) {
 					t.Logf("callee declared at %v",
 						filepath.Base(calleePosn.String()))
 
-					t.Logf("run this command to reproduce locally:\n$ gopls fix -a -d %s:#%d refactor.inline",
+					t.Logf("run this command to reproduce locally:\n$ gopls codeaction -kind=refactor.inline -exec -diff %s:#%d",
 						callPosn.Filename, callPosn.Offset)
 
 					callee, err := inline.AnalyzeCallee(
@@ -181,11 +178,15 @@ func TestEverything(t *testing.T) {
 						t.Log(err)
 						return
 					}
-					got := res.Content
+
+					got, err := applyEdits(caller.Types, callerFile.FileStart, callerContent, res.Edits)
+					if err != nil {
+						t.Fatalf("can't apply inliner edits: %v", err)
+					}
 
 					// Print the diff.
 					t.Logf("Got diff:\n%s",
-						diff.Unified("old", "new", string(callerContent), string(res.Content)))
+						diff.Unified("old", "new", string(callerContent), string(got)))
 
 					// Parse and type-check the transformed source.
 					f, err := parser.ParseFile(caller.Fset, callPosn.Filename, got, parser.SkipObjectResolution)
@@ -193,7 +194,7 @@ func TestEverything(t *testing.T) {
 						t.Fatalf("transformed source does not parse: %v", err)
 					}
 					// Splice into original file list.
-					syntax := append([]*ast.File(nil), callerPkg.Syntax...)
+					syntax := slices.Clone(callerPkg.Syntax)
 					for i := range callerPkg.Syntax {
 						if syntax[i] == callerFile {
 							syntax[i] = f
@@ -225,8 +226,7 @@ func TestEverything(t *testing.T) {
 							got)
 					}
 				})
-				return true
-			})
+			}
 			noMutCheck()
 		}
 	}

@@ -24,20 +24,17 @@ func _() int {
 func _() int {
 	print(1)
 	return 2
-	// want "unreachable code"
 }
 
 func _() int {
 L:
 	print(1)
 	goto L
-	// want "unreachable code"
 }
 
 func _() int {
 	print(1)
 	panic(2)
-	// want "unreachable code"
 }
 
 // but only builtin panic
@@ -52,7 +49,6 @@ func _() int {
 	{
 		print(1)
 		return 2
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -62,7 +58,6 @@ func _() int {
 		print(1)
 		return 2
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -70,7 +65,6 @@ L:
 	{
 		print(1)
 		goto L
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -81,7 +75,6 @@ L:
 		print(1)
 		goto L
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -95,7 +88,6 @@ func _() int {
 	print(1)
 	{
 		panic(2)
-		// want "unreachable code"
 	}
 }
 
@@ -104,33 +96,28 @@ func _() int {
 	{
 		panic(2)
 	}
-	// want "unreachable code"
 }
 
 func _() int {
 	print(1)
 	return 2
-
 }
 
 func _() int {
 L:
 	print(1)
 	goto L
-
 }
 
 func _() int {
 	print(1)
 	panic(2)
-
 }
 
 func _() int {
 	{
 		print(1)
 		return 2
-
 	}
 }
 
@@ -139,7 +126,6 @@ L:
 	{
 		print(1)
 		goto L
-
 	}
 }
 
@@ -147,7 +133,6 @@ func _() int {
 	print(1)
 	{
 		panic(2)
-
 	}
 }
 
@@ -156,7 +141,6 @@ func _() int {
 		print(1)
 		return 2
 	}
-
 }
 
 func _() int {
@@ -165,7 +149,6 @@ L:
 		print(1)
 		goto L
 	}
-
 }
 
 func _() int {
@@ -173,7 +156,6 @@ func _() int {
 	{
 		panic(2)
 	}
-
 }
 
 func _() int {
@@ -183,7 +165,6 @@ func _() int {
 	} else {
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -194,7 +175,6 @@ L:
 	} else {
 		goto L
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -209,7 +189,6 @@ L:
 	} else {
 		goto L
 	}
-	// want "unreachable code"
 }
 
 // if-else chain missing final else is not okay, even if the
@@ -250,7 +229,6 @@ func _() int {
 	print(1)
 	for {
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -259,14 +237,12 @@ func _() int {
 			break
 		}
 	}
-	// want "unreachable code"
 }
 
 func _() int {
 	for {
 		for {
 			break
-			// want "unreachable code"
 		}
 	}
 }
@@ -275,7 +251,6 @@ func _() int {
 	for {
 		for {
 			continue
-			// want "unreachable code"
 		}
 	}
 }
@@ -287,7 +262,6 @@ func _() int {
 			break L
 		}
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -302,7 +276,6 @@ func _() int {
 	for {
 		for {
 		}
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -372,17 +345,6 @@ func _() int {
 func _() int {
 	print(1)
 	select {}
-	// want "unreachable code"
-}
-
-func _() int {
-	print(1)
-	select {
-	case <-c:
-		print(2)
-		panic("abc")
-		// want "unreachable code"
-	}
 }
 
 func _() int {
@@ -392,7 +354,6 @@ func _() int {
 		print(2)
 		panic("abc")
 	}
-	// want "unreachable code"
 }
 
 func _() int {
@@ -400,9 +361,7 @@ func _() int {
 	select {
 	case <-c:
 		print(2)
-		for {
-		}
-		// want "unreachable code"
+		panic("abc")
 	}
 }
 
@@ -414,21 +373,15 @@ func _() int {
 		for {
 		}
 	}
-	// want "unreachable code"
 }
 
 func _() int {
-L:
 	print(1)
 	select {
 	case <-c:
 		print(2)
-		panic("abc")
-		// want "unreachable code"
-	case c <- 1:
-		print(2)
-		goto L
-		// want "unreachable code"
+		for {
+		}
 	}
 }
 
@@ -443,19 +396,18 @@ L:
 		print(2)
 		goto L
 	}
-	// want "unreachable code"
 }
 
 func _() int {
+L:
 	print(1)
 	select {
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
-	default:
-		select {}
-		// want "unreachable code"
+	case c <- 1:
+		print(2)
+		goto L
 	}
 }
 
@@ -468,7 +420,17 @@ func _() int {
 	default:
 		select {}
 	}
-	// want "unreachable code"
+}
+
+func _() int {
+	print(1)
+	select {
+	case <-c:
+		print(2)
+		panic("abc")
+	default:
+		select {}
+	}
 }
 
 func _() int {
@@ -487,7 +449,6 @@ L:
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
 	case c <- 1:
 		print(2)
 	}
@@ -521,7 +482,6 @@ func _() int {
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -561,7 +521,6 @@ func _() int {
 		panic("abc")
 	default:
 		select {}
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -572,10 +531,8 @@ func _() int {
 	case 1:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
-		// want "unreachable code"
 	}
 }
 
@@ -588,20 +545,6 @@ func _() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
-}
-
-func _() int {
-	print(1)
-	switch x {
-	default:
-		return 4
-		// want "unreachable code"
-	case 1:
-		print(2)
-		panic(3)
-		// want "unreachable code"
-	}
 }
 
 func _() int {
@@ -613,18 +556,16 @@ func _() int {
 		print(2)
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 func _() int {
 	print(1)
 	switch x {
-	case 1:
-		print(2)
-		fallthrough
 	default:
 		return 4
-		// want "unreachable code"
+	case 1:
+		print(2)
+		panic(3)
 	}
 }
 
@@ -637,7 +578,17 @@ func _() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
+}
+
+func _() int {
+	print(1)
+	switch x {
+	case 1:
+		print(2)
+		fallthrough
+	default:
+		return 4
+	}
 }
 
 func _() int {
@@ -700,7 +651,6 @@ L:
 	case 1:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
 	}
@@ -712,7 +662,6 @@ func _() int {
 	switch x {
 	default:
 		return 4
-		// want "unreachable code"
 	case 1:
 		print(2)
 		panic(3)
@@ -741,10 +690,8 @@ func _() int {
 	case int:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
-		// want "unreachable code"
 	}
 }
 
@@ -757,20 +704,6 @@ func _() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
-}
-
-func _() int {
-	print(1)
-	switch x.(type) {
-	default:
-		return 4
-		// want "unreachable code"
-	case int:
-		print(2)
-		panic(3)
-		// want "unreachable code"
-	}
 }
 
 func _() int {
@@ -782,18 +715,16 @@ func _() int {
 		print(2)
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 func _() int {
 	print(1)
 	switch x.(type) {
-	case int:
-		print(2)
-		fallthrough
 	default:
 		return 4
-		// want "unreachable code"
+	case int:
+		print(2)
+		panic(3)
 	}
 }
 
@@ -806,7 +737,17 @@ func _() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
+}
+
+func _() int {
+	print(1)
+	switch x.(type) {
+	case int:
+		print(2)
+		fallthrough
+	default:
+		return 4
+	}
 }
 
 func _() int {
@@ -869,7 +810,6 @@ L:
 	case int:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
 	}
@@ -881,7 +821,6 @@ func _() int {
 	switch x.(type) {
 	default:
 		return 4
-		// want "unreachable code"
 	case int:
 		print(2)
 		panic(3)
@@ -913,18 +852,15 @@ func _() int {
 
 func _() int {
 	return 2
-	// want "unreachable code"
 }
 
 func _() int {
 L:
 	goto L
-	// want "unreachable code"
 }
 
 func _() int {
 	panic(2)
-	// want "unreachable code"
 }
 
 // but only builtin panic
@@ -937,7 +873,6 @@ func _() int {
 func _() int {
 	{
 		return 2
-		// want "unreachable code"
 	}
 }
 
@@ -945,15 +880,6 @@ func _() int {
 	{
 		return 2
 	}
-	// want "unreachable code"
-}
-
-func _() int {
-L:
-	{
-		goto L
-		// want "unreachable code"
-	}
 }
 
 func _() int {
@@ -961,13 +887,12 @@ L:
 	{
 		goto L
 	}
-	// want "unreachable code"
 }
 
 func _() int {
+L:
 	{
-		panic(2)
-		// want "unreachable code"
+		goto L
 	}
 }
 
@@ -975,32 +900,33 @@ func _() int {
 	{
 		panic(2)
 	}
-	// want "unreachable code"
+}
+
+func _() int {
+	{
+		panic(2)
+	}
 }
 
 func _() int {
 	return 2
-
 	println() // ok
 }
 
 func _() int {
 L:
 	goto L
-
 	println() // ok
 }
 
 func _() int {
 	panic(2)
-
 	println() // ok
 }
 
 func _() int {
 	{
 		return 2
-
 	}
 	println() // ok
 }
@@ -1009,7 +935,6 @@ func _() int {
 L:
 	{
 		goto L
-
 	}
 	println() // ok
 }
@@ -1017,7 +942,6 @@ L:
 func _() int {
 	{
 		panic(2)
-
 	}
 	println() // ok
 }
@@ -1026,7 +950,6 @@ func _() int {
 	{
 		return 2
 	}
-
 	println() // ok
 }
 
@@ -1035,7 +958,6 @@ L:
 	{
 		goto L
 	}
-
 	println() // ok
 }
 
@@ -1043,7 +965,6 @@ func _() int {
 	{
 		panic(2)
 	}
-
 	println() // ok
 }
 
@@ -1059,20 +980,17 @@ var _ = func() int {
 var _ = func() int {
 	print(1)
 	return 2
-	// want "unreachable code"
 }
 
 var _ = func() int {
 L:
 	print(1)
 	goto L
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	print(1)
 	panic(2)
-	// want "unreachable code"
 }
 
 // but only builtin panic
@@ -1087,7 +1005,6 @@ var _ = func() int {
 	{
 		print(1)
 		return 2
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -1097,7 +1014,6 @@ var _ = func() int {
 		print(1)
 		return 2
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1105,7 +1021,6 @@ L:
 	{
 		print(1)
 		goto L
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -1116,7 +1031,6 @@ L:
 		print(1)
 		goto L
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1130,7 +1044,6 @@ var _ = func() int {
 	print(1)
 	{
 		panic(2)
-		// want "unreachable code"
 	}
 }
 
@@ -1139,33 +1052,28 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	print(1)
 	return 2
-
 }
 
 var _ = func() int {
 L:
 	print(1)
 	goto L
-
 }
 
 var _ = func() int {
 	print(1)
 	panic(2)
-
 }
 
 var _ = func() int {
 	{
 		print(1)
 		return 2
-
 	}
 }
 
@@ -1174,7 +1082,6 @@ L:
 	{
 		print(1)
 		goto L
-
 	}
 }
 
@@ -1182,7 +1089,6 @@ var _ = func() int {
 	print(1)
 	{
 		panic(2)
-
 	}
 }
 
@@ -1191,7 +1097,6 @@ var _ = func() int {
 		print(1)
 		return 2
 	}
-
 }
 
 var _ = func() int {
@@ -1200,7 +1105,6 @@ L:
 		print(1)
 		goto L
 	}
-
 }
 
 var _ = func() int {
@@ -1208,7 +1112,6 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-
 }
 
 var _ = func() int {
@@ -1218,7 +1121,6 @@ var _ = func() int {
 	} else {
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1229,7 +1131,6 @@ L:
 	} else {
 		goto L
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1244,7 +1145,6 @@ L:
 	} else {
 		goto L
 	}
-	// want "unreachable code"
 }
 
 // if-else chain missing final else is not okay, even if the
@@ -1285,7 +1185,6 @@ var _ = func() int {
 	print(1)
 	for {
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1294,14 +1193,12 @@ var _ = func() int {
 			break
 		}
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	for {
 		for {
 			break
-			// want "unreachable code"
 		}
 	}
 }
@@ -1310,7 +1207,6 @@ var _ = func() int {
 	for {
 		for {
 			continue
-			// want "unreachable code"
 		}
 	}
 }
@@ -1322,7 +1218,6 @@ var _ = func() int {
 			break L
 		}
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1337,7 +1232,6 @@ var _ = func() int {
 	for {
 		for {
 		}
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -1407,17 +1301,6 @@ var _ = func() int {
 var _ = func() int {
 	print(1)
 	select {}
-	// want "unreachable code"
-}
-
-var _ = func() int {
-	print(1)
-	select {
-	case <-c:
-		print(2)
-		panic("abc")
-		// want "unreachable code"
-	}
 }
 
 var _ = func() int {
@@ -1427,7 +1310,6 @@ var _ = func() int {
 		print(2)
 		panic("abc")
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
@@ -1435,9 +1317,7 @@ var _ = func() int {
 	select {
 	case <-c:
 		print(2)
-		for {
-		}
-		// want "unreachable code"
+		panic("abc")
 	}
 }
 
@@ -1449,21 +1329,15 @@ var _ = func() int {
 		for {
 		}
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
-L:
 	print(1)
 	select {
 	case <-c:
 		print(2)
-		panic("abc")
-		// want "unreachable code"
-	case c <- 1:
-		print(2)
-		goto L
-		// want "unreachable code"
+		for {
+		}
 	}
 }
 
@@ -1478,19 +1352,18 @@ L:
 		print(2)
 		goto L
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
+L:
 	print(1)
 	select {
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
-	default:
-		select {}
-		// want "unreachable code"
+	case c <- 1:
+		print(2)
+		goto L
 	}
 }
 
@@ -1503,7 +1376,17 @@ var _ = func() int {
 	default:
 		select {}
 	}
-	// want "unreachable code"
+}
+
+var _ = func() int {
+	print(1)
+	select {
+	case <-c:
+		print(2)
+		panic("abc")
+	default:
+		select {}
+	}
 }
 
 var _ = func() int {
@@ -1522,7 +1405,6 @@ L:
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
 	case c <- 1:
 		print(2)
 	}
@@ -1556,7 +1438,6 @@ var _ = func() int {
 	case <-c:
 		print(2)
 		panic("abc")
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -1596,7 +1477,6 @@ var _ = func() int {
 		panic("abc")
 	default:
 		select {}
-		// want "unreachable code"
 	}
 	println() // ok
 }
@@ -1607,10 +1487,8 @@ var _ = func() int {
 	case 1:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
-		// want "unreachable code"
 	}
 }
 
@@ -1623,20 +1501,6 @@ var _ = func() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
-}
-
-var _ = func() int {
-	print(1)
-	switch x {
-	default:
-		return 4
-		// want "unreachable code"
-	case 1:
-		print(2)
-		panic(3)
-		// want "unreachable code"
-	}
 }
 
 var _ = func() int {
@@ -1648,18 +1512,16 @@ var _ = func() int {
 		print(2)
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	print(1)
 	switch x {
-	case 1:
-		print(2)
-		fallthrough
 	default:
 		return 4
-		// want "unreachable code"
+	case 1:
+		print(2)
+		panic(3)
 	}
 }
 
@@ -1672,7 +1534,17 @@ var _ = func() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
+}
+
+var _ = func() int {
+	print(1)
+	switch x {
+	case 1:
+		print(2)
+		fallthrough
+	default:
+		return 4
+	}
 }
 
 var _ = func() int {
@@ -1735,7 +1607,6 @@ L:
 	case 1:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
 	}
@@ -1747,7 +1618,6 @@ var _ = func() int {
 	switch x {
 	default:
 		return 4
-		// want "unreachable code"
 	case 1:
 		print(2)
 		panic(3)
@@ -1776,10 +1646,8 @@ var _ = func() int {
 	case int:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
-		// want "unreachable code"
 	}
 }
 
@@ -1792,20 +1660,6 @@ var _ = func() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
-}
-
-var _ = func() int {
-	print(1)
-	switch x.(type) {
-	default:
-		return 4
-		// want "unreachable code"
-	case int:
-		print(2)
-		panic(3)
-		// want "unreachable code"
-	}
 }
 
 var _ = func() int {
@@ -1817,18 +1671,16 @@ var _ = func() int {
 		print(2)
 		panic(3)
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	print(1)
 	switch x.(type) {
-	case int:
-		print(2)
-		fallthrough
 	default:
 		return 4
-		// want "unreachable code"
+	case int:
+		print(2)
+		panic(3)
 	}
 }
 
@@ -1841,7 +1693,17 @@ var _ = func() int {
 	default:
 		return 4
 	}
-	// want "unreachable code"
+}
+
+var _ = func() int {
+	print(1)
+	switch x.(type) {
+	case int:
+		print(2)
+		fallthrough
+	default:
+		return 4
+	}
 }
 
 var _ = func() int {
@@ -1904,7 +1766,6 @@ L:
 	case int:
 		print(2)
 		panic(3)
-		// want "unreachable code"
 	default:
 		return 4
 	}
@@ -1916,7 +1777,6 @@ var _ = func() int {
 	switch x.(type) {
 	default:
 		return 4
-		// want "unreachable code"
 	case int:
 		print(2)
 		panic(3)
@@ -1948,18 +1808,15 @@ var _ = func() int {
 
 var _ = func() int {
 	return 2
-	// want "unreachable code"
 }
 
 var _ = func() int {
 L:
 	goto L
-	// want "unreachable code"
 }
 
 var _ = func() int {
 	panic(2)
-	// want "unreachable code"
 }
 
 // but only builtin panic
@@ -1972,7 +1829,6 @@ var _ = func() int {
 var _ = func() int {
 	{
 		return 2
-		// want "unreachable code"
 	}
 }
 
@@ -1980,15 +1836,6 @@ var _ = func() int {
 	{
 		return 2
 	}
-	// want "unreachable code"
-}
-
-var _ = func() int {
-L:
-	{
-		goto L
-		// want "unreachable code"
-	}
 }
 
 var _ = func() int {
@@ -1996,13 +1843,12 @@ L:
 	{
 		goto L
 	}
-	// want "unreachable code"
 }
 
 var _ = func() int {
+L:
 	{
-		panic(2)
-		// want "unreachable code"
+		goto L
 	}
 }
 
@@ -2010,32 +1856,33 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-	// want "unreachable code"
+}
+
+var _ = func() int {
+	{
+		panic(2)
+	}
 }
 
 var _ = func() int {
 	return 2
-
 	println() // ok
 }
 
 var _ = func() int {
 L:
 	goto L
-
 	println() // ok
 }
 
 var _ = func() int {
 	panic(2)
-
 	println() // ok
 }
 
 var _ = func() int {
 	{
 		return 2
-
 	}
 	println() // ok
 }
@@ -2044,7 +1891,6 @@ var _ = func() int {
 L:
 	{
 		goto L
-
 	}
 	println() // ok
 }
@@ -2052,7 +1898,6 @@ L:
 var _ = func() int {
 	{
 		panic(2)
-
 	}
 	println() // ok
 }
@@ -2061,7 +1906,6 @@ var _ = func() int {
 	{
 		return 2
 	}
-
 	println() // ok
 }
 
@@ -2070,7 +1914,6 @@ L:
 	{
 		goto L
 	}
-
 	println() // ok
 }
 
@@ -2078,13 +1921,7 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-
 	println() // ok
-}
-
-var _ = func() {
-	// goto without label used to panic
-	goto
 }
 
 func _() int {

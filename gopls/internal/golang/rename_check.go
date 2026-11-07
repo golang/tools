@@ -33,26 +33,32 @@ package golang
 //   method, not the concrete method.
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/token"
 	"go/types"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	// Conflict error messages in the old gorename tool (whence this
 	// logic originated) contain rich information associated with
 	// multiple source lines, such as:
@@ -101,7 +107,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)
@@ -330,7 +336,7 @@ func deeper(x, y *types.Scope) bool {
 //     scope that begins at the end of its ValueSpec, or after the
 //     AssignStmt for a var declared by ":=".
 //
-//   - Each type {t,u} in the body has a scope that that begins at
+//   - Each type {t,u} in the body has a scope that begins at
 //     the start of the TypeSpec, so they can be self-recursive
 //     but--unlike package-level types--not mutually recursive.
 
@@ -339,91 +345,63 @@ func deeper(x, y *types.Scope) bool {
 // lexical block enclosing the reference.  If fn returns false the
 // iteration is terminated and findLexicalRefs returns false.
 func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ident, block *types.Scope) bool) bool {
+	filter := []ast.Node{
+		(*ast.Ident)(nil),
+		(*ast.SelectorExpr)(nil),
+		(*ast.CompositeLit)(nil),
+	}
 	ok := true
-	var stack []ast.Node
-
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
-		if n == nil {
-			stack = stack[:len(stack)-1] // pop
-			return false
-		}
+	var visit func(cur inspector.Cursor) (descend bool)
+	visit = func(cur inspector.Cursor) (descend bool) {
 		if !ok {
 			return false // bail out
 		}
-
-		stack = append(stack, n) // push
-		switch n := n.(type) {
+		switch n := cur.Node().(type) {
 		case *ast.Ident:
 			if pkg.TypesInfo().Uses[n] == obj {
-				block := enclosingBlock(pkg.TypesInfo(), stack)
+				block := typesinternal.EnclosingScope(pkg.TypesInfo(), cur)
 				if !fn(n, block) {
 					ok = false
 				}
 			}
-			return visit(nil) // pop stack
 
 		case *ast.SelectorExpr:
 			// don't visit n.Sel
-			ast.Inspect(n.X, visit)
-			return visit(nil) // pop stack, don't descend
+			cur.ChildAt(edge.SelectorExpr_X, -1).Inspect(filter, visit)
+			return false // don't descend
 
 		case *ast.CompositeLit:
 			// Handle recursion ourselves for struct literals
 			// so we don't visit field identifiers.
 			tv, ok := pkg.TypesInfo().Types[n]
 			if !ok {
-				return visit(nil) // pop stack, don't descend
+				return false // don't descend
 			}
 			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
-					ast.Inspect(n.Type, visit)
+					cur.ChildAt(edge.CompositeLit_Type, -1).Inspect(filter, visit)
 				}
-				for _, elt := range n.Elts {
-					if kv, ok := elt.(*ast.KeyValueExpr); ok {
-						ast.Inspect(kv.Value, visit)
-					} else {
-						ast.Inspect(elt, visit)
+				for i, elt := range n.Elts {
+					curElt := cur.ChildAt(edge.CompositeLit_Elts, i)
+					if _, ok := elt.(*ast.KeyValueExpr); ok {
+						// skip kv.Key
+						curElt = curElt.ChildAt(edge.KeyValueExpr_Value, -1)
 					}
+					curElt.Inspect(filter, visit)
 				}
-				return visit(nil) // pop stack, don't descend
+				return false // don't descend
 			}
 		}
 		return true
 	}
 
-	for _, f := range pkg.Syntax() {
-		ast.Inspect(f, visit)
-		if len(stack) != 0 {
-			panic(stack)
-		}
+	for _, pgf := range pkg.CompiledGoFiles() {
+		pgf.Cursor().Inspect(filter, visit)
 		if !ok {
 			break
 		}
 	}
 	return ok
-}
-
-// enclosingBlock returns the innermost block logically enclosing the
-// specified AST node (an ast.Ident), specified in the form of a path
-// from the root of the file, [file...n].
-func enclosingBlock(info *types.Info, stack []ast.Node) *types.Scope {
-	for i := range stack {
-		n := stack[len(stack)-1-i]
-		// For some reason, go/types always associates a
-		// function's scope with its FuncType.
-		// See comments about scope above.
-		switch f := n.(type) {
-		case *ast.FuncDecl:
-			n = f.Type
-		case *ast.FuncLit:
-			n = f.Type
-		}
-		if b := info.Scopes[n]; b != nil {
-			return b
-		}
-	}
-	panic("no Scope for *ast.File")
 }
 
 func (r *renamer) checkLabel(label *types.Label) {
@@ -445,7 +423,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 	// go/types offers no easy way to get from a field (or interface
 	// method) to its declaring struct (or interface), so we must
 	// ascend the AST.
-	if pgf, ok := enclosingFile(r.pkg, from.Pos()); ok {
+	if pgf, err := r.pkg.FileEnclosing(from.Pos()); err == nil {
 		path, _ := astutil.PathEnclosingInterval(pgf.File, from.Pos(), from.Pos())
 		// path matches this pattern:
 		// [Ident SelectorExpr? StarExpr? Field FieldList StructType ParenExpr* ... File]
@@ -473,21 +451,22 @@ func (r *renamer) checkStructField(from *types.Var) {
 			// This struct is also a named type.
 			// We must check for direct (non-promoted) field/field
 			// and method/field conflicts.
-			named := r.pkg.TypesInfo().Defs[spec.Name].Type()
-			prev, indices, _ := types.LookupFieldOrMethod(named, true, r.pkg.Types(), r.to)
-			if len(indices) == 1 {
-				r.errorf(from.Pos(), "renaming this field %q to %q",
-					from.Name(), r.to)
-				r.errorf(prev.Pos(), "\twould conflict with this %s",
-					objectKind(prev))
-				return // skip checkSelections to avoid redundant errors
+			if tname := r.pkg.TypesInfo().Defs[spec.Name]; tname != nil {
+				prev, indices, _ := types.LookupFieldOrMethod(tname.Type(), true, r.pkg.Types(), r.to)
+				if len(indices) == 1 {
+					r.errorf(from.Pos(), "renaming this field %q to %q",
+						from.Name(), r.to)
+					r.errorf(prev.Pos(), "\twould conflict with this %s",
+						objectKind(prev))
+					return // skip checkSelections to avoid redundant errors
+				}
 			}
 		} else {
 			// This struct is not a named type.
 			// We need only check for direct (non-promoted) field/field conflicts.
 			T := r.pkg.TypesInfo().Types[tStruct].Type.Underlying().(*types.Struct)
-			for i := 0; i < T.NumFields(); i++ {
-				if prev := T.Field(i); prev.Name() == r.to {
+			for prev := range T.Fields() {
+				if prev.Name() == r.to {
 					r.errorf(from.Pos(), "renaming this field %q to %q",
 						from.Name(), r.to)
 					r.errorf(prev.Pos(), "\twould conflict with this field")
@@ -504,7 +483,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 	if from.Anonymous() {
 		if named, ok := from.Type().(*types.Named); ok {
 			r.check(named.Obj())
-		} else if named, ok := aliases.Unalias(typesinternal.Unpointer(from.Type())).(*types.Named); ok {
+		} else if named, ok := types.Unalias(typesinternal.Unpointer(from.Type())).(*types.Named); ok {
 			r.check(named.Obj())
 		}
 	}
@@ -813,7 +792,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := aliases.Unalias(I).(*types.Named); ok {
+				if named, ok := types.Unalias(I).(*types.Named); ok {
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {
@@ -867,9 +846,17 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 			//
 			// Only proceed if all packages have no errors.
 			if len(pkg.ParseErrors()) > 0 || len(pkg.TypeErrors()) > 0 {
+				var filename string
+				if len(pkg.ParseErrors()) > 0 {
+					err := pkg.ParseErrors()[0][0]
+					filename = filepath.Base(err.Pos.Filename)
+				} else if len(pkg.TypeErrors()) > 0 {
+					err := pkg.TypeErrors()[0]
+					filename = filepath.Base(err.Fset.File(err.Pos).Name())
+				}
 				r.errorf(token.NoPos, // we don't have a position for this error.
-					"renaming %q to %q not possible because %q has errors",
-					r.from, r.to, pkg.Metadata().PkgPath)
+					"renaming %q to %q not possible because %q in %q has errors",
+					r.from, r.to, filename, pkg.Metadata().PkgPath)
 				return nil
 			}
 			f.Find(pkg.TypesInfo(), pkg.Syntax())
@@ -883,7 +870,7 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 
 // recv returns the method's receiver.
 func recv(meth *types.Func) *types.Var {
-	return meth.Type().(*types.Signature).Recv()
+	return meth.Signature().Recv()
 }
 
 // someUse returns an arbitrary use of obj within info.
@@ -931,6 +918,117 @@ func isValidIdentifier(id string) bool {
 	return token.Lookup(id) == token.IDENT
 }
 
+// checkPackageRename returns the effective new package directory, path and name
+// resulting from renaming the current package to newName, which may be an
+// identifier or a package path. An error is returned if the renaming is
+// invalid.
+func checkPackageRename(curPkg *cache.Package, f file.Handle, newName string, moveSubpackages bool) (newPkgDir string, newPkgName PackageName, newPkgPath PackagePath, err error) {
+	// Path unchanged
+	if newName == curPkg.String() || newName == string(curPkg.Metadata().Name) {
+		return f.URI().DirPath(), curPkg.Metadata().Name, curPkg.Metadata().PkgPath, nil
+	}
+
+	// If there are any Go files in the package that are not in the compiled package
+	// with the current build config, we should not allow a package move.
+	ignored := hasIgnoredGoFiles(curPkg)
+	if ignored {
+		return "", "", "", fmt.Errorf("moving a package with ignored files is not supported")
+	}
+
+	// TODO(mkalil): support relative paths
+	if build.IsLocalImport(newName) {
+		return "", "", "", fmt.Errorf("specifying relative paths in package rename not yet supported")
+	}
+	// When package move is enabled, we prompt with the full package path. Users
+	// can either submit a full package path or just provide the package
+	// identifier.
+	validIdent := isValidIdentifier(newName)
+	if validIdent {
+		// Not an attempted move. Check if a directory already exists at that
+		// path, in which case we should not allow renaming.
+		root := filepath.Dir(f.URI().DirPath())
+		newPkgDir = filepath.Join(root, newName)
+		exists, empty, err := dirIsEmpty(newPkgDir)
+		if err != nil {
+			return "", "", "", err
+		}
+		// When rename moves subpackages, we merely change the directory name, which cannot
+		// happen if the target directory already exists.
+		if moveSubpackages && exists || !empty {
+			return "", "", "", fmt.Errorf("invalid package identifier: %q is not empty", newPkgDir)
+		}
+		parentPkgPath := strings.TrimSuffix(string(curPkg.Metadata().PkgPath), string(curPkg.Metadata().Name)) // leaves a trailing slash
+		newPkgPath = PackagePath(parentPkgPath + newName)
+		newPkgName = PackageName(newName)
+		return newPkgDir, newPkgName, newPkgPath, nil
+	}
+	// Don't allow moving packages across module boundaries.
+	curModPath := curPkg.Metadata().Module.Path
+	if !strings.HasPrefix(newName+"/", curModPath+"/") {
+		return "", "", "", fmt.Errorf("invalid package path %q; cannot move package across module boundary", newName)
+	}
+	// Don't support package merging. If a directory already exists
+	// at that path, we should not allow renaming.
+	newPathAfterMod := strings.TrimPrefix(newName, curModPath) //newName is a package path here.
+	modDir := curPkg.Metadata().Module.Dir
+	newPkgDir = filepath.Join(modDir, filepath.FromSlash(newPathAfterMod))
+	// Trim the starting slash, which is not considered valid in fs.ValidPath.
+	isValidDir := fs.ValidPath(strings.TrimPrefix(newPkgDir, string(filepath.Separator)))
+	if !isValidDir {
+		return "", "", "", fmt.Errorf("invalid package path %q", newName)
+	}
+	newPkgName = PackageName(filepath.Base(newPkgDir))
+	exists, empty, err := dirIsEmpty(newPkgDir)
+	if err != nil {
+		return "", "", "", err
+	}
+	// When rename moves subpackages, we merely change the directory name, which cannot
+	// happen if the target directory already exists.
+	if moveSubpackages && exists || !empty {
+		return "", "", "", fmt.Errorf("invalid package path: %q is not empty", newPkgDir)
+	}
+	// Verify that the new package name is a valid identifier.
+	if !isValidIdentifier(string(newPkgName)) {
+		return "", "", "", fmt.Errorf("invalid package name %q", newPkgName)
+	}
+	if f.URI().Dir().Base() != string(curPkg.Metadata().Name) {
+		return "", "", "", fmt.Errorf("can't move package: package name %q does not match directory base name %q", string(curPkg.Metadata().Name), f.URI().Dir().Base())
+	}
+	return newPkgDir, newPkgName, PackagePath(newName), nil
+}
+
+// hasIgnoredGoFiles returns true if the input pkg contains any Go files that
+// are not part of package pkg with the current build configuration.
+func hasIgnoredGoFiles(pkg *cache.Package) bool {
+	// If any ignored files are Go files, don't allow a package move.
+	for _, f := range pkg.Metadata().IgnoredFiles {
+		if strings.HasSuffix(f.Path(), ".go") {
+			return true
+		}
+	}
+	return false
+}
+
+// dirIsEmpty returns two values: whether the directory exists and whether it is
+// empty (contains only directory entries). If it does not exist, empty is
+// always true.
+func dirIsEmpty(dir string) (exists bool, empty bool, err error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, true, nil
+		} else {
+			return false, false, err
+		}
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			return true, false, nil
+		}
+	}
+	return true, true, nil
+}
+
 // isLocal reports whether obj is local to some function.
 // Precondition: not a struct field or interface method.
 func isLocal(obj types.Object) bool {
@@ -940,13 +1038,6 @@ func isLocal(obj types.Object) bool {
 		depth++
 	}
 	return depth >= 4
-}
-
-func isPackageLevel(obj types.Object) bool {
-	if obj == nil {
-		return false
-	}
-	return obj.Pkg().Scope().Lookup(obj.Name()) == obj
 }
 
 // -- Plundered from go/scanner: ---------------------------------------

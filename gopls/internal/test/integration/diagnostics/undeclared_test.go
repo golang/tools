@@ -5,6 +5,7 @@
 package diagnostics
 
 import (
+	"slices"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -34,12 +35,7 @@ func _() int {
 `
 	Run(t, src, func(t *testing.T, env *Env) {
 		isUnnecessary := func(diag protocol.Diagnostic) bool {
-			for _, tag := range diag.Tags {
-				if tag == protocol.Unnecessary {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(diag.Tags, protocol.Unnecessary)
 		}
 
 		// 'x' is undeclared, but still necessary.

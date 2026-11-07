@@ -1,3 +1,3 @@
-//go:build go1.20
+//go:build go1.21
 
-package versions // want "pre.go@go1.20"
+package versions // want "pre.go@go1.21"

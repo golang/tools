@@ -100,7 +100,8 @@ func TestMatcherSimilarities(t *testing.T) {
 	idents := collectIdentifiers(t)
 	t.Logf("collected %d unique identifiers", len(idents))
 
-	// TODO: use go1.21 slices.MaxFunc.
+	// We can't use slices.MaxFunc because we want a custom
+	// scoring (not equivalence) function.
 	topMatch := func(score func(string) float64) string {
 		top := ""
 		topScore := 0.0

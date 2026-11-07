@@ -1,4 +1,6 @@
-# Gopls: Command-line interface
+---
+title: "Gopls: Command-line interface"
+---
 
 The `gopls` command provides a number of subcommands that expose much
 of the server's functionality. However, the interface is currently
@@ -20,7 +22,7 @@ Info: Finished loading packages.
 /home/gopher/xtools/gopls/main.go:35:7-11
 ```
 
-See golang/go#63693 for a discussion of its future.
+See https://go.dev/issue/63693 for a discussion of its future.
 
 Learn about available commands and flags by running `gopls help`.
 

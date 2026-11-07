@@ -1,0 +1,26 @@
+This test exercises stub methods functionality with variadic parameters.
+
+In golang/go#61693 stubmethods was panicking in this case.
+
+-- go.mod --
+module mod.com
+
+go 1.18
+-- main.go --
+package main
+
+type C int
+
+func F(err ...error) {}
+
+func _() {
+	var x error
+	F(x, C(0)) //@quickfix(re"C.0.", re"missing method Error", stub)
+}
+-- @stub/main.go --
+@@ -5 +5,5 @@
++// Error implements [error].
++func (c C) Error() string {
++	panic("unimplemented")
++}
++

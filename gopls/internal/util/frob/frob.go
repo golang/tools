@@ -12,8 +12,7 @@
 //   - Interface values are not supported; this avoids the need for
 //     the encoding to describe types.
 //
-//   - Types that recursively contain private struct fields are not
-//     permitted.
+//   - Private struct fields are ignored.
 //
 //   - The encoding is unspecified and subject to change, so the encoder
 //     and decoder must exactly agree on their implementation and on the
@@ -46,11 +45,17 @@ type Codec[T any] struct{ frob *frob }
 func CodecFor[T any]() Codec[T] {
 	frobsMu.Lock()
 	defer frobsMu.Unlock()
-	return Codec[T]{frobFor(reflect.TypeOf((*T)(nil)).Elem())}
+	return Codec[T]{frobFor(reflect.TypeFor[T]())}
 }
 
-func (codec Codec[T]) Encode(v T) []byte          { return codec.frob.Encode(v) }
-func (codec Codec[T]) Decode(data []byte, ptr *T) { codec.frob.Decode(data, ptr) }
+func (codec Codec[T]) Encode(v T) []byte { return codec.frob.Encode(v) }
+
+// Decode decodes data and returns the result. It is suitable for use
+// as a filecache.Get decoder.
+func (codec Codec[T]) Decode(data []byte) (v T) {
+	codec.frob.Decode(data, &v)
+	return
+}
 
 var (
 	frobsMu sync.Mutex
@@ -101,10 +106,9 @@ func frobFor(t reflect.Type) *frob {
 			fr.addElem(fr.t.Elem())
 
 		case reflect.Struct:
-			for i := 0; i < fr.t.NumField(); i++ {
-				field := fr.t.Field(i)
+			for field := range fr.t.Fields() {
 				if field.PkgPath != "" {
-					panic(fmt.Sprintf("unexported field %v", field))
+					continue // skip unexported field
 				}
 				fr.addElem(field.Type)
 			}
@@ -184,7 +188,7 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 	case reflect.Array:
 		len := v.Type().Len()
 		elem := fr.elems[0]
-		for i := 0; i < len; i++ {
+		for i := range len {
 			elem.encode(out, v.Index(i))
 		}
 
@@ -197,7 +201,7 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 				// []byte fast path
 				out.bytes(v.Bytes())
 			} else {
-				for i := 0; i < len; i++ {
+				for i := range len {
 					elem.encode(out, v.Index(i))
 				}
 			}
@@ -207,10 +211,15 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 		len := v.Len()
 		out.uint32(uint32(len))
 		if len > 0 {
+			n := 0
 			kfrob, vfrob := fr.elems[0], fr.elems[1]
-			for iter := v.MapRange(); iter.Next(); {
+			for iter := v.MapRange(); iter.Next(); n++ {
 				kfrob.encode(out, iter.Key())
 				vfrob.encode(out, iter.Value())
+			}
+			if n != len {
+				// Better to be defensive than emit a malformed record.
+				panic("concurrent map modification")
 			}
 		}
 
@@ -245,8 +254,8 @@ func (fr *frob) Decode(data []byte, ptr any) {
 		panic(fmt.Sprintf("got %v, want %v", rv.Type(), fr.t))
 	}
 	rd := &reader{data}
-	if string(rd.bytes(4)) != magic {
-		panic("not a frob-encoded message")
+	if len(data) < len(magic) || string(rd.bytes(len(magic))) != magic {
+		panic("not a frob-encoded message") // (likely an empty message)
 	}
 	fr.decode(rd, rv)
 	if len(rd.data) > 0 {
@@ -299,7 +308,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 
 	case reflect.Array:
 		len := fr.t.Len()
-		for i := 0; i < len; i++ {
+		for i := range len {
 			fr.elems[0].decode(in, addr.Index(i))
 		}
 
@@ -313,7 +322,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 				addr.Set(reflect.AppendSlice(addr, reflect.ValueOf(in.bytes(len))))
 			} else {
 				addr.Set(reflect.MakeSlice(fr.t, len, len))
-				for i := 0; i < len; i++ {
+				for i := range len {
 					elem.decode(in, addr.Index(i))
 				}
 			}
@@ -327,14 +336,9 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 			kfrob, vfrob := fr.elems[0], fr.elems[1]
 			k := reflect.New(kfrob.t).Elem()
 			v := reflect.New(vfrob.t).Elem()
-			kzero := reflect.Zero(kfrob.t)
-			vzero := reflect.Zero(vfrob.t)
-			for i := 0; i < len; i++ {
-				// TODO(adonovan): use SetZero from go1.20.
-				// k.SetZero()
-				// v.SetZero()
-				k.Set(kzero)
-				v.Set(vzero)
+			for range len {
+				k.SetZero()
+				v.SetZero()
 				kfrob.decode(in, k)
 				vfrob.decode(in, v)
 				m.SetMapIndex(k, v)

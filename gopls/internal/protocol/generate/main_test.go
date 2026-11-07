@@ -40,7 +40,7 @@ func TestParseContents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var our interface{}
+	var our any
 	if err := json.Unmarshal(out, &our); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestParseContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not read metaModel.json: %v", err)
 	}
-	var raw interface{}
+	var raw any
 	if err := json.Unmarshal(buf, &raw); err != nil {
 		t.Fatal(err)
 	}

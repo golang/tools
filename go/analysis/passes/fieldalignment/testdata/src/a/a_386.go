@@ -5,7 +5,7 @@ type PointerGood struct {
 	buf [1000]uintptr
 }
 
-type PointerBad struct { // want "struct with 4004 pointer bytes could be 4"
+type PointerBad struct { // want "PointerBad has 4004 leading bytes of pointer data but optimal value is 4"
 	buf [1000]uintptr
 	P   *int
 }
@@ -21,7 +21,7 @@ type PointerSorta struct {
 	}
 }
 
-type PointerSortaBad struct { // want "struct with 16 pointer bytes could be 12"
+type PointerSortaBad struct { // want "PointerSortaBad has 16 leading bytes of pointer data but optimal value is 12"
 	a struct {
 		p *int
 		q [2]uintptr
@@ -32,7 +32,7 @@ type PointerSortaBad struct { // want "struct with 16 pointer bytes could be 12"
 	}
 }
 
-type MultiField struct { // want "struct of size 20 could be 12"
+type MultiField struct { // want "MultiField has size 20 \\(allocator size class 24\\) but the optimal size is 12 \\(allocator size class 16\\) leading to a waste of 8 bytes \\(33%\\)"
 	b      bool
 	i1, i2 int
 	a3     [3]bool

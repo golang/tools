@@ -38,48 +38,147 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/lru"
 )
 
-// Start causes the filecache to initialize and start garbage gollection.
+// Start causes the filecache to initialize and start garbage collection.
 //
 // Start is automatically called by the first call to Get, but may be called
 // explicitly to pre-initialize the cache.
 func Start() {
-	go getCacheDir()
+	go func() {
+		// Force early creation of the filecache and refuse to start
+		// if there were unexpected errors such as ENOSPC. This
+		// minimizes the window of exposure to deletion of the
+		// executable, and ensures that all subsequent calls to
+		// filecache.Get cannot fail for these two reasons;
+		// see issue #67433.
+		//
+		// This leaves only one likely cause for later failures:
+		// deletion of the cache while gopls is running. If the
+		// problem continues, we could periodically stat the cache
+		// directory (for example at the start of every RPC) and
+		// either re-create it or just fail the RPC with an
+		// informative error and terminate the process.
+		if _, err := Get("nonesuch", [32]byte{}, Bytes); err != nil && err != ErrNotFound {
+			counter.Inc("gopls/nocache")
+			log.Fatalf("gopls cannot access its persistent index (disk full?): %v", err)
+		}
+	}()
 }
 
-// As an optimization, use a 100MB in-memory LRU cache in front of filecache
-// operations. This reduces I/O for operations such as diagnostics or
-// implementations that repeatedly access the same cache entries.
-var memCache = lru.New(100 * 1e6)
+// memCache is a 100MB in-memory LRU cache in front of filecache
+// operations. It holds either raw bytes (written by [Set]) or decoded
+// objects (written by [Get]). This avoids both repeated I/O and
+// repeated deserialization for operations such as references or
+// implementations that access the same entries many times.
+var memCache = lru.New[memKey, any](100 * 1e6)
 
 type memKey struct {
 	kind string
 	key  [32]byte
 }
 
-// Get retrieves from the cache and returns the value most recently
-// supplied to Set(kind, key), possibly by another process.
-// Get returns ErrNotFound if the value was not found.
+// ErrNotFound is the distinguished error
+// returned by Get when the key is not found.
+var ErrNotFound = fmt.Errorf("not found")
+
+// ErrNoCache is the type of errors returned by Get when the cache
+// cannot be created at all (e.g. due to disk space, lack of
+// permission, deletion of the gopls executable, or hardware fault).
 //
-// Callers should not modify the returned array.
-func Get(kind string, key [32]byte) ([]byte, error) {
+// The appropriate action in this case is typically to log.Fatal since
+// there is little the application can do and performance will
+// inevitably be terrible; See [GetOrFatal].
+type ErrNoCache struct{ error }
+
+// Bytes is the identity decoder, for use with [Get] when the caller
+// wants the raw bytes.
+func Bytes(data []byte) []byte { return data }
+
+// Get retrieves from the cache the value most recently supplied to
+// Set(kind, key), possibly by another process, and passes it through
+// decode. The decoded result is cached in memory so that repeated
+// reads avoid both I/O and deserialization. On a memory-cache hit
+// holding raw bytes (from a recent [Set]), the entry is decoded once
+// and upgraded in place from raw bytes to the decoded value.
+//
+// Get returns [ErrNotFound] if the value was not found.
+//
+// Get returns [ErrNoCache] if the cache did not exist and could not
+// be created. This may be due to ENOSPC, deletion of the process's
+// executable, deletion or corruption of the cache by external
+// meddling while gopls is running, or by faulty hardware (see issue
+// #67433). In this case, terminating the application is likely the
+// best course; see [GetOrFatal].
+//
+// Each kind must be used with exactly one decoded type T; mixing types
+// for the same kind is a programming error and will panic.
+// The returned value may be shared with other callers and must not be
+// mutated.
+func Get[T any](kind string, key [32]byte, decode func([]byte) T) (T, error) {
+	var zero T
+	mk := memKey{kind, key}
+
 	// First consult the read-through memory cache.
 	// Note that memory cache hits do not update the times
 	// used for LRU eviction of the file-based cache.
-	if value := memCache.Get(memKey{kind, key}); value != nil {
-		return value.([]byte), nil
+	var data []byte
+	if v, ok := memCache.Get(mk); ok {
+		if t, ok := v.(T); ok {
+			return t, nil
+		}
+		// Set stores the encoded bytes, so a hit may hold []byte rather
+		// than T until the first Get decodes and upgrades the entry.
+		// Alternatively, we could pass an encoder to Set, but the
+		// asymmetry here ensures that we don't rely on the intrinsic
+		// identity of our encoded values.
+		if data, ok = v.([]byte); !ok {
+			// Entry holds a decoded value of a different type; each
+			// kind must be used with exactly one accessor.
+			panic(fmt.Sprintf("filecache: kind %q used with multiple decoded types (got %T, want %T)", kind, v, zero))
+		}
+	} else {
+		var err error
+		if data, err = get(kind, key); err != nil {
+			return zero, err
+		}
 	}
 
+	result := decode(data)
+	memCache.Set(mk, result, len(data))
+	return result, nil
+}
+
+// GetOrFatal retrieves from the cache like [Get], but if it
+// encounters an unrecoverable [ErrNoCache] error, it calls log.Fatal.
+// Any unexpected error (not [ErrNotFound]) is logged.
+func GetOrFatal[T any](kind string, key [32]byte, decode func([]byte) T) (T, bool) {
+	val, err := Get(kind, key, decode)
+	if err == nil {
+		return val, true // hit
+	}
+	if errNoCache, ok := errors.AsType[ErrNoCache](err); ok {
+		log.Fatal(errNoCache) // unrecoverable
+	}
+	if err != ErrNotFound {
+		log.Printf("unexpected error reading %s from filecache: %v", kind, err)
+	}
+	return *new(T), false // miss
+}
+
+// get reads the value for (kind, key) from the file system, bypassing
+// the in-memory cache.
+func get(kind string, key [32]byte) ([]byte, error) {
 	iolimit <- struct{}{}        // acquire a token
 	defer func() { <-iolimit }() // release a token
 
 	// Read the index file, which provides the name of the CAS file.
 	indexName, err := filename(kind, key)
 	if err != nil {
-		return nil, err
+		return nil, err // (ErrNoCache)
 	}
 	indexData, err := os.ReadFile(indexName)
 	if err != nil {
@@ -100,7 +199,7 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// engineered hash collision, which is infeasible.
 	casName, err := filename(casKind, valueHash)
 	if err != nil {
-		return nil, err
+		return nil, err // (ErrNoCache)
 	}
 	value, _ := os.ReadFile(casName) // ignore error
 	if sha256.Sum256(value) != valueHash {
@@ -118,26 +217,19 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// automatically, but for efficiency most POSIX systems have
 	// for many years set the noatime mount option to avoid every
 	// open or read operation entailing a metadata write.)
-	now := time.Now()
-	touch := func(filename string) {
-		st, err := os.Stat(filename)
-		if err == nil && now.Sub(st.ModTime()) > time.Hour {
-			os.Chtimes(filename, now, now) // ignore error
-		}
-	}
-	touch(indexName)
-	touch(casName)
-
-	memCache.Set(memKey{kind, key}, value, len(value))
+	touch(indexName, casName)
 
 	return value, nil
 }
 
-// ErrNotFound is the distinguished error
-// returned by Get when the key is not found.
-var ErrNotFound = fmt.Errorf("not found")
-
 // Set updates the value in the cache.
+//
+// Set may fail due to:
+// - failure to access/create the cache (first call only);
+// - out of space (ENOSPC);
+// - deletion of the cache concurrent with a call to Set;
+// - faulty hardware.
+// See issue #67433.
 func Set(kind string, key [32]byte, value []byte) error {
 	memCache.Set(memKey{kind, key}, value, len(value))
 
@@ -150,12 +242,21 @@ func Set(kind string, key [32]byte, value []byte) error {
 	iolimit <- struct{}{}        // acquire a token
 	defer func() { <-iolimit }() // release a token
 
+	// TODO(adonovan): opt: reduce the ~10 metadata syscalls per Set,
+	// which are costly on macOS (APFS updates the Spotlight index,
+	// and many companies install endpoint security clients that
+	// intercept file I/O). We could:
+	// - remember which of the 256 "XX/" directories exist, to avoid MkdirAll;
+	// - skip touch(casName) when we just created the CAS file;
+	// - replace the ReadFile+Equal probe with something cheaper
+	//   (e.g. Stat+size check, or O_EXCL create).
+
 	// First, add the value to the content-
 	// addressable store (CAS), if not present.
 	hash := sha256.Sum256(value)
 	casName, err := filename(casKind, hash)
 	if err != nil {
-		return err
+		return err // (ErrNoCache)
 	}
 	// Does CAS file exist and have correct (complete) content?
 	// TODO(adonovan): opt: use mmap for this check.
@@ -174,17 +275,30 @@ func Set(kind string, key [32]byte, value []byte) error {
 	// Now write an index entry that refers to the CAS file.
 	indexName, err := filename(kind, key)
 	if err != nil {
-		return err
+		return err // (ErrNoCache)
 	}
 	if err := os.MkdirAll(filepath.Dir(indexName), 0700); err != nil {
-		return err
+		return err // e.g. disk full
 	}
 	if err := writeFileNoTrunc(indexName, hash[:], 0600); err != nil {
 		os.Remove(indexName) // ignore error
 		return err           // e.g. disk full
 	}
 
+	// Update the CAS file's timestamp to prevent premature LRU eviction.
+	touch(casName)
+
 	return nil
+}
+
+func touch(filenames ...string) {
+	now := time.Now()
+	for _, filename := range filenames {
+		st, err := os.Stat(filename)
+		if err == nil && now.Sub(st.ModTime()) > time.Hour {
+			os.Chtimes(filename, now, now) // ignore error
+		}
+	}
 }
 
 // The active 1-channel is a selectable resettable event
@@ -214,7 +328,7 @@ const (
 	bugKind = "bug" // gopls bug reports
 )
 
-var iolimit = make(chan struct{}, 128) // counting semaphore to limit I/O concurrency in Set.
+var iolimit = make(chan struct{}, 8) // counting semaphore to limit I/O concurrency in Set.
 
 var budget int64 = 1e9 // 1GB
 
@@ -308,7 +422,7 @@ func filename(kind string, key [32]byte) (string, error) {
 	base := fmt.Sprintf("%x-%s", key, kind)
 	dir, err := getCacheDir()
 	if err != nil {
-		return "", err
+		return "", err // (ErrNoCache)
 	}
 	// Keep the BugReports function consistent with this one.
 	return filepath.Join(dir, base[:2], base), nil
@@ -320,56 +434,59 @@ func filename(kind string, key [32]byte) (string, error) {
 // It must incorporate the hash of the executable so that we needn't
 // worry about incompatible changes to the file format or changes to
 // the algorithm that produced the index.
-func getCacheDir() (string, error) {
-	cacheDirOnce.Do(func() {
-		// Use user's preferred cache directory.
-		userDir := os.Getenv("GOPLSCACHE")
-		if userDir == "" {
-			var err error
-			userDir, err = os.UserCacheDir()
-			if err != nil {
-				userDir = os.TempDir()
-			}
-		}
-		goplsDir := filepath.Join(userDir, "gopls")
-
-		// UserCacheDir may return a nonexistent directory
-		// (in which case we must create it, which may fail),
-		// or it may return a non-writable directory, in
-		// which case we should ideally respect the user's express
-		// wishes (e.g. XDG_CACHE_HOME) and not write somewhere else.
-		// Sadly UserCacheDir doesn't currently let us distinguish
-		// such intent from accidental misconfiguraton such as HOME=/
-		// in a CI builder. So, we check whether the gopls subdirectory
-		// can be created (or already exists) and not fall back to /tmp.
-		// See also https://github.com/golang/go/issues/57638.
-		if os.MkdirAll(goplsDir, 0700) != nil {
-			goplsDir = filepath.Join(os.TempDir(), "gopls")
-		}
-
-		// Start the garbage collector.
-		go gc(goplsDir)
-
-		// Compute the hash of this executable (~20ms) and create a subdirectory.
-		hash, err := hashExecutable()
+var getCacheDir = sync.OnceValues(func() (string, error) {
+	// Use user's preferred cache directory.
+	userDir := os.Getenv("GOPLSCACHE")
+	if userDir == "" {
+		var err error
+		userDir, err = os.UserCacheDir()
 		if err != nil {
-			cacheDirErr = fmt.Errorf("can't hash gopls executable: %v", err)
+			userDir = os.TempDir()
 		}
-		// Use only 32 bits of the digest to avoid unwieldy filenames.
-		// It's not an adversarial situation.
-		cacheDir = filepath.Join(goplsDir, fmt.Sprintf("%x", hash[:4]))
-		if err := os.MkdirAll(cacheDir, 0700); err != nil {
-			cacheDirErr = fmt.Errorf("can't create cache: %v", err)
-		}
-	})
-	return cacheDir, cacheDirErr
-}
+	}
+	goplsDir := filepath.Join(userDir, "gopls")
 
-var (
-	cacheDirOnce sync.Once
-	cacheDir     string
-	cacheDirErr  error
-)
+	// UserCacheDir may return a nonexistent directory
+	// (in which case we must create it, which may fail),
+	// or it may return a non-writable directory, in
+	// which case we should ideally respect the user's express
+	// wishes (e.g. XDG_CACHE_HOME) and not write somewhere else.
+	// Sadly UserCacheDir doesn't currently let us distinguish
+	// such intent from accidental misconfiguraton such as HOME=/
+	// in a CI builder. So, we check whether the gopls subdirectory
+	// can be created (or already exists) and not fall back to /tmp.
+	// See also https://github.com/golang/go/issues/57638.
+	if os.MkdirAll(goplsDir, 0700) != nil {
+		goplsDir = filepath.Join(os.TempDir(), "gopls")
+	}
+
+	// Start the garbage collector.
+	go gc(goplsDir)
+
+	// Compute the hash of this executable (~20ms) and create a subdirectory.
+	hash, err := hashExecutable()
+	if err != nil {
+		return "", ErrNoCache{fmt.Errorf("can't hash gopls executable: %w", err)}
+	}
+	// Use only 32 bits of the digest to avoid unwieldy filenames.
+	// It's not an adversarial situation.
+	cacheDir := filepath.Join(goplsDir, fmt.Sprintf("%x", hash[:4]))
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		return "", ErrNoCache{fmt.Errorf("can't create cache: %w", err)}
+	}
+	// ...but record the full digest to detect collisions.
+	// The birthday paradox P(k) = 1 - exp(-k^2 / (2N)), where N = 1<<32,
+	// gives 50% odds of a 32-bit collision even with >77K different executables.
+	shaFile := filepath.Join(cacheDir, "exe.sha256")
+	if prev, err := os.ReadFile(shaFile); err == nil && !bytes.Equal(prev, hash[:]) {
+		return "", ErrNoCache{fmt.Errorf("gopls cache directory %s hash collision (%x vs %x)", cacheDir, prev, hash[:])}
+	}
+	if err := writeFileNoTrunc(shaFile, hash[:], 0600); err != nil {
+		return "", ErrNoCache{fmt.Errorf("can't write executable hash: %w", err)}
+	}
+
+	return cacheDir, nil
+})
 
 func hashExecutable() (hash [32]byte, err error) {
 	exe, err := os.Executable()
@@ -591,7 +708,7 @@ func BugReports() (string, []bug.Bug) {
 			if err != nil || n != len(key) {
 				return nil // ignore malformed file names
 			}
-			content, err := Get(bugKind, key)
+			content, err := Get(bugKind, key, Bytes)
 			if err == nil { // ignore read errors
 				var b bug.Bug
 				if err := json.Unmarshal(content, &b); err != nil {

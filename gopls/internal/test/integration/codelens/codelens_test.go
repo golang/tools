@@ -7,6 +7,7 @@ package codelens
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/server"
@@ -182,10 +183,10 @@ require golang.org/x/hello v1.2.3
 				if !found {
 					t.Fatalf("found no command with the title %s", commandTitle)
 				}
-				if _, err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+				if err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 					Command:   lens.Command.Command,
 					Arguments: lens.Command.Arguments,
-				}); err != nil {
+				}, nil); err != nil {
 					t.Fatal(err)
 				}
 				env.AfterChange()
@@ -252,7 +253,8 @@ func TestUpgradeCodelens_ModVendor(t *testing.T) {
 	// This test checks the regression of golang/go#66055. The upgrade codelens
 	// should work in a mod vendor context (the test above using a go.work file
 	// was not broken).
-	testenv.NeedsGo1Point(t, 22)
+	testenv.NeedsGoCommand1Point(t, 22)
+
 	const shouldUpdateDep = `
 -- go.mod --
 module mod.com/a
@@ -260,9 +262,6 @@ module mod.com/a
 go 1.22
 
 require golang.org/x/hello v1.2.3
--- go.sum --
-golang.org/x/hello v1.2.3 h1:7Wesfkx/uBd+eFgPrq0irYj/1XfmbvLV8jZ/W7C2Dwg=
-golang.org/x/hello v1.2.3/go.mod h1:OgtlzsxVMUUdsdQCIDYgaauCTH47B8T8vofouNJfzgY=
 -- main.go --
 package main
 
@@ -281,6 +280,7 @@ require golang.org/x/hello v1.3.3
 `
 
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxyWithLatest),
 	).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
 		env.RunGoCommand("mod", "vendor")
@@ -300,6 +300,64 @@ require golang.org/x/hello v1.3.3
 		env.AfterChange()
 		if got := env.BufferText("go.mod"); got != wantGoModA {
 			t.Fatalf("go.mod upgrade failed:\n%s", compare.Text(wantGoModA, got))
+		}
+	})
+}
+
+func TestUpgradeCodelens_FlagInjection(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com/a
+
+go 1.22
+
+require (
+	-m=false v1.0.0
+	-u=false v1.0.0
+	-export v1.0.0
+	-debug-actiongraph=injected.json v1.0.0
+)
+-- main.go --
+package main
+
+func main() {}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("go.mod")
+		for _, title := range []string{"Check for upgrades", "Upgrade direct dependencies"} {
+			var lens protocol.CodeLens
+			var found bool
+			for _, l := range env.CodeLens("go.mod") {
+				if l.Command.Title == title {
+					lens = l
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("found no command with the title %s", title)
+			}
+			err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+				Command:   lens.Command.Command,
+				Arguments: lens.Command.Arguments,
+			}, nil)
+			if err == nil {
+				t.Errorf("%s succeeded unexpectedly on flag-like module path", title)
+			}
+		}
+		if _, err := os.Stat(env.Sandbox.Workdir.URI("injected.json").Path()); err == nil {
+			t.Errorf("flag injection created injected.json")
+		}
+		// Prior to Go 1.28 (CL 802480), "go mod why -m -- -m=false ..." succeeds and
+		// reports "(main module does not need module -m=false)"; in Go 1.28+, it
+		// fails with "malformed module path". Without "--", it fails with
+		// "flag provided but not defined: -u" on all Go versions.
+		if content, _, err := env.Editor.Hover(env.Ctx, env.RegexpSearch("go.mod", "-m=false")); err != nil {
+			if !strings.Contains(err.Error(), "malformed module path") {
+				t.Errorf("Hover failed with unexpected error: %v", err)
+			}
+		} else if content == nil || !strings.Contains(content.Value, "main module does not need module -m=false") {
+			t.Errorf("Hover returned unexpected content: %v", content)
 		}
 	})
 }
@@ -334,11 +392,6 @@ require golang.org/x/hello v1.0.0
 require golang.org/x/unused v1.0.0
 
 // EOF
--- go.sum --
-golang.org/x/hello v1.0.0 h1:qbzE1/qT0/zojAMd/JcPsO2Vb9K4Bkeyq0vB2JGMmsw=
-golang.org/x/hello v1.0.0/go.mod h1:WW7ER2MRNXWA6c8/4bDIek4Hc/+DofTrMaQQitGXcco=
-golang.org/x/unused v1.0.0 h1:LecSbCn5P3vTcxubungSt1Pn4D/WocCaiWOPDC0y0rw=
-golang.org/x/unused v1.0.0/go.mod h1:ihoW8SgWzugwwj0N2SfLfPZCxTB1QOVfhMfB5PWTQ8U=
 -- main.go --
 package main
 
@@ -348,7 +401,10 @@ func main() {
 	_ = hi.Goodbye
 }
 `
-	WithOptions(ProxyFiles(proxy)).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy),
+	).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.RegexpReplace("go.mod", "// EOF", "// EOF unsaved edit") // unsaved edits ok
 		env.ExecuteCodeLensCommand("go.mod", command.Tidy, nil)
@@ -388,7 +444,7 @@ func Foo() {
 }
 `
 	Run(t, workspace, func(t *testing.T, env *Env) {
-		// Open the file. We have a nonexistant symbol that will break cgo processing.
+		// Open the file. We have a nonexistent symbol that will break cgo processing.
 		env.OpenFile("cgo.go")
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("cgo.go", ``), WithMessage("go list failed to return CompiledGoFiles")),

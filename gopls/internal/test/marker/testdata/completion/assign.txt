@@ -25,19 +25,19 @@ func _() {
 		myStr string //@item(assignStr, "myStr", "string", "var")
 	)
 
-	var _ string = my //@rank(" //", assignStr, assignInt)
-	var _ string = //@rank(" //", assignStr, assignInt)
+	var _ string = my //@rank(re"() \\/\\/", assignStr, assignInt)
+	var _ string = //@rank(re"() \\/\\/", assignStr, assignInt)
 }
 
 func _() {
-	var a string = a //@complete(" //")
+	var a string = a //@complete(re"() \\/\\/")
 }
 
 func _() {
-	fooBar := fooBa //@complete(" //"),item(assignFooBar, "fooBar", "", "var")
-	abc, fooBar := 123, fooBa //@complete(" //", assignFooBar)
+	fooBar := fooBa //@complete(re"() \\/\\/"),item(assignFooBar, "fooBar", "", "var")
+	abc, fooBar := 123, fooBa //@complete(re"() \\/\\/", assignFooBar)
 	{
-		fooBar := fooBa //@complete(" //", assignFooBar)
+		fooBar := fooBa //@complete(re"() \\/\\/", assignFooBar)
 	}
 }
 

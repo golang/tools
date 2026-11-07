@@ -1,0 +1,17 @@
+This test case reproduced a panic due to a bug in objectpath
+on recursive interfaces (#70418).
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- p/p.go --
+package p
+
+type Anon = interface{ F() } //@implementation("F")
+
+type I interface {
+	A(Anon)
+	Z()
+	Anon
+}

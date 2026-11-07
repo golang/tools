@@ -8,15 +8,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 // check implements the check verb for gopls.
 type check struct {
-	app *Application
+	app      *application
+	Severity string `flag:"severity" help:"minimum diagnostic severity (hint, info, warning, or error)"`
 }
 
 func (c *check) Name() string      { return "check" }
@@ -35,6 +36,20 @@ Example: show the diagnostic results of this file:
 // Run performs the check on the files specified by args and prints the
 // results to stdout.
 func (c *check) Run(ctx context.Context, args ...string) error {
+	severityCutoff := protocol.SeverityWarning
+	switch c.Severity {
+	case "hint":
+		severityCutoff = protocol.SeverityHint
+	case "info":
+		severityCutoff = protocol.SeverityInformation
+	case "warning":
+		// default
+	case "error":
+		severityCutoff = protocol.SeverityError
+	default:
+		return fmt.Errorf("unrecognized -severity value %q", c.Severity)
+	}
+
 	if len(args) == 0 {
 		return nil
 	}
@@ -51,11 +66,11 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		opts.RelatedInformationSupported = true
 	}
 
-	conn, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	// Open and diagnose the requested files.
 	var (
@@ -65,19 +80,19 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	for _, arg := range args {
 		uri := protocol.URIFromPath(arg)
 		uris = append(uris, uri)
-		file, err := conn.openFile(ctx, uri)
+		file, err := cli.openFile(ctx, uri)
 		if err != nil {
 			return err
 		}
 		checking[uri] = file
 	}
-	if err := conn.diagnoseFiles(ctx, uris); err != nil {
+	if err := diagnoseFiles(ctx, cli.server, uris); err != nil {
 		return err
 	}
 
 	// print prints a single element of a diagnostic.
 	print := func(uri protocol.DocumentURI, rng protocol.Range, message string) error {
-		file, err := conn.openFile(ctx, uri)
+		file, err := cli.openFile(ctx, uri)
 		if err != nil {
 			return err
 		}
@@ -95,7 +110,10 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		file.diagnosticsMu.Unlock()
 
 		for _, diag := range diags {
-			if err := print(file.uri, diag.Range, diag.Message); err != nil {
+			if diag.Severity > severityCutoff { // lower severity value => greater severity, counterintuitively
+				continue
+			}
+			if err := print(file.uri, diag.Range, diag.MessageString()); err != nil {
 				return err
 			}
 			for _, rel := range diag.RelatedInformation {

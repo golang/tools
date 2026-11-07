@@ -1,0 +1,10 @@
+Regression test for golang/go#60544.
+
+-- go.mod --
+module mod.com
+
+go 1.19
+-- main.go --
+package main
+
+func F[T comparable]() {}//@typedef(re"comparable()", BUILTIN)

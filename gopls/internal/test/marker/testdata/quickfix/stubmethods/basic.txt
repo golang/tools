@@ -1,0 +1,30 @@
+This test exercises basic 'stub methods' functionality.
+See basic_resolve.txt for the same test with resolve support.
+
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": false,
+			"resolveSupport": {}
+		}
+	}
+}
+
+-- go.mod --
+module example.com
+go 1.12
+
+-- a/a.go --
+package a
+
+type C int
+
+var _ error = C(0) //@quickfix(re"C.0.", re"missing method Error", stub)
+-- @stub/a/a.go --
+@@ -5 +5,5 @@
++// Error implements [error].
++func (c C) Error() string {
++	panic("unimplemented")
++}
++

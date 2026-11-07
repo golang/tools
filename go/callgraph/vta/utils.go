@@ -6,10 +6,9 @@ package vta
 
 import (
 	"go/types"
+	"iter"
 
-	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -25,7 +24,7 @@ func isReferenceNode(n node) bool {
 		return true
 	}
 
-	if _, ok := aliases.Unalias(n.Type()).(*types.Pointer); ok {
+	if _, ok := types.Unalias(n.Type()).(*types.Pointer); ok {
 		return true
 	}
 
@@ -139,39 +138,29 @@ func sliceArrayElem(t types.Type) types.Type {
 	case *types.Basic:
 		return types.Typ[types.Byte]
 	case *types.Interface: // type param.
-		terms, err := typeparams.InterfaceTermSet(u)
-		if err != nil || len(terms) == 0 {
+		ts := typeparams.TypeSetOf(u)
+		if ts.Len() == 0 {
 			panic(t)
 		}
-		return sliceArrayElem(terms[0].Type()) // Element types must match.
+		return sliceArrayElem(ts.Term(0).Type()) // Element types must match.
 	default:
 		panic(t)
 	}
 }
 
-// siteCallees returns a go1.23 iterator for the callees for call site `c`
-// given program `callgraph`.
-func siteCallees(c ssa.CallInstruction, callgraph *callgraph.Graph) func(yield func(*ssa.Function) bool) {
-	// TODO: when x/tools uses go1.23, change callers to use range-over-func
-	// (https://go.dev/issue/65237).
-	node := callgraph.Nodes[c.Parent()]
+// siteCallees returns an iterator for the callees for call site `c`.
+func siteCallees(c ssa.CallInstruction, callees calleesFunc) iter.Seq[*ssa.Function] {
 	return func(yield func(*ssa.Function) bool) {
-		if node == nil {
-			return
-		}
-
-		for _, edge := range node.Out {
-			if edge.Site == c {
-				if !yield(edge.Callee.Func) {
-					return
-				}
+		for _, callee := range callees(c) {
+			if !yield(callee) {
+				return
 			}
 		}
 	}
 }
 
 func canHaveMethods(t types.Type) bool {
-	t = aliases.Unalias(t)
+	t = types.Unalias(t)
 	if _, ok := t.(*types.Named); ok {
 		return true
 	}

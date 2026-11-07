@@ -16,10 +16,10 @@ import (
 )
 
 func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.DocumentSymbol", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -52,10 +52,7 @@ func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 			Name:       s.Name,
 			Kind:       s.Kind,
 			Deprecated: s.Deprecated,
-			Location: protocol.Location{
-				URI:   params.TextDocument.URI,
-				Range: s.Range,
-			},
+			Location:   params.TextDocument.URI.Location(s.Range),
 		}
 	}
 	return symbols, nil

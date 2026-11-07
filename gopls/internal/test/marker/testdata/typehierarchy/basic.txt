@@ -1,0 +1,50 @@
+Basic test of type hierarchy.
+
+We pose the same queries across two identical packages to exercise
+the local and global algorithms.
+
+TODO(adonovan): test other properties of the result, such as kind.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type I interface { F() } //@ loc(I, "I")
+
+type J interface { F(); G() } //@ loc(J, "J")
+
+type S int  //@ loc(S, "S")
+
+func (S) F() {}
+func (S) G() {}
+
+//@subtypes(S)
+//@subtypes(I, J, S, BI, BJ, BS)
+//@subtypes(J, S, BJ, BS)
+
+//@supertypes(S, I, J, BI, BJ)
+//@supertypes(I, BI)
+//@supertypes(J, I, BI, BJ)
+
+-- b/b.go --
+package b
+
+type BI interface { F() } //@ loc(BI, "BI")
+
+type BJ interface { F(); G() } //@ loc(BJ, "BJ")
+
+type BS int  //@ loc(BS, "BS")
+
+func (BS) F() {}
+func (BS) G() {}
+
+//@subtypes(BS)
+//@subtypes(BI, BJ, BS, I, J, S)
+//@subtypes(BJ, BS, J, S)
+
+//@supertypes(BS, BI, BJ, I, J)
+//@supertypes(BI, I)
+//@supertypes(BJ, BI, I, J)

@@ -1,0 +1,33 @@
+This test demonstrates support for "hoverKind": "Structured".
+
+Its size expectations assume a 64-bit machine.
+
+-- flags --
+-skip_goarch=386,arm
+
+-- go.mod --
+module example.com/p
+
+go 1.18
+
+-- settings.json --
+{
+	"hoverKind": "Structured"
+}
+-- p.go --
+package p
+
+// MyType is a type.
+type MyType struct { //@ hover("MyType", "MyType", MyType)
+	F int // a field
+	S string // a string field
+}
+
+// MyFunc is a function.
+func MyFunc(i int) string { //@ hover("MyFunc", "MyFunc", MyFunc)
+	return ""
+}
+-- @MyFunc --
+{"synopsis":"MyFunc is a function.","fullDocumentation":"MyFunc is a function.\n","signature":"func MyFunc(i int) string","singleLine":"func MyFunc(i int) string","symbolName":"p.MyFunc","linkPath":"example.com/p","linkAnchor":"MyFunc"}
+-- @MyType --
+{"synopsis":"MyType is a type.","fullDocumentation":"MyType is a type.\n","signature":"type MyType struct { // size=24 (0x18)\n\tF int    // a field\n\tS string // a string field\n}\n","singleLine":"type MyType struct{F int; S string}","symbolName":"p.MyType","linkPath":"example.com/p","linkAnchor":"MyType"}

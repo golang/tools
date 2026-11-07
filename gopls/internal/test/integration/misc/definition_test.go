@@ -5,12 +5,16 @@
 package misc
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -38,13 +42,13 @@ const message = "Hello World."
 func TestGoToInternalDefinition(t *testing.T) {
 	Run(t, internalDefinition, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", "message"))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", "message"))
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "const.go"; name != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
 		if want := env.RegexpSearch("const.go", "message"); loc != want {
-			t.Errorf("GoToDefinition: got location %v, want %v", loc, want)
+			t.Errorf("Definition: got location %v, want %v", loc, want)
 		}
 	})
 }
@@ -87,13 +91,13 @@ func TestGoToLinknameDefinition(t *testing.T) {
 
 		// Jump from directives 2nd arg.
 		start := env.RegexpSearch("upper/upper.go", `lower.bar`)
-		loc := env.GoToDefinition(start)
+		loc := env.FirstDefinition(start)
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "lower/lower.go"; name != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
 		if want := env.RegexpSearch("lower/lower.go", `bar`); loc != want {
-			t.Errorf("GoToDefinition: got position %v, want %v", loc, want)
+			t.Errorf("Definition: got position %v, want %v", loc, want)
 		}
 	})
 }
@@ -136,13 +140,13 @@ func TestGoToLinknameDefinitionInReverseDep(t *testing.T) {
 
 		// Jump from directives 2nd arg.
 		start := env.RegexpSearch("lower/lower.go", `upper.foo`)
-		loc := env.GoToDefinition(start)
+		loc := env.FirstDefinition(start)
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "upper/upper.go"; name != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
 		if want := env.RegexpSearch("upper/upper.go", `foo`); loc != want {
-			t.Errorf("GoToDefinition: got position %v, want %v", loc, want)
+			t.Errorf("Definition: got position %v, want %v", loc, want)
 		}
 	})
 }
@@ -175,13 +179,13 @@ func TestGoToLinknameDefinitionDisconnected(t *testing.T) {
 
 		// Jump from directives 2nd arg.
 		start := env.RegexpSearch("a/a.go", `b.bar`)
-		loc := env.GoToDefinition(start)
+		loc := env.FirstDefinition(start)
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "b/b.go"; name != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
 		if want := env.RegexpSearch("b/b.go", `bar`); loc != want {
-			t.Errorf("GoToDefinition: got position %v, want %v", loc, want)
+			t.Errorf("Definition: got position %v, want %v", loc, want)
 		}
 	})
 }
@@ -203,32 +207,36 @@ func main() {
 func TestGoToStdlibDefinition_Issue37045(t *testing.T) {
 	Run(t, stdlibDefinition, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `fmt.(Printf)`))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `fmt.(Printf)`))
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if got, want := path.Base(name), "print.go"; got != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
+		env.OpenFile(name)
 
 		// Test that we can jump to definition from outside our workspace.
 		// See golang.org/issues/37045.
-		newLoc := env.GoToDefinition(loc)
+		newLoc := env.FirstDefinition(loc)
 		newName := env.Sandbox.Workdir.URIToPath(newLoc.URI)
 		if newName != name {
-			t.Errorf("GoToDefinition is not idempotent: got %q, want %q", newName, name)
+			t.Errorf("Definition is not idempotent: got %q, want %q", newName, name)
 		}
 		if newLoc != loc {
-			t.Errorf("GoToDefinition is not idempotent: got %v, want %v", newLoc, loc)
+			t.Errorf("Definition is not idempotent: got %v, want %v", newLoc, loc)
 		}
 	})
 }
 
+// This test depends on the internal symbol fmt.newPrinter.
+// It may need updating as the fmt package evolves.
 func TestUnexportedStdlib_Issue40809(t *testing.T) {
 	Run(t, stdlibDefinition, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `fmt.(Printf)`))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `fmt.(Printf)`))
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
+		env.OpenFile(name)
 
-		loc = env.RegexpSearch(name, `:=\s*(newPrinter)\(\)`)
+		loc = env.RegexpSearch(name, `:=\s*(newPrinter)\(.*\)`)
 
 		// Check that we can find references on a reference
 		refs := env.References(loc)
@@ -236,7 +244,7 @@ func TestUnexportedStdlib_Issue40809(t *testing.T) {
 			t.Errorf("expected 5+ references to newPrinter, found: %#v", refs)
 		}
 
-		loc = env.GoToDefinition(loc)
+		loc = env.FirstDefinition(loc)
 		content, _ := env.Hover(loc)
 		if !strings.Contains(content.Value, "newPrinter") {
 			t.Fatal("definition of newPrinter went to the incorrect place")
@@ -303,7 +311,7 @@ func main() {}
 				Settings{"importShortcut": tt.importShortcut},
 			).Run(t, mod, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
-				loc := env.GoToDefinition(env.RegexpSearch("main.go", `"fmt"`))
+				loc := env.FirstDefinition(env.RegexpSearch("main.go", `"fmt"`))
 				if loc == (protocol.Location{}) {
 					t.Fatalf("expected definition, got none")
 				}
@@ -314,80 +322,6 @@ func main() {}
 			})
 		})
 	}
-}
-
-func TestGoToTypeDefinition_Issue38589(t *testing.T) {
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.12
--- main.go --
-package main
-
-type Int int
-
-type Struct struct{}
-
-func F1() {}
-func F2() (int, error) { return 0, nil }
-func F3() (**Struct, bool, *Int, error) { return nil, false, nil, nil }
-func F4() (**Struct, bool, *float64, error) { return nil, false, nil, nil }
-
-func main() {}
-`
-
-	for _, tt := range []struct {
-		re         string
-		wantError  bool
-		wantTypeRe string
-	}{
-		{re: `F1`, wantError: true},
-		{re: `F2`, wantError: true},
-		{re: `F3`, wantError: true},
-		{re: `F4`, wantError: false, wantTypeRe: `type (Struct)`},
-	} {
-		t.Run(tt.re, func(t *testing.T) {
-			Run(t, mod, func(t *testing.T, env *Env) {
-				env.OpenFile("main.go")
-
-				loc, err := env.Editor.TypeDefinition(env.Ctx, env.RegexpSearch("main.go", tt.re))
-				if tt.wantError {
-					if err == nil {
-						t.Fatal("expected error, got nil")
-					}
-					return
-				}
-				if err != nil {
-					t.Fatalf("expected nil error, got %s", err)
-				}
-
-				typeLoc := env.RegexpSearch("main.go", tt.wantTypeRe)
-				if loc != typeLoc {
-					t.Errorf("invalid pos: want %+v, got %+v", typeLoc, loc)
-				}
-			})
-		})
-	}
-}
-
-func TestGoToTypeDefinition_Issue60544(t *testing.T) {
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.19
--- main.go --
-package main
-
-func F[T comparable]() {}
-`
-
-	Run(t, mod, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-
-		_ = env.TypeDefinition(env.RegexpSearch("main.go", "comparable")) // must not panic
-	})
 }
 
 // Test for golang/go#47825.
@@ -426,7 +360,7 @@ package client
 `
 	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("client/client_role_test.go")
-		env.GoToDefinition(env.RegexpSearch("client/client_role_test.go", "RoleSetup"))
+		env.FirstDefinition(env.RegexpSearch("client/client_role_test.go", "RoleSetup"))
 	})
 }
 
@@ -437,7 +371,7 @@ func TestGoToCrashingDefinition_Issue49223(t *testing.T) {
 		params.TextDocument.URI = protocol.DocumentURI("fugitive%3A///Users/user/src/mm/ems/.git//0/pkg/domain/treasury/provider.go")
 		params.Position.Character = 18
 		params.Position.Line = 0
-		env.Editor.Server.Definition(env.Ctx, params)
+		env.Editor.Server.Definition(env.Ctx, params) // ignore error
 	})
 }
 
@@ -463,10 +397,6 @@ module example.com/a
 go 1.14
 require other.com/b v1.0.0
 
--- go.sum --
-other.com/b v1.0.0 h1:1wb3PMGdet5ojzrKl+0iNksRLnOM9Jw+7amBNqmYwqk=
-other.com/b v1.0.0/go.mod h1:TgHQFucl04oGT+vrUm/liAzukYHNxCwKNkQZEyn3m9g=
-
 -- a.go --
 package a
 import "other.com/b"
@@ -474,6 +404,7 @@ const _ = b.K
 
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 		Modes(Default), // fails in 'experimental' mode
 	).Run(t, src, func(t *testing.T, env *Env) {
@@ -487,11 +418,11 @@ const _ = b.K
 		refLoc := env.RegexpSearch("a.go", "K") // find "b.K" reference
 
 		// Initially, b.K is defined in the module cache.
-		gotLoc := env.GoToDefinition(refLoc)
+		gotLoc := env.FirstDefinition(refLoc)
 		gotFile := env.Sandbox.Workdir.URIToPath(gotLoc.URI)
 		wantCache := filepath.ToSlash(env.Sandbox.GOPATH()) + "/pkg/mod/other.com/b@v1.0.0/b.go"
 		if gotFile != wantCache {
-			t.Errorf("GoToDefinition, before: got file %q, want %q", gotFile, wantCache)
+			t.Errorf("Definition, before: got file %q, want %q", gotFile, wantCache)
 		}
 
 		// Run 'go mod vendor' outside the editor.
@@ -501,10 +432,10 @@ const _ = b.K
 		env.Await(env.DoneWithChangeWatchedFiles())
 
 		// Now, b.K is defined in the vendor tree.
-		gotLoc = env.GoToDefinition(refLoc)
+		gotLoc = env.FirstDefinition(refLoc)
 		wantVendor := "vendor/other.com/b/b.go"
 		if gotFile != wantVendor {
-			t.Errorf("GoToDefinition, after go mod vendor: got file %q, want %q", gotFile, wantVendor)
+			t.Errorf("Definition, after go mod vendor: got file %q, want %q", gotFile, wantVendor)
 		}
 
 		// Delete the vendor tree.
@@ -520,10 +451,10 @@ const _ = b.K
 		env.Await(env.DoneWithChangeWatchedFiles())
 
 		// b.K is once again defined in the module cache.
-		gotLoc = env.GoToDefinition(gotLoc)
+		gotLoc = env.FirstDefinition(gotLoc)
 		gotFile = env.Sandbox.Workdir.URIToPath(gotLoc.URI)
 		if gotFile != wantCache {
-			t.Errorf("GoToDefinition, after rm -rf vendor: got file %q, want %q", gotFile, wantCache)
+			t.Errorf("Definition, after rm -rf vendor: got file %q, want %q", gotFile, wantCache)
 		}
 	})
 }
@@ -554,16 +485,16 @@ FOO
 SKIP
 `
 
-func TestGoToEmbedDefinition(t *testing.T) {
+func TestEmbedDefinition(t *testing.T) {
 	Run(t, embedDefinition, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 
 		start := env.RegexpSearch("main.go", `\*.txt`)
-		loc := env.GoToDefinition(start)
+		loc := env.FirstDefinition(start)
 
 		name := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "foo.txt"; name != want {
-			t.Errorf("GoToDefinition: got file %q, want %q", name, want)
+			t.Errorf("Definition: got file %q, want %q", name, want)
 		}
 	})
 }
@@ -588,10 +519,213 @@ func _(err error) {
 		env.OpenFile("a.go")
 
 		start := env.RegexpSearch("a.go", `Error`)
-		loc := env.GoToDefinition(start)
+		loc := env.FirstDefinition(start)
 
 		if !strings.HasSuffix(string(loc.URI), "builtin.go") {
-			t.Errorf("GoToDefinition(err.Error) = %#v, want builtin.go", loc)
+			t.Errorf("Definition(err.Error) = %#v, want builtin.go", loc)
+		}
+	})
+}
+
+func TestAssemblyDefinition(t *testing.T) {
+	// This test cannot be expressed as a marker test because
+	// the expect package ignores markers (@loc) within a .s file.
+	const src = `
+-- go.mod --
+module mod.com
+
+-- foo_darwin_arm64.s --
+
+// assembly implementation
+TEXT ·foo(SB),NOSPLIT,$0
+	RET
+
+-- a.go --
+//go:build darwin && arm64
+
+package a
+
+// Go declaration
+func foo(int) int
+
+var _ = foo(123) // call
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		locString := func(loc protocol.Location) string {
+			return fmt.Sprintf("%s:%s", loc.URI.Base(), loc.Range)
+		}
+
+		// Definition at the call"foo(123)" takes us to the Go declaration.
+		callLoc := env.RegexpSearch("a.go", regexp.QuoteMeta("foo(123)"))
+		declLoc := env.FirstDefinition(callLoc)
+		if got, want := locString(declLoc), "a.go:5:5-5:8"; got != want {
+			t.Errorf("Definition(call): got %s, want %s", got, want)
+		}
+
+		// Definition a second time takes us to the assembly implementation.
+		implLoc := env.FirstDefinition(declLoc)
+		if got, want := locString(implLoc), "foo_darwin_arm64.s:2:6-2:9"; got != want {
+			t.Errorf("Definition(go decl): got %s, want %s", got, want)
+		}
+	})
+}
+
+func TestPackageKeyInvalidationAfterSave(t *testing.T) {
+	// This test is a little subtle, but catches a bug that slipped through
+	// testing of https://go.dev/cl/614165, which moved active packages to the
+	// packageHandle.
+	//
+	// The bug was that after a format-and-save operation, the save marks the
+	// package as dirty but doesn't change its identity. In other words, this is
+	// the sequence of change:
+	//
+	//  S_0 --format--> S_1 --save--> S_2
+	//
+	// A package is computed on S_0, invalidated in S_1 and immediately
+	// invalidated again in S_2. Due to an invalidation bug, the validity of the
+	// package from S_0 was checked by comparing the identical keys of S_1 and
+	// S_2, and so the stale package from S_0 was marked as valid.
+	const src = `
+-- go.mod --
+module mod.com
+
+-- a.go --
+package a
+
+func Foo() {
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		fooLoc := env.RegexpSearch("a.go", "()Foo")
+		loc0 := env.FirstDefinition(fooLoc)
+
+		// Insert a space that will be removed by formatting.
+		env.EditBuffer("a.go", protocol.TextEdit{
+			Range:   fooLoc.Range,
+			NewText: " ",
+		})
+		env.SaveBuffer("a.go") // reformats the file before save
+		env.AfterChange()
+		loc1 := env.FirstDefinition(env.RegexpSearch("a.go", "Foo"))
+		if diff := cmp.Diff(loc0, loc1); diff != "" {
+			t.Errorf("mismatching locations (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestCommentDefinition_Issue69616(t *testing.T) {
+	// This test exercises a few edge cases discovered by telemetry in
+	// golang/go#69616, namely situations where a parsed Go file might
+	// not have an associated scope in the package types.Info.
+	//
+	// The files below set up two types of edge cases:
+	//  - a 'compiled' Go file that isn't actually type-checked, because it has
+	//    the wrong package name
+	//  - a non-compiled Go file (unsafe.go).
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- cmd/main.go --
+package main
+
+import "unsafe"
+
+var _  = unsafe.Offsetof
+
+func Foo() {}
+-- cmd/x.go --
+package x
+
+// Bar is like [Foo]
+func Bar() {}
+`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		// First, check that we don't produce a crash or bug when
+		// finding definitions in a 'compiled' go file that isn't actually type
+		// checked.
+		env.OpenFile("cmd/x.go")
+		_, _ = env.Editor.Definitions(env.Ctx, env.RegexpSearch("cmd/x.go", "()Foo"))
+
+		// Next, go to the unsafe package, and find the doc link to [Sizeof].
+		// It will also fail to resolve, because unsafe.go isn't compiled, but
+		// again should not panic or result in a bug.
+		env.OpenFile("cmd/main.go")
+		loc := env.FirstDefinition(env.RegexpSearch("cmd/main.go", `unsafe\.(Offsetof)`))
+		unsafePath := loc.URI.Path()
+		env.OpenFile(unsafePath)
+		_, _ = env.Editor.Definitions(env.Ctx,
+			env.RegexpSearch(unsafePath, `\[()Sizeof\]`))
+	})
+}
+func TestUndefinedLabel_Issue76625(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.22
+-- a.go --
+package a
+
+func UndefinedLabel() {
+	for i := range 10 {
+		if i > 2 {
+			goto undefinedLabel
+		}
+	}
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		expectedErr := "undefined label"
+		gotoUndefined := env.RegexpSearch("a.go", `goto`)
+		_, err := env.Editor.Definitions(env.Ctx, gotoUndefined)
+		if err == nil {
+			t.Fatalf("request succeeded unexpectedly, want error %s", err)
+		}
+		if !strings.Contains(err.Error(), expectedErr) {
+			t.Fatalf("received unexpected error message %s, want %s", err, expectedErr)
+		}
+	})
+
+}
+
+func TestDefinition_embedSeparator(t *testing.T) {
+	// This test checks that Definition on a //go:embed glob pattern reports
+	// the location of the (first) matching file. It is a regression test for
+	// a path-separator bug on Windows (https://go.dev/issue/77131).
+	//
+	// It can't be expressed as a marker test because it would require
+	// a @def marker within a //go:embed directive.
+	const src = `
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/subdir/embed.txt --
+hello
+
+-- a/a.go --
+package a
+
+import _ "embed"
+
+//go:embed subdir/embed.txt
+var _ string
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.FirstDefinition(env.RegexpSearch("a/a.go", "subdir"))
+		got := fileLocations(env, []protocol.Location{loc})
+		want := []string{"a/subdir/embed.txt:1"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Definition at 'subdir' returned %v, want %v", got, want)
 		}
 	})
 }

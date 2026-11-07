@@ -1,0 +1,68 @@
+This test checks the basic of 'Declare missing method T.f' quick fix.
+
+-- basic_stub.go --
+package fromcallbasic
+
+type Basic struct{}
+
+func basic() {
+	i := 1
+	b := Basic{}
+	f(b.basic(i)) //@quickfix("basic", re"has no field or method", basic)
+}
+
+func f(i int) string { return "s" }
+-- @basic/basic_stub.go --
+@@ -5 +5,4 @@
++func (b Basic) basic(i int) int {
++	panic("unimplemented")
++}
++
+-- pointer.go --
+package fromcallbasic
+
+type P struct{}
+
+func recv_param_pointer() {
+	p := &P{}
+	i := 42
+	p.pointer(&i) //@quickfix("pointer", re"has no field or method", pointer)
+}
+-- @pointer/pointer.go --
+@@ -5 +5,4 @@
++func (p *P) pointer(i *int) {
++	panic("unimplemented")
++}
++
+-- other.go --
+package fromcallbasic
+
+type TypeDeclInOtherFile struct{}
+
+-- this.go --
+package fromcallbasic
+
+func fun() {
+	i := 1
+	t := TypeDeclInOtherFile{}
+	t.other(i) //@quickfix("other", re"has no field or method", del_other)
+}
+-- @del_other/other.go --
+@@ -5 +5,3 @@
++func (t TypeDeclInOtherFile) other(i int) {
++	panic("unimplemented")
++}
+-- should_insert_after.go --
+package fromcallbasic
+
+type HasMethod struct{}
+
+func (h *HasMethod) m() {
+	h.should_insert_after() //@quickfix("should_insert_after", re"has no field or method", insert)
+}
+-- @insert/should_insert_after.go --
+@@ -8 +8,4 @@
++
++func (h *HasMethod) should_insert_after() {
++	panic("unimplemented")
++}

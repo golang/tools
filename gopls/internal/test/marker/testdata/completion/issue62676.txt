@@ -2,7 +2,6 @@ This test verifies that unimported completion respects the usePlaceholders setti
 
 -- flags --
 -ignore_extra_diags
--min_go=go1.21
 
 -- settings.json --
 {
@@ -54,7 +53,7 @@ import "os"
 
 func _() {
 	// This uses goimports-based completion; TODO: this should insert snippets.
-	os.Open //@acceptcompletion(re"Open()", "Open", open)
+	os.Open(${1:}) //@acceptcompletion(re"Open()", "Open", open)
 }
 
 func _() {

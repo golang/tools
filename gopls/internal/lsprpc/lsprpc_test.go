@@ -52,14 +52,13 @@ func (s PingServer) DidOpen(ctx context.Context, params *protocol.DidOpenTextDoc
 }
 
 func TestClientLogging(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	server := PingServer{}
 	client := FakeClient{Logs: make(chan string, 10)}
 
 	ctx = debug.WithInstance(ctx, "")
-	ss := NewStreamServer(cache.New(nil), false, nil).(*StreamServer)
+	ss := NewStreamServer(cache.New(nil), false, nil)
 	ss.serverForTest = server
 	ts := servertest.NewPipeServer(ss, nil)
 	defer checkClose(t, ts.Close)
@@ -80,7 +79,11 @@ func TestClientLogging(t *testing.T) {
 		if !matched {
 			t.Errorf("got log %q, want a log containing %q", got, want)
 		}
-	case <-time.After(1 * time.Second):
+
+	case <-time.After(10 * time.Second):
+		// Any timeout we enforce here is at the mercy
+		// of the underlying operating system.
+		// 1s was occasionally flaky; 10s should be better.
 		t.Error("timeout waiting for client log")
 	}
 }
@@ -122,7 +125,7 @@ func checkClose(t *testing.T, closer func() error) {
 func setupForwarding(ctx context.Context, t *testing.T, s protocol.Server) (direct, forwarded servertest.Connector, cleanup func()) {
 	t.Helper()
 	serveCtx := debug.WithInstance(ctx, "")
-	ss := NewStreamServer(cache.New(nil), false, nil).(*StreamServer)
+	ss := NewStreamServer(cache.New(nil), false, nil)
 	ss.serverForTest = s
 	tsDirect := servertest.NewTCPServer(serveCtx, ss, nil)
 
@@ -212,13 +215,11 @@ func TestDebugInfoLifecycle(t *testing.T) {
 		}
 	}()
 
-	baseCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	baseCtx := t.Context()
 	clientCtx := debug.WithInstance(baseCtx, "")
 	serverCtx := debug.WithInstance(baseCtx, "")
 
-	cache := cache.New(nil)
-	ss := NewStreamServer(cache, false, nil)
+	ss := NewStreamServer(cache.New(nil), false, nil)
 	tsBackend := servertest.NewTCPServer(serverCtx, ss, nil)
 
 	forwarder, err := NewForwarder("tcp;"+tsBackend.Addr, nil)
@@ -302,8 +303,8 @@ func TestEnvForwarding(t *testing.T) {
 	conn.Go(ctx, jsonrpc2.MethodNotFound)
 	dispatch := protocol.ServerDispatcher(conn)
 	initParams := &protocol.ParamInitialize{}
-	initParams.InitializationOptions = map[string]interface{}{
-		"env": map[string]interface{}{
+	initParams.InitializationOptions = map[string]any{
+		"env": map[string]any{
 			"GONOPROXY": "example.com",
 		},
 	}
@@ -314,7 +315,7 @@ func TestEnvForwarding(t *testing.T) {
 	if server.params == nil {
 		t.Fatalf("initialize params are unset")
 	}
-	env := server.params.InitializationOptions.(map[string]interface{})["env"].(map[string]interface{})
+	env := server.params.InitializationOptions.(map[string]any)["env"].(map[string]any)
 
 	// Check for an arbitrary Go variable. It should be set.
 	if _, ok := env["GOPRIVATE"]; !ok {

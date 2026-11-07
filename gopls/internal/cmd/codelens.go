@@ -11,13 +11,12 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/tool"
 )
 
 // codelens implements the codelens verb for gopls.
 type codelens struct {
 	EditFlags
-	app *Application
+	app *application
 
 	Exec bool `flag:"exec" help:"execute the first matching code lens"`
 }
@@ -32,7 +31,7 @@ The codelens command lists or executes code lenses for the specified
 file, or line within a file. A code lens is a command associated with
 a position in the code.
 
-With an optional title argment, only code lenses matching that
+With an optional title argument, only code lenses matching that
 title are considered.
 
 By default, the codelens command lists the available lenses for the
@@ -42,10 +41,10 @@ is executed, and its output is printed to stdout.
 
 Example:
 
-	$ gopls codelens a_test.go                    # list code lenses in a file
-	$ gopls codelens a_test.go:10                 # list code lenses on line 10
-	$ gopls codelens a_test.go gopls.test         # list gopls.test commands
-	$ gopls codelens -run a_test.go:10 gopls.test # run a specific test
+	$ gopls codelens a_test.go                     # list code lenses in a file
+	$ gopls codelens a_test.go:10                  # list code lenses on line 10
+	$ gopls codelens a_test.go "run test"          # list gopls.run_tests commands
+	$ gopls codelens -exec a_test.go:10 "run test" # run a specific test
 
 codelens-flags:
 `)
@@ -56,14 +55,14 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	var filename, title string
 	switch len(args) {
 	case 0:
-		return tool.CommandLineErrorf("codelens requires a file name")
+		return commandLineErrorf("codelens requires a file name")
 	case 2:
 		title = args[1]
 		fallthrough
 	case 1:
 		filename = args[0]
 	default:
-		return tool.CommandLineErrorf("codelens expects at most two arguments")
+		return commandLineErrorf("codelens expects at most two arguments")
 	}
 
 	r.app.editFlags = &r.EditFlags // in case a codelens perform an edit
@@ -83,14 +82,14 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 		opts.Codelenses[settings.CodeLensTest] = true
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	filespan := parseSpan(filename)
-	file, err := conn.openFile(ctx, filespan.URI())
+	file, err := cli.openFile(ctx, filespan.URI())
 	if err != nil {
 		return err
 	}
@@ -102,7 +101,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	p := protocol.CodeLensParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 	}
-	lenses, err := conn.CodeLens(ctx, &p)
+	lenses, err := cli.server.CodeLens(ctx, &p)
 	if err != nil {
 		return err
 	}
@@ -122,7 +121,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 		// -exec: run the first matching code lens.
 		if r.Exec {
-			_, err := conn.executeCommand(ctx, lens.Command)
+			_, err := executeCommand(ctx, cli.server, lens.Command)
 			return err
 		}
 

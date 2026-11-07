@@ -7,7 +7,6 @@ package debug
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"runtime"
 	"testing"
@@ -17,9 +16,7 @@ import (
 
 func TestPrintVersionInfoJSON(t *testing.T) {
 	buf := new(bytes.Buffer)
-	if err := PrintVersionInfo(context.Background(), buf, true, JSON); err != nil {
-		t.Fatalf("PrintVersionInfo failed: %v", err)
-	}
+	WriteVersionInfo(buf, true, JSON)
 	res := buf.Bytes()
 
 	var got ServerVersion
@@ -37,9 +34,7 @@ func TestPrintVersionInfoJSON(t *testing.T) {
 
 func TestPrintVersionInfoPlainText(t *testing.T) {
 	buf := new(bytes.Buffer)
-	if err := PrintVersionInfo(context.Background(), buf, true, PlainText); err != nil {
-		t.Fatalf("PrintVersionInfo failed: %v", err)
-	}
+	WriteVersionInfo(buf, true, PlainText)
 	res := buf.Bytes()
 
 	// Other fields of BuildInfo may not be available during test.

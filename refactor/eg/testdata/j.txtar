@@ -1,0 +1,36 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+import ()
+
+func before(x int) int { return x + x + x }
+func after(x int) int {
+	temp := x + x
+	return temp + x
+}
+
+-- in/j1/j1.go --
+package j1
+
+import "fmt"
+
+func example() {
+	temp := 5
+	fmt.Print(temp + temp + temp)
+}
+
+-- out/j1/j1.go --
+package j1
+
+import "fmt"
+
+func example() {
+	temp := 5
+	temp := temp + temp
+	fmt.Print(temp + temp)
+}

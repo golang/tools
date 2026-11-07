@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ func NewDatabase(ctx context.Context, txtarReports []byte) (*DB, error) {
 		return nil, err
 	}
 	if err := generateDB(ctx, txtarReports, disk, false); err != nil {
-		os.RemoveAll(disk)
+		os.RemoveAll(disk) // ignore error
 		return nil, err
 	}
 
@@ -51,7 +52,7 @@ func NewDatabase(ctx context.Context, txtarReports []byte) (*DB, error) {
 
 // DB is a read-only vulnerability database on disk.
 // Users can use this database with golang.org/x/vuln APIs
-// by setting the `VULNDB“ environment variable.
+// by setting the `VULNDB` environment variable.
 type DB struct {
 	disk string
 }
@@ -199,7 +200,7 @@ func AffectedRanges(versions []VersionRange) []osv.Range {
 
 func toOSVPackages(pkgs []*Package) (imps []osv.Package) {
 	for _, p := range pkgs {
-		syms := append([]string{}, p.Symbols...)
+		syms := slices.Clone(p.Symbols)
 		syms = append(syms, p.DerivedSymbols...)
 		sort.Strings(syms)
 		imps = append(imps, osv.Package{

@@ -6,13 +6,14 @@ package misc
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 // This test exercises the filtering of code actions in generated files.
@@ -35,25 +36,28 @@ package a
 
 func f() { g() }
 func g() {}
+
+-- issue72742/a.go --
+package main
+
+func main(){
+	fmt.Println("helloworld")
+}
 `
 
 	Run(t, src, func(t *testing.T, env *Env) {
-		check := func(filename string, wantKind ...protocol.CodeActionKind) {
+		check := func(filename string, re string, want []protocol.CodeActionKind) {
 			env.OpenFile(filename)
-			loc := env.RegexpSearch(filename, `g\(\)`)
+			loc := env.RegexpSearch(filename, re)
 			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			type kinds = map[protocol.CodeActionKind]bool
-			got := make(kinds)
+			type kinds = []protocol.CodeActionKind
+			got := make(kinds, 0)
 			for _, act := range actions {
-				got[act.Kind] = true
-			}
-			want := make(kinds)
-			for _, kind := range wantKind {
-				want[kind] = true
+				got = append(got, act.Kind)
 			}
 
 			if diff := cmp.Diff(want, got); diff != "" {
@@ -63,21 +67,51 @@ func g() {}
 			}
 		}
 
-		check("src/a.go",
+		check("src/a.go", `g\(\)`, []protocol.CodeActionKind{
+			settings.AddTest,
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
-			protocol.RefactorExtract,
-			protocol.RefactorInline)
-		check("gen/a.go",
+			settings.GoSplitPackage,
+			settings.GoToggleCompilerOptDetails,
+			settings.RefactorInlineCall,
+			settings.GoplsDocFeatures,
+		})
+
+		check("gen/a.go", `g\(\)`, []protocol.CodeActionKind{
 			settings.GoAssembly,
 			settings.GoDoc,
-			settings.GoFreeSymbols)
+			settings.GoFreeSymbols,
+			settings.GoSplitPackage,
+			settings.GoToggleCompilerOptDetails,
+			settings.GoplsDocFeatures,
+		})
+
+		check("issue72742/a.go", `fmt`, []protocol.CodeActionKind{
+			settings.OrganizeImports,
+			settings.AddTest,
+			settings.GoAssembly,
+			settings.GoDoc,
+			settings.GoFreeSymbols,
+			settings.GoSplitPackage,
+			settings.GoToggleCompilerOptDetails,
+			settings.GoplsDocFeatures,
+		})
 	})
 }
 
-// Test refactor.inline is not included in automatically triggered code action
+// Test refactor.inline.call is not included in automatically triggered code action
 // unless users want refactoring.
+//
+// (The mechanism behind this behavior has changed. It was added when
+// we used to interpret CodeAction(Only=[]) as "all kinds", which was
+// a distracting nuisance (too many lightbulbs); this was fixed by
+// adding special logic to refactor.inline.call to respect the trigger
+// kind; but now we do this for all actions (for similar reasons) and
+// interpret Only=[] as Only=[quickfix] unless triggerKind=invoked;
+// except that the test client always requests CodeAction(Only=[""]).
+// So, we should remove the special logic from refactorInlineCall
+// and vary the Only parameter used by the test client.)
 func TestVSCodeIssue65167(t *testing.T) {
 	const vim1 = `package main
 
@@ -106,13 +140,53 @@ func Func() int { return 0 }
 						actions := env.CodeAction(loc, nil, trigger)
 						want := trigger != protocol.CodeActionAutomatic || selectedRange
 						if got := slices.ContainsFunc(actions, func(act protocol.CodeAction) bool {
-							return act.Kind == protocol.RefactorInline
+							return act.Kind == settings.RefactorInlineCall
 						}); got != want {
-							t.Errorf("got refactor.inline = %t, want %t", got, want)
+							t.Errorf("got refactor.inline.call = %t, want %t", got, want)
 						}
 					})
 				}
 			})
 		}
+	})
+}
+
+// TestDescendingRange isn't really a test of CodeAction at all: it
+// merely tests the response of the server to any (start, end) range
+// that is descending. See #74394.
+func TestDescendingRange(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+go 1.19
+
+-- a/a.go --
+package a
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "package")
+		rng := &loc.Range
+		rng.Start, rng.End = rng.End, rng.Start
+		_, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+		got, wantSubstr := fmt.Sprint(err), "start (offset 7) > end (offset 0)"
+		if !strings.Contains(got, wantSubstr) {
+			t.Fatalf("CodeAction error: got %q, want substring %q", got, wantSubstr)
+		}
+	})
+}
+
+// TestIssue76235 is a regression test for a crash in CodeAction
+// (refactor.extract.variable-all). It can't be a marker test since
+// the fixed behavior is a no-op: no code actions, no crash.
+func TestIssue76235(t *testing.T) {
+	const src = `
+-- a/a.go --
+package a; func f([3]int)
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "3")
+		env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger) // ignore error
 	})
 }

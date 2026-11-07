@@ -8,10 +8,13 @@
 // interface, and this fact is necessary for the package to be
 // well-typed.
 //
-// THIS PACKAGE IS EXPERIMENTAL AND MAY CHANGE AT ANY TIME.
+// It requires well-typed inputs, and may panic otherwise.
 //
-// It is provided only for the gopls tool. It requires well-typed inputs.
-package satisfy // import "golang.org/x/tools/refactor/satisfy"
+// This package reimplements parts of the type checker. See
+// https://go.dev/issue/70638 for a proposal to expose the work
+// already done by the type checker, which would make this package
+// redundant.
+package satisfy
 
 // NOTES:
 //
@@ -43,7 +46,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -85,6 +87,9 @@ type Finder struct {
 // info.{Defs,Uses,Selections,Types} must have been populated by the
 // type-checker.
 func (f *Finder) Find(info *types.Info, files []*ast.File) {
+	if info.Defs == nil || info.Uses == nil || info.Selections == nil || info.Types == nil {
+		panic("Finder.Find: one of info.{Defs,Uses,Selections.Types} is not populated")
+	}
 	if f.Result == nil {
 		f.Result = make(map[Constraint]bool)
 	}
@@ -102,7 +107,9 @@ func (f *Finder) Find(info *types.Info, files []*ast.File) {
 
 			case *ast.FuncDecl:
 				if d.Body != nil {
-					f.sig = f.info.Defs[d.Name].Type().(*types.Signature)
+					if obj := f.info.Defs[d.Name]; obj != nil {
+						f.sig, _ = obj.Type().(*types.Signature)
+					}
 					f.stmt(d.Body)
 					f.sig = nil
 				}
@@ -120,24 +127,31 @@ var (
 
 // exprN visits an expression in a multi-value context.
 func (f *Finder) exprN(e ast.Expr) types.Type {
-	typ := f.info.Types[e].Type.(*types.Tuple)
+	typ, _ := f.info.Types[e].Type.(*types.Tuple)
 	switch e := e.(type) {
 	case *ast.ParenExpr:
 		return f.exprN(e.X)
 
 	case *ast.CallExpr:
 		// x, err := f(args)
-		sig := coreType(f.expr(e.Fun)).(*types.Signature)
-		f.call(sig, e.Args)
+		if sig := hasUnderlyingTermOf[*types.Signature](f.expr(e.Fun)); sig != nil {
+			f.call(sig, e.Args, e.Ellipsis.IsValid())
+		}
 
 	case *ast.IndexExpr:
 		// y, ok := x[i]
 		x := f.expr(e.X)
-		f.assign(f.expr(e.Index), coreType(x).(*types.Map).Key())
+		if m := hasUnderlyingTermOf[*types.Map](x); m != nil {
+			f.assign(f.expr(e.Index), m.Key())
+		}
 
 	case *ast.TypeAssertExpr:
 		// y, ok := x.(T)
-		f.typeAssert(f.expr(e.X), typ.At(0).Type())
+		if typ != nil && typ.Len() > 0 {
+			f.typeAssert(f.expr(e.X), typ.At(0).Type())
+		} else {
+			f.expr(e.X)
+		}
 
 	case *ast.UnaryExpr: // must be receive <-
 		// y, ok := <-x
@@ -146,16 +160,22 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 	default:
 		panic(e)
 	}
-	return typ
+	if typ != nil {
+		return typ
+	}
+	return tInvalid
 }
 
-func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
+// call visits the arguments of a call to a function with signature sig.
+// dots indicates a "spread" call f(x, y...), whose final argument
+// provides the entire variadic slice.
+func (f *Finder) call(sig *types.Signature, args []ast.Expr, dots bool) {
 	if len(args) == 0 {
 		return
 	}
 
 	// Ellipsis call?  e.g. f(x, y, z...)
-	if _, ok := args[len(args)-1].(*ast.Ellipsis); ok {
+	if dots {
 		for i, arg := range args {
 			// The final arg is a slice, and so is the final param.
 			f.assign(sig.Params().At(i).Type(), f.expr(arg))
@@ -163,21 +183,8 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 		return
 	}
 
-	var argtypes []types.Type
-
 	// Gather the effective actual parameter types.
-	if tuple, ok := f.info.Types[args[0]].Type.(*types.Tuple); ok {
-		// f(g()) call where g has multiple results?
-		f.expr(args[0])
-		// unpack the tuple
-		for i := 0; i < tuple.Len(); i++ {
-			argtypes = append(argtypes, tuple.At(i).Type())
-		}
-	} else {
-		for _, arg := range args {
-			argtypes = append(argtypes, f.expr(arg))
-		}
-	}
+	argtypes := f.argTypes(args)
 
 	// Assign the actuals to the formals.
 	if !sig.Variadic() {
@@ -199,36 +206,69 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 }
 
 // builtin visits the arguments of a builtin type with signature sig.
-func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr) {
+// dots indicates a "spread" call such as append(x, y...).
+func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr, dots bool) {
 	switch obj.Name() {
 	case "make", "new":
-		// skip the type operand
-		for _, arg := range args[1:] {
+		for i, arg := range args {
+			if i == 0 && f.info.Types[arg].IsType() {
+				continue // skip the type operand
+			}
 			f.expr(arg)
 		}
 
 	case "append":
-		s := f.expr(args[0])
-		if _, ok := args[len(args)-1].(*ast.Ellipsis); ok && len(args) == 2 {
+		if dots {
 			// append(x, y...)   including append([]byte, "foo"...)
+			f.expr(args[0])
 			f.expr(args[1])
 		} else {
 			// append(x, y, z)
-			tElem := coreType(s).(*types.Slice).Elem()
-			for _, arg := range args[1:] {
-				f.assign(tElem, f.expr(arg))
+			// append(f()) where f has multiple results
+			argtypes := f.argTypes(args)
+			if s := hasUnderlyingTermOf[*types.Slice](argtypes[0]); s != nil {
+				for _, argtype := range argtypes[1:] {
+					f.assign(s.Elem(), argtype)
+				}
 			}
 		}
 
 	case "delete":
-		m := f.expr(args[0])
-		k := f.expr(args[1])
-		f.assign(coreType(m).(*types.Map).Key(), k)
+		// delete(m, k)
+		// delete(f()) where f has multiple results
+		argtypes := f.argTypes(args)
+		if len(argtypes) == 2 {
+			if m := hasUnderlyingTermOf[*types.Map](argtypes[0]); m != nil {
+				f.assign(m.Key(), argtypes[1])
+			}
+		}
 
 	default:
 		// ordinary call
-		f.call(sig, args)
+		f.call(sig, args, dots)
 	}
+}
+
+// argTypes visits the arguments of a call and returns their effective
+// types. A single multi-valued argument, as in f(g()), is unpacked
+// into the types of its results.
+func (f *Finder) argTypes(args []ast.Expr) []types.Type {
+	var argtypes []types.Type
+	if len(args) == 1 {
+		if tuple, ok := f.info.Types[args[0]].Type.(*types.Tuple); ok {
+			// f(g()) call where g has multiple results?
+			f.expr(args[0])
+			// unpack the tuple
+			for v := range tuple.Variables() {
+				argtypes = append(argtypes, v.Type())
+			}
+			return argtypes
+		}
+	}
+	for _, arg := range args {
+		argtypes = append(argtypes, f.expr(arg))
+	}
+	return argtypes
 }
 
 func (f *Finder) extract(tuple types.Type, i int) types.Type {
@@ -274,7 +314,7 @@ func (f *Finder) assign(lhs, rhs types.Type) {
 	if types.Identical(lhs, rhs) {
 		return
 	}
-	if !isInterface(lhs) {
+	if !types.IsInterface(lhs) {
 		return
 	}
 
@@ -341,7 +381,8 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 		if e.Name == "_" { // e.g. "for _ = range x"
 			return tInvalid
 		}
-		panic("undefined ident: " + e.Name)
+		// There could be a missing definition, return an invalid type
+		return tInvalid
 
 	case *ast.Ellipsis:
 		if e.Elt != nil {
@@ -350,53 +391,78 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 
 	case *ast.FuncLit:
 		saved := f.sig
-		f.sig = tv.Type.(*types.Signature)
+		f.sig, _ = tv.Type.(*types.Signature)
 		f.stmt(e.Body)
 		f.sig = saved
 
 	case *ast.CompositeLit:
-		switch T := coreType(typeparams.Deref(tv.Type)).(type) {
-		case *types.Struct:
-			for i, elem := range e.Elts {
-				if kv, ok := elem.(*ast.KeyValueExpr); ok {
-					f.assign(f.info.Uses[kv.Key.(*ast.Ident)].Type(), f.expr(kv.Value))
-				} else {
-					f.assign(T.Field(i).Type(), f.expr(elem))
+		for under := range typeparams.TypeSetOf(typeparams.Deref(tv.Type)).UnderlyingTypes() {
+			switch T := under.(type) {
+			case *types.Struct:
+				for i, elem := range e.Elts {
+					if kv, ok := elem.(*ast.KeyValueExpr); ok {
+						// in weird code, kv.Key might not be an identifier
+						id, ok := kv.Key.(*ast.Ident)
+						if !ok || f.info.Uses[id] == nil {
+							f.expr(kv.Value)
+							continue
+
+						}
+						f.assign(f.info.Uses[id].Type(), f.expr(kv.Value))
+					} else {
+						f.assign(T.Field(i).Type(), f.expr(elem))
+					}
 				}
-			}
 
-		case *types.Map:
-			for _, elem := range e.Elts {
-				elem := elem.(*ast.KeyValueExpr)
-				f.assign(T.Key(), f.expr(elem.Key))
-				f.assign(T.Elem(), f.expr(elem.Value))
-			}
-
-		case *types.Array, *types.Slice:
-			tElem := T.(interface {
-				Elem() types.Type
-			}).Elem()
-			for _, elem := range e.Elts {
-				if kv, ok := elem.(*ast.KeyValueExpr); ok {
-					// ignore the key
-					f.assign(tElem, f.expr(kv.Value))
-				} else {
-					f.assign(tElem, f.expr(elem))
+			case *types.Map:
+				for _, elem := range e.Elts {
+					elem := elem.(*ast.KeyValueExpr)
+					f.assign(T.Key(), f.expr(elem.Key))
+					f.assign(T.Elem(), f.expr(elem.Value))
 				}
-			}
 
-		default:
-			panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
+			case *types.Array, *types.Slice:
+				tElem := T.(interface{ Elem() types.Type }).Elem()
+				for _, elem := range e.Elts {
+					if kv, ok := elem.(*ast.KeyValueExpr); ok {
+						// ignore the key
+						f.assign(tElem, f.expr(kv.Value))
+					} else {
+						f.assign(tElem, f.expr(elem))
+					}
+				}
+			case *types.Basic:
+				if T.Kind() == types.Invalid {
+					for _, elem := range e.Elts {
+						if kv, ok := elem.(*ast.KeyValueExpr); ok {
+							f.expr(kv.Key)
+							f.expr(kv.Value)
+						} else {
+							f.expr(elem)
+						}
+					}
+					continue
+				}
+				panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
+			default:
+				panic(fmt.Sprintf("unexpected composite literal type %T: %v", tv.Type, tv.Type.String()))
+			}
 		}
 
 	case *ast.ParenExpr:
 		f.expr(e.X)
 
 	case *ast.SelectorExpr:
-		if _, ok := f.info.Selections[e]; ok {
-			f.expr(e.X) // selection
+		if seln, ok := f.info.Selections[e]; ok {
+			// If e.X is a type (e.g., e is interface{ m() }.m), don't visit it.
+			if seln.Kind() != types.MethodExpr {
+				f.expr(e.X)
+			}
 		} else {
-			return f.info.Uses[e.Sel].Type() // qualified identifier
+			if obj, ok := f.info.Uses[e.Sel]; ok {
+				return obj.Type() // qualified identifier
+			}
+			return tInvalid
 		}
 
 	case *ast.IndexExpr:
@@ -406,8 +472,8 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// x[i] or m[k] -- index or lookup operation
 			x := f.expr(e.X)
 			i := f.expr(e.Index)
-			if ux, ok := coreType(x).(*types.Map); ok {
-				f.assign(ux.Key(), i)
+			if m := hasUnderlyingTermOf[*types.Map](x); m != nil {
+				f.assign(m.Key(), i)
 			}
 		}
 
@@ -441,25 +507,27 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// unsafe call. Treat calls to functions in unsafe like ordinary calls,
 			// except that their signature cannot be determined by their func obj.
 			// Without this special handling, f.expr(e.Fun) would fail below.
-			if s, ok := unparen(e.Fun).(*ast.SelectorExpr); ok {
+			if s, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
 				if obj, ok := f.info.Uses[s.Sel].(*types.Builtin); ok && obj.Pkg().Path() == "unsafe" {
 					sig := f.info.Types[e.Fun].Type.(*types.Signature)
-					f.call(sig, e.Args)
+					f.call(sig, e.Args, e.Ellipsis.IsValid())
 					return tv.Type
 				}
 			}
 
 			// builtin call
-			if id, ok := unparen(e.Fun).(*ast.Ident); ok {
+			if id, ok := ast.Unparen(e.Fun).(*ast.Ident); ok {
 				if obj, ok := f.info.Uses[id].(*types.Builtin); ok {
 					sig := f.info.Types[id].Type.(*types.Signature)
-					f.builtin(obj, sig, e.Args)
+					f.builtin(obj, sig, e.Args, e.Ellipsis.IsValid())
 					return tv.Type
 				}
 			}
 
 			// ordinary call
-			f.call(coreType(f.expr(e.Fun)).(*types.Signature), e.Args)
+			if sig := hasUnderlyingTermOf[*types.Signature](f.expr(e.Fun)); sig != nil {
+				f.call(sig, e.Args, e.Ellipsis.IsValid())
+			}
 		}
 
 	case *ast.StarExpr:
@@ -519,7 +587,9 @@ func (f *Finder) stmt(s ast.Stmt) {
 	case *ast.SendStmt:
 		ch := f.expr(s.Chan)
 		val := f.expr(s.Value)
-		f.assign(coreType(ch).(*types.Chan).Elem(), val)
+		if c := hasUnderlyingTermOf[*types.Chan](ch); c != nil {
+			f.assign(c.Elem(), val)
+		}
 
 	case *ast.IncDecStmt:
 		f.expr(s.X)
@@ -566,6 +636,12 @@ func (f *Finder) stmt(s ast.Stmt) {
 		f.expr(s.Call)
 
 	case *ast.ReturnStmt:
+		if f.sig == nil {
+			for _, result := range s.Results {
+				f.expr(result)
+			}
+			break
+		}
 		formals := f.sig.Results()
 		switch len(s.Results) {
 		case formals.Len(): // 1:1
@@ -623,9 +699,9 @@ func (f *Finder) stmt(s ast.Stmt) {
 		var I types.Type
 		switch ass := s.Assign.(type) {
 		case *ast.ExprStmt: // x.(type)
-			I = f.expr(unparen(ass.X).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.X).(*ast.TypeAssertExpr).X)
 		case *ast.AssignStmt: // y := x.(type)
-			I = f.expr(unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
 		}
 		for _, cc := range s.Body.List {
 			cc := cc.(*ast.CaseClause)
@@ -666,36 +742,36 @@ func (f *Finder) stmt(s ast.Stmt) {
 		if s.Tok == token.ASSIGN {
 			if s.Key != nil {
 				k := f.expr(s.Key)
-				var xelem types.Type
 				// Keys of array, *array, slice, string aren't interesting
 				// since the RHS key type is just an int.
-				switch ux := coreType(x).(type) {
-				case *types.Chan:
-					xelem = ux.Elem()
-				case *types.Map:
-					xelem = ux.Key()
-				}
-				if xelem != nil {
-					f.assign(k, xelem)
+				for under := range typeparams.TypeSetOf(x).UnderlyingTypes() {
+					switch term := under.(type) {
+					case *types.Chan:
+						f.assign(k, term.Elem())
+					case *types.Map:
+						f.assign(k, term.Key())
+					}
 				}
 			}
 			if s.Value != nil {
 				val := f.expr(s.Value)
-				var xelem types.Type
 				// Values of type strings aren't interesting because
 				// the RHS value type is just a rune.
-				switch ux := coreType(x).(type) {
-				case *types.Array:
-					xelem = ux.Elem()
-				case *types.Map:
-					xelem = ux.Elem()
-				case *types.Pointer: // *array
-					xelem = coreType(typeparams.Deref(ux)).(*types.Array).Elem()
-				case *types.Slice:
-					xelem = ux.Elem()
-				}
-				if xelem != nil {
-					f.assign(val, xelem)
+				for under := range typeparams.TypeSetOf(x).UnderlyingTypes() {
+					switch term := under.(type) {
+					case *types.Pointer:
+						for under := range typeparams.TypeSetOf(term.Elem()).UnderlyingTypes() {
+							if array, ok := under.(*types.Array); ok {
+								f.assign(val, array.Elem())
+							}
+						}
+					case *types.Array:
+						f.assign(val, term.Elem())
+					case *types.Map:
+						f.assign(val, term.Elem())
+					case *types.Slice:
+						f.assign(val, term.Elem())
+					}
 				}
 			}
 		}
@@ -707,12 +783,6 @@ func (f *Finder) stmt(s ast.Stmt) {
 }
 
 // -- Plundered from golang.org/x/tools/go/ssa -----------------
-
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
-
-func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
-func coreType(T types.Type) types.Type { return typeparams.CoreType(T) }
 
 func instance(info *types.Info, expr ast.Expr) bool {
 	var id *ast.Ident
@@ -726,4 +796,26 @@ func instance(info *types.Info, expr ast.Expr) bool {
 	}
 	_, ok := info.Instances[id]
 	return ok
+}
+
+// -- type-set helpers --
+
+// hasUnderlyingTermOf reports whether the type set of t contains a
+// term whose underlying type has top-level type constructor T
+// (e.g. *types.Map for a map).
+// If so, it returns an arbitrary one.
+// Otherwise it returns the zero value (nil).
+//
+// This arbitrariness would be a hazard if this function were
+// published more widely, but in this package it is used only for
+// structural operations (indexing, etc) that require the relevant
+// component types to be identical across all terms in the operand's
+// type set.
+func hasUnderlyingTermOf[T types.Type](t types.Type) T {
+	for under := range typeparams.TypeSetOf(t).UnderlyingTypes() {
+		if under, ok := under.(T); ok {
+			return under
+		}
+	}
+	return *new(T) // e.g. (*types.Map)(nil)
 }

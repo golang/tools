@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/util/asm"
 )
 
 // ParseGo parses the file whose contents are provided by fh.
@@ -40,6 +41,23 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	pgf, _ := parsego.Parse(ctx, fset, fh.URI(), content, mode, purgeFuncBodies)
+	pgf, _ := parsego.Parse(ctx, fset, fh.URI(), content, mode, purgeFuncBodies) // ignore 'fixes'
 	return pgf, nil
+}
+
+// parseAsmFiles parses the assembly files whose contents are provided by fhs.
+func parseAsmFiles(ctx context.Context, fhs ...file.Handle) ([]*asm.File, error) {
+	pafs := make([]*asm.File, len(fhs))
+	for i, fh := range fhs {
+		// Check for context cancellation before reading file content.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		content, err := fh.Content()
+		if err != nil {
+			return nil, err
+		}
+		pafs[i] = asm.Parse(fh.URI(), content)
+	}
+	return pafs, nil
 }

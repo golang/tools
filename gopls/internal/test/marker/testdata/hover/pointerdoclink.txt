@@ -1,0 +1,47 @@
+This test verifies the fix for golang/go#77329.
+Doc links to pointer types should be formatted correctly.
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- a/a.go --
+package a
+
+type Foo int
+
+type Baz string
+
+// Bar is a [*Foo]
+var Bar *Foo //@hover("Bar", "Bar", Bar)
+
+// Buzz is a [*Baz] with trailing space
+var Buzz *Baz //@hover("Buzz", "Buzz", Buzz)
+
+-- @Bar --
+```go
+var Bar *Foo
+```
+
+---
+
+Bar is a [\*Foo](file://$WORKDIR/a/a.go#3,6)
+
+
+---
+
+[`a.Bar` on pkg.go.dev](https://pkg.go.dev/example.com/a#Bar)
+-- @Buzz --
+```go
+var Buzz *Baz
+```
+
+---
+
+Buzz is a [\*Baz](file://$WORKDIR/a/a.go#5,6) with trailing space
+
+
+---
+
+[`a.Buzz` on pkg.go.dev](https://pkg.go.dev/example.com/a#Buzz)

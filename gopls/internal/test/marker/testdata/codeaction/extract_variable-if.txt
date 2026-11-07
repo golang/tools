@@ -1,0 +1,41 @@
+This test checks the behavior of the 'extract variable/constant' code actions
+when the optimal place for the new declaration is within the "if" statement,
+like so:
+
+   if x := 1 + 2 or y + y ; true {
+   } else if x > 0 {
+   }
+
+A future refactor.variable implementation that does this should avoid
+using a 'const' declaration, which is not legal at that location.
+
+-- flags --
+-ignore_extra_diags
+
+-- a.go --
+package a
+
+func constant() {
+	if true {
+	} else if 1 + 2 > 0 { //@ codeaction("1 + 2", "refactor.extract.constant", edit=constant)
+	}
+}
+
+func variable(y int) {
+	if true {
+	} else if y + y > 0 { //@ codeaction("y + y", "refactor.extract.variable", edit=variable)
+	}
+}
+
+-- @constant/a.go --
+@@ -4 +4 @@
++	const newConst = 1 + 2
+@@ -5 +6 @@
+-	} else if 1 + 2 > 0 { //@ codeaction("1 + 2", "refactor.extract.constant", edit=constant)
++	} else if newConst > 0 { //@ codeaction("1 + 2", "refactor.extract.constant", edit=constant)
+-- @variable/a.go --
+@@ -10 +10 @@
++	newVar := y + y
+@@ -11 +12 @@
+-	} else if y + y > 0 { //@ codeaction("y + y", "refactor.extract.variable", edit=variable)
++	} else if newVar > 0 { //@ codeaction("y + y", "refactor.extract.variable", edit=variable)

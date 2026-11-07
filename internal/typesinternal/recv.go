@@ -6,20 +6,34 @@ package typesinternal
 
 import (
 	"go/types"
-
-	"golang.org/x/tools/internal/aliases"
 )
 
-// ReceiverNamed returns the named type (if any) associated with the
-// type of recv, which may be of the form N or *N, or aliases thereof.
-// It also reports whether a Pointer was present.
-func ReceiverNamed(recv *types.Var) (isPtr bool, named *types.Named) {
-	t := recv.Type()
-	if ptr, ok := aliases.Unalias(t).(*types.Pointer); ok {
-		isPtr = true
-		t = ptr.Elem()
+// RecvBase returns the receiver base type (if any) of the method fn,
+// and reports whether the receiver is a pointer to it.
+//
+// The spec says of a method declaration: the receiver's "type must be
+// a defined type T or a pointer to a defined type T, possibly followed
+// by a list of type parameter names [P1, P2, …] enclosed in square
+// brackets. T is called the receiver base type."
+//
+// The named result is nil if fn is not a method, or if its receiver
+// is an anonymous interface or struct type, as in interface{ f() }.
+//
+// TODO(adonovan): go.dev/issue/81715 proposes this as a method of *types.Func.
+func RecvBase(fn *types.Func) (isPtr bool, named *types.Named) {
+	// The boolean result appears first to
+	// avoid misinterpretation as an 'ok'
+	// bool, and because that's the natural
+	// reading order in "*Named".
+
+	if recv := fn.Signature().Recv(); recv != nil {
+		t := recv.Type()
+		if ptr, ok := types.Unalias(t).(*types.Pointer); ok {
+			isPtr = true
+			t = ptr.Elem()
+		}
+		named, _ = types.Unalias(t).(*types.Named)
 	}
-	named, _ = aliases.Unalias(t).(*types.Named)
 	return
 }
 
@@ -36,7 +50,7 @@ func ReceiverNamed(recv *types.Var) (isPtr bool, named *types.Named) {
 // indirection from the type, regardless of named types (analogous to
 // a LOAD instruction).
 func Unpointer(t types.Type) types.Type {
-	if ptr, ok := aliases.Unalias(t).(*types.Pointer); ok {
+	if ptr, ok := types.Unalias(t).(*types.Pointer); ok {
 		return ptr.Elem()
 	}
 	return t

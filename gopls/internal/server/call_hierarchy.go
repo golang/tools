@@ -14,46 +14,49 @@ import (
 )
 
 func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.CallHierarchyPrepareParams) ([]protocol.CallHierarchyItem, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.prepareCallHierarchy")
+	ctx, done := event.Start(ctx, "server.PrepareCallHierarchy")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Range)
 	}
-	return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
+	return nil, nil // empty result
 }
 
 func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.incomingCalls")
+	ctx, done := event.Start(ctx, "server.IncomingCalls")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range)
 	}
-	return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return nil, nil // empty result
 }
 
 func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.outgoingCalls")
+	ctx, done := event.Start(ctx, "server.OutgoingCalls")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 	}
-	return golang.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return nil, nil // empty result
 }

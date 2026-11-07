@@ -7,6 +7,7 @@ package misc
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 
@@ -20,9 +21,10 @@ func TestFillStruct(t *testing.T) {
 		capabilities string
 		wantCommand  bool
 	}{
-		{"default", "{}", true},
-		{"no data", `{ "textDocument": {"codeAction": {	"resolveSupport": { "properties": ["edit"] } } } }`, true},
-		{"resolve support", `{ "textDocument": {"codeAction": {	"dataSupport": true, "resolveSupport": { "properties": ["edit"] } } } }`, false},
+		{"default", "{}", false},
+		{"no data support", `{"textDocument": {"codeAction": {"dataSupport": false, "resolveSupport": {"properties": ["edit"]}}}}`, true},
+		{"no resolve support", `{"textDocument": {"codeAction": {"dataSupport": true, "resolveSupport": {"properties": []}}}}`, true},
+		{"data and resolve support", `{"textDocument": {"codeAction": {"dataSupport": true, "resolveSupport": {"properties": ["edit"]}}}}`, false},
 	}
 
 	const basic = `
@@ -49,7 +51,7 @@ func Foo() {
 
 			runner.Run(t, basic, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
-				fixes, err := env.Editor.CodeActions(env.Ctx, env.RegexpSearch("main.go", "Info{}"), nil, protocol.RefactorRewrite)
+				fixes, err := env.Editor.CodeActions(env.Ctx, env.RegexpSearch("main.go", "Info{}"), nil, settings.RefactorRewriteFillStruct)
 				if err != nil {
 					t.Fatal(err)
 				}

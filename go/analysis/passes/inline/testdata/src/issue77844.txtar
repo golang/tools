@@ -1,0 +1,27 @@
+-- go.mod --
+module example.com
+
+go 1.24
+
+-- lib/lib.go --
+package lib
+
+//go:fix inline
+type Alias[T any] = []T
+
+-- other/other.go --
+package other
+
+type Other int
+
+-- main/main.go --
+package main
+
+import (
+	"example.com/lib"
+	"example.com/other"
+)
+
+func _() {
+	var _ lib.Alias[other.Other] // want "Type alias lib.Alias.other.Other. should be inlined"
+}

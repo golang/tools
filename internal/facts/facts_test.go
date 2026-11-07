@@ -18,9 +18,10 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/aliases"
+
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 type myFact struct {
@@ -36,10 +37,9 @@ func init() {
 
 func TestEncodeDecode(t *testing.T) {
 	tests := []struct {
-		name       string
-		typeparams bool // requires typeparams to be enabled
-		files      map[string]string
-		plookups   []pkgLookups // see testEncodeDecode for details
+		name     string
+		files    map[string]string
+		plookups []pkgLookups // see testEncodeDecode for details
 	}{
 		{
 			name: "loading-order",
@@ -185,8 +185,7 @@ func TestEncodeDecode(t *testing.T) {
 			},
 		},
 		{
-			name:       "typeparams",
-			typeparams: true,
+			name: "typeparams",
 			files: map[string]string{
 				"a/a.go": `package a
 				  type T1 int
@@ -203,9 +202,9 @@ func TestEncodeDecode(t *testing.T) {
 				  type N3[T a.T3] func() T
 				  type N4[T a.T4|int8] func() T
 				  type N5[T interface{Bar() a.T5} ] func() T
-		
+
 				  type t5 struct{}; func (t5) Bar() a.T5 { return 0 }
-		
+
 				  var G1 N1[a.T1]
 				  var G2 func() N2[a.T2]
 				  var G3 N3[a.T3]
@@ -223,7 +222,7 @@ func TestEncodeDecode(t *testing.T) {
 					  v5 = b.G5
 					  v6 = b.F6[t6]
 				  )
-		
+
 				  type t6 struct{}; func (t6) Foo() {}
 				`,
 			},
@@ -245,9 +244,7 @@ func TestEncodeDecode(t *testing.T) {
 			},
 		},
 	}
-
-	for i := range tests {
-		test := tests[i]
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			testEncodeDecode(t, test.files, test.plookups)
@@ -255,9 +252,36 @@ func TestEncodeDecode(t *testing.T) {
 	}
 }
 
+func TestEncodeDecodeAliases(t *testing.T) {
+	testenv.NeedsGo1Point(t, 24)
+
+	files := map[string]string{
+		"a/a.go": `package a
+				  type A = int
+				`,
+		"b/b.go": `package b
+				  import "a"
+				  type B = a.A
+				`,
+		"c/c.go": `package c
+				  import "b";
+				  type N1[T int|~string] = struct{}
+
+				  var V1 = N1[b.B]{}
+				`,
+	}
+	plookups := []pkgLookups{
+		{"a", []lookup{}},
+		{"b", []lookup{}},
+		// fake objexpr for RHS of V1's type arg (see customFind hack)
+		{"c", []lookup{{"c.V1->c.N1->b.B->a.A", "myFact(a.A)"}}},
+	}
+	testEncodeDecode(t, files, plookups)
+}
+
 type lookup struct {
-	objexpr string
-	want    string
+	objexpr string // expression whose type is a named type
+	want    string // printed form of fact associated with that type (or "no fact")
 }
 
 type pkgLookups struct {
@@ -308,7 +332,7 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 		}
 
 		// decode
-		facts, err := facts.NewDecoder(pkg).Decode(read)
+		facts, err := newDecoder(pkg).Decode(read)
 		if err != nil {
 			t.Fatalf("Decode failed: %v", err)
 		}
@@ -346,6 +370,19 @@ func testEncodeDecode(t *testing.T, files map[string]string, tests []pkgLookups)
 	}
 }
 
+// customFind allows for overriding how an object is looked up
+// by find. This is necessary for objects that are accessible through
+// the API but are not the type of any expression we can pass to types.CheckExpr.
+var customFind = map[string]func(p *types.Package) types.Object{
+	"c.V1->c.N1->b.B->a.A": func(p *types.Package) types.Object {
+		cV1 := p.Scope().Lookup("V1")
+		cN1 := cV1.Type().(*types.Alias)
+		aT1 := cN1.TypeArgs().At(0).(*types.Alias)
+		zZ1 := aT1.Rhs().(*types.Alias)
+		return zZ1.Obj()
+	},
+}
+
 func find(p *types.Package, expr string) types.Object {
 	// types.Eval only allows us to compute a TypeName object for an expression.
 	// TODO(adonovan): support other expressions that denote an object:
@@ -353,7 +390,9 @@ func find(p *types.Package, expr string) types.Object {
 	// - new(T).f for a field or method
 	// I've added CheckExpr in https://go-review.googlesource.com/c/go/+/144677.
 	// If that becomes available, use it.
-
+	if f := customFind[expr]; f != nil {
+		return f(p)
+	}
 	// Choose an arbitrary position within the (single-file) package
 	// so that we are within the scope of its import declarations.
 	somepos := p.Scope().Lookup(p.Scope().Names()[0]).Pos()
@@ -361,7 +400,7 @@ func find(p *types.Package, expr string) types.Object {
 	if err != nil {
 		return nil
 	}
-	if n, ok := aliases.Unalias(tv.Type).(*types.Named); ok {
+	if n, ok := tv.Type.(typesinternal.NamedOrAlias); ok {
 		return n.Obj()
 	}
 	return nil
@@ -387,6 +426,27 @@ func load(t *testing.T, dir string, path string) (*types.Package, error) {
 	return pkgs[0].Types, nil
 }
 
+// newDecoder returns a facts decoder for pkg whose package lookup
+// function consults the transitive closure of pkg.Imports().
+//
+// This is equivalent to the importer's package map, because
+// gcimporter records all packages referenced by a package's export
+// data as its imports.
+func newDecoder(pkg *types.Package) *facts.Decoder {
+	m := make(map[string]*types.Package)
+	var visit func(pkgs []*types.Package)
+	visit = func(pkgs []*types.Package) {
+		for _, p := range pkgs {
+			if _, ok := m[p.Path()]; !ok {
+				m[p.Path()] = p
+				visit(p.Imports())
+			}
+		}
+	}
+	visit(pkg.Imports())
+	return facts.NewDecoder(pkg, func(path string) *types.Package { return m[path] })
+}
+
 type otherFact struct {
 	S string
 }
@@ -410,7 +470,7 @@ func TestFactFilter(t *testing.T) {
 	}
 
 	obj := pkg.Scope().Lookup("A")
-	s, err := facts.NewDecoder(pkg).Decode(func(pkgPath string) ([]byte, error) { return nil, nil })
+	s, err := newDecoder(pkg).Decode(func(pkgPath string) ([]byte, error) { return nil, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +480,7 @@ func TestFactFilter(t *testing.T) {
 	s.ExportPackageFact(&otherFact{"bad package fact"})
 
 	filter := map[reflect.Type]bool{
-		reflect.TypeOf(&myFact{}): true,
+		reflect.TypeFor[*myFact](): true,
 	}
 
 	pkgFacts := s.AllPackageFacts(filter)
@@ -522,7 +582,7 @@ func TestMalformed(t *testing.T) {
 				packages[pkg.Path()] = pkg
 
 				// decode facts
-				facts, err := facts.NewDecoder(pkg).Decode(read)
+				facts, err := facts.NewDecoder(pkg, func(path string) *types.Package { return packages[path] }).Decode(read)
 				if err != nil {
 					t.Fatalf("Decode failed: %v", err)
 				}

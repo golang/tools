@@ -18,19 +18,19 @@ func _() {
 	)
 
 	var foo [1]int
-	foo[a]  //@complete("]", indexAB, indexAA)
-	foo[:a] //@complete("]", indexAB, indexAA)
-	a[:a]   //@complete("[", indexAA, indexAB)
-	a[a]    //@complete("[", indexAA, indexAB)
+	foo[a]  //@complete(re"()\\]", indexAB, indexAA)
+	foo[:a] //@complete(re"()\\]", indexAB, indexAA)
+	a[:a]   //@complete(re"()\\[", indexAA, indexAB)
+	a[a]    //@complete(re"()\\[", indexAA, indexAB)
 
 	var bar map[string]int
-	bar[a] //@complete("]", indexAA, indexAB)
+	bar[a] //@complete(re"()\\]", indexAA, indexAB)
 
 	type myMap map[string]int
 	var baz myMap
-	baz[a] //@complete("]", indexAA, indexAB)
+	baz[a] //@complete(re"()\\]", indexAA, indexAB)
 
 	type myInt int
 	var mi myInt //@item(indexMyInt, "mi", "myInt", "var")
-	foo[m]       //@snippet("]", indexMyInt, "mi")
+	foo[m]       //@snippet(re"()\\]", indexMyInt, "mi")
 }

@@ -1,0 +1,222 @@
+This test verifies the behavior of renaming a package declaration when package move is enabled.
+It tests the following:
+- Invalid renames:
+	- Moving across a module boundary
+	- Moving to a package that already exists
+
+- Renames edge cases:
+	- Naming collisions
+	- Renaming to internal package
+		- Not allowed when there is some importer of the package to be moved
+		that is not in the internal package
+	- Impact of renaming on _test packages
+	- Renaming with the exact same path - no edits produced
+
+-- flags --
+-ignore_extra_diags
+
+-- go.work --
+use .
+use ./othermoddir
+
+-- go.mod --
+module golang.org/lsptests/rename
+
+replace golang.org/lsptests/six/four => ./six/four
+
+go 1.20
+-- one/one.go --
+package one //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"cannot move package across module boundary")
+
+-- three/three.go --
+package three //@ renameerr("three", "golang.org/lsptests/othermod/three", re"cannot move package across module boundary"), renameerr("three", "golang.org/lsptests/rename/one", re"not empty")
+
+
+-- six/six.go --
+package six //@ renameerr("six", "golang.org/lsptests/rename/$$$", re"invalid package name")
+
+import "golang.org/lsptests/rename/six/four"
+
+func Foo() {
+	four.Bar()
+}
+
+-- six/four/four.go --
+package four //@ rename("four", "golang.org/lsptests/rename/five", moveUpOneDir), renameerr("four", "../relative", re"specifying relative paths in package rename not yet supported")
+
+func Bar() {}
+
+-- seven/seven/seven.go --
+package seven
+
+import
+(
+	"golang.org/lsptests/rename/six/four"
+	five "golang.org/lsptests/rename/six"
+)
+
+func foo() {
+	four.Bar()
+}
+
+-- importsnine/importsnine.go --
+package importsnine //@ rename("importsnine", "golang.org/lsptests/rename/nine/internal/importsnine", allowedInternal) // only importers of this package are already in the internal package, so okay to move it
+
+import (
+	"golang.org/lsptests/rename/nine/nine/nine"
+)
+
+-- nine/nine/nine/nine.go --
+package nine //@ renameerr("nine", "golang.org/lsptests/rename/nine/internal/nine", re"package move would result in illegal internal import")
+
+-- nine/internal/helpers.go --
+package internal
+
+import "golang.org/lsptests/rename/importsnine"
+
+-- seven/eight/eight.go --
+package eight //@ rename("eight", "golang.org/lsptests/rename/six/eight", differentDir), rename("eight", "golang.org/lsptests/rename/nine/nine/nine/eight", moveDownTwoDirs)
+-- fix/fix.go --
+package fix //@ rename("fix", "golang.org/lsptests/rename/newFix", renameWithTestPkg)
+
+import (
+	"golang.org/lsptests/rename/seven/eight"
+	)
+
+-- seven/eight/other/other.go --
+package other //@ rename("other", "golang.org/lsptests/rename/seven/eight/other/newDir1/newDir2", createNewDir)
+
+-- seven/eight/other/newDir1/newDir2/newDir3/test.go --
+package newDir3 // verifies that we can move the package above into a directory that already exists but is empty
+
+-- fix/fix_test.go --
+package fix_test
+-- othermoddir/othermod/other.go --
+package othermod
+
+import "golang.org/lsptests/rename/nine/nine/nine"
+
+
+-- othermoddir/go.mod --
+module mod.com/other
+
+-- foo/windows.go --
+//go:build windows
+package foo
+
+-- foo/default.go --
+//go:build !windows
+package foo //@ renameerr("foo", "golang.org/lsptests/rename/foo2", re"ignored files")
+
+-- bar/bar.go --
+package foobar //@ renameerr("foobar", "golang.org/lsptests/rename/otherpath", re"does not match directory base name")
+
+-- @moveDownTwoDirs/nine/nine/nine/eight/eight.go --
+@@ -0,0 +1 @@
++package eight //@ rename("eight", "golang.org/lsptests/rename/six/eight", differentDir), rename("eight", "golang.org/lsptests/rename/nine/nine/nine/eight", moveDownTwoDirs)
+-- @moveDownTwoDirs/seven/eight/eight.go --
+@@ -1 +0,0 @@
+-package eight //@ rename("eight", "golang.org/lsptests/rename/six/eight", differentDir), rename("eight", "golang.org/lsptests/rename/nine/nine/nine/eight", moveDownTwoDirs)
+-- @moveUpOneDir/five/four.go --
+@@ -0,0 +1,4 @@
++package five //@ rename("four", "golang.org/lsptests/rename/five", moveUpOneDir), renameerr("four", "../relative", re"specifying relative paths in package rename not yet supported")
++
++func Bar() {}
++
+-- @moveUpOneDir/six/four/four.go --
+@@ -1,4 +0,0 @@
+-package four //@ rename("four", "golang.org/lsptests/rename/five", moveUpOneDir), renameerr("four", "../relative", re"specifying relative paths in package rename not yet supported")
+-
+-func Bar() {}
+-
+-- @moveUpOneDir/seven/seven/seven.go --
+@@ -5 +5 @@
+-	"golang.org/lsptests/rename/six/four"
++	five1 "golang.org/lsptests/rename/five"
+@@ -10 +10 @@
+-	four.Bar()
++	five1.Bar()
+-- @newNameSameDir/one/one.go --
+@@ -1,2 +0,0 @@
+-package one //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"cannot move package across module boundary")
+-
+-- @newNameSameDir/two/one.go --
+@@ -0,0 +1,2 @@
++package two //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"cannot move package across module boundary")
++
+-- @sameName/one/one.go --
+-- @moveUpOneDir/six/six.go --
+@@ -3 +3 @@
+-import "golang.org/lsptests/rename/six/four"
++import "golang.org/lsptests/rename/five"
+@@ -6 +6 @@
+-	four.Bar()
++	five.Bar()
+-- @moveUpOneDir/go.mod --
+@@ -3 +3 @@
+-replace golang.org/lsptests/six/four => ./six/four
++replace golang.org/lsptests/six/four => ./five
+-- @differentDir/seven/eight/eight.go --
+@@ -1 +0,0 @@
+-package eight //@ rename("eight", "golang.org/lsptests/rename/six/eight", differentDir), rename("eight", "golang.org/lsptests/rename/nine/nine/nine/eight", moveDownTwoDirs)
+-- @differentDir/six/eight/eight.go --
+@@ -0,0 +1 @@
++package eight //@ rename("eight", "golang.org/lsptests/rename/six/eight", differentDir), rename("eight", "golang.org/lsptests/rename/nine/nine/nine/eight", moveDownTwoDirs)
+-- @differentDir/fix/fix.go --
+@@ -4 +4 @@
+-	"golang.org/lsptests/rename/seven/eight"
++	"golang.org/lsptests/rename/six/eight"
+-- @moveDownTwoDirs/fix/fix.go --
+@@ -4 +4 @@
+-	"golang.org/lsptests/rename/seven/eight"
++	"golang.org/lsptests/rename/nine/nine/nine/eight"
+-- @allowedInternal/importsnine/importsnine.go --
+@@ -1,6 +0,0 @@
+-package importsnine //@ rename("importsnine", "golang.org/lsptests/rename/nine/internal/importsnine", allowedInternal) // only importers of this package are already in the internal package, so okay to move it
+-
+-import (
+-	"golang.org/lsptests/rename/nine/nine/nine"
+-)
+-
+-- @allowedInternal/nine/internal/helpers.go --
+@@ -3 +3 @@
+-import "golang.org/lsptests/rename/importsnine"
++import "golang.org/lsptests/rename/nine/internal/importsnine"
+-- @allowedInternal/nine/internal/importsnine/importsnine.go --
+@@ -0,0 +1,6 @@
++package importsnine //@ rename("importsnine", "golang.org/lsptests/rename/nine/internal/importsnine", allowedInternal) // only importers of this package are already in the internal package, so okay to move it
++
++import (
++	"golang.org/lsptests/rename/nine/nine/nine"
++)
++
+-- @renameWithTestPkg/fix/fix.go --
+@@ -1,6 +0,0 @@
+-package fix //@ rename("fix", "golang.org/lsptests/rename/newFix", renameWithTestPkg)
+-
+-import (
+-	"golang.org/lsptests/rename/seven/eight"
+-	)
+-
+-- @renameWithTestPkg/fix/fix_test.go --
+@@ -1 +0,0 @@
+-package fix_test
+-- @renameWithTestPkg/newFix/fix.go --
+@@ -0,0 +1,6 @@
++package newFix //@ rename("fix", "golang.org/lsptests/rename/newFix", renameWithTestPkg)
++
++import (
++	"golang.org/lsptests/rename/seven/eight"
++	)
++
+-- @renameWithTestPkg/newFix/fix_test.go --
+@@ -0,0 +1 @@
++package newFix_test
+-- @createNewDir/seven/eight/other/other.go --
+@@ -1,2 +0,0 @@
+-package other //@ rename("other", "golang.org/lsptests/rename/seven/eight/other/newDir1/newDir2", createNewDir)
+-
+-- @createNewDir/seven/eight/other/newDir1/newDir2/other.go --
+@@ -0,0 +1,2 @@
++package newDir2 //@ rename("other", "golang.org/lsptests/rename/seven/eight/other/newDir1/newDir2", createNewDir)
++

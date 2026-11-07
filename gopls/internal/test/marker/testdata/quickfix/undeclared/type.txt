@@ -1,0 +1,9 @@
+This test verifies that we do not offer a "Create variable" quick fix for an
+undeclared composite literal type until golang/go#69947 is supported.
+
+-- a.go --
+package a
+
+func _() {
+	_ = a{} //@quickfixerr("a", re"(undeclared|undefined)", re"found 0 CodeActions")
+}

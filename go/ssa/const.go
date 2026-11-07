@@ -12,10 +12,10 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
-	"strings"
 
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // NewConst returns a new constant of the specified value and type.
@@ -42,21 +42,24 @@ func NewConst(val constant.Value, typ types.Type) *Const {
 //	types.IsString for ""
 //	0 otherwise.
 func soleTypeKind(typ types.Type) types.BasicInfo {
-	// State records the set of possible zero values (false, 0, "").
-	// Candidates (perhaps all) are eliminated during the type-set
-	// iteration, which executes at least once.
+	ts := typeparams.TypeSetOf(typ)
+	if ts.Len() == 0 {
+		return 0 // unrestricted or empty type set
+	}
+	// State records the set of possible zero values (false, 0, ""),
+	// narrowed by each term.
 	state := types.IsBoolean | types.IsInteger | types.IsString
-	underIs(typeSetOf(typ), func(ut types.Type) bool {
-		var c types.BasicInfo
-		if t, ok := ut.(*types.Basic); ok {
-			c = t.Info()
+	for u := range ts.UnderlyingTypes() {
+		t, ok := u.(*types.Basic)
+		if !ok {
+			return 0 // non-basic: zero value has no constant.Value
 		}
+		c := t.Info()
 		if c&types.IsNumeric != 0 { // int/float/complex
 			c = types.IsInteger
 		}
-		state = state & c
-		return state != 0
-	})
+		state &= c
+	}
 	return state
 }
 
@@ -79,7 +82,7 @@ func zeroConst(t types.Type) *Const {
 func (c *Const) RelString(from *types.Package) string {
 	var s string
 	if c.Value == nil {
-		s = zeroString(c.typ, from)
+		s, _ = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
 	} else if c.Value.Kind() == constant.String {
 		s = constant.StringVal(c.Value)
 		const max = 20
@@ -92,44 +95,6 @@ func (c *Const) RelString(from *types.Package) string {
 		s = c.Value.String()
 	}
 	return s + ":" + relType(c.Type(), from)
-}
-
-// zeroString returns the string representation of the "zero" value of the type t.
-func zeroString(t types.Type, from *types.Package) string {
-	switch t := t.(type) {
-	case *types.Basic:
-		switch {
-		case t.Info()&types.IsBoolean != 0:
-			return "false"
-		case t.Info()&types.IsNumeric != 0:
-			return "0"
-		case t.Info()&types.IsString != 0:
-			return `""`
-		case t.Kind() == types.UnsafePointer:
-			fallthrough
-		case t.Kind() == types.UntypedNil:
-			return "nil"
-		default:
-			panic(fmt.Sprint("zeroString for unexpected type:", t))
-		}
-	case *types.Pointer, *types.Slice, *types.Interface, *types.Chan, *types.Map, *types.Signature:
-		return "nil"
-	case *types.Named, *aliases.Alias:
-		return zeroString(t.Underlying(), from)
-	case *types.Array, *types.Struct:
-		return relType(t, from) + "{}"
-	case *types.Tuple:
-		// Tuples are not normal values.
-		// We are currently format as "(t[0], ..., t[n])". Could be something else.
-		components := make([]string, t.Len())
-		for i := 0; i < t.Len(); i++ {
-			components[i] = zeroString(t.At(i).Type(), from)
-		}
-		return "(" + strings.Join(components, ", ") + ")"
-	case *types.TypeParam:
-		return "*new(" + relType(t, from) + ")"
-	}
-	panic(fmt.Sprint("zeroString: unexpected ", t))
 }
 
 func (c *Const) Name() string {
@@ -165,12 +130,14 @@ func (c *Const) IsNil() bool {
 // nillable reports whether *new(T) == nil is legal for type T.
 func nillable(t types.Type) bool {
 	if typeparams.IsTypeParam(t) {
-		return underIs(typeSetOf(t), func(u types.Type) bool {
-			// empty type set (u==nil) => any underlying types => not nillable
-			return u != nil && nillable(u)
-		})
+		// All types in the type set must be nillable.
+		// An unrestricted or empty type set is not nillable.
+		ts := typeparams.TypeSetOf(t)
+		return ts.Len() > 0 && moreiters.Every(ts.UnderlyingTypes(), nillable)
 	}
-	switch t.Underlying().(type) {
+	switch t := t.Underlying().(type) {
+	case *types.Basic:
+		return t.Kind() == types.UnsafePointer
 	case *types.Pointer, *types.Slice, *types.Chan, *types.Map, *types.Signature:
 		return true
 	case *types.Interface:

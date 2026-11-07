@@ -34,8 +34,7 @@ func TestBasics(t *testing.T) {
 		E: []byte("hello"),
 		F: []string{s1, s2},
 	}
-	var y Basics
-	codec.Decode(codec.Encode(x), &y)
+	y := codec.Decode(codec.Encode(x))
 	if !reflect.DeepEqual(x, y) {
 		t.Fatalf("bad roundtrip: got %#v, want %#v", y, x)
 	}
@@ -79,8 +78,7 @@ func TestInts(t *testing.T) {
 		C64:  complex(math.MaxFloat32, math.MaxFloat32),
 		C128: complex(math.MaxFloat64, math.MaxFloat64),
 	}
-	var max2 Ints
-	codec.Decode(codec.Encode(max1), &max2)
+	max2 := codec.Decode(codec.Encode(max1))
 	if !reflect.DeepEqual(max1, max2) {
 		t.Fatalf("max: bad roundtrip: got %#v, want %#v", max2, max1)
 	}
@@ -97,8 +95,7 @@ func TestInts(t *testing.T) {
 		C64:  complex(-math.MaxFloat32, -math.MaxFloat32),
 		C128: complex(-math.MaxFloat64, -math.MaxFloat64),
 	}
-	var min2 Ints
-	codec.Decode(codec.Encode(min1), &min2)
+	min2 := codec.Decode(codec.Encode(min1))
 	if !reflect.DeepEqual(min1, min2) {
 		t.Fatalf("min: bad roundtrip: got %#v, want %#v", min2, min1)
 	}
@@ -111,8 +108,7 @@ func TestInts(t *testing.T) {
 		I32: -1,
 		I64: -1,
 	}
-	var neg2 Ints
-	codec.Decode(codec.Encode(neg1), &neg2)
+	neg2 := codec.Decode(codec.Encode(neg1))
 	if !reflect.DeepEqual(neg1, neg2) {
 		t.Fatalf("neg: bad roundtrip: got %#v, want %#v", neg2, neg1)
 	}

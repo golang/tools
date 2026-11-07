@@ -43,7 +43,7 @@ func (v *TagsFlag) Set(s string) error {
 
 	// Starting in Go 1.13, the -tags flag is a comma-separated list of build tags.
 	*v = []string{}
-	for _, s := range strings.Split(s, ",") {
+	for s := range strings.SplitSeq(s, ",") {
 		if s != "" {
 			*v = append(*v, s)
 		}
@@ -51,7 +51,7 @@ func (v *TagsFlag) Set(s string) error {
 	return nil
 }
 
-func (v *TagsFlag) Get() interface{} { return *v }
+func (v *TagsFlag) Get() any { return *v }
 
 func splitQuotedFields(s string) ([]string, error) {
 	// See $GOROOT/src/cmd/internal/quoted/quoted.go (Split)

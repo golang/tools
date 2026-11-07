@@ -52,6 +52,35 @@ go 1.17
 	})
 }
 
+func TestMultilineTokensAgain(t *testing.T) {
+	// Regression tests for a crash; see go.dev/issue/74635.
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.17
+-- hi.tmpl --
+{{/* this is
+a comment */}}
+`
+	WithOptions(
+		Settings{
+			"templateExtensions": []string{"tmpl"},
+			"semanticTokens":     true,
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		var p protocol.SemanticTokensParams
+		p.TextDocument.URI = env.Sandbox.Workdir.URI("hi.tmpl")
+		toks, err := env.Editor.Server.SemanticTokensFull(env.Ctx, &p)
+		if err != nil {
+			t.Errorf("semantic token failed: %v", err)
+		}
+		if toks == nil || len(toks.Data) == 0 {
+			t.Errorf("got no semantic tokens")
+		}
+	})
+}
+
 func TestTemplatesFromExtensions(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -190,8 +219,9 @@ go 1.12
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a.tmpl")
-		x := env.RegexpSearch("a.tmpl", `A`)
-		loc := env.GoToDefinition(x)
+		x := env.RegexpSearch("a.tmpl", `()A`)
+		loc := env.FirstDefinition(x)
+		env.OpenFile(env.Sandbox.Workdir.URIToPath(loc.URI))
 		refs := env.References(loc)
 		if len(refs) != 2 {
 			t.Fatalf("got %v reference(s), want 2", len(refs))
@@ -226,6 +256,32 @@ func shorten(fn protocol.DocumentURI) string {
 	}
 	j := len(pieces)
 	return pieces[j-2] + "/" + pieces[j-1]
+}
+
+func TestCompletionPanic_Issue57621(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- hello.tmpl --
+{{range .Planets}}
+Hello {{
+{{end}}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("hello.tmpl")
+		// None of these should panic.
+		env.Completion(env.RegexpSearch("hello.tmpl", `Hello ()\{\{`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `Hello \{()\{`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `Hello \{\{()`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `()\{\{range`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `\{()\{range`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `\{\{()range`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `Planets()}}`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `Planets}()}`))
+		env.Completion(env.RegexpSearch("hello.tmpl", `Planets}}()`))
+	})
 }
 
 // Hover needs tests

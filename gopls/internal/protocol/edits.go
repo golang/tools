@@ -6,6 +6,7 @@ package protocol
 
 import (
 	"fmt"
+	"slices"
 
 	"golang.org/x/tools/internal/diff"
 )
@@ -16,7 +17,7 @@ func EditsFromDiffEdits(m *Mapper, edits []diff.Edit) ([]TextEdit, error) {
 	// LSP doesn't require TextEditArray to be sorted:
 	// this is the receiver's concern. But govim, and perhaps
 	// other clients have historically relied on the order.
-	edits = append([]diff.Edit(nil), edits...)
+	edits = slices.Clone(edits)
 	diff.SortEdits(edits)
 
 	result := make([]TextEdit, len(edits))
@@ -134,6 +135,16 @@ func DocumentChangeCreate(uri DocumentURI) DocumentChange {
 	return DocumentChange{
 		CreateFile: &CreateFile{
 			Kind: "create",
+			URI:  uri,
+		},
+	}
+}
+
+// DocumentChangeDelete constructs a DocumentChange that deletes a file.
+func DocumentChangeDelete(uri DocumentURI) DocumentChange {
+	return DocumentChange{
+		DeleteFile: &DeleteFile{
+			Kind: "delete",
 			URI:  uri,
 		},
 	}

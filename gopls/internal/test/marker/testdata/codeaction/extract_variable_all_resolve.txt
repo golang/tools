@@ -1,0 +1,249 @@
+This test checks the behavior of the 'replace all occurrences of expression' code action, with resolve support.
+See extract_variable_all.txt for the same test without resolve support.
+
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": true,
+			"resolveSupport": {
+				"properties": ["edit"]
+			}
+		}
+	}
+}
+-- flags --
+-ignore_extra_diags
+
+-- basic_lit.go --
+package extract_all
+
+func _() {
+	var _ = 1 + 2 + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
+	var _ = 1 + 2 + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
+}
+-- @basic_lit/basic_lit.go --
+@@ -4,2 +4,3 @@
+-	var _ = 1 + 2 + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
+-	var _ = 1 + 2 + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
++	const newConst = 1 + 2
++	var _ = newConst + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
++	var _ = newConst + 3 //@codeaction("1 + 2", "refactor.extract.constant-all", edit=basic_lit)
+-- nested_scope.go --
+package extract_all
+
+func _() {
+	newConst1 := 0
+	if true {
+		x := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+	}
+	if true {
+		newConst := 0
+		if false {
+			y := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+		}
+	}
+	z := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+}
+-- @nested_scope/nested_scope.go --
+@@ -5 +5 @@
++	const newConst2 = 1 + 2 + 3
+@@ -6 +7 @@
+-		x := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
++		x := newConst2 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+@@ -11 +12 @@
+-			y := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
++			y := newConst2 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+@@ -14 +15 @@
+-	z := 1 + 2 + 3 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
++	z := newConst2 //@codeaction("1 + 2 + 3", "refactor.extract.constant-all", edit=nested_scope)
+-- function_call.go --
+package extract_all
+
+import "fmt"
+
+func _() {
+	result := fmt.Sprintf("%d", 42) //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
+	if result != "" {
+		anotherResult := fmt.Sprintf("%d", 42) //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
+		_ = anotherResult
+	}
+}
+-- @replace_func_call/function_call.go --
+@@ -6 +6,2 @@
+-	result := fmt.Sprintf("%d", 42) //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
++	newVar := fmt.Sprintf("%d", 42)
++	result := newVar //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
+@@ -8 +9 @@
+-		anotherResult := fmt.Sprintf("%d", 42) //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
++		anotherResult := newVar //@codeaction(`fmt.Sprintf("%d", 42)`, "refactor.extract.variable-all", edit=replace_func_call)
+-- composite_literals.go --
+package extract_all
+
+func _() {
+	data := []int{1, 2, 3} //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
+	processData(data)
+	moreData := []int{1, 2, 3} //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
+	processData(moreData)
+}
+
+func processData(d []int) {}
+-- @composite/composite_literals.go --
+@@ -4 +4,2 @@
+-	data := []int{1, 2, 3} //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
++	newVar := []int{1, 2, 3}
++	data := newVar //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
+@@ -6 +7 @@
+-	moreData := []int{1, 2, 3} //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
++	moreData := newVar //@codeaction("[]int{1, 2, 3}", "refactor.extract.variable-all", edit=composite)
+-- selector.go --
+package extract_all
+
+type MyStruct struct {
+	Value int
+}
+
+func _() {
+	s := MyStruct{Value: 10}
+	v := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
+	if v > 0 {
+		w := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
+		_ = w
+	}
+}
+-- @sel/selector.go --
+@@ -9 +9,2 @@
+-	v := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
++	newVar := s.Value
++	v := newVar //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
+@@ -11 +12 @@
+-		w := s.Value //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
++		w := newVar //@codeaction("s.Value", "refactor.extract.variable-all", edit=sel)
+-- index.go --
+package extract_all
+
+func _() {
+	arr := []int{1, 2, 3}
+	val := arr[0] //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
+	val2 := arr[0] //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
+}
+-- @index/index.go --
+@@ -5,2 +5,3 @@
+-	val := arr[0] //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
+-	val2 := arr[0] //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
++	newVar := arr[0]
++	val := newVar //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
++	val2 := newVar //@codeaction("arr[0]", "refactor.extract.variable-all", edit=index)
+-- slice_expr.go --
+package extract_all
+
+func _() {
+	data := []int{1, 2, 3, 4, 5}
+	part := data[1:3] //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
+	anotherPart := data[1:3] //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
+}
+-- @slice/slice_expr.go --
+@@ -5,2 +5,3 @@
+-	part := data[1:3] //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
+-	anotherPart := data[1:3] //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
++	newVar := data[1:3]
++	part := newVar //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
++	anotherPart := newVar //@codeaction("data[1:3]", "refactor.extract.variable-all", edit=slice)
+-- nested_func.go --
+package extract_all
+
+func outer() {
+	inner := func() {
+		val := 100 + 200 //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
+		_ = val
+	}
+	inner()
+	val := 100 + 200 //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
+	_ = val
+}
+-- @nested/nested_func.go --
+@@ -4 +4 @@
++	const newConst = 100 + 200
+@@ -5 +6 @@
+-		val := 100 + 200 //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
++		val := newConst //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
+@@ -9 +10 @@
+-	val := 100 + 200 //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
++	val := newConst //@codeaction("100 + 200", "refactor.extract.constant-all", edit=nested)
+-- switch.go --
+package extract_all
+
+func _() {
+	value := 2
+	switch value {
+	case 1:
+		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+		_ = result
+	case 2:
+		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+		_ = result
+	default:
+		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+		_ = result
+	}
+}
+-- @switch/switch.go --
+@@ -5 +5 @@
++	newVar := value * 10
+@@ -7 +8 @@
+-		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
++		result := newVar //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+@@ -10 +11 @@
+-		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
++		result := newVar //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+@@ -13 +14 @@
+-		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
++		result := newVar //@codeaction("value * 10", "refactor.extract.variable-all", edit=switch)
+-- switch_single.go --
+package extract_all
+
+func _() {
+	value := 2
+	switch value {
+	case 1:
+		result := value * 10
+		_ = result
+	case 2:
+		result := value * 10
+		_ = result
+	default:
+		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable", edit=switch_single)
+		_ = result
+	}
+}
+-- @switch_single/switch_single.go --
+@@ -13 +13,2 @@
+-		result := value * 10 //@codeaction("value * 10", "refactor.extract.variable", edit=switch_single)
++		newVar := value * 10
++		result := newVar //@codeaction("value * 10", "refactor.extract.variable", edit=switch_single)
+-- func_list.go --
+package extract_all
+
+func _() {
+	x := func(a int) int { //@codeaction("func", "refactor.extract.variable-all", end=closeBracket1, edit=func_list)
+		b := 1
+		return b + a
+	} //@loc(closeBracket1, "}")
+	y := func(a int) int { //@codeaction("func", "refactor.extract.variable-all", end=closeBracket2, edit=func_list)
+		b := 1
+		return b + a
+	}//@loc(closeBracket2, "}")
+}
+-- @func_list/func_list.go --
+@@ -4 +4 @@
+-	x := func(a int) int { //@codeaction("func", "refactor.extract.variable-all", end=closeBracket1, edit=func_list)
++	newVar := func(a int) int {
+@@ -7,5 +7,3 @@
+-	} //@loc(closeBracket1, "}")
+-	y := func(a int) int { //@codeaction("func", "refactor.extract.variable-all", end=closeBracket2, edit=func_list)
+-		b := 1
+-		return b + a
+-	}//@loc(closeBracket2, "}")
++	}
++	x := newVar //@loc(closeBracket1, "}")
++	y := newVar//@loc(closeBracket2, "}")

@@ -1,0 +1,83 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package packagepath_test
+
+import (
+	"testing"
+
+	. "golang.org/x/tools/internal/packagepath"
+)
+
+func TestCanImport(t *testing.T) {
+	for _, tt := range []struct {
+		from string
+		to   string
+		want bool
+	}{
+		{"fmt", "internal", true},
+		{"fmt", "internal/foo", true},
+		{"fmt", "fmt/internal/foo", true},
+		{"fmt", "cmd/internal/archive", false},
+		{"a.com/b", "internal", false},
+		{"a.com/b", "xinternal", true},
+		{"a.com/b", "internal/foo", false},
+		{"a.com/b", "xinternal/foo", true},
+		{"a.com/b", "a.com/internal", true},
+		{"a.com/b", "a.com/b/internal", true},
+		{"a.com/b", "a.com/b/internal/foo", true},
+		{"a.com/b", "a.com/c/internal", false},
+		{"a.com/b", "a.com/c/xinternal", true},
+		{"a.com/b", "a.com/c/internal/foo", false},
+		{"a.com/b", "a.com/c/xinternal/foo", true},
+	} {
+		got := CanImport(tt.from, tt.to)
+		if got != tt.want {
+			t.Errorf("CanImport(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
+		}
+	}
+}
+
+func TestMaybeStdPackage(t *testing.T) {
+	testCases := []struct {
+		pkgpath string
+		isStd   bool
+	}{
+		{pkgpath: "os", isStd: true},
+		{pkgpath: "net/http", isStd: true},
+		{pkgpath: "vendor/golang.org/x/net/dns/dnsmessage", isStd: true},
+		{pkgpath: "golang.org/x/net/dns/dnsmessage", isStd: false},
+		{pkgpath: "testdata", isStd: false},
+		{pkgpath: "myprivateapp", isStd: true}, // a false positive (go.dev/issue/80555)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.pkgpath, func(t *testing.T) {
+			got := MaybeStdPackage(tc.pkgpath)
+			if got != tc.isStd {
+				t.Fatalf("got %t want %t", got, tc.isStd)
+			}
+		})
+	}
+}
+
+func TestTrimVersionSuffix(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"math/rand/v2", "math/rand"},
+		{"example.com/foo/bar/v3", "example.com/foo/bar"},
+		{"math/rand", "math/rand"},
+		{"fmt", "fmt"},
+		{"example.com/lib/valid", "example.com/lib/valid"},
+		{"example.com/lib/v1", "example.com/lib"},
+		{"v2", "v2"},
+	}
+	for _, test := range tests {
+		if got := TrimVersionSuffix(test.path); got != test.want {
+			t.Errorf("TrimVersionSuffix(%q) = %q, want %q", test.path, got, test.want)
+		}
+	}
+}

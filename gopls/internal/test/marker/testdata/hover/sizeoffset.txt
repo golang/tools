@@ -9,9 +9,11 @@ Notes:
 - the test's size expectations assumes a 64-bit machine.
 - requires go1.22 because size information was inaccurate before.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- flags --
 -skip_goarch=386,arm
--min_go=go1.22
 
 -- go.mod --
 module example.com
@@ -46,6 +48,10 @@ type wasteful struct { //@ hover("wasteful", "wasteful", wasteful)
 	c bool
 }
 
+type sizeclass struct { //@ hover("sizeclass", "sizeclass", sizeclass)
+	a [5]*int
+}
+
 -- @T --
 ```go
 type T struct { // size=48 (0x30)
@@ -54,6 +60,8 @@ type T struct { // size=48 (0x30)
 	y, z int //@ hover("y", "y", y), hover("z", "z", z)
 }
 ```
+
+---
 
 [`a.T` on pkg.go.dev](https://pkg.go.dev/example.com#T)
 -- @wasteful --
@@ -64,10 +72,18 @@ type wasteful struct { // size=48 (0x30) (29% wasted)
 	c bool
 }
 ```
+-- @sizeclass --
+```go
+type sizeclass struct { // size=40 (0x28), class=48 (0x30)
+	a [5]*int
+}
+```
 -- @a --
 ```go
 field a int // size=8, offset=0
 ```
+
+---
 
 @ hover("a", "a", a)
 -- @U --
@@ -75,8 +91,12 @@ field a int // size=8, offset=0
 field U U // size=24 (0x18), offset=8
 ```
 
+---
+
 @ hover("U", "U", U)
 
+
+---
 
 [`(a.T).U` on pkg.go.dev](https://pkg.go.dev/example.com#T.U)
 -- @y --
@@ -84,11 +104,15 @@ field U U // size=24 (0x18), offset=8
 field y int // size=8, offset=32 (0x20)
 ```
 
+---
+
 @ hover("y", "y", y), hover("z", "z", z)
 -- @z --
 ```go
 field z int // size=8, offset=40 (0x28)
 ```
+
+---
 
 @ hover("y", "y", y), hover("z", "z", z)
 -- @p --
@@ -96,11 +120,15 @@ field z int // size=8, offset=40 (0x28)
 field p T
 ```
 
+---
+
 @ hover("p", "p", p)
 -- @q --
 ```go
 field q int // size=8
 ```
+
+---
 
 @ hover("q", "q", q)
 -- @Gint --
@@ -108,10 +136,14 @@ field q int // size=8
 field Gint G[int] // size=16 (0x10), offset=0
 ```
 
+---
+
 @ hover("Gint",    "Gint",    Gint)
 -- @Gstring --
 ```go
 field Gstring G[string] // size=24 (0x18), offset=16 (0x10)
 ```
+
+---
 
 @ hover("Gstring", "Gstring", Gstring)

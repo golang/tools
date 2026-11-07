@@ -13,7 +13,7 @@ go 1.0
 -- a/a.go --
 package a
 
-func foo() {   //@ loc(foo, "foo")
+func Foo() {   //@ loc(Foo, "Foo")
 	bar()
 }
 
@@ -38,14 +38,14 @@ func init() { //@ loc(init, "init")
 	baz()
 }
 
-//@ outgoingcalls(foo, bar)
+//@ outgoingcalls(Foo, bar)
 //@ outgoingcalls(bar, baz)
 //@ outgoingcalls(baz, bluh)
 //@ outgoingcalls(bluh)
 //@ outgoingcalls(init, baz)
 
-//@ incomingcalls(foo)
-//@ incomingcalls(bar, foo)
+//@ incomingcalls(Foo)
+//@ incomingcalls(bar, Foo)
 //@ incomingcalls(baz, bar, global, init)
 //@ incomingcalls(bluh, baz)
 //@ incomingcalls(init)

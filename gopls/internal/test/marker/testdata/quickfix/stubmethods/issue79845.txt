@@ -1,0 +1,42 @@
+This test verifies that stubmethods quickfix generates correct
+signatures for instantiated generic interfaces. See golang/go#79845.
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- main.go --
+package main
+
+type Group[E any] interface {
+	Identity() E
+	Combine(E, E) E
+	Inverse(E) E
+}
+
+type IntegersModuloPrime struct {
+	mod int
+}
+
+var _ Group[int] = IntegersModuloPrime{} //@quickfix(re"IntegersModuloPrime", re"missing method", stub)
+
+-- @stub/main.go --
+@@ -13 +13,14 @@
+-var _ Group[int] = IntegersModuloPrime{} //@quickfix(re"IntegersModuloPrime", re"missing method", stub)
++// Combine implements [Group].
++func (i IntegersModuloPrime) Combine(int, int) int {
++	panic("unimplemented")
++}
++
++// Identity implements [Group].
++func (i IntegersModuloPrime) Identity() int {
++	panic("unimplemented")
++}
++
++// Inverse implements [Group].
++func (i IntegersModuloPrime) Inverse(int) int {
++	panic("unimplemented")
++}
+@@ -15 +28 @@
++var _ Group[int] = IntegersModuloPrime{} //@quickfix(re"IntegersModuloPrime", re"missing method", stub)

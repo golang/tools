@@ -14,8 +14,7 @@ package main
 
 import (
 	"go/types"
-
-	"golang.org/x/tools/internal/aliases"
+	"slices"
 )
 
 func (p *printer) writeType(this *types.Package, typ types.Type) {
@@ -30,11 +29,9 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 	// practice deeply nested composite types with unnamed component
 	// types are uncommon. This code is likely more efficient than
 	// using a map.
-	for _, t := range visited {
-		if t == typ {
-			p.printf("○%T", typ) // cycle to typ
-			return
-		}
+	if slices.Contains(visited, typ) {
+		p.printf("○%T", typ) // cycle to typ
+		return
 	}
 	visited = append(visited, typ)
 
@@ -74,7 +71,7 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 
 		p.print("struct {\n")
 		p.indent++
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f := t.Field(i)
 			if !f.Anonymous() {
 				p.printf("%s ", f.Name())
@@ -113,7 +110,7 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 		//
 		n := t.NumMethods()
 		if n == 0 {
-			p.print("interface{}")
+			p.print("any")
 			return
 		}
 
@@ -122,7 +119,7 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 		if GcCompatibilityMode {
 			// print flattened interface
 			// (useful to compare against gc-generated interfaces)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				m := t.Method(i)
 				p.print(m.Name())
 				p.writeSignatureInternal(this, m.Type().(*types.Signature), visited)
@@ -177,9 +174,9 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 			p.print(")")
 		}
 
-	case *aliases.Alias:
+	case *types.Alias:
 		// TODO(adonovan): display something aliasy.
-		p.writeTypeInternal(this, aliases.Unalias(t), visited)
+		p.writeTypeInternal(this, types.Unalias(t), visited)
 
 	case *types.Named:
 		s := "<Named w/o object>"

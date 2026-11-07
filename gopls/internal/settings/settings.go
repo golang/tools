@@ -6,17 +6,21 @@ package settings
 
 import (
 	"fmt"
+	"maps"
+	"math"
 	"path/filepath"
-	"runtime"
+	"reflect"
 	"strings"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/maps"
-	"golang.org/x/tools/gopls/internal/util/slices"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
+	"golang.org/x/tools/gopls/internal/telemetry"
+	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
+// An Annotation is a category of Go compiler optimization diagnostic.
 type Annotation string
 
 const (
@@ -36,7 +40,8 @@ const (
 // Options holds various configuration that affects Gopls execution, organized
 // by the nature or origin of the settings.
 //
-// Options must be comparable with reflect.DeepEqual.
+// Options must be comparable with reflect.DeepEqual, and serializable with
+// [frob.Codec].
 //
 // This type defines both the logic of LSP-supplied option parsing
 // (see [SetOptions]), and the public documentation of options in
@@ -45,7 +50,13 @@ const (
 // Each exported field of each embedded type such as "ClientOptions"
 // contributes a user-visible option setting. The option name is the
 // field name rendered in camelCase. Unlike most Go doc comments,
-// these fields should be documented using GitHub markdown.
+// these fields should be documented using CommonMark Markdown,
+// without renderer-specific extensions (see doc.API).
+//
+// Likewise, the doc comments of the constants of enum types used by
+// these fields (e.g. [Annotation], [InlayHint]) are emitted verbatim as
+// Markdown in settings.md, inlayHints.md, and api.json, and should
+// use Markdown.
 type Options struct {
 	ClientOptions
 	ServerOptions
@@ -53,14 +64,37 @@ type Options struct {
 	InternalOptions
 }
 
+// Debug returns a list of "name = value" strings for each Options field.
+func (o *Options) Debug() []string {
+	var res []string
+
+	var visitStruct func(v reflect.Value, path []string)
+	visitStruct = func(v reflect.Value, path []string) {
+		for i := range v.NumField() {
+			f := v.Field(i)
+			ftyp := v.Type().Field(i)
+			path := append(path, ftyp.Name)
+			if ftyp.Type.Kind() == reflect.Struct {
+				visitStruct(f, path)
+			} else {
+				res = append(res, fmt.Sprintf("%s = %#v",
+					strings.Join(path, "."),
+					f.Interface()))
+			}
+		}
+	}
+	visitStruct(reflect.ValueOf(o).Elem(), nil)
+
+	return res
+}
+
 // ClientOptions holds LSP-specific configuration that is provided by the
 // client.
 //
 // ClientOptions must be comparable with reflect.DeepEqual.
 type ClientOptions struct {
-	ClientInfo                                 *protocol.ClientInfo
+	ClientInfo                                 protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
-	InsertReplaceSupported                     bool
 	ConfigurationSupported                     bool
 	DynamicConfigurationSupported              bool
 	DynamicRegistrationSemanticTokensSupported bool
@@ -69,13 +103,23 @@ type ClientOptions struct {
 	PreferredContentFormat                     protocol.MarkupKind
 	LineFoldingOnly                            bool
 	HierarchicalDocumentSymbolSupport          bool
+	ImportsSource                              ImportsSourceEnum `status:"experimental"`
 	SemanticTypes                              []string
 	SemanticMods                               []string
 	RelatedInformationSupported                bool
-	CompletionTags                             bool
 	CompletionDeprecated                       bool
+	CompletionInsertReplaceSupported           bool
+	CompletionLabelDetailsSupported            bool
+	CompletionTags                             bool
 	SupportedResourceOperations                []protocol.ResourceOperationKind
 	CodeActionResolveOptions                   []string
+	ShowDocumentSupported                      bool
+	// SupportedWorkDoneProgressFormats specifies the formats supported by the
+	// client for handling workdone progress metadata.
+	SupportedWorkDoneProgressFormats map[WorkDoneProgressStyle]bool
+	// SupportedInteractiveInputTypes specifies the interactive types supported
+	// by the client.
+	SupportedInteractiveInputTypes map[protocol.FormFieldKind]bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -117,7 +161,7 @@ type BuildOptions struct {
 	// Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 	DirectoryFilters []string
 
-	// TemplateExtensions gives the extensions of file names that are treateed
+	// TemplateExtensions gives the extensions of file names that are treated
 	// as template files. (The extension
 	// is the part of the file name after the final dot.)
 	TemplateExtensions []string
@@ -134,11 +178,6 @@ type BuildOptions struct {
 	// opening a nested workspace directory, you can reduce the amount of work
 	// gopls has to do to keep your workspace up to date.
 	ExpandWorkspaceToModule bool `status:"experimental"`
-
-	// AllowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module
-	// downloads rather than requiring user action. This option will eventually
-	// be removed.
-	AllowImplicitNetworkAccess bool `status:"experimental"`
 
 	// StandaloneTags specifies a set of build constraints that identify
 	// individual Go source files that make up the entire main package of an
@@ -159,6 +198,14 @@ type BuildOptions struct {
 	//
 	// This setting is only supported when gopls is built with Go 1.16 or later.
 	StandaloneTags []string
+
+	// WorkspaceFiles configures the set of globs that match files defining the
+	// logical build of the current workspace. Any on-disk changes to any files
+	// matching a glob specified here will trigger a reload of the workspace.
+	//
+	// This setting need only be customized in environments with a custom
+	// GOPACKAGESDRIVER.
+	WorkspaceFiles []string
 }
 
 // Note: UIOptions must be comparable with reflect.DeepEqual.
@@ -179,22 +226,57 @@ type UIOptions struct {
 	// ...
 	//   "codelenses": {
 	//     "generate": false,  // Don't show the `go generate` lens.
-	//     "gc_details": true  // Show a code lens toggling the display of gc's choices.
 	//   }
 	// ...
 	// }
 	// ```
 	Codelenses map[CodeLensSource]bool
 
-	// SemanticTokens controls whether the LSP server will send
-	// semantic tokens to the client.
+	// SemanticTokens determines whether gopls will return a
+	// SemanticTokensProvider at initialization, or respond
+	// to requests for semantic tokens.
+	//
+	// This setting being `false` won't necessary disable the client's calls
+	// for semantic tokens. If you want that, it would need to be configured in
+	// the client. For example, in VSCode, this would disable all Go semantic
+	// token calls to the LSP server:
+	//
+	// ```json5
+	// "[go]": {
+	//     "editor.semanticHighlighting.enabled": false,
+	// }
+	// ```
 	SemanticTokens bool `status:"experimental"`
 
 	// NoSemanticString turns off the sending of the semantic token 'string'
+	//
+	// Deprecated: Use SemanticTokenTypes["string"] = false instead. See
+	// golang/vscode-go#3632
 	NoSemanticString bool `status:"experimental"`
 
-	// NoSemanticNumber  turns off the sending of the semantic token 'number'
+	// NoSemanticNumber turns off the sending of the semantic token 'number'
+	//
+	// Deprecated: Use SemanticTokenTypes["number"] = false instead. See
+	// golang/vscode-go#3632.
 	NoSemanticNumber bool `status:"experimental"`
+
+	// SemanticTokenTypes configures the semantic token types. It allows
+	// disabling types by setting each value to false.
+	// By default, all types are enabled.
+	SemanticTokenTypes map[string]bool `status:"experimental"`
+
+	// SemanticTokenModifiers configures the semantic token modifiers. It allows
+	// disabling modifiers by setting each value to false.
+	// By default, all modifiers are enabled.
+	SemanticTokenModifiers map[string]bool `status:"experimental"`
+
+	// NewGoFileHeader enables automatic insertion of the copyright comment
+	// and package declaration in a newly created Go file.
+	NewGoFileHeader bool
+
+	// RenameMovesSubpackages enables Rename operations on packages to
+	// move subdirectories of the target package.
+	RenameMovesSubpackages bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -206,32 +288,13 @@ type CodeLensSource string
 // and in the user documentation thereof, which is generated by
 // gopls/doc/generate/generate.go parsing this file.
 //
-// Doc comments should use GitHub Markdown.
+// Doc comments should use CommonMark Markdown (see doc.API).
 // The first line becomes the title.
 //
 // (For historical reasons, each code lens source identifier typically
 // matches the name of one of the command.Commands returned by it,
 // but that isn't essential.)
 const (
-	// Toggle display of Go compiler optimization decisions
-	//
-	// This codelens source causes the `package` declaration of
-	// each file to be annotated with a command to toggle the
-	// state of the per-session variable that controls whether
-	// optimization decisions from the Go compiler (formerly known
-	// as "gc") should be displayed as diagnostics.
-	//
-	// Optimization decisions include:
-	// - whether a variable escapes, and how escape is inferred;
-	// - whether a nil-pointer check is implied or eliminated;
-	// - whether a function can be inlined.
-	//
-	// TODO(adonovan): this source is off by default because the
-	// annotation is annoying and because VS Code has a separate
-	// "Toggle gc details" command. Replace it with a Code Action
-	// ("Source action...").
-	CodeLensGCDetails CodeLensSource = "gc_details"
-
 	// Run `go generate`
 	//
 	// This codelens source annotates any `//go:generate` comments
@@ -255,13 +318,25 @@ const (
 
 	// Run govulncheck
 	//
-	// This codelens source annotates the `module` directive in a
-	// go.mod file with a command to run Govulncheck.
+	// This codelens source annotates the `module` directive in a go.mod file
+	// with a command to run govulncheck synchronously.
 	//
-	// [Govulncheck](https://go.dev/blog/vuln) is a static
-	// analysis tool that computes the set of functions reachable
-	// within your application, including dependencies;
-	// queries a database of known security vulnerabilities; and
+	// [Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+	// computes the set of functions reachable within your application, including
+	// dependencies; queries a database of known security vulnerabilities; and
+	// reports any potential problems it finds.
+	//
+	//gopls:status experimental
+	CodeLensVulncheck CodeLensSource = "vulncheck"
+
+	// Run govulncheck (legacy)
+	//
+	// This codelens source annotates the `module` directive in a go.mod file
+	// with a command to run Govulncheck asynchronously.
+	//
+	// [Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+	// computes the set of functions reachable within your application, including
+	// dependencies; queries a database of known security vulnerabilities; and
 	// reports any potential problems it finds.
 	CodeLensRunGovulncheck CodeLensSource = "run_govulncheck"
 
@@ -340,7 +415,7 @@ type CompletionOptions struct {
 // Note: DocumentationOptions must be comparable with reflect.DeepEqual.
 type DocumentationOptions struct {
 	// HoverKind controls the information that appears in the hover text.
-	// SingleLine and Structured are intended for use only by authors of editor plugins.
+	// SingleLine is intended for use only by authors of editor plugins.
 	HoverKind HoverKind
 
 	// LinkTarget is the base URL for links to Go package
@@ -371,7 +446,29 @@ type DocumentationOptions struct {
 //
 // Note: this type has special logic in loadEnums in generate.go.
 // Be sure to reflect enum and doc changes there!
-type LinksInHoverEnum any
+type LinksInHoverEnum int
+
+const (
+	LinksInHover_None LinksInHoverEnum = iota
+	LinksInHover_LinkTarget
+	LinksInHover_Gopls
+)
+
+// MarshalJSON implements the json.Marshaler interface, so that the default
+// values are formatted correctly in documentation. (See [Options.setOne] for
+// the flexible custom unmarshaling behavior).
+func (l LinksInHoverEnum) MarshalJSON() ([]byte, error) {
+	switch l {
+	case LinksInHover_None:
+		return []byte("false"), nil
+	case LinksInHover_LinkTarget:
+		return []byte("true"), nil
+	case LinksInHover_Gopls:
+		return []byte(`"gopls"`), nil
+	default:
+		return nil, fmt.Errorf("invalid LinksInHover value %d", l)
+	}
+}
 
 // Note: FormattingOptions must be comparable with reflect.DeepEqual.
 type FormattingOptions struct {
@@ -390,12 +487,13 @@ type FormattingOptions struct {
 	Gofumpt bool
 }
 
-// Note: DiagnosticOptions must be comparable with reflect.DeepEqual.
+// Note: DiagnosticOptions must be comparable with reflect.DeepEqual,
+// and frob-encodable (no interfaces).
 type DiagnosticOptions struct {
 	// Analyses specify analyses that the user would like to enable or disable.
 	// A map of the names of analysis passes that should be enabled/disabled.
 	// A full list of analyzers that gopls uses can be found in
-	// [analyzers.md](https://github.com/golang/tools/blob/master/gopls/doc/analyzers.md).
+	// [analyzers](https://go.dev/gopls/analyzers).
 	//
 	// Example Usage:
 	//
@@ -409,14 +507,34 @@ type DiagnosticOptions struct {
 	// ```
 	Analyses map[string]bool
 
-	// Staticcheck enables additional analyses from staticcheck.io.
+	// Staticcheck configures the default set of analyses staticcheck.io.
 	// These analyses are documented on
 	// [Staticcheck's website](https://staticcheck.io/docs/checks/).
-	Staticcheck bool `status:"experimental"`
+	//
+	// The "staticcheck" option has three values:
+	// - false: disable all staticcheck analyzers
+	// - true: enable all staticcheck analyzers
+	// - unset: enable a subset of staticcheck analyzers
+	//   selected by gopls maintainers for runtime efficiency
+	//   and analytic precision.
+	//
+	// Regardless of this setting, individual analyzers can be
+	// selectively enabled or disabled using the `analyses` setting.
+	Staticcheck         bool `status:"experimental"`
+	StaticcheckProvided bool `status:"experimental"` // = "staticcheck" was explicitly provided
 
-	// Annotations specifies the various kinds of optimization diagnostics
-	// that should be reported by the gc_details command.
-	Annotations map[Annotation]bool `status:"experimental"`
+	// Annotations specifies the various kinds of compiler
+	// optimization details that should be reported as diagnostics
+	// when enabled for a package by the "Toggle compiler
+	// optimization details" (`gopls.gc_details`) command.
+	//
+	// (Some users care only about one kind of annotation in their
+	// profiling efforts. More importantly, in large packages, the
+	// number of annotations can sometimes overwhelm the user
+	// interface and exceed the per-file diagnostic limit.)
+	//
+	// TODO(adonovan): rename this field to CompilerOptDetail.
+	Annotations map[Annotation]bool
 
 	// Vulncheck enables vulnerability scanning.
 	Vulncheck VulncheckMode `status:"experimental"`
@@ -446,8 +564,7 @@ type DiagnosticOptions struct {
 
 type InlayHintOptions struct {
 	// Hints specify inlay hints that users want to see. A full list of hints
-	// that gopls uses can be found in
-	// [inlayHints.md](https://github.com/golang/tools/blob/master/gopls/doc/inlayHints.md).
+	// that gopls uses can be found in [inlayHints](https://go.dev/gopls/inlayHints).
 	Hints map[InlayHint]bool `status:"experimental"`
 }
 
@@ -456,33 +573,34 @@ type InlayHintOptions struct {
 type InlayHint string
 
 // This is the source from which gopls/doc/inlayHints.md is generated.
+// Doc comments should use CommonMark Markdown (see doc.API).
 const (
 	// ParameterNames controls inlay hints for parameter names:
 	// ```go
-	// 	parseInt(/* str: */ "123", /* radix: */ 8)
+	// 	parseInt(« str: » "123", « radix: » 8)
 	// ```
 	ParameterNames InlayHint = "parameterNames"
 
 	// AssignVariableTypes controls inlay hints for variable types in assign statements:
 	// ```go
-	// 	i/* int*/, j/* int*/ := 0, len(r)-1
+	// 	i« int», j« int» := 0, len(r)-1
 	// ```
 	AssignVariableTypes InlayHint = "assignVariableTypes"
 
 	// ConstantValues controls inlay hints for constant values:
 	// ```go
 	// 	const (
-	// 		KindNone   Kind = iota/* = 0*/
-	// 		KindPrint/*  = 1*/
-	// 		KindPrintf/* = 2*/
-	// 		KindErrorf/* = 3*/
+	// 		KindNone   Kind = iota« = 0»
+	// 		KindPrint«  = 1»
+	// 		KindPrintf« = 2»
+	// 		KindErrorf« = 3»
 	// 	)
 	// ```
 	ConstantValues InlayHint = "constantValues"
 
 	// RangeVariableTypes controls inlay hints for variable types in range statements:
 	// ```go
-	// 	for k/* int*/, v/* string*/ := range []string{} {
+	// 	for k« int», v« string» := range []string{} {
 	// 		fmt.Println(k, v)
 	// 	}
 	// ```
@@ -493,22 +611,47 @@ const (
 	// 	for _, c := range []struct {
 	// 		in, want string
 	// 	}{
-	// 		/*struct{ in string; want string }*/{"Hello, world", "dlrow ,olleH"},
+	// 		«struct{ in string; want string }»{"Hello, world", "dlrow ,olleH"},
 	// 	}
 	// ```
 	CompositeLiteralTypes InlayHint = "compositeLiteralTypes"
 
 	// CompositeLiteralFieldNames inlay hints for composite literal field names:
 	// ```go
-	// 	{/*in: */"Hello, world", /*want: */"dlrow ,olleH"}
+	// 	Point2D{«X: »1, «Y: »2}
+	//
+	//	Outer{«Embedded.»Field: 0}
 	// ```
 	CompositeLiteralFieldNames InlayHint = "compositeLiteralFields"
 
 	// FunctionTypeParameters inlay hints for implicit type parameters on generic functions:
 	// ```go
-	// 	myFoo/*[int, string]*/(1, "hello")
+	// 	myFoo«[int, string]»(1, "hello")
 	// ```
 	FunctionTypeParameters InlayHint = "functionTypeParameters"
+
+	// IgnoredError inlay hints for implicitly discarded errors:
+	// ```go
+	// 	f.Close()« // ignore error»
+	// ```
+	// This check inserts an `// ignore error` hint following any
+	// statement that is a function call whose error result is
+	// implicitly ignored.
+	//
+	// To suppress the hint, write an actual comment containing
+	// one of the following strings:
+	// ```
+	// ignore error
+	// discard error
+	// can't fail
+	// cannot fail
+	// ```
+	// following the call statement, or explicitly assign the
+	// result to a blank variable.
+	//
+	// A handful of common functions such as `fmt.Println` are
+	// excluded from the check.
+	IgnoredError InlayHint = "ignoredError"
 )
 
 type NavigationOptions struct {
@@ -548,6 +691,44 @@ type UserOptions struct {
 	UIOptions
 	FormattingOptions
 
+	// FileWatcher specifies the server-side file watching strategy used by gopls.
+	//
+	// By default, this is set to "off", meaning gopls relies exclusively on the
+	// language client (e.g., the editor) to send file change notifications.
+	//
+	// Available options:
+	//   - "off"      : Client-driven watching (default)
+	//   - "fsnotify" : OS-level event notifications
+	//   - "poll"     : Periodic directory scanning
+	FileWatcher FileWatcherMode `status:"experimental"`
+
+	// MaxFileCacheBytes sets a soft limit on the file cache size in bytes.
+	// If zero, the default budget is used.
+	//
+	// The cache may temporarily use more than this amount.
+	// Also, this parameter limits file contents; disk block usage
+	// as measured by du(1) may be significantly higher.
+	MaxFileCacheBytes int64 `status:"experimental"`
+
+	// MemoryLimit sets a soft memory limit (in bytes) for the gopls process, via
+	// runtime/debug.SetMemoryLimit. If non-positive (the default), no limit is set.
+	//
+	// On large workspaces, a single edit that invalidates many
+	// packages (for example a syntax error in a widely-imported
+	// package) can make the heap briefly grow well above the
+	// steady-state working set before the garbage collector
+	// catches up, spiking memory and, on memory-constrained
+	// machines, causing swapping. A soft limit makes the GC work
+	// harder to stay near the limit, trading some CPU for a lower
+	// memory peak.
+	//
+	// The limit is soft and may be exceeded. Set it comfortably above the
+	// steady-state working set, as too low a value causes excessive GC.
+	//
+	// Unlike the GOMEMLIMIT environment variable, this setting is
+	// strictly numeric; SI suffixes are not permitted.
+	MemoryLimit int64 `status:"experimental"`
+
 	// VerboseOutput enables additional debug logging.
 	VerboseOutput bool `status:"debug"`
 }
@@ -573,6 +754,10 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 	}
 }
 
+type WorkDoneProgressStyle string
+
+const WorkDoneProgressStyleLog WorkDoneProgressStyle = "log"
+
 // InternalOptions contains settings that are not intended for use by the
 // average user. These may be settings used by tests or outdated settings that
 // will soon be deprecated. Some of these settings may not even be configurable
@@ -581,6 +766,9 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 // TODO(rfindley): even though these settings are not intended for
 // modification, some of them should be surfaced in our documentation.
 type InternalOptions struct {
+	// MCPTools configures enabled tools (by tool name), overriding the defaults.
+	MCPTools map[string]bool
+
 	// VerboseWorkDoneProgress controls whether the LSP server should send
 	// progress reports for all work done outside the scope of an RPC.
 	// Used by the regression tests.
@@ -624,6 +812,12 @@ type InternalOptions struct {
 	// on the server.
 	// This option applies only during initialization.
 	ShowBugReports bool
+
+	// WatchedFileDelay controls the amount of time that gopls waits to debounce
+	// bursts of workspace/didChangeWatchedFiles notifications.
+	//
+	// A value of 0 disables debouncing, processing changes immediately.
+	WatchedFileDelay time.Duration
 
 	// SubdirWatchPatterns configures the file watching glob patterns registered
 	// by gopls.
@@ -677,7 +871,21 @@ type InternalOptions struct {
 	// dynamically creating build configurations for different modules,
 	// directories, and GOOS/GOARCH combinations to cover open files.
 	ZeroConfig bool
+
+	// PullDiagnostics enables support for pull diagnostics.
+	//
+	// TODO(rfindley): make pull diagnostics robust, and remove this option,
+	// allowing pull diagnostics by default.
+	PullDiagnostics bool
 }
+
+type FileWatcherMode string
+
+const (
+	FileWatcherOff      FileWatcherMode = "off"
+	FileWatcherFSNotify FileWatcherMode = "fsnotify"
+	FileWatcherPoll     FileWatcherMode = "poll"
+)
 
 type SubdirWatchPatterns string
 
@@ -702,6 +910,19 @@ func (s ImportShortcut) ShowLinks() bool {
 func (s ImportShortcut) ShowDefinition() bool {
 	return s == BothShortcuts || s == DefinitionShortcut
 }
+
+// ImportsSourceEnum has legal values:
+//
+// - `off` to disable searching the file system for imports
+// - `gopls` to use the metadata graph and module cache index
+// - `goimports` for the old behavior, to be deprecated
+type ImportsSourceEnum string
+
+const (
+	ImportsSourceOff       ImportsSourceEnum = "off"
+	ImportsSourceGopls     ImportsSourceEnum = "gopls"
+	ImportsSourceGoimports ImportsSourceEnum = "goimports"
+)
 
 type Matcher string
 
@@ -758,17 +979,17 @@ const (
 	SynopsisDocumentation HoverKind = "SynopsisDocumentation"
 	FullDocumentation     HoverKind = "FullDocumentation"
 
-	// Structured is an experimental setting that returns a structured hover format.
-	// This format separates the signature from the documentation, so that the client
-	// can do more manipulation of these fields.
-	//
-	// This should only be used by clients that support this behavior.
+	// Structured is a misguided experimental setting that returns a JSON
+	// hover format. This setting should not be used, as it will be removed in a
+	// future release of gopls.
 	Structured HoverKind = "Structured"
 )
 
 type VulncheckMode string
 
 const (
+	// Vulncheck can be triggered via prompt.
+	ModeVulncheckPrompt VulncheckMode = "Prompt"
 	// Disable vulnerability analysis.
 	ModeVulncheckOff VulncheckMode = "Off"
 	// In Imports mode, `gopls` will report vulnerabilities that affect packages
@@ -789,28 +1010,64 @@ const (
 	// TODO: support "Manual"?
 )
 
-// Set updates *options based on the provided JSON value:
+type CounterPath = telemetry.CounterPath
+
+// Set updates *Options based on the provided JSON value:
 // null, bool, string, number, array, or object.
+//
+// The applied result describes settings that were applied. Each CounterPath
+// contains at least the name of the setting, but may also include sub-setting
+// names for settings that are themselves maps, and/or a non-empty bucket name
+// when bucketing is desirable.
+//
 // On failure, it returns one or more non-nil errors.
-func (o *Options) Set(value any) (errors []error) {
+func (o *Options) Set(value any) (applied []CounterPath, errs []error) {
 	switch value := value.(type) {
 	case nil:
 	case map[string]any:
 		seen := make(map[string]struct{})
 		for name, value := range value {
-			if err := o.set(name, value, seen); err != nil {
+			// Use only the last segment of a dotted name such as
+			// ui.navigation.symbolMatcher. The other segments
+			// are discarded, even without validation (!).
+			// (They are supported to enable hierarchical names
+			// in the VS Code graphical configuration UI.)
+			split := strings.Split(name, ".")
+			name = split[len(split)-1]
+
+			if _, ok := seen[name]; ok {
+				errs = append(errs, fmt.Errorf("duplicate value for %s", name))
+			}
+			seen[name] = struct{}{}
+
+			paths, err := o.setOne(name, value)
+			if err != nil {
 				err := fmt.Errorf("setting option %q: %w", name, err)
-				errors = append(errors, err)
+				errs = append(errs, err)
+			}
+			_, soft := err.(*SoftError)
+			if err == nil || soft {
+				if len(paths) == 0 {
+					path := CounterPath{name, ""}
+					applied = append(applied, path)
+				} else {
+					for _, subpath := range paths {
+						path := append(CounterPath{name}, subpath...)
+						applied = append(applied, path)
+					}
+				}
 			}
 		}
 	default:
-		errors = append(errors, fmt.Errorf("invalid options type %T (want JSON null or object)", value))
+		errs = append(errs, fmt.Errorf("invalid options type %T (want JSON null or object)", value))
 	}
-	return errors
+	return applied, errs
 }
 
-func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps protocol.ClientCapabilities) {
-	o.ClientInfo = clientName
+func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps protocol.ClientCapabilities) {
+	if clientInfo != nil {
+		o.ClientInfo = *clientInfo
+	}
 	if caps.Workspace.WorkspaceEdit != nil {
 		o.SupportedResourceOperations = caps.Workspace.WorkspaceEdit.ResourceOperations
 	}
@@ -818,7 +1075,11 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	if c := caps.TextDocument.Completion; c.CompletionItem.SnippetSupport {
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
-	o.InsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
+	o.CompletionInsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
+	o.CompletionLabelDetailsSupported = caps.TextDocument.Completion.CompletionItem.LabelDetailsSupport
+	if caps.Window.ShowDocument != nil {
+		o.ShowDocumentSupported = caps.Window.ShowDocument.Support
+	}
 	// Check if the client supports configuration messages.
 	o.ConfigurationSupported = caps.Workspace.Configuration
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration
@@ -833,6 +1094,7 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	// Check if the client supports only line folding.
 
 	if fr := caps.TextDocument.FoldingRange; fr != nil {
+		// TODO(pjw): add telemetry
 		o.LineFoldingOnly = fr.LineFoldingOnly
 	}
 	// Check if the client supports hierarchical document symbols.
@@ -858,26 +1120,33 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	if caps.TextDocument.CodeAction.DataSupport && caps.TextDocument.CodeAction.ResolveSupport != nil {
 		o.CodeActionResolveOptions = caps.TextDocument.CodeAction.ResolveSupport.Properties
 	}
+
+	// Client experimental capabilities.
+	if experimental, ok := caps.Experimental.(map[string]any); ok {
+		if formats, ok := experimental["progressMessageStyles"].([]any); ok {
+			o.SupportedWorkDoneProgressFormats = make(map[WorkDoneProgressStyle]bool, len(formats))
+			for _, f := range formats {
+				o.SupportedWorkDoneProgressFormats[WorkDoneProgressStyle(f.(string))] = true
+			}
+		}
+
+		if interactiveCap, ok := experimental["interactiveResolve"].(map[string]any); ok {
+			if inputTypes, ok := interactiveCap["inputTypes"].([]any); ok {
+				o.SupportedInteractiveInputTypes = make(map[protocol.FormFieldKind]bool, len(inputTypes))
+				for _, t := range inputTypes {
+					if s, ok := t.(string); ok {
+						o.SupportedInteractiveInputTypes[protocol.FormFieldKind(s)] = true
+					}
+				}
+			}
+		}
+	}
 }
 
-func (o *Options) Clone() *Options {
-	// TODO(rfindley): has this function gone stale? It appears that there are
-	// settings that are incorrectly cloned here (such as TemplateExtensions).
-	result := &Options{
-		ClientOptions:   o.ClientOptions,
-		InternalOptions: o.InternalOptions,
-		ServerOptions:   o.ServerOptions,
-		UserOptions:     o.UserOptions,
-	}
-	// Fully clone any slice or map fields. Only UserOptions can be modified.
-	result.Analyses = maps.Clone(o.Analyses)
-	result.Codelenses = maps.Clone(o.Codelenses)
-	result.SetEnvSlice(o.EnvSlice())
-	result.BuildFlags = slices.Clone(o.BuildFlags)
-	result.DirectoryFilters = slices.Clone(o.DirectoryFilters)
-	result.StandaloneTags = slices.Clone(o.StandaloneTags)
+var codec = frob.CodecFor[*Options]()
 
-	return result
+func (o *Options) Clone() *Options {
+	return codec.Decode(codec.Encode(o))
 }
 
 // validateDirectoryFilter validates if the filter string
@@ -895,7 +1164,7 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 		if seg != "**" {
 			for _, op := range unsupportedOps {
 				if strings.Contains(seg, op) {
-					return "", fmt.Errorf("invalid filter %v, operator %v not supported. If you want to have this operator supported, consider filing an issue.", filter, op)
+					return "", fmt.Errorf("invalid filter %v, operator %v not supported. If you want to have this operator supported, consider filing an issue", filter, op)
 				}
 			}
 		}
@@ -904,28 +1173,27 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
-// set updates a field of o based on the name and value.
+// setOne updates a field of o based on the name and value.
+//
+// The applied result describes the counter values to be updated as a result of
+// the applied setting. If the result is nil, the default counter for this
+// setting should be updated.
+//
+// For example, if the setting name is "foo",
+//   - If applied is nil, update the count for "foo".
+//   - If applied is []CounterPath{{"bucket"}}, update the count for
+//     foo:bucket.
+//   - If applied is []CounterPath{{"a","b"}, {"c","d"}}, update foo/a:b and
+//     foo/c:d.
+//
 // It returns an error if the value was invalid or duplicate.
 // It is the caller's responsibility to augment the error with 'name'.
-func (o *Options) set(name string, value any, seen map[string]struct{}) error {
-	// Use only the last segment of a dotted name such as
-	// ui.navigation.symbolMatcher. The other segments
-	// are discarded, even without validation (!).
-	// (They are supported to enable hierarchical names
-	// in the VS Code graphical configuration UI.)
-	split := strings.Split(name, ".")
-	name = split[len(split)-1]
-
-	if _, ok := seen[name]; ok {
-		return fmt.Errorf("duplicate value")
-	}
-	seen[name] = struct{}{}
-
+func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error) {
 	switch name {
 	case "env":
 		env, ok := value.(map[string]any)
 		if !ok {
-			return fmt.Errorf("invalid type %T (want JSON object)", value)
+			return nil, fmt.Errorf("invalid type %T (want JSON object)", value)
 		}
 		if o.Env == nil {
 			o.Env = make(map[string]string)
@@ -936,28 +1204,32 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			case string, int:
 				o.Env[k] = fmt.Sprint(v)
 			default:
-				return fmt.Errorf("invalid map value %T (want string)", v)
+				return nil, fmt.Errorf("invalid map value %T (want string)", v)
 			}
 		}
+		return nil, nil
 
 	case "buildFlags":
-		return setStringSlice(&o.BuildFlags, value)
+		return nil, setStringSlice(&o.BuildFlags, value)
 
 	case "directoryFilters":
 		filterStrings, err := asStringSlice(value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var filters []string
 		for _, filterStr := range filterStrings {
 			filter, err := validateDirectoryFilter(filterStr)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
 		}
 		o.DirectoryFilters = filters
+		return nil, nil
 
+	case "workspaceFiles":
+		return nil, setStringSlice(&o.WorkspaceFiles, value)
 	case "completionDocumentation":
 		return setBool(&o.CompletionDocumentation, value)
 	case "usePlaceholders":
@@ -967,7 +1239,18 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "completeUnimported":
 		return setBool(&o.CompleteUnimported, value)
 	case "completionBudget":
-		return setDuration(&o.CompletionBudget, value)
+		return nil, setDuration(&o.CompletionBudget, value)
+	case "importsSource":
+		res, err := setEnum(&o.ImportsSource, value,
+			ImportsSourceOff,
+			ImportsSourceGopls,
+			ImportsSourceGoimports)
+		if err != nil {
+			return nil, err
+		}
+		return res, &SoftError{
+			msg: "importsSource is deprecated as it is no longer needed",
+		}
 	case "matcher":
 		return setEnum(&o.Matcher, value,
 			Fuzzy,
@@ -993,24 +1276,31 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			AllSymbolScope)
 
 	case "hoverKind":
+		// TODO(rfindley): reinstate the deprecation of Structured hover by making
+		// it a warning in gopls v0.N+1, and removing it in gopls v0.N+2.
 		return setEnum(&o.HoverKind, value,
 			NoDocumentation,
 			SingleLine,
 			SynopsisDocumentation,
 			FullDocumentation,
-			Structured)
+			Structured,
+		)
 
 	case "linkTarget":
-		return setString(&o.LinkTarget, value)
+		return nil, setString(&o.LinkTarget, value)
 
 	case "linksInHover":
 		switch value {
-		case false, true, "gopls":
-			o.LinksInHover = value
+		case false:
+			o.LinksInHover = LinksInHover_None
+		case true:
+			o.LinksInHover = LinksInHover_LinkTarget
+		case "gopls":
+			o.LinksInHover = LinksInHover_Gopls
 		default:
-			return fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`,
-				value)
+			return nil, fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`, value)
 		}
+		return nil, nil
 
 	case "importShortcut":
 		return setEnum(&o.ImportShortcut, value,
@@ -1019,12 +1309,7 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			DefinitionShortcut)
 
 	case "analyses":
-		if err := setBoolMap(&o.Analyses, value); err != nil {
-			return err
-		}
-		if o.Analyses["fieldalignment"] {
-			return deprecatedError("the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)")
-		}
+		return setBoolMap(&o.Analyses, value)
 
 	case "hints":
 		return setBoolMap(&o.Hints, value)
@@ -1035,35 +1320,49 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "vulncheck":
 		return setEnum(&o.Vulncheck, value,
 			ModeVulncheckOff,
-			ModeVulncheckImports)
+			ModeVulncheckImports,
+			ModeVulncheckPrompt)
 
 	case "codelenses", "codelens":
 		lensOverrides, err := asBoolMap[CodeLensSource](value)
 		if err != nil {
-			return err
+			return nil, err
+		}
+		if o.Codelenses == nil {
+			o.Codelenses = make(map[CodeLensSource]bool)
 		}
 		o.Codelenses = maps.Clone(o.Codelenses)
-		for source, enabled := range lensOverrides {
-			o.Codelenses[source] = enabled
+		maps.Copy(o.Codelenses, lensOverrides)
+
+		var counts []CounterPath
+		for k, v := range lensOverrides {
+			counts = append(counts, CounterPath{string(k), fmt.Sprint(v)})
 		}
 
+		var errs []string
 		if name == "codelens" {
-			return deprecatedError("codelenses")
+			errs = append(errs, deprecatedError("codelenses").Error())
 		}
+		if lensOverrides[CodeLensRunGovulncheck] && lensOverrides[CodeLensVulncheck] {
+			errs = append(errs, "The 'run_govulncheck' codelens is superseded by the 'vulncheck' codelens. Only 'vulncheck' should be set.")
+		}
+		if len(errs) > 0 {
+			return counts, &SoftError{msg: strings.Join(errs, "\n")}
+		}
+		return counts, nil
 
 	case "staticcheck":
-		v, err := asBool(value)
-		if err != nil {
-			return err
-		}
-		if v && !StaticcheckSupported {
-			return fmt.Errorf("staticcheck is not supported at %s;"+
-				" rebuild gopls with a more recent version of Go", runtime.Version())
-		}
-		o.Staticcheck = v
+		o.StaticcheckProvided = true
+		return setBool(&o.Staticcheck, value)
 
 	case "local":
-		return setString(&o.Local, value)
+		return nil, setString(&o.Local, value)
+
+	case "maxFileCacheBytes":
+		return setInt64(&o.MaxFileCacheBytes, value)
+
+	case "memoryLimit":
+		return setInt64(&o.MemoryLimit, value)
 
 	case "verboseOutput":
 		return setBool(&o.VerboseOutput, value)
@@ -1075,15 +1374,7 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 		return setBool(&o.ShowBugReports, value)
 
 	case "gofumpt":
-		v, err := asBool(value)
-		if err != nil {
-			return err
-		}
-		if v && !GofumptSupported {
-			return fmt.Errorf("gofumpt is not supported at %s;"+
-				" rebuild gopls with a more recent version of Go", runtime.Version())
-		}
-		o.Gofumpt = v
+		return setBool(&o.Gofumpt, value)
 
 	case "completeFunctionCalls":
 		return setBool(&o.CompleteFunctionCalls, value)
@@ -1091,11 +1382,29 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "semanticTokens":
 		return setBool(&o.SemanticTokens, value)
 
+	// TODO(hxjiang): deprecate noSemanticString and noSemanticNumber.
 	case "noSemanticString":
-		return setBool(&o.NoSemanticString, value)
+		counts, err := setBool(&o.NoSemanticString, value)
+		if err != nil {
+			return nil, err
+		}
+		return counts, &SoftError{"noSemanticString setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being)."}
 
 	case "noSemanticNumber":
-		return setBool(&o.NoSemanticNumber, value)
+		counts, err := setBool(&o.NoSemanticNumber, value)
+		if err != nil {
+			return nil, err
+		}
+		return counts, &SoftError{"noSemanticNumber setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being)."}
+
+	case "semanticTokenTypes":
+		return setBoolMap(&o.SemanticTokenTypes, value)
+
+	case "semanticTokenModifiers":
+		return setBoolMap(&o.SemanticTokenModifiers, value)
+
+	case "newGoFileHeader":
+		return setBool(&o.NewGoFileHeader, value)
 
 	case "expandWorkspaceToModule":
 		// See golang/go#63536: we can consider deprecating
@@ -1109,15 +1418,16 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "templateExtensions":
 		switch value := value.(type) {
 		case []any:
-			return setStringSlice(&o.TemplateExtensions, value)
+			return nil, setStringSlice(&o.TemplateExtensions, value)
 		case nil:
 			o.TemplateExtensions = nil
 		default:
-			return fmt.Errorf("unexpected type %T (want JSON array of string)", value)
+			return nil, fmt.Errorf("unexpected type %T (want JSON array of string)", value)
 		}
+		return nil, nil
 
 	case "diagnosticsDelay":
-		return setDuration(&o.DiagnosticsDelay, value)
+		return nil, setDuration(&o.DiagnosticsDelay, value)
 
 	case "diagnosticsTrigger":
 		return setEnum(&o.DiagnosticsTrigger, value,
@@ -1127,14 +1437,8 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)
 
-	case "allowImplicitNetworkAccess":
-		if err := setBool(&o.AllowImplicitNetworkAccess, value); err != nil {
-			return err
-		}
-		return softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
-
 	case "standaloneTags":
-		return setStringSlice(&o.StandaloneTags, value)
+		return nil, setStringSlice(&o.StandaloneTags, value)
 
 	case "subdirWatchPatterns":
 		return setEnum(&o.SubdirWatchPatterns, value,
@@ -1143,7 +1447,7 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			SubdirWatchPatternsAuto)
 
 	case "reportAnalysisProgressAfter":
-		return setDuration(&o.ReportAnalysisProgressAfter, value)
+		return nil, setDuration(&o.ReportAnalysisProgressAfter, value)
 
 	case "telemetryPrompt":
 		return setBool(&o.TelemetryPrompt, value)
@@ -1157,6 +1461,18 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "zeroConfig":
 		return setBool(&o.ZeroConfig, value)
 
+	case "pullDiagnostics":
+		return setBool(&o.PullDiagnostics, value)
+
+	case "mcpTools":
+		return setBoolMap(&o.MCPTools, value)
+
+	case "renameMovesSubpackages":
+		return setBool(&o.RenameMovesSubpackages, value)
+
+	case "fileWatcher":
+		return setEnum(&o.FileWatcher, value, FileWatcherOff, FileWatcherFSNotify, FileWatcherPoll)
+
 	// deprecated and renamed settings
 	//
 	// These should never be deleted: there is essentially no cost
@@ -1165,50 +1481,57 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 
 	// renamed
 	case "experimentalDisabledAnalyses":
-		return deprecatedError("analyses")
+		return nil, deprecatedError("analyses")
 
 	case "disableDeepCompletion":
-		return deprecatedError("deepCompletion")
+		return nil, deprecatedError("deepCompletion")
 
 	case "disableFuzzyMatching":
-		return deprecatedError("fuzzyMatching")
+		return nil, deprecatedError("fuzzyMatching")
 
 	case "wantCompletionDocumentation":
-		return deprecatedError("completionDocumentation")
+		return nil, deprecatedError("completionDocumentation")
 
 	case "wantUnimportedCompletions":
-		return deprecatedError("completeUnimported")
+		return nil, deprecatedError("completeUnimported")
 
 	case "fuzzyMatching":
-		return deprecatedError("matcher")
+		return nil, deprecatedError("matcher")
 
 	case "caseSensitiveCompletion":
-		return deprecatedError("matcher")
+		return nil, deprecatedError("matcher")
 
 	case "experimentalDiagnosticsDelay":
-		return deprecatedError("diagnosticsDelay")
+		return nil, deprecatedError("diagnosticsDelay")
 
 	// deprecated
+
+	case "allowImplicitNetworkAccess":
+		return nil, deprecatedError("")
+
 	case "memoryMode":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "tempModFile":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalWorkspaceModule":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalTemplateSupport":
-		return deprecatedError("")
+		return nil, deprecatedError("")
+
+	case "watchedFileDelay":
+		return nil, setDuration(&o.WatchedFileDelay, value)
 
 	case "experimentalWatchedFileDelay":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalPackageCacheKey":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "allowModfileModifications":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "allExperiments":
 		// golang/go#65548: this setting is a no-op, but we fail don't report it as
@@ -1217,29 +1540,65 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 		// If, in the future, VS Code stops injecting this, we could theoretically
 		// report an error here, but it also seems harmless to keep ignoring this
 		// setting forever.
+		return nil, nil
 
 	case "experimentalUseInvalidMetadata":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "newDiff":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "wantSuggestedFixes":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "noIncrementalSync":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "watchFileChanges":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "go-diff":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	default:
-		return fmt.Errorf("unexpected setting")
+		return nil, fmt.Errorf("unexpected setting")
 	}
-	return nil
+}
+
+// EnabledSemanticTokenModifiers returns a map of modifiers to boolean.
+func (o *Options) EnabledSemanticTokenModifiers() map[semtok.Modifier]bool {
+	copy := make(map[semtok.Modifier]bool, len(o.SemanticMods))
+	// Enable the modifiers defined in client capabilities
+	for _, m := range o.SemanticMods {
+		if enabled, found := o.SemanticTokenModifiers[m]; found && !enabled {
+			// If the client capabilities enables a semantic mod, but the
+			// user's UI settings disables it, keep it disabled.
+			continue
+		}
+		copy[semtok.Modifier(m)] = true
+	}
+	return copy
+}
+
+// EnabledSemanticTokenTypes returns a map of types to boolean.
+func (o *Options) EnabledSemanticTokenTypes() map[semtok.Type]bool {
+	copy := make(map[semtok.Type]bool, len(o.SemanticTypes))
+	// Enable the tokens defined in client capabilities
+	for _, t := range o.SemanticTypes {
+		if enabled, found := o.SemanticTokenTypes[t]; found && !enabled {
+			// If the client capabilities enables a semantic type, but the
+			// user's UI settings disables it, keep it disabled.
+			continue
+		}
+		copy[semtok.Type(t)] = true
+	}
+	if o.NoSemanticString {
+		copy[semtok.TokString] = false
+	}
+	if o.NoSemanticNumber {
+		copy[semtok.TokNumber] = false
+	}
+	return copy
 }
 
 // A SoftError is an error that does not affect the functionality of gopls.
@@ -1251,15 +1610,10 @@ func (e *SoftError) Error() string {
 	return e.msg
 }
 
-// softErrorf reports a soft error related to the current option.
-func softErrorf(format string, args ...any) error {
-	return &SoftError{fmt.Sprintf(format, args...)}
-}
-
 // deprecatedError reports the current setting as deprecated.
 // The optional replacement is suggested to the user.
 func deprecatedError(replacement string) error {
-	msg := fmt.Sprintf("this setting is deprecated")
+	msg := "this setting is deprecated"
 	if replacement != "" {
 		msg = fmt.Sprintf("%s, use %q instead", msg, replacement)
 	}
@@ -1269,13 +1623,13 @@ func deprecatedError(replacement string) error {
 // setT() and asT() helpers: the setT forms write to the 'dest *T'
 // variable only on success, to reduce boilerplate in Option.set.
 
-func setBool(dest *bool, value any) error {
+func setBool(dest *bool, value any) ([]CounterPath, error) {
 	b, err := asBool(value)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = b
-	return nil
+	return []CounterPath{{fmt.Sprint(b)}}, nil
 }
 
 func asBool(value any) (bool, error) {
@@ -1299,56 +1653,62 @@ func setDuration(dest *time.Duration, value any) error {
 	return nil
 }
 
-func setAnnotationMap(dest *map[Annotation]bool, value any) error {
+func setAnnotationMap(dest *map[Annotation]bool, value any) ([]CounterPath, error) {
 	all, err := asBoolMap[string](value)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if all == nil {
-		return nil
-	}
+	var counters []CounterPath
 	// Default to everything enabled by default.
 	m := make(map[Annotation]bool)
 	for k, enabled := range all {
 		var a Annotation
-		if err := setEnum(&a, k,
+		cnts, err := setEnum(&a, k,
 			Nil,
 			Escape,
 			Inline,
-			Bounds); err != nil {
+			Bounds)
+		if err != nil {
 			// In case of an error, process any legacy values.
 			switch k {
 			case "noEscape":
 				m[Escape] = false
-				return fmt.Errorf(`"noEscape" is deprecated, set "Escape: false" instead`)
+				return nil, fmt.Errorf(`"noEscape" is deprecated, set "Escape: false" instead`)
+
 			case "noNilcheck":
 				m[Nil] = false
-				return fmt.Errorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
+				return nil, fmt.Errorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
 
 			case "noInline":
 				m[Inline] = false
-				return fmt.Errorf(`"noInline" is deprecated, set "Inline: false" instead`)
+				return nil, fmt.Errorf(`"noInline" is deprecated, set "Inline: false" instead`)
+
 			case "noBounds":
 				m[Bounds] = false
-				return fmt.Errorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
+				return nil, fmt.Errorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
+
 			default:
-				return err
+				return nil, err
 			}
-			continue
 		}
+		counters = append(counters, cnts...)
 		m[a] = enabled
 	}
 	*dest = m
-	return nil
+	return counters, nil
 }
 
-func setBoolMap[K ~string](dest *map[K]bool, value any) error {
+func setBoolMap[K ~string](dest *map[K]bool, value any) ([]CounterPath, error) {
 	m, err := asBoolMap[K](value)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = m
-	return nil
+	var counts []CounterPath
+	for k, v := range m {
+		counts = append(counts, CounterPath{string(k), fmt.Sprint(v)})
+	}
+	return counts, nil
 }
 
 func asBoolMap[K ~string](value any) (map[K]bool, error) {
@@ -1409,13 +1769,13 @@ func asStringSlice(value any) ([]string, error) {
 	return slice, nil
 }
 
-func setEnum[S ~string](dest *S, value any, options ...S) error {
+func setEnum[S ~string](dest *S, value any, options ...S) ([]CounterPath, error) {
 	enum, err := asEnum(value, options...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = enum
-	return nil
+	return []CounterPath{{string(enum)}}, nil
 }
 
 func asEnum[S ~string](value any, options ...S) (S, error) {
@@ -1429,4 +1789,44 @@ func asEnum[S ~string](value any, options ...S) (S, error) {
 		}
 	}
 	return "", fmt.Errorf("invalid option %q for enum", str)
+}
+
+func setInt64(dest *int64, value any) ([]CounterPath, error) {
+	i, err := asInt64(value)
+	if err != nil {
+		return nil, err
+	}
+	*dest = i
+	return []CounterPath{{fmt.Sprint(i)}}, nil
+}
+
+func asInt64(value any) (int64, error) {
+	switch v := value.(type) {
+
+	case float64:
+		// Note that this is what we expect since JSON unmarshalling
+		// into any produces float64 for numbers.
+		if !isFinite(v) {
+			return 0, fmt.Errorf("invalid value %v (want finite number)", v)
+		}
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("invalid value %v (want integer)", v)
+		}
+		if v != float64(int64(v)) {
+			return 0, fmt.Errorf("invalid value %v (not representable as int64)", v)
+		}
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case int:
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("invalid type %T (want int64)", value)
+	}
+}
+
+// isFinite reports whether f represents a finite rational value.
+// It is equivalent to !math.IsNan(f) && !math.IsInf(f, 0).
+func isFinite(f float64) bool {
+	return math.Abs(f) <= math.MaxFloat64
 }

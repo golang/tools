@@ -1,0 +1,34 @@
+This is a regression test for go.dev/issue/81814,
+in which the stubmethods code action would panic
+when given incorrect (start, end) positions.
+(The incorrect positions themselves arise from
+go.dev/issue/81876.)
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a.go --
+package p
+
+type I interface {
+	M()
+}
+
+var m map[string]int
+
+func _() {
+	var a int
+	var b I
+	a, b = m[""] //@loc(x, "m")
+}
+// This comment must be present to avoid
+// a panic due to https://go.dev/issue/81876.
+-- b.go --
+package p
+
+//@codeaction(x, "quickfix", diag=re"missing method", err=re"found 0 CodeActions")

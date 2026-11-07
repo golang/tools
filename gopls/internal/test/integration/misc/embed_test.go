@@ -25,7 +25,7 @@ import (
 func F() {}
 
 //go:embed NONEXISTENT
-var foo string
+var Foo string
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("x.go")

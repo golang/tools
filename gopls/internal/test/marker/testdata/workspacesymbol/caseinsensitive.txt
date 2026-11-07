@@ -20,6 +20,8 @@ var RandomGopherVariableA int
 var randomgopherVariableB int
 var RandomGopherOtherVariable int
 
+var _ = randomgopherVariableB // pacify unusedfunc
+
 -- @blank --
 -- @randomgophervar --
 p.go:6:5-26 RandomGopherVariableA Variable

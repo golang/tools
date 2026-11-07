@@ -1,0 +1,46 @@
+This test checks that a composite literal whose type is
+inferred from its context (go1.28) matches only literals
+of the same type. See go.dev/issue/82039.
+
+-- go.mod --
+module example.com
+go 1.28
+
+-- lib/lib.go --
+package lib
+
+type T struct{ X, Y int }
+
+type U struct{ X, Y int }
+
+func F(T) {}
+
+func G(U) {}
+
+-- template/template.go --
+package template
+
+import "example.com/lib"
+
+func before() lib.T { return {1, 2} }
+func after() lib.T  { return {2, 1} }
+
+-- in/k1/k1.go --
+package k1
+
+import "example.com/lib"
+
+func example() {
+	lib.F({1, 2}) // match
+	lib.G({1, 2}) // no match: different type
+}
+
+-- out/k1/k1.go --
+package k1
+
+import "example.com/lib"
+
+func example() {
+	lib.F({2, 1}) // match
+	lib.G({1, 2}) // no match: different type
+}

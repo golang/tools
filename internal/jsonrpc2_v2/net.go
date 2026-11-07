@@ -100,14 +100,14 @@ func (l *netPiper) Accept(context.Context) (io.ReadWriteCloser, error) {
 	// preferring the latter if already closed at the start of Accept.
 	select {
 	case <-l.done:
-		return nil, errClosed
+		return nil, net.ErrClosed
 	default:
 	}
 	select {
 	case rwc := <-l.dialed:
 		return rwc, nil
 	case <-l.done:
-		return nil, errClosed
+		return nil, net.ErrClosed
 	}
 }
 
@@ -133,6 +133,6 @@ func (l *netPiper) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
 	case <-l.done:
 		client.Close()
 		server.Close()
-		return nil, errClosed
+		return nil, net.ErrClosed
 	}
 }

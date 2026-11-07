@@ -30,7 +30,7 @@ package a
 func _() {
 	z := 1
 	{
-		var x int = z
+		x := z
 		z := 1
 		print(x + 2 + z)
 	} //@ inline(re"f", out1)

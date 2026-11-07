@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.16
-// +build go1.16
-
 package cache
 
 import (
@@ -59,6 +56,36 @@ func TestIsStandaloneFile(t *testing.T) {
 			"//go:build ignore\n// +build ignore\n\npackage main\n",
 			[]string{"ignore"},
 			true,
+		},
+		{
+			"multiple legacy constraints",
+			"// +build ignore\n// +build linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"combined syntax",
+			"//go:build ignore && linux\n// +build ignore\n// +build linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"standalone tag with additional constraint",
+			"//go:build ignore && linux\n\npackage main\n",
+			[]string{"ignore"},
+			true,
+		},
+		{
+			"standalone tag in disjunction",
+			"//go:build ignore || darwin\n\npackage main\n",
+			[]string{"ignore"},
+			false,
+		},
+		{
+			"contradictory standalone tag",
+			"//go:build ignore && !ignore\n\npackage main\n",
+			[]string{"ignore"},
+			false,
 		},
 		{
 			"after comments",

@@ -98,7 +98,7 @@ func TestFreeRefs(t *testing.T) {
 				test.src[startOffset+len("«"):endOffset] +
 				" " +
 				test.src[endOffset+len("»"):]
-			f, err := parser.ParseFile(fset, name, src, 0)
+			f, err := parser.ParseFile(fset, name, src, parser.SkipObjectResolution)
 			if err != nil {
 				t.Fatal(err)
 			}

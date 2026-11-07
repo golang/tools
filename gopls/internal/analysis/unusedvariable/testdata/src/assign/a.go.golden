@@ -14,6 +14,9 @@ type A struct {
 }
 
 func singleAssignment() {
+
+
+
 	if 1 == 1 {
 	}
 
@@ -31,22 +34,33 @@ func partOfMultiAssignment() {
 func sideEffects(cBool chan bool, cInt chan int) {
 	<-c            // want `declared (and|but) not used`
 	fmt.Sprint("") // want `declared (and|but) not used`
-	A{             // want `declared (and|but) not used`
+	_ = A{         // want `declared (and|but) not used`
 		b: func() int {
 			return 1
 		}(),
 	}
-	A{<-cInt}          // want `declared (and|but) not used`
-	fInt() + <-cInt    // want `declared (and|but) not used`
-	fBool() && <-cBool // want `declared (and|but) not used`
-	map[int]int{       // want `declared (and|but) not used`
+	_ = A{<-cInt}          // want `declared (and|but) not used`
+	_ = fInt() + <-cInt    // want `declared (and|but) not used`
+	_ = fBool() && <-cBool // want `declared (and|but) not used`
+	_ = map[int]int{       // want `declared (and|but) not used`
 		fInt(): <-cInt,
 	}
-	[]int{<-cInt}       // want `declared (and|but) not used`
+	_ = []int{<-cInt}       // want `declared (and|but) not used`
+
+	// (ill-typed)
 	func(s string) {}() // want `declared (and|but) not used`
 }
 
 func commentAbove() {
+	// v is a variable
+}
+
+func commentBelow() {
+	// v is a variable
+}
+
+func commentSpaceBelow() {
+
 	// v is a variable
 }
 
@@ -56,4 +70,10 @@ func fBool() bool {
 
 func fInt() int {
 	return 1
+}
+
+func issue81809(path string) error {
+	_, err := os.Open(path) // want `declared (and|but) not used`
+	_, err = os.Open(path)
+	return err
 }

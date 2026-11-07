@@ -19,13 +19,14 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/tokeninternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
 
 // FormatType returns the detail and kind for a types.Type.
-func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
+func FormatType(typ types.Type, qual types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
 	typ = typ.Underlying()
 	if types.IsInterface(typ) {
 		detail = "interface{...}"
@@ -34,7 +35,7 @@ func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protoco
 		detail = "struct{...}"
 		kind = protocol.StructCompletion
 	} else {
-		detail = types.TypeString(typ, qf)
+		detail = types.TypeString(typ, qual)
 		kind = protocol.ClassCompletion
 	}
 	return detail, kind
@@ -177,31 +178,11 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 	return result, writeResultParens
 }
 
-// FormatTypeParams turns TypeParamList into its Go representation, such as:
-// [T, Y]. Note that it does not print constraints as this is mainly used for
-// formatting type params in method receivers.
-func FormatTypeParams(tparams *types.TypeParamList) string {
-	if tparams == nil || tparams.Len() == 0 {
-		return ""
-	}
-	var buf bytes.Buffer
-	buf.WriteByte('[')
-	for i := 0; i < tparams.Len(); i++ {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString(tparams.At(i).Obj().Name())
-	}
-	buf.WriteByte(']')
-	return buf.String()
-}
-
 // NewSignature returns formatted signature for a types.Signature struct.
-func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
+func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qual types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string
 	tpList := sig.TypeParams()
-	for i := 0; i < tpList.Len(); i++ {
-		tparam := tpList.At(i)
+	for tparam := range tpList.TypeParams() {
 		// TODO: is it possible to reuse the logic from FormatVarType here?
 		s := tparam.Obj().Name() + " " + tparam.Constraint().String()
 		tparams = append(tparams, s)
@@ -210,9 +191,12 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 	params := make([]string, 0, sig.Params().Len())
 	for i := 0; i < sig.Params().Len(); i++ {
 		el := sig.Params().At(i)
-		typ, err := FormatVarType(ctx, s, pkg, el, qf, mq)
+		typ, err := FormatVarType(ctx, s, pkg, el, qual, mq)
 		if err != nil {
 			return nil, err
+		}
+		if sig.Variadic() && i == sig.Params().Len()-1 {
+			typ = strings.Replace(typ, "[]", "...", 1)
 		}
 		p := typ
 		if el.Name() != "" {
@@ -228,7 +212,7 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 			needResultParens = true
 		}
 		el := sig.Results().At(i)
-		typ, err := FormatVarType(ctx, s, pkg, el, qf, mq)
+		typ, err := FormatVarType(ctx, s, pkg, el, qual, mq)
 		if err != nil {
 			return nil, err
 		}
@@ -261,13 +245,32 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 	}, nil
 }
 
+// We look for 'invalidTypeString' to determine if we can use the fast path for
+// FormatVarType.
+var invalidTypeString = types.Typ[types.Invalid].String()
+
 // FormatVarType formats a *types.Var, accounting for type aliases.
 // To do this, it looks in the AST of the file in which the object is declared.
 // On any errors, it always falls back to types.TypeString.
 //
 // TODO(rfindley): this function could return the actual name used in syntax,
 // for better parameter names.
-func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qf types.Qualifier, mq MetadataQualifier) (string, error) {
+func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qual types.Qualifier, mq MetadataQualifier) (string, error) {
+	typeString := types.TypeString(obj.Type(), qual)
+	// Fast path: if the type string does not contain 'invalid type', we no
+	// longer need to do any special handling, thanks to materialized aliases in
+	// Go 1.23+.
+	//
+	// Unfortunately, due to the handling of invalid types, we can't quite delete
+	// the rather complicated preexisting logic of FormatVarType--it isn't an
+	// acceptable regression to start printing "invalid type" in completion or
+	// signature help. strings.Contains is conservative: the type string of a
+	// valid type may actually contain "invalid type" (due to struct tags or
+	// field formatting), but such cases should be exceedingly rare.
+	if !strings.Contains(typeString, invalidTypeString) {
+		return typeString, nil
+	}
+
 	// TODO(rfindley): This looks wrong. The previous comment said:
 	// "If the given expr refers to a type parameter, then use the
 	// object's Type instead of the type parameter declaration. This helps
@@ -280,18 +283,18 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 	//
 	// Left this during refactoring in order to preserve pre-existing logic.
 	if typeparams.IsTypeParam(obj.Type()) {
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 
 	if isBuiltin(obj) {
 		// This is defensive, though it is extremely unlikely we'll ever have a
 		// builtin var.
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 
 	// TODO(rfindley): parsing to produce candidates can be costly; consider
 	// using faster methods.
-	targetpgf, pos, err := parseFull(ctx, snapshot, srcpkg.FileSet(), obj.Pos())
+	targetpgf, pos, err := parseFull(ctx, snapshot, srcpkg.FileSet(), obj)
 	if err != nil {
 		return "", err // e.g. ctx cancelled
 	}
@@ -303,32 +306,32 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 		return "", bug.Errorf("failed to find file %q in deps of %q", targetpgf.URI, srcpkg.Metadata().ID)
 	}
 
-	decl, spec, field := findDeclInfo([]*ast.File{targetpgf.File}, pos)
+	decl, spec, field, _ := findDeclInfo(targetpgf, pos)
 
 	// We can't handle type parameters correctly, so we fall back on TypeString
 	// for parameterized decls.
 	if decl, _ := decl.(*ast.FuncDecl); decl != nil {
 		if decl.Type.TypeParams.NumFields() > 0 {
-			return types.TypeString(obj.Type(), qf), nil // in generic function
+			return typeString, nil // in generic function
 		}
 		if decl.Recv != nil && len(decl.Recv.List) > 0 {
 			rtype := decl.Recv.List[0].Type
 			if e, ok := rtype.(*ast.StarExpr); ok {
 				rtype = e.X
 			}
-			if x, _, _, _ := typeparams.UnpackIndexExpr(rtype); x != nil {
-				return types.TypeString(obj.Type(), qf), nil // in method of generic type
+			if x, _, _, _ := astutil.UnpackIndexExpr(rtype); x != nil {
+				return typeString, nil // in method of generic type
 			}
 		}
 	}
 	if spec, _ := spec.(*ast.TypeSpec); spec != nil && spec.TypeParams.NumFields() > 0 {
-		return types.TypeString(obj.Type(), qf), nil // in generic type decl
+		return typeString, nil // in generic type decl
 	}
 
 	if field == nil {
 		// TODO(rfindley): we should never reach here from an ordinary var, so
 		// should probably return an error here.
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 	expr := field.Type
 

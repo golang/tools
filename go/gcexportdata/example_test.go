@@ -3,11 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build go1.7 && gc && !android && !ios && (unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || plan9 || windows)
-// +build go1.7
-// +build gc
-// +build !android
-// +build !ios
-// +build unix aix darwin dragonfly freebsd linux netbsd openbsd solaris plan9 windows
 
 package gcexportdata_test
 
@@ -20,15 +15,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/gcexportdata"
 )
 
 // ExampleRead uses gcexportdata.Read to load type information for the
-// "fmt" package from the fmt.a file produced by the gc compiler.
+// "fmt" package from the export data file produced by "go list -export".
 func ExampleRead() {
-	// Find the export data file.
+	// Build the export data file.
 	filename, path := gcexportdata.Find("fmt", "")
 	if filename == "" {
 		log.Fatalf("can't find export data for fmt")
@@ -56,13 +52,7 @@ func ExampleRead() {
 
 	// We can see all the names in Names.
 	members := pkg.Scope().Names()
-	foundPrintln := false
-	for _, member := range members {
-		if member == "Println" {
-			foundPrintln = true
-			break
-		}
-	}
+	foundPrintln := slices.Contains(members, "Println")
 	fmt.Print("Package members:    ")
 	if foundPrintln {
 		fmt.Println("Println found")

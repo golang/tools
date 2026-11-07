@@ -5,7 +5,6 @@
 // No testdata on Android.
 
 //go:build !android
-// +build !android
 
 package loader_test
 
@@ -558,7 +557,7 @@ func TestVendorCwdIssue16580(t *testing.T) {
 // - TypeCheckFuncBodies hook
 
 func TestTransitivelyErrorFreeFlag(t *testing.T) {
-	// Create an minimal custom build.Context
+	// Create a minimal custom build.Context
 	// that fakes the following packages:
 	//
 	// a --> b --> c!   c has an error

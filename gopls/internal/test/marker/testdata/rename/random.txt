@@ -39,7 +39,7 @@ func _() {
 }
 
 func sw() {
-	var x interface{}
+	var x any
 
 	switch y := x.(type) { //@rename("y", "y0", yToy0)
 	case int:

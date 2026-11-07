@@ -1,0 +1,304 @@
+//go:build go1.27
+
+package embedlit
+
+type A struct {
+	a int
+	B
+}
+
+type B struct {
+	b int
+	C
+}
+
+type C struct {
+	c int
+	D
+}
+
+type D struct {
+	d int
+	E
+}
+
+type E struct {
+	e int
+	F
+}
+
+type F struct {
+	f int
+}
+
+type G struct {
+	f int
+}
+
+type H struct {
+	F
+	G
+}
+
+type I struct {
+	i int
+}
+
+type J struct {
+	F
+	G
+	I
+}
+
+const zero = 0
+
+type K struct{ L }
+type L []int
+
+type T struct {
+	a int
+	b int
+	U
+}
+
+type U struct {
+	x int
+	V
+}
+
+type V struct {
+	x, y int
+}
+
+type W struct {
+	V
+}
+
+type X struct {
+	*V
+}
+
+var (
+	_ = A{B: B{b: 1}}                         // want "embedded field type can be removed from struct literal"
+	_ = A{a: 1, B: B{b: 1, C: C{c: 1}}}       // want "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
+	_ = E{F: F{1}}                            // nope: cannot promote unkeyed fields
+	_ = D{E: E{F: F{1}}, d: 1}                // want "embedded field type can be removed from struct literal"
+	_ = D{E: E{e: 2, F: F{1}}}                // want "embedded field type can be removed from struct literal"
+	_ = A{a: 10, B: B{C: C{1, D{d: 1}}}}      // want "embedded field type can be removed from struct literal"
+	_ = H{F: F{f: 1}}                         // nope: cannot promote ambiguous fields
+	_ = J{I: I{i: 1}, F: F{f: 1}, G: G{f: 1}} // want "embedded field type can be removed from struct literal"
+	// multi-line with commas
+	_ = A{ // want +1 "embedded field type can be removed from struct literal"
+		B: B{
+			b: 1,
+		},
+	}
+
+	_ = A{a: 1, B: B{}} // nope: empty composite lit
+
+	// don't suggest a fix if it's too tricky to preserve comments
+	_ = A{ // nope: comments within range to delete
+		B: B{ // one
+			C: C{ // two
+				c: 1, // three
+			}, // four
+		}, // five
+	}
+	_ = A{ // nope: comments within range to delete
+		B: B{b: 1 /* comment, with comma */},
+		a: 2,
+	}
+	_ = A{ // nope: comments within range to delete
+		B: B{
+			b: 1, // comment, with comma
+		},
+		a: 2,
+	}
+	_ = A{B: /* comment */ B{b: 1}}       // nope: comment in range to delete
+	_ = A{B: B{b: 1} /* comment */, a: 2} // want "embedded field type can be removed from struct literal"
+	_ = K{L: L{zero: 0}}                  // nope: cannot promote slice elements
+	_ = K{L: L{0: 100}}                   // nope: cannot promote slice elements
+
+	_ = A{ // want +2 "embedded field type can be removed from struct literal"
+		// want +2 "embedded field type can be removed from struct literal"
+		B: B{
+			C: C{
+				c: 1,
+			},
+			b: 2,
+		},
+		a: 3,
+	}
+
+	_ = A{B: B{C: C{c: 1}}} // want "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
+
+	_ = A{B: B{ // want "embedded field type can be removed from struct literal"
+		// want +1 "embedded field type can be removed from struct literal"
+		C: C{
+			c: 1,
+		},
+	}}
+
+	_ = A{ // want +1 "embedded field type can be removed from struct literal" "embedded field type can be removed from struct literal"
+		B: B{C: C{c: 1}},
+	}
+
+	_ = A{ // want +2 "embedded field type can be removed from struct literal"
+		// want +2 "embedded field type can be removed from struct literal"
+		B: B{ // comment here
+			C: C{
+				c: 1,
+			},
+		},
+	}
+
+	_ = E{ // want +2 "embedded field type can be removed from struct literal"
+		e: 2,
+		F: F{f: 1},
+	}
+
+	_ = W{ // want +1 "embedded field type can be removed from struct literal"
+		V: V{x: 1,
+			y: 1,
+		},
+	}
+)
+
+func _() {
+	t1 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t1.b = 2
+
+	var t2 A
+	t2 = A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t2.b = 2
+
+	var t3 = A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t3.b = 2
+
+	t4 := T{1, 2, U{x: 3}} // nope: can't mix keyed and unkeyed elements
+	t4.x = 4
+
+	t5 := A{a: 1}
+	_ = t5 // nope: intervening statement
+	t5.b = 2
+
+	t6 := A{a: 1} // nope: value assigned depends on t6 itself
+	t6.b = t6.a + 1
+
+	t7 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t7.b = foo()
+
+	// Only apply edits from pattern A first even though both patterns apply.
+	t8 := A{ // want +1 "embedded field type can be removed from struct literal"
+		B: B{b: 1},
+	}
+	t8.a = 2
+
+	t9 := A{} // nope: multiple assignments not yet supported
+	t9.a, t9.b = 1, 2
+
+	t10 := A{} // want "embedded field assignment can be moved to struct literal"
+	t10.a = 1  // this comment is preserved
+	t10.b = 2  // this one too
+
+	t11 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t11.b = 2
+	t11.c = 3
+
+	t12 := A{} // want "embedded field assignment can be moved to struct literal"
+	t12.B = B{
+		b: 1, // this comment is preserved
+	}
+
+	t13 := A{} // want "embedded field assignment can be moved to struct literal"
+	t13.a = 1
+	// comment between assignments
+	t13.b = 2
+
+	t14 := A{} // want "embedded field assignment can be moved to struct literal"
+	t14.a = 1
+	t14.b =
+		foo() +
+			1
+
+	t15 := A{a: 1} // nope: += in field assignment
+	t15.b += 2
+
+	t16 := A{ // want "embedded field assignment can be moved to struct literal"
+		a: 1, // comment, with a comma
+	}
+	t16.b = 2
+
+	assgn1, assgn2 := A{}, A{} // nope, multi-assign
+	assgn1.e = 1
+	assgn2.e = 1
+
+	var (
+		v        = A{} // nope, multi-declaration
+		othervar = 2
+	)
+	v.e = 1
+	_ = othervar
+
+	var v1, v2 = A{}, A{} // nope, multi-declaration
+	v2.e = 1
+	_ = v1
+
+	t17 := U{}
+	t17.x = 1 // nope: not embedded
+
+	t18 := V{}
+	t18.x = 1
+	t18.y = 2 // nope: not embedded
+
+	t19 := U{} // want "embedded field assignment can be moved to struct literal"
+	t19.y = 2
+	t19.x = 1
+
+	t20 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
+	t20.b = 2
+
+	t21 := A{a: 1 /* a, b */} // want "embedded field assignment can be moved to struct literal"
+	t21.b = 2
+
+	t22 := W{ // want +1 "embedded field type can be removed from struct literal"
+		V: V{y: 2},
+	}
+	_ = t22
+
+	t23 := W{} // want "embedded field assignment can be moved to struct literal"
+	t23.V = newV()
+	t23.x = 1 // cannot be combined with V
+
+	t24 := W{
+		V: newV(),
+	}
+	t24.x = 1 // nope: cannot specify promoted field x and enclosing embedded field V
+
+	t25 := V{
+		x: 1,
+	}
+	t25.x = 2 // nope: duplicate field
+
+	t26 := W{} // want "embedded field assignment can be moved to struct literal"
+	t26.x = 1
+	t26.y = 2
+
+	t27 := A{a: 1}
+	t27.a = 2 // nope: duplicate field name b in struct literal
+
+	t28 := A{a: 1} // want "embedded field assignment can be moved to struct literal"
+	t28.b = 5
+	t28.a = 9 // nope: duplicate field name a in struct literal
+
+	t29 := X{V: &V{}}
+	t29.x = 1 // nope: invalid implicit pointer indirection to reach promoted field in struct literal
+}
+
+func foo() int {
+	return 0
+}
+
+func newV() V {
+	return V{y: 42}
+}

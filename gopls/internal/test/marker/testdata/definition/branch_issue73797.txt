@@ -1,0 +1,24 @@
+This test checks the case of a definition operation on a "continue" with an invalid label.
+In gotip, the typechecker no longer associates the continue statement with its invalid label,
+so this test case should only be run for go1.24 or earlier.
+See the related change in go/types: https://go-review.git.corp.google.com/c/go/+/638257
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+func InvalidLabel() {
+    label:
+	for i := 0; i < 10; i++ {
+	}
+	for i := 0; i < 10; i++ { //@loc(for, "for")
+		continue label //@def("continue", for)
+	}
+}

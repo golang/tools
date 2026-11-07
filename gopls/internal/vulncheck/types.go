@@ -35,7 +35,7 @@ type Result struct {
 
 	// AsOf describes when this Result was computed using govulncheck.
 	// It is valid only with the govulncheck analysis mode.
-	AsOf time.Time `json:",omitempty"`
+	AsOf time.Time
 }
 
 type AnalysisMode string

@@ -158,7 +158,7 @@ func Hello() int {
 		// Now, to satisfy a definition request, gopls will try to reload moda. But
 		// without access to the proxy (because this is no longer a
 		// reinitialization), this loading will fail.
-		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
+		loc := env.FirstDefinition(env.RegexpSearch("moda/a/a.go", "Hello"))
 		got := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if want := "b.com@v1.2.3/b/b.go"; !strings.HasSuffix(got, want) {
 			t.Errorf("expected %s, got %v", want, got)
@@ -217,9 +217,6 @@ module b.com/nested
 go 1.18
 
 require b.com/other v1.4.6
--- go.sum --
-b.com/other v1.4.6 h1:pHXSzGsk6DamYXp9uRdDB9A/ZQqAN9it+JudU0sBf94=
-b.com/other v1.4.6/go.mod h1:T0TYuGdAHw4p/l0+1P/yhhYHfZRia7PaadNVDu58OWM=
 -- nested.go --
 package nested
 
@@ -228,6 +225,7 @@ import "b.com/other/foo"
 const C = foo.Foo
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OnceMet(

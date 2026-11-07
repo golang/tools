@@ -51,7 +51,9 @@ func RunGovulncheck(ctx context.Context, pattern string, snapshot *cache.Snapsho
 	if db := cache.GetEnv(snapshot, "GOVULNDB"); db != "" {
 		vulncheckargs = append(vulncheckargs, "-db", db)
 	}
-	vulncheckargs = append(vulncheckargs, pattern)
+	// Pass the pattern after an end-of-options separator, so that it is
+	// always interpreted as a package pattern.
+	vulncheckargs = append(vulncheckargs, "--", pattern)
 	// TODO: support -tags. need to compute tags args from opts.BuildFlags.
 	// TODO: support -test.
 
@@ -91,7 +93,7 @@ func RunGovulncheck(ctx context.Context, pattern string, snapshot *cache.Snapsho
 		if stderr.Len() > 0 {
 			log.Write(stderr.Bytes())
 		}
-		return nil, fmt.Errorf("failed to read govulncheck output: %v", err)
+		return nil, fmt.Errorf("failed to read govulncheck output: %v: stderr:\n%s", err, stderr)
 	}
 
 	findings := handler.findings // sort so the findings in the result is deterministic.

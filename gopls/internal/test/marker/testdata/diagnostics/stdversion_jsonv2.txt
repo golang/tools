@@ -1,0 +1,24 @@
+This test verifies that "too new" diagnostics from the stdversion analyzer
+are suppressed for jsonv2 when the go version is go1.25 or later.
+See golang/go#80691
+
+-- env --
+GOEXPERIMENT=jsonv2
+-- flags --
+-min_go_command=go1.25
+-max_go_command=go1.26
+
+-- go.mod --
+module example.com
+
+go 1.25
+
+-- a/a.go --
+//go:build goexperiment.jsonv2 || go1.27
+package a
+
+import "encoding/json/v2"
+
+func _() {
+	_ = json.Marshal // no diagnostic, see golang/go#80691
+}

@@ -5,9 +5,12 @@
 package cache
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
@@ -29,7 +32,7 @@ type InitializationError struct {
 
 func byURI(d *Diagnostic) protocol.DocumentURI { return d.URI } // For use in maps.Group.
 
-// An Diagnostic corresponds to an LSP Diagnostic.
+// A Diagnostic corresponds to an LSP Diagnostic.
 // https://microsoft.github.io/language-server-protocol/specification#diagnostic
 //
 // It is (effectively) gob-serializable; see {encode,decode}Diagnostics.
@@ -69,21 +72,77 @@ func (d *Diagnostic) String() string {
 	return fmt.Sprintf("%v: %s", d.Range, d.Message)
 }
 
+// Hash computes a hash to identify the diagnostic.
+// The hash is for deduplicating within a file, so does not incorporate d.URI.
+func (d *Diagnostic) Hash() file.Hash {
+	h := sha256.New()
+	for _, t := range d.Tags {
+		fmt.Fprintf(h, "tag: %s\n", t)
+	}
+	for _, r := range d.Related {
+		fmt.Fprintf(h, "related: %s %s %s\n", r.Location.URI, r.Message, r.Location.Range)
+	}
+	fmt.Fprintf(h, "code: %s\n", d.Code)
+	fmt.Fprintf(h, "codeHref: %s\n", d.CodeHref)
+	fmt.Fprintf(h, "message: %s\n", d.Message)
+	fmt.Fprintf(h, "range: %s\n", d.Range)
+	fmt.Fprintf(h, "severity: %s\n", d.Severity)
+	fmt.Fprintf(h, "source: %s\n", d.Source)
+	if d.BundledFixes != nil {
+		fmt.Fprintf(h, "fixes: %s\n", *d.BundledFixes)
+	}
+	var hash [sha256.Size]byte
+	h.Sum(hash[:0])
+	return hash
+}
+
+func ToProtocolDiagnostics(diagnostics ...*Diagnostic) []protocol.Diagnostic {
+	// TODO(rfindley): support bundling edits, and bundle all suggested fixes here.
+	// (see cache.bundleLazyFixes).
+
+	reports := []protocol.Diagnostic{}
+	for _, diag := range diagnostics {
+		pdiag := protocol.Diagnostic{
+			Message: protocol.Or_Diagnostic_message{
+				// diag.Message might start with \n or \t
+				Value: strings.TrimSpace(diag.Message),
+			},
+			Range:              diag.Range,
+			Severity:           diag.Severity,
+			Source:             string(diag.Source),
+			Tags:               protocol.NonNilSlice(diag.Tags),
+			RelatedInformation: diag.Related,
+			Data:               diag.BundledFixes,
+		}
+		if diag.Code != "" {
+			pdiag.Code = diag.Code
+		}
+		if diag.CodeHref != "" {
+			pdiag.CodeDescription = &protocol.CodeDescription{Href: diag.CodeHref}
+		}
+		reports = append(reports, pdiag)
+	}
+	return reports
+}
+
+// A DiagnosticSource identifies the source of a diagnostic.
+//
+// Its value may be one of the distinguished string values below, or
+// the Name of an [analysis.Analyzer].
 type DiagnosticSource string
 
 const (
-	UnknownError             DiagnosticSource = "<Unknown source>"
-	ListError                DiagnosticSource = "go list"
-	ParseError               DiagnosticSource = "syntax"
-	TypeError                DiagnosticSource = "compiler"
-	ModTidyError             DiagnosticSource = "go mod tidy"
-	OptimizationDetailsError DiagnosticSource = "optimizer details"
-	UpgradeNotification      DiagnosticSource = "upgrade available"
-	Vulncheck                DiagnosticSource = "vulncheck imports"
-	Govulncheck              DiagnosticSource = "govulncheck"
-	TemplateError            DiagnosticSource = "template"
-	WorkFileError            DiagnosticSource = "go.work file"
-	ConsistencyInfo          DiagnosticSource = "consistency"
+	UnknownError           DiagnosticSource = "<Unknown source>"
+	ListError              DiagnosticSource = "go list"
+	ParseError             DiagnosticSource = "syntax"
+	TypeError              DiagnosticSource = "compiler"
+	ModTidyError           DiagnosticSource = "go mod tidy"
+	CompilerOptDetailsInfo DiagnosticSource = "optimizer details" // cmd/compile -json=0,dir
+	UpgradeNotification    DiagnosticSource = "upgrade available"
+	Vulncheck              DiagnosticSource = "vulncheck imports"
+	Govulncheck            DiagnosticSource = "govulncheck"
+	TemplateError          DiagnosticSource = "template"
+	WorkFileError          DiagnosticSource = "go.work file"
 )
 
 // A SuggestedFix represents a suggested fix (for a diagnostic)
@@ -103,10 +162,10 @@ type SuggestedFix struct {
 }
 
 // SuggestedFixFromCommand returns a suggested fix to run the given command.
-func SuggestedFixFromCommand(cmd protocol.Command, kind protocol.CodeActionKind) SuggestedFix {
+func SuggestedFixFromCommand(cmd *protocol.Command, kind protocol.CodeActionKind) SuggestedFix {
 	return SuggestedFix{
 		Title:      cmd.Title,
-		Command:    &cmd,
+		Command:    cmd,
 		ActionKind: kind,
 	}
 }
@@ -165,13 +224,12 @@ func bundleLazyFixes(sd *Diagnostic) bool {
 
 // BundledLazyFixes extracts any bundled codeActions from the
 // diag.Data field.
-func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
+func BundledLazyFixes(diag protocol.Diagnostic) ([]protocol.CodeAction, error) {
 	var fix lazyFixesJSON
 	if diag.Data != nil {
 		err := protocol.UnmarshalJSON(*diag.Data, &fix)
 		if err != nil {
-			bug.Reportf("unmarshalling lazy fix: %v", err)
-			return nil
+			return nil, fmt.Errorf("unmarshalling fix from diagnostic data: %v", err)
 		}
 	}
 
@@ -179,8 +237,7 @@ func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
 	for _, action := range fix.Actions {
 		// See bundleLazyFixes: for now we only support bundling commands.
 		if action.Edit != nil {
-			bug.Reportf("bundled fix %q includes workspace edits", action.Title)
-			continue
+			return nil, fmt.Errorf("bundled fix %q includes workspace edits", action.Title)
 		}
 		// associate the action with the incoming diagnostic
 		// (Note that this does not mutate the fix.Fixes slice).
@@ -188,5 +245,5 @@ func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
 		actions = append(actions, action)
 	}
 
-	return actions
+	return actions, nil
 }

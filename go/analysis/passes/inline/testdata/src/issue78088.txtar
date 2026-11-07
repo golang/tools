@@ -1,0 +1,75 @@
+This test verifies that the inliner does not insert unnecessary parentheses when
+forming the type arguments of a call, nor in composite literal expressions
+where parentheses are not allowed.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- e/e.go --
+//go:build go1.26
+package e
+
+import "errors"
+
+//go:fix inline
+func As[T error](err error) (T, bool) { // want As:"goFixInline e.As"
+	return errors.AsType[T](err)
+}
+
+-- f/f.go --
+//go:build go1.26
+package f
+
+import (
+	"io/fs"
+	"example.com/e"
+)
+
+func AsPathError(err error) (*fs.PathError, bool) {
+	return e.As[*fs.PathError](err) // want "Call of e.As should be inlined"
+}
+
+-- f/f.go.golden --
+//go:build go1.26
+package f
+
+import (
+	"errors"
+	"io/fs"
+)
+
+func AsPathError(err error) (*fs.PathError, bool) {
+	return errors.AsType[*fs.PathError](err) // want "Call of e.As should be inlined"
+}
+
+-- g/g.go --
+package g
+
+//go:fix inline
+func MapLiteral[T ~map[string]int]() T { // want MapLiteral:"goFixInline g.MapLiteral"
+	return T{"k": 1}
+}
+
+//go:fix inline
+func SliceLiteral[T ~[]int]() T { // want SliceLiteral:"goFixInline g.SliceLiteral"
+	return T{1, 2, 3}
+}
+
+-- h/h.go --
+package h
+
+import "example.com/g"
+
+func CallLiterals() {
+	_ = g.MapLiteral[map[string]int]() // want "Call of g.MapLiteral should be inlined"
+	_ = g.SliceLiteral[[]int]()        // want "Call of g.SliceLiteral should be inlined"
+}
+
+-- h/h.go.golden --
+package h
+
+func CallLiterals() {
+	_ = map[string]int{"k": 1} // want "Call of g.MapLiteral should be inlined"
+	_ = []int{1, 2, 3}         // want "Call of g.SliceLiteral should be inlined"
+}

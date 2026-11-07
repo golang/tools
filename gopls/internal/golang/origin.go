@@ -10,7 +10,13 @@ import "go/types"
 // with the same origin as the provided obj (which may be a synthetic object
 // created during instantiation).
 func containsOrigin(objSet map[types.Object]bool, obj types.Object) bool {
+	if objSet[obj] {
+		return true // fast path: exact match (common for non-generic code)
+	}
 	objOrigin := origin(obj)
+	if objOrigin == obj {
+		return false // non-generic: origin is identity, so no match
+	}
 	for target := range objSet {
 		if origin(target) == objOrigin {
 			return true

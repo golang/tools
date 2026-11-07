@@ -19,11 +19,11 @@ var stringAVar = "var"    //@item(stringAVar, "stringAVar", "string", "var")
 func stringBFunc() string { return "str" } //@item(stringBFunc, "stringBFunc", "func() string", "func")
 type stringer struct{}    //@item(stringer, "stringer", "struct{...}", "struct")
 
-func _() stringer //@complete("tr", stringer)
+func _() stringer //@complete(re"()tr", stringer)
 
-func _(val stringer) {} //@complete("tr", stringer)
+func _(val stringer) {} //@complete(re"()tr", stringer)
 
-func (stringer) _() {} //@complete("tr", stringer)
+func (stringer) _() {} //@complete(re"()tr", stringer)
 
 func _() {
 	var s struct {
@@ -32,29 +32,29 @@ func _() {
 		AC int    //@item(rankAC, "AC", "int", "field")
 	}
 	fnStr := func(string) {}
-	fnStr(s.A)      //@complete(")", rankAB, rankAA, rankAC)
-	fnStr("" + s.A) //@complete(")", rankAB, rankAA, rankAC)
+	fnStr(s.A)      //@complete(re"()\\)", rankAB, rankAA, rankAC)
+	fnStr("" + s.A) //@complete(re"()\\)", rankAB, rankAA, rankAC)
 
 	fnInt := func(int) {}
-	fnInt(-s.A) //@complete(")", rankAA, rankAC, rankAB)
+	fnInt(-s.A) //@complete(re"()\\)", rankAA, rankAC, rankAB)
 
 	// no expected type
-	fnInt(func() int { s.A }) //@complete(" }", rankAA, rankAB, rankAC)
-	fnInt(s.A())              //@complete("()", rankAA, rankAC, rankAB)
-	fnInt([]int{}[s.A])       //@complete("])", rankAA, rankAC, rankAB)
-	fnInt([]int{}[:s.A])      //@complete("])", rankAA, rankAC, rankAB)
+	fnInt(func() int { s.A }) //@complete(re"() }", rankAA, rankAB, rankAC)
+	fnInt(s.A())              //@complete(re"()\\(\\)", rankAA, rankAC, rankAB)
+	fnInt([]int{}[s.A])       //@complete(re"()\\]\\)", rankAA, rankAC, rankAB)
+	fnInt([]int{}[:s.A])      //@complete(re"()\\]\\)", rankAA, rankAC, rankAB)
 
-	fnInt(s.A.(int)) //@complete(".(", rankAA, rankAC, rankAB)
+	fnInt(s.A.(int)) //@complete(re"()\\.\\(", rankAA, rankAC, rankAB)
 
 	fnPtr := func(*string) {}
-	fnPtr(&s.A) //@complete(")", rankAB, rankAA, rankAC)
+	fnPtr(&s.A) //@complete(re"()\\)", rankAB, rankAA, rankAC)
 
 	var aaPtr *string //@item(rankAAPtr, "aaPtr", "*string", "var")
 	var abPtr *int    //@item(rankABPtr, "abPtr", "*int", "var")
-	fnInt(*a)         //@complete(")", rankABPtr, rankAAPtr, stringAVar)
+	fnInt(*a)         //@complete(re"()\\)", rankABPtr, rankAAPtr, stringAVar)
 
 	_ = func() string {
-		return s.A //@complete(" //", rankAB, rankAA, rankAC)
+		return s.A //@complete(re"() \\/\\/", rankAB, rankAA, rankAC)
 	}
 }
 
@@ -72,12 +72,12 @@ func (foo) FooPublicMethod() int { //@item(rankFooPubMeth, "FooPublicMethod", "f
 }
 
 func _() {
-	var _ int = foo{}. //@rank(" //", rankFooPrivField, rankFooPubField),rank(" //", rankFooPrivMeth, rankFooPubMeth),rank(" //", rankFooPrivField, rankFooPrivMeth)
+	var _ int = foo{}. //@rank(re"() \\/\\/", rankFooPrivField, rankFooPubField),rank(re"() \\/\\/", rankFooPrivMeth, rankFooPubMeth),rank(re"() \\/\\/", rankFooPrivField, rankFooPrivMeth)
 }
 
 func _() {
 	HandleFunc //@item(httpHandleFunc, "HandleFunc", "func(pattern string, handler func(http.ResponseWriter, *http.Request))", "func")
 	HandlerFunc //@item(httpHandlerFunc, "HandlerFunc", "func(http.ResponseWriter, *http.Request)", "type")
 
-	http.HandleFunc //@rank(" //", httpHandleFunc, httpHandlerFunc)
+	http.HandleFunc //@rank(re"() \\/\\/", httpHandleFunc, httpHandlerFunc)
 }

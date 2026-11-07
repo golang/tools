@@ -7,14 +7,16 @@ package nilness
 import (
 	_ "embed"
 	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -23,13 +25,13 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nilness",
-	Doc:      analysisutil.MustExtractDoc(doc, "nilness"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "nilness"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness",
 	Run:      run,
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	ssainput := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, fn := range ssainput.SrcFuncs {
 		runFunc(pass, fn)
@@ -38,7 +40,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runFunc(pass *analysis.Pass, fn *ssa.Function) {
-	reportf := func(category string, pos token.Pos, format string, args ...interface{}) {
+	// Skip cgo-generated functions annotated with
+	// //go:cgo_unsafe_args such as _cgo_cmalloc since
+	// they behave in magical ways not captured by the
+	// SSA representation, leading to false positives.
+	if hasCgoUnsafeArgs(fn) {
+		return
+	}
+
+	reportf := func(category string, pos token.Pos, format string, args ...any) {
 		// We ignore nil-checking ssa.Instructions
 		// that don't correspond to syntax.
 		if pos.IsValid() {
@@ -53,7 +63,7 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 	// notNil reports an error if v is provably nil.
 	notNil := func(stack []fact, instr ssa.Instruction, v ssa.Value, descr string) {
 		if nilnessOf(stack, v) == isnil {
-			reportf("nilderef", instr.Pos(), descr)
+			reportf("nilderef", instr.Pos(), "%s", descr)
 		}
 	}
 
@@ -83,10 +93,24 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 			case *ssa.FieldAddr:
 				notNil(stack, instr, instr.X, "nil dereference in field selection")
 			case *ssa.IndexAddr:
-				switch typeparams.CoreType(instr.X.Type()).(type) {
-				case *types.Pointer: // *array
+				// X is a pointer to an array, a slice, or a type
+				// parameter whose type set contains only those types,
+				// possibly a mixture of the two (e.g. *[4]int | []int).
+				var ptrs, slices bool
+				for u := range typeparams.TypeSetOf(instr.X.Type()).UnderlyingTypes() {
+					switch u.(type) {
+					case *types.Pointer: // *array
+						ptrs = true
+					case *types.Slice:
+						slices = true
+					}
+				}
+				switch {
+				case ptrs && slices:
+					notNil(stack, instr, instr.X, "nil dereference in index operation")
+				case ptrs:
 					notNil(stack, instr, instr.X, "nil dereference in array index operation")
-				case *types.Slice:
+				case slices:
 					// This is not necessarily a runtime error, because
 					// it is usually dominated by a bounds check.
 					if isRangeIndex(instr) {
@@ -300,7 +324,7 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		}
 	case *ssa.MakeInterface:
 		// A MakeInterface is non-nil unless its operand is a type parameter.
-		tparam, ok := aliases.Unalias(v.X.Type()).(*types.TypeParam)
+		tparam, ok := types.Unalias(v.X.Type()).(*types.TypeParam)
 		if !ok {
 			return isnonnil
 		}
@@ -308,7 +332,7 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		// A MakeInterface of a type parameter is non-nil if
 		// the type parameter cannot be instantiated as an
 		// interface type (#66835).
-		if terms, err := typeparams.NormalTerms(tparam.Constraint()); err == nil && len(terms) > 0 {
+		if typeparams.TypeSetOf(tparam).Len() > 0 {
 			return isnonnil
 		}
 
@@ -443,22 +467,32 @@ func is[T any](x any) bool {
 	return ok
 }
 
+// isNillable reports whether the zero value of type t is nil.
+//
+// For a type parameter, this holds if every type in its type set is
+// nillable; it is false if the type set is unrestricted (e.g. any),
+// since the type parameter may then be instantiated by a non-nillable type.
 func isNillable(t types.Type) bool {
-	// TODO(adonovan): CoreType (+ case *Interface) looks wrong.
-	// This should probably use Underlying, and handle TypeParam
-	// by computing the union across its normal terms.
-	switch t := typeparams.CoreType(t).(type) {
-	case *types.Pointer,
-		*types.Map,
-		*types.Signature,
-		*types.Chan,
-		*types.Interface,
-		*types.Slice:
-		return true
-	case *types.Basic:
-		return t == types.Typ[types.UnsafePointer]
+	if types.IsInterface(t) && !typeparams.IsTypeParam(t) {
+		return true // the zero value of an interface is nil
 	}
-	return false
+	ts := typeparams.TypeSetOf(t)
+	if ts.Len() == 0 {
+		return false // unrestricted type parameter
+	}
+	return moreiters.Every(ts.UnderlyingTypes(), func(u types.Type) bool {
+		switch u := u.(type) {
+		case *types.Pointer,
+			*types.Map,
+			*types.Signature,
+			*types.Chan,
+			*types.Slice:
+			return true
+		case *types.Basic:
+			return u == types.Typ[types.UnsafePointer]
+		}
+		return false
+	})
 }
 
 // isRangeIndex reports whether the instruction is a slice indexing
@@ -493,6 +527,20 @@ func isRangeIndex(instr *ssa.IndexAddr) bool {
 				}
 			}
 		}
+	}
+	return false
+}
+
+func hasCgoUnsafeArgs(fn *ssa.Function) bool {
+	for ; fn != nil; fn = fn.Parent() {
+		if decl, ok := fn.Syntax().(*ast.FuncDecl); ok && decl != nil {
+			for _, d := range astutil.Directives(decl.Doc) {
+				if d.Tool == "go" && d.Name == "cgo_unsafe_args" {
+					return true
+				}
+			}
+		}
+
 	}
 	return false
 }

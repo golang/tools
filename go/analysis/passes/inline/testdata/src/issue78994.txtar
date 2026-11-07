@@ -1,0 +1,33 @@
+This is a regression test for a bug in the special logic for embedded
+struct fields. It assumed that the lack of ast.Field.Names implied an
+embedded field, but of course that can also happen with parameters
+and results, such as Value in the declaration of func f below.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type Val int
+
+//go:fix inline
+type Value = Val // want Value:"goFixInline alias"
+
+func f(Value) Value { return 1 } // want "Type alias Value should be inlined" "Type alias Value should be inlined"
+
+var x []Value // want "Type alias Value should be inlined"
+
+-- a/a.go.golden --
+package a
+
+type Val int
+
+//go:fix inline
+type Value = Val // want Value:"goFixInline alias"
+
+func f(Val) Val { return 1 } // want "Type alias Value should be inlined" "Type alias Value should be inlined"
+
+var x []Val // want "Type alias Value should be inlined"
+

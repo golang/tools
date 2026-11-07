@@ -21,10 +21,7 @@ import (
 // TestCapabilities does some minimal validation of the server's adherence to the LSP.
 // The checks in the test are added as changes are made and errors noticed.
 func TestCapabilities(t *testing.T) {
-	// TODO(bcmills): This test fails on js/wasm, which is not unexpected, but the
-	// failure mode is that the DidOpen call below reports "no views in session",
-	// which seems a little too cryptic.
-	// Is there some missing error reporting somewhere?
+	// server.DidOpen fails to obtain metadata without go command (e.g. on wasm).
 	testenv.NeedsTool(t, "go")
 
 	tmpDir, err := os.MkdirTemp("", "fake")
@@ -40,36 +37,30 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New()
+	app := newApplication()
+	ctx := context.Background()
 
+	// Initialize the client.
+	// (Unlike app.connect, we use minimal Initialize params.)
+	options := settings.DefaultOptions(app.options)
+	client := newClient(app, options)
+	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(tmpDir)
 	params.Capabilities.Workspace.Configuration = true
-
-	// Send an initialize request to the server.
-	ctx := context.Background()
-	client := newClient(app)
-	options := settings.DefaultOptions(app.options)
-	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
-	result, err := server.Initialize(ctx, params)
+	cli, err := client.initialize(ctx, server, params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Validate initialization result.
-	if err := validateCapabilities(result); err != nil {
+	defer cli.terminate(ctx)
+
+	if err := validateCapabilities(client.initializeResult); err != nil {
 		t.Error(err)
 	}
-	// Complete initialization of server.
-	if err := server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
-		t.Fatal(err)
-	}
-
-	c := newConnection(server, client)
-	defer c.terminate(ctx)
 
 	// Open the file on the server side.
 	uri := protocol.URIFromPath(tmpFile)
-	if err := c.Server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
+	if err := server.DidOpen(ctx, &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,
 			LanguageID: "go",
@@ -82,7 +73,7 @@ func TestCapabilities(t *testing.T) {
 
 	// If we are sending a full text change, the change.Range must be nil.
 	// It is not enough for the Change to be empty, as that is ambiguous.
-	if err := c.Server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
+	if err := server.DidChange(ctx, &protocol.DidChangeTextDocumentParams{
 		TextDocument: protocol.VersionedTextDocumentIdentifier{
 			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
 				URI: uri,
@@ -100,9 +91,12 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Send a code action request to validate expected types.
-	actions, err := c.Server.CodeAction(ctx, &protocol.CodeActionParams{
+	actions, err := server.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
+		},
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{protocol.SourceOrganizeImports},
 		},
 	})
 	if err != nil {
@@ -115,7 +109,7 @@ func TestCapabilities(t *testing.T) {
 		}
 	}
 
-	if err := c.Server.DidSave(ctx, &protocol.DidSaveTextDocumentParams{
+	if err := server.DidSave(ctx, &protocol.DidSaveTextDocumentParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},
@@ -126,12 +120,16 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Send a completion request to validate expected types.
-	list, err := c.Server.Completion(ctx, &protocol.CompletionParams{
-		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
-			TextDocument: protocol.TextDocumentIdentifier{
-				URI: uri,
+	list, err := server.Completion(ctx, &protocol.CompletionParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: uri,
+		},
+		Range: protocol.Range{
+			Start: protocol.Position{
+				Line:      0,
+				Character: 28,
 			},
-			Position: protocol.Position{
+			End: protocol.Position{
 				Line:      0,
 				Character: 28,
 			},
@@ -156,10 +154,10 @@ func TestCapabilities(t *testing.T) {
 			t.Errorf("textEdit is not TextEdit nor InsertReplaceEdit, instead it is %T", textEdit)
 		}
 	}
-	if err := c.Server.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Server.Exit(ctx); err != nil {
+	if err := server.Exit(ctx); err != nil {
 		t.Fatal(err)
 	}
 }

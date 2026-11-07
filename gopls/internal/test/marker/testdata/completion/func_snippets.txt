@@ -27,6 +27,6 @@ func Identity[P ~int](p P) P { //@item(Identity, "Identity", "", "")
 }
 
 func _() {
-	_ = NewSyncM //@snippet(" //", NewSyncMap, "NewSyncMap[${1:K comparable}, ${2:V any}]()")
-	_ = Identi //@snippet(" //", Identity, "Identity(${1:p P})")
+	_ = NewSyncM //@snippet(re"() \\/\\/", NewSyncMap, "NewSyncMap[${1:K comparable}, ${2:V any}]()")
+	_ = Identi //@snippet(re"() \\/\\/", Identity, "Identity(${1:p P})")
 }

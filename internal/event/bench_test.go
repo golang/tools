@@ -25,9 +25,9 @@ type Hooks struct {
 var (
 	aValue  = keys.NewInt("a", "")
 	bValue  = keys.NewString("b", "")
-	aCount  = keys.NewInt64("aCount", "Count of time A is called.")
+	aCount  = keys.NewInt("aCount", "Count of time A is called.")
 	aStat   = keys.NewInt("aValue", "A value.")
-	bCount  = keys.NewInt64("B", "Count of time B is called.")
+	bCount  = keys.NewInt("B", "Count of time B is called.")
 	bLength = keys.NewInt("BLen", "B length.")
 
 	Baseline = Hooks{
@@ -140,9 +140,9 @@ func B(ctx context.Context, hooks Hooks, a int, b string) int {
 func (hooks Hooks) runBenchmark(b *testing.B) {
 	ctx := context.Background()
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	var acc int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, value := range initialList {
 			acc += A(ctx, hooks, value)
 		}

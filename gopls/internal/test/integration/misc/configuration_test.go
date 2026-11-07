@@ -8,18 +8,11 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
-
-	"golang.org/x/tools/internal/testenv"
 )
 
 // Test that enabling and disabling produces the expected results of showing
 // and hiding staticcheck analysis results.
 func TestChangeConfiguration(t *testing.T) {
-	// Staticcheck only supports Go versions >= 1.20.
-	// Note: keep this in sync with TestStaticcheckWarning. Below this version we
-	// should get an error when setting staticcheck configuration.
-	testenv.NeedsGo1Point(t, 20)
-
 	const files = `
 -- go.mod --
 module mod.com
@@ -164,8 +157,6 @@ type B struct {
 //
 // Gopls should not get confused about buffer content when recreating the view.
 func TestMajorOptionsChange(t *testing.T) {
-	testenv.NeedsGo1Point(t, 20) // needs staticcheck
-
 	const files = `
 -- go.mod --
 module mod.com
@@ -193,40 +184,12 @@ var ErrFoo = errors.New("foo")
 		cfg.Env = map[string]string{
 			"AN_ARBITRARY_VAR": "FOO",
 		}
-		cfg.Settings = map[string]interface{}{
+		cfg.Settings = map[string]any{
 			"staticcheck": true,
 		}
 		env.ChangeConfiguration(cfg)
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/a.go", "var (FooErr)")),
-		)
-	})
-}
-
-func TestStaticcheckWarning(t *testing.T) {
-	// Note: keep this in sync with TestChangeConfiguration.
-	testenv.SkipAfterGo1Point(t, 19)
-
-	const files = `
--- go.mod --
-module mod.com
-
-go 1.12
--- a/a.go --
-package a
-
-import "errors"
-
-// FooErr should be called ErrFoo (ST1012)
-var FooErr = errors.New("foo")
-`
-
-	WithOptions(
-		Settings{"staticcheck": true},
-	).Run(t, files, func(t *testing.T, env *Env) {
-		env.OnceMet(
-			InitialWorkspaceLoad,
-			ShownMessage("staticcheck is not supported"),
 		)
 	})
 }

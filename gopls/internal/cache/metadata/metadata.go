@@ -45,17 +45,20 @@ type Package struct {
 	PkgPath PackagePath
 	Name    PackageName
 
-	// these three fields are as defined by go/packages.Package
+	// These fields are as defined by go/packages.Package
 	GoFiles         []protocol.DocumentURI
 	CompiledGoFiles []protocol.DocumentURI
 	IgnoredFiles    []protocol.DocumentURI
+	OtherFiles      []protocol.DocumentURI
+
+	AsmFiles []protocol.DocumentURI // *.s subset of OtherFiles
 
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
 	Errors        []packages.Error          // must be set for packages in import cycles
 	DepsByImpPath map[ImportPath]PackageID  // may contain dups; empty ID => missing
 	DepsByPkgPath map[PackagePath]PackageID // values are unique and non-empty
-	Module        *packages.Module
+	Module        *packages.Module          // may be missing for std and cmd; see Go issue #65816.
 	DepsErrors    []*packagesinternal.PackageError
 	LoadDir       string // directory from which go/packages was run
 	Standalone    bool   // package synthesized for a standalone file (e.g. ignore-tagged)
@@ -150,7 +153,7 @@ func (mp *Package) String() string { return string(mp.ID) }
 // intermediate test variant of p, of which there could be many.
 // Good code doesn't rely on such trickery.
 //
-// Most callers of MetadataForFile call RemoveIntermediateTestVariants
+// Most callers of MetadataForFile set removeIntermediateTestVariants parameter
 // to discard them before requesting type checking, or the products of
 // type-checking such as the cross-reference index or method set index.
 //
@@ -166,9 +169,6 @@ func (mp *Package) IsIntermediateTestVariant() bool {
 }
 
 // A Source maps package IDs to metadata for the packages.
-//
-// TODO(rfindley): replace this with a concrete metadata graph, once it is
-// exposed from the snapshot.
 type Source interface {
 	// Metadata returns the [Package] for the given package ID, or nil if it does
 	// not exist.

@@ -19,14 +19,14 @@ import (
 var Entries = keys.New("metric_entries", "The set of metrics calculated for an event")
 
 type Config struct {
-	subscribers map[interface{}][]subscriber
+	subscribers map[any][]subscriber
 }
 
 type subscriber func(time.Time, label.Map, label.Label) Data
 
 func (e *Config) subscribe(key label.Key, s subscriber) {
 	if e.subscribers == nil {
-		e.subscribers = make(map[interface{}][]subscriber)
+		e.subscribers = make(map[any][]subscriber)
 	}
 	e.subscribers[key] = append(e.subscribers[key], s)
 }
@@ -40,11 +40,7 @@ func (e *Config) Exporter(output event.Exporter) event.Exporter {
 		mu.Lock()
 		defer mu.Unlock()
 		var metrics []Data
-		for index := 0; ev.Valid(index); index++ {
-			l := ev.Label(index)
-			if !l.Valid() {
-				continue
-			}
+		for l := range ev.Labels() {
 			id := l.Key()
 			if list := e.subscribers[id]; len(list) > 0 {
 				for _, s := range list {

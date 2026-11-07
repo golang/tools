@@ -39,16 +39,8 @@ func relName(v Value, i Instruction) string {
 	return v.Name()
 }
 
-// normalizeAnyForTesting controls whether we replace occurrences of
-// interface{} with any. It is only used for normalizing test output.
-var normalizeAnyForTesting bool
-
 func relType(t types.Type, from *types.Package) string {
-	s := types.TypeString(t, types.RelativeTo(from))
-	if normalizeAnyForTesting {
-		s = strings.ReplaceAll(s, "interface{}", "any")
-	}
-	return s
+	return types.TypeString(t, types.RelativeTo(from))
 }
 
 func relTerm(term *types.Term, from *types.Package) string {
@@ -188,12 +180,13 @@ func (v *MultiConvert) String() string {
 	var b strings.Builder
 	b.WriteString(printConv("multiconvert", v, v.X))
 	b.WriteString(" [")
-	for i, s := range v.from {
-		for j, d := range v.to {
+	srcs, dsts := typeparams.TypeSetOf(v.from), typeparams.TypeSetOf(v.to)
+	for i := range srcs.Len() {
+		for j := range dsts.Len() {
 			if i != 0 || j != 0 {
 				b.WriteString(" | ")
 			}
-			fmt.Fprintf(&b, "%s <- %s", relTerm(d, from), relTerm(s, from))
+			fmt.Fprintf(&b, "%s <- %s", relTerm(dsts.Term(j), from), relTerm(srcs.Term(i), from))
 		}
 	}
 	b.WriteString("]")
@@ -395,7 +388,7 @@ func (s *MapUpdate) String() string {
 
 func (s *DebugRef) String() string {
 	p := s.Parent().Prog.Fset.Position(s.Pos())
-	var descr interface{}
+	var descr any
 	if s.object != nil {
 		descr = s.object // e.g. "var x int"
 	} else {

@@ -4,7 +4,7 @@ when the go.mod go version is set to a 1.22 toolchain version (1.22.x).
 In golang/go#66876, gopls failed to handle this correctly.
 
 -- flags --
--min_go=go1.22
+-min_go_command=go1.22
 
 -- go.mod --
 module example.com/loopclosure

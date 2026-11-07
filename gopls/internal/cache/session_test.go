@@ -6,12 +6,16 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -85,7 +89,8 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				options: func(dir string) map[string]any {
 					return map[string]any{
 						"env": map[string]any{
-							"GOPATH": dir,
+							"GO111MODULE": "", // golang/go#70196: must be unset
+							"GOPATH":      dir,
 						},
 					}
 				},
@@ -336,16 +341,19 @@ replace (
 			for _, f := range test.folders {
 				opts := settings.DefaultOptions()
 				if f.options != nil {
-					for _, err := range opts.Set(f.options(dir)) {
+					_, errs := opts.Set(f.options(dir))
+					for _, err := range errs {
 						t.Fatal(err)
 					}
 				}
-				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)
+				uri := toURI(f.dir)
+				env, err := FetchGoEnv(ctx, uri, opts)
 				if err != nil {
 					t.Fatalf("FetchGoEnv failed: %v", err)
 				}
+				t.Logf("FetchGoEnv(%q) = %+v", uri, env)
 				folders = append(folders, &Folder{
-					Dir:     toURI(f.dir),
+					Dir:     uri,
 					Name:    path.Base(f.dir),
 					Options: opts,
 					Env:     *env,
@@ -399,4 +407,194 @@ func writeFiles(t *testing.T, files map[string]string) string {
 		}
 	}
 	return root
+}
+
+// TestOrphanedFileDiagnostics_Shutdown verifies that session operations,
+// particularly OrphanedFileDiagnostics and SnapshotOf, fail cleanly with
+// ErrSessionShutdown when the session shuts down, including when views and
+// overlays are present. This prevents race conditions where in-flight
+// background diagnostics emit false-positive warnings during shutdown.
+func TestOrphanedFileDiagnostics_Shutdown(t *testing.T) {
+	testenv.NeedsExec(t)
+	t.Setenv("GOPACKAGESDRIVER", "off")
+
+	// The module is in "a". b/b.go is not in the module, so it is orphaned.
+	files := map[string]string{
+		"a/go.mod": "module example.com/a\ngo 1.18\n",
+		"a/a.go":   "package a\n",
+		"b/b.go":   "package b\n",
+	}
+	dir := writeFiles(t, files)
+	toURI := func(name string) protocol.DocumentURI {
+		return protocol.URIFromPath(filepath.Join(dir, name))
+	}
+
+	ctx := t.Context()
+	session := NewSession(ctx, New(nil))
+
+	opts := settings.DefaultOptions()
+	env, err := FetchGoEnv(ctx, toURI("a"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := &Folder{Dir: toURI("a"), Name: "a", Options: opts, Env: *env}
+	_, _, release, err := session.NewView(ctx, folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+
+	// Open a file in the module and the orphaned file. For the orphaned file,
+	// no view has a real package, so SnapshotOf uses its fallback path.
+	var mods []file.Modification
+	for _, name := range []string{"a/a.go", "b/b.go"} {
+		mods = append(mods, file.Modification{
+			URI:        toURI(name),
+			Action:     file.Open,
+			Version:    1,
+			Text:       []byte(files[name]),
+			LanguageID: "go",
+		})
+	}
+	if _, err := session.DidModifyFiles(ctx, mods); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make sure that b/b.go is orphaned before shutdown.
+	bURI := toURI("b/b.go")
+	diags, err := session.OrphanedFileDiagnostics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diags[bURI]) == 0 {
+		t.Fatalf("OrphanedFileDiagnostics before Shutdown: no diagnostics for %s, want at least one", bURI)
+	}
+
+	snapshotOf := func(uri protocol.DocumentURI) error {
+		_, release, err := session.SnapshotOf(ctx, uri)
+		if err == nil {
+			release()
+		}
+		return err
+	}
+
+	// Call OrphanedFileDiagnostics and SnapshotOf repeatedly while
+	// Shutdown runs, as background diagnostics do when the client exits.
+	// Each call must succeed or return ErrSessionShutdown.
+	//
+	// This is a smoke test for data races (run with -race). It does not
+	// reliably hit the narrow race where SnapshotOf gets a list of views that
+	// is not empty, and then each view shuts down before it gives a snapshot.
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := session.OrphanedFileDiagnostics(ctx); err != nil && !errors.Is(err, ErrSessionShutdown) {
+				t.Errorf("concurrent OrphanedFileDiagnostics returned %v, want nil or %v", err, ErrSessionShutdown)
+			}
+			if err := snapshotOf(bURI); err != nil && !errors.Is(err, ErrSessionShutdown) {
+				t.Errorf("concurrent SnapshotOf returned %v, want nil or %v", err, ErrSessionShutdown)
+			}
+		}
+	})
+
+	session.Shutdown(ctx)
+	close(stop)
+	wg.Wait()
+
+	// After Shutdown, all session operations must return ErrSessionShutdown.
+	for _, check := range []struct {
+		name string
+		f    func() error
+	}{
+		{"OrphanedFileDiagnostics", func() error { _, err := session.OrphanedFileDiagnostics(ctx); return err }},
+		{"SnapshotOf", func() error { return snapshotOf(bURI) }},
+		{"NewView", func() error { _, _, _, err := session.NewView(ctx, folder); return err }},
+		{"ResetView", func() error { _, err := session.ResetView(ctx, toURI("a")); return err }},
+		{"DidModifyFiles", func() error { _, err := session.DidModifyFiles(ctx, nil); return err }},
+	} {
+		if err := check.f(); !errors.Is(err, ErrSessionShutdown) {
+			t.Errorf("%s after Shutdown returned %v, want %v", check.name, err, ErrSessionShutdown)
+		}
+	}
+}
+
+// TestReloadWorkspaceSerialization checks that concurrent calls to
+// awaitLoaded on a snapshot with invalidated packages serialize via
+// View.reloadSema and execute only a single package load (golang/go#81408).
+func TestReloadWorkspaceSerialization(t *testing.T) {
+	testenv.NeedsExec(t)
+	t.Setenv("GOPACKAGESDRIVER", "off")
+
+	files := map[string]string{
+		"go.mod": "module example.com/a\ngo 1.18\n",
+		"a.go":   "package a\n",
+	}
+	dir := writeFiles(t, files)
+	toURI := func(name string) protocol.DocumentURI {
+		return protocol.URIFromPath(filepath.Join(dir, name))
+	}
+
+	ctx := t.Context()
+	session := NewSession(ctx, New(nil))
+	defer session.Shutdown(ctx)
+
+	opts := settings.DefaultOptions()
+	env, err := FetchGoEnv(ctx, toURI(""), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := &Folder{Dir: toURI(""), Name: "a", Options: opts, Env: *env}
+	view, snapshot, release, err := session.NewView(ctx, folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.awaitLoaded(ctx); err != nil {
+		release()
+		t.Fatal(err)
+	}
+	release()
+
+	// Modify a.go's imports so that its package metadata is invalidated and
+	// queued in snapshot.shouldLoad.
+	if _, err := session.DidModifyFiles(ctx, []file.Modification{{
+		URI:        toURI("a.go"),
+		Action:     file.Open,
+		Version:    1,
+		Text:       []byte("package a\nimport _ \"fmt\"\n"),
+		LanguageID: "go",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, release, err = view.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	before := atomic.LoadUint64(&loadID)
+
+	const goroutines = 10
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			if err := snapshot.awaitLoaded(ctx); err != nil {
+				t.Errorf("awaitLoaded failed: %v", err)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if loads := atomic.LoadUint64(&loadID) - before; loads != 1 {
+		t.Errorf("concurrent awaitLoaded executed %d package loads, want 1", loads)
+	}
 }

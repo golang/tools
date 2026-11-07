@@ -3,6 +3,9 @@ request.
 
 TODO(rfindley): add a test for the legacy 'fuzzy' symbol matcher using setting ("symbolMatcher": "fuzzy"). This test uses the default matcher ("fastFuzzy").
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module mod.test/symbols
 

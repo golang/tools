@@ -28,7 +28,7 @@ func BenchmarkCodeAction(b *testing.B) {
 				defer stopAndRecord()
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				env.CodeActionForFile(test.file, nil)
 			}
 		})
@@ -52,7 +52,7 @@ func BenchmarkCodeActionFollowingEdit(b *testing.B) {
 				defer stopAndRecord()
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				edits := atomic.AddInt64(&editID, 1)
 				env.EditBuffer(test.file, protocol.TextEdit{
 					Range: protocol.Range{

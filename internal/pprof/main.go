@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // The pprof command prints the total time in a pprof profile provided
 // through the standard input.

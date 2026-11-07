@@ -44,6 +44,30 @@ some content
 				},
 			},
 		},
+		{
+			name: "crlf",
+			text: "comment\r\n-- file --\r\ndata\r\n",
+			parsed: &Archive{
+				Comment: []byte("comment\r\n"),
+				Files:   []File{{"file", []byte("data\r\n")}},
+			},
+		},
+		{
+			name: "utf8 and comment",
+			text: `# This is a test comment
+-- hello.txt --
+Hello
+-- unicode.txt --
+Go语言
+`,
+			parsed: &Archive{
+				Comment: []byte("# This is a test comment\n"),
+				Files: []File{
+					{"hello.txt", []byte("Hello\n")},
+					{"unicode.txt", []byte("Go语言\n")},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

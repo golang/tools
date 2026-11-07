@@ -31,7 +31,7 @@ func main() {
 		panic(a)
 	}
 
-	e := 42
+	e := byte(42)
 	if s := MyString(e); s != "*" {
 		panic(s)
 	}

@@ -1,0 +1,19 @@
+package wrongreturn
+
+// This should NOT be detected as min - it returns the wrong values
+func min(x, y int) int {
+	if x <= y {
+		return y
+	} else {
+		return x
+	}
+}
+
+// This should NOT be detected as max - it returns the wrong values
+func max(x, y int) int {
+	if x > y {
+		return y
+	} else {
+		return x
+	}
+}

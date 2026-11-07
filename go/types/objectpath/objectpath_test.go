@@ -12,21 +12,27 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
-	"golang.org/x/tools/go/gcexportdata"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func TestPaths(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"b": {"b.go": `
+	const src = `
+-- go.mod --
+module x.io
+
+-- b/b.go --
 package b
 
-import "a"
+import "x.io/a"
 
 const C = a.Int(0)
 
@@ -40,6 +46,11 @@ type U T
 
 type A = struct{ x int }
 
+type unexported2 struct { z int }
+type AN = unexported2 // alias of named
+
+// type GA[T any] = T // see below
+
 var V []*a.T
 
 type M map[struct{x int}]struct{y int}
@@ -52,16 +63,23 @@ func (unexportedType) F() {} // not reachable from package's public API (export 
 type S struct{t struct{x int}}
 type R []struct{y int}
 type Q [2]struct{z int}
-`},
-		"a": {"a.go": `
+
+type I interface {
+	M()
+}
+
+-- a/a.go --
 package a
 
 type Int int
 
 type T struct{x, y int}
 
-`},
-	}
+type Issue68046 interface { f(x int) interface{Issue68046} }
+`
+
+	pkgmap := loadPackages(t, src, "./a", "./b")
+
 	paths := []pathTest{
 		// Good paths
 		{"b", "C", "const b.C a.Int", ""},
@@ -75,9 +93,17 @@ type T struct{x, y int}
 		{"b", "T.UF0", "field A int", ""},
 		{"b", "T.UF1", "field b int", ""},
 		{"b", "T.UF2", "field T a.T", ""},
-		{"b", "U.UF2", "field T a.T", ""}, // U.U... are aliases for T.U...
-		{"b", "A", "type b.A = struct{x int}", ""},
+		{"b", "U.UF2", "field T a.T", ""},          // U.U... are aliases for T.U...
+		{"b", "A", "type b.A = struct{x int}", ""}, // go1.22/alias=1: "type b.A = b.A"
+		{"b", "A.aF0", "field x int", ""},
 		{"b", "A.F0", "field x int", ""},
+		{"b", "AN", "type b.AN = b.unexported2", ""}, // go1.22/alias=1: "type b.AN = b.AN"
+		{"b", "AN.UF0", "field z int", ""},
+		{"b", "AN.aO", "type b.unexported2 struct{z int}", ""},
+		{"b", "AN.O", "type b.unexported2 struct{z int}", ""},
+		{"b", "AN.aUF0", "field z int", ""},
+		{"b", "AN.UF0", "field z int", ""},
+		// {"b", "GA", "type parameter b.GA = T", ""}, // TODO(adonovan): enable once GOEXPERIMENT=aliastypeparams has gone
 		{"b", "V", "var b.V []*a.T", ""},
 		{"b", "M", "type b.M map[struct{x int}]struct{y int}", ""},
 		{"b", "M.UKF0", "field x int", ""},
@@ -85,13 +111,15 @@ type T struct{x, y int}
 		{"b", "T.M0", "func (b.T).M() *interface{f()}", ""}, // concrete method
 		{"b", "T.M0.RA0", "var  *interface{f()}", ""},       // parameter
 		{"b", "T.M0.RA0.EM0", "func (interface).f()", ""},   // interface method
+		{"b", "I.UM0", "func (b.I).M()", ""},
 		{"b", "unexportedType", "type b.unexportedType struct{}", ""},
 		{"b", "unexportedType.M0", "func (b.unexportedType).F()", ""},
 		{"b", "S.UF0.F0", "field x int", ""},
 		{"b", "R.UEF0", "field y int", ""},
 		{"b", "Q.UEF0", "field z int", ""},
 		{"a", "T", "type a.T struct{x int; y int}", ""},
-		{"a", "T.UF0", "field x int", ""},
+		{"a", "Issue68046.UM0", "func (a.Issue68046).f(x int) interface{a.Issue68046}", ""},
+		{"a", "Issue68046.UM0.PA0", "var x int", ""},
 
 		// Bad paths
 		{"b", "", "", "empty path"},
@@ -117,22 +145,14 @@ type T struct{x, y int}
 		{"b", "F.PA4", "", "tuple index 4 out of range [0-4)"},
 		{"b", "F.XO", "", "invalid path: unknown code 'X'"},
 	}
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("a")
-	conf.Import("b")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, test := range paths {
-		if err := testPath(prog, test); err != nil {
+		if err := testPath(pkgmap, test); err != nil {
 			t.Error(err)
 		}
 	}
 
 	// bad objects
-	bInfo := prog.Imported["b"]
+	b := pkgmap["x.io/b"]
 	for _, test := range []struct {
 		obj     types.Object
 		wantErr string
@@ -140,29 +160,42 @@ type T struct{x, y int}
 		{types.Universe.Lookup("nil"), "predeclared nil has no path"},
 		{types.Universe.Lookup("len"), "predeclared builtin len has no path"},
 		{types.Universe.Lookup("int"), "predeclared type int has no path"},
-		{bInfo.Implicits[bInfo.Files[0].Imports[0]], "no path for package a"}, // import "a"
-		{bInfo.Pkg.Scope().Lookup("unexportedFunc"), "no path for non-exported func b.unexportedFunc()"},
+		{b.TypesInfo.Implicits[b.Syntax[0].Imports[0]], "no path for package a (\"a\")"}, // import "a"
+		{b.Types.Scope().Lookup("unexportedFunc"), "no path for non-exported func b.unexportedFunc()"},
 	} {
 		path, err := objectpath.For(test.obj)
 		if err == nil {
 			t.Errorf("Object(%s) = %q, want error", test.obj, path)
 			continue
 		}
-		if err.Error() != test.wantErr {
-			t.Errorf("Object(%s) error was %q, want %q", test.obj, err, test.wantErr)
+		gotErr := strings.ReplaceAll(err.Error(), "x.io/", "")
+		if gotErr != test.wantErr {
+			t.Errorf("Object(%s) error was %q, want %q", test.obj, gotErr, test.wantErr)
 			continue
 		}
 	}
 }
 
-type pathTest struct {
-	pkg     string
-	path    objectpath.Path
-	wantobj string
-	wantErr string
+// loadPackages expands the archive and loads the package patterns relative to its root.
+func loadPackages(t *testing.T, archive string, patterns ...string) map[string]*packages.Package {
+	// TODO(adonovan): ExtractTxtarToTmp (sans File) would be useful.
+	ar := txtar.Parse([]byte(archive))
+	pkgs := testfiles.LoadPackages(t, ar, patterns...)
+	m := make(map[string]*packages.Package)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		m[pkg.Types.Path()] = pkg
+	})
+	return m
 }
 
-func testPath(prog *loader.Program, test pathTest) error {
+type pathTest struct {
+	pkg     string // sans "x.io/" module prefix
+	path    objectpath.Path
+	wantobj string
+	wantErr string // after each "x.io/" replaced with ""
+}
+
+func testPath(pkgmap map[string]*packages.Package, test pathTest) error {
 	// We test objectpath by enumerating a set of paths
 	// and ensuring that Path(pkg, Object(pkg, path)) == path.
 	//
@@ -177,23 +210,24 @@ func testPath(prog *loader.Program, test pathTest) error {
 	//
 	// The downside is that the test depends on the path encoding.
 	// The upside is that the test exercises the encoding.
+	pkg := pkgmap["x.io/"+test.pkg].Types
 
-	pkg := prog.Imported[test.pkg].Pkg
 	// check path -> object
 	obj, err := objectpath.Object(pkg, test.path)
 	if (test.wantErr != "") != (err != nil) {
 		return fmt.Errorf("Object(%s, %q) returned error %q, want %q", pkg.Path(), test.path, err, test.wantErr)
 	}
 	if test.wantErr != "" {
-		if got := err.Error(); got != test.wantErr {
+		gotErr := strings.ReplaceAll(err.Error(), "x.io/", "")
+		if gotErr != test.wantErr {
 			return fmt.Errorf("Object(%s, %q) error was %q, want %q",
-				pkg.Path(), test.path, got, test.wantErr)
+				pkg.Path(), test.path, gotErr, test.wantErr)
 		}
 		return nil
 	}
 	// Inv: err == nil
 
-	if objString := obj.String(); objString != test.wantobj {
+	if objString := types.ObjectString(obj, (*types.Package).Name); objString != test.wantobj {
 		return fmt.Errorf("Object(%s, %q) = %s, want %s", pkg.Path(), test.path, objString, test.wantobj)
 	}
 	if obj.Pkg() != pkg {
@@ -215,6 +249,36 @@ func testPath(prog *loader.Program, test pathTest) error {
 	if obj2 != obj {
 		return fmt.Errorf("Object(%s, For(obj)) != obj: got %s, obj is %s (path1=%q, path2=%q)", pkg.Path(), obj2, obj, test.path, path2)
 	}
+
+	// We also call [objectpath.Encoder.For] three times to ensure it
+	// gives consistent results with [objectpath.For] in all states:
+	//  1: searching for symbol without index
+	//  2: building index and looking up symbol
+	//  3: looking up symbol in existing index.
+	{
+		enc := new(objectpath.Encoder)
+
+		epath1, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#1 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		epath2, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#2 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		epath3, err := enc.For(obj)
+		if err != nil {
+			return fmt.Errorf("#3 Encoder.For(%v) failed: %v, want %q", obj, err, test.path)
+		}
+
+		if epath1 != path2 || epath2 != path2 || epath3 != path2 {
+			return fmt.Errorf("consistency error for %v: For path=%q, Encoder paths=(%q %q %q)",
+				obj, path2, epath1, epath2, epath3)
+		}
+	}
+
 	return nil
 }
 
@@ -253,7 +317,7 @@ func (unreachable) F() {} // not reachable in export data
 	if err != nil {
 		t.Fatal(err)
 	}
-	conf := types.Config{Importer: importer.For("source", nil)}
+	conf := types.Config{Importer: importer.ForCompiler(token.NewFileSet(), "source", nil)}
 	info := &types.Info{
 		Defs: make(map[*ast.Ident]types.Object),
 	}
@@ -264,12 +328,12 @@ func (unreachable) F() {} // not reachable in export data
 
 	// Export binary export data then reload it as a new package, "bin".
 	var buf bytes.Buffer
-	if err := gcexportdata.Write(&buf, fset, srcpkg); err != nil {
+	if err := gcimporter.IExportData(&buf, fset, srcpkg); err != nil {
 		t.Fatal(err)
 	}
 
 	imports := make(map[string]*types.Package)
-	binpkg, err := gcexportdata.Read(&buf, fset, imports, "bin/p")
+	binpkg, err := gcimporter.IImportData(fset, imports, buf.Bytes(), "bin/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,64 +390,155 @@ func objectString(obj types.Object) string {
 	return s
 }
 
-// TestOrdering uses objectpath over two Named types with the same method
-// names but in a different source order and checks that objectpath is the
-// same for methods with the same name.
+// TestOrdering verifies that the compiler and go/types emit methods in the same order,
+// including when generic methods are present.
+//
+// See golang/go#78495 and golang/go#81188.
 func TestOrdering(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"p": {"p.go": `
+	testenv.NeedsGoPackages(t)
+
+	run := func(t *testing.T, src string) {
+		fs, err := txtar.FS(txtar.Parse([]byte(src)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := testfiles.CopyToTmp(t, fs)
+
+		loadPackageWithMode := func(mode packages.LoadMode) *packages.Package {
+			cfg := &packages.Config{
+				Mode: mode,
+				Dir:  dir,
+				Env: append(os.Environ(),
+					"GO111MODULES=on",
+					"GOPATH=",
+					"GOWORK=off",
+					"GOPROXY=off"),
+			}
+			pkgs, err := packages.Load(cfg, "x.io/p")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if num := packages.PrintErrors(pkgs); num > 0 {
+				t.Fatalf("packages contained %d errors", num)
+			}
+			if len(pkgs) != 1 {
+				t.Fatalf("packages.Load returned %d packages, want 1", len(pkgs))
+			}
+			return pkgs[0]
+		}
+
+		// Load the package from compiler export data.
+		binpkg := loadPackageWithMode(packages.NeedExportFile | packages.NeedTypes)
+		// Load the package from typed syntax tree.
+		srcpkg := loadPackageWithMode(packages.LoadSyntax)
+
+		// objectpath encodes concrete methods by their go/types method index.
+		// Verify that paths produced from source-loaded types resolve to the same
+		// methods in compiler export data.
+		srcNamed := srcpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+		for srcMethod := range srcNamed.Methods() {
+			path, err := objectpath.For(srcMethod)
+			if err != nil {
+				t.Fatalf("For(%s): %v", srcMethod.Name(), err)
+			}
+
+			binObj, err := objectpath.Object(binpkg.Types, path)
+			if err != nil {
+				t.Fatalf("Object(%q): %v", path, err)
+			}
+
+			if binObj.Name() != srcMethod.Name() {
+				t.Errorf("Object(%q) = %s, want %s", path, binObj.Name(), srcMethod.Name())
+			}
+		}
+
+		binNamed := binpkg.Types.Scope().Lookup("T").Type().(*types.Named)
+		for binMethod := range binNamed.Methods() {
+			path, err := objectpath.For(binMethod)
+			if err != nil {
+				t.Fatalf("For(%s): %v", binMethod.Name(), err)
+			}
+
+			srcObj, err := objectpath.Object(srcpkg.Types, path)
+			if err != nil {
+				t.Fatalf("Object(%q): %v", path, err)
+			}
+
+			if srcObj.Name() != binMethod.Name() {
+				t.Errorf("Object(%q) = %s, want %s", path, srcObj.Name(), binMethod.Name())
+			}
+		}
+	}
+
+	t.Run("nongeneric", func(t *testing.T) {
+		run(t, `-- go.mod --
+module x.io
+
+-- p/p.go --
 package p
 
 type T struct{ A int }
 
-func (T) M() { }
-func (T) N() { }
 func (T) X() { }
 func (T) Y() { }
-`},
-		"q": {"q.go": `
-package q
+func (T) M() { }
+func (T) N() { }
+`)
+	})
+
+	t.Run("generic", func(t *testing.T) {
+		t.Skip("requires go1.27.x cmd/compile that emits V5")
+		testenv.NeedsGoCommand1Point(t, 27)
+		run(t, `-- go.mod --
+module x.io
+go 1.27
+
+-- p/p.go --
+package p
 
 type T struct{ A int }
 
-func (T) N() { }
-func (T) M() { }
-func (T) Y() { }
+func (T) G1[X any](x X) X { return x }
 func (T) X() { }
-`}}
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("p")
-	conf.Import("q")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := prog.Imported["p"].Pkg
-	q := prog.Imported["q"].Pkg
+func (T) G2[Y any](y Y) Y { return y }
+func (T) Y() { }
+func (T) M() { }
+func (T) G3[Z any](z Z) Z { return z }
+func (T) N() { }
+`)
+	})
+}
 
-	// From here, the objectpaths generated for p and q should be the
-	// same. If they are not, then we are generating an ordering that is
-	// dependent on the declaration of the types within the file.
-	for _, test := range []struct {
-		path objectpath.Path
-	}{
-		{"T.M0"},
-		{"T.M1"},
-		{"T.M2"},
-		{"T.M3"},
-	} {
-		pobj, err := objectpath.Object(p, test.path)
-		if err != nil {
-			t.Errorf("Object(%s) failed in a1: %v", test.path, err)
-			continue
-		}
-		qobj, err := objectpath.Object(q, test.path)
-		if err != nil {
-			t.Errorf("Object(%s) failed in a2: %v", test.path, err)
-			continue
-		}
-		if pobj.Name() != pobj.Name() {
-			t.Errorf("Objects(%s) not equal, got a1 = %v, a2 = %v", test.path, pobj.Name(), qobj.Name())
-		}
+func TestIssue70418(t *testing.T) {
+	// This cyclic structure exhibited a bug (go.dev/issues/70418)
+	// with the seenMethods map that causes a lot of gopls crashes.
+	// objectpath would inspect the methods of I:
+	// - First we see I.A, which leads to Anon, to F, which is marked as seen.
+	// - Second we see I.F, embedded via alias Anon.
+	//   Since we've already seen F, we break out of the interface method loop.
+	// - Third, we fail to visit I.Z.
+	// The solution is to skip only I.F, not the rest of the interface.
+
+	const src = `
+-- go.mod --
+module example.com
+
+-- p/p.go --
+package p
+
+type Anon = interface{ F() }
+
+type I interface {
+	A(Anon)
+	Z()
+	Anon
+}
+`
+	pkgmap := loadPackages(t, src, "./p")
+	pkg := pkgmap["example.com/p"].Types
+	Z, _ := types.LookupSelection(pkg.Scope().Lookup("I").Type(), false, pkg, "Z")
+	_, err := objectpath.For(Z.Obj())
+	if err != nil {
+		t.Fatalf("objectpath.For(Z) failed: %v", err)
 	}
 }

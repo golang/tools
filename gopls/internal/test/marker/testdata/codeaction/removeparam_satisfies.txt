@@ -8,9 +8,6 @@ that must be modified), in order to produce the desired outcome for our users.
 Doing so would be more complicated, so for now this test simply records the
 current behavior.
 
--- flags --
--min_go=go1.20
-
 -- go.mod --
 module example.com/rm
 
@@ -21,30 +18,15 @@ package rm
 
 type T int
 
-func (t T) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t T) Foo(x int) { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=basic)
 }
 
--- use/use.go --
-package use
-
-import "example.com/rm"
-
-type Fooer interface{
-	Foo(int)
-}
-
-var _ Fooer = rm.T(0)
-
-func _() {
-	var x rm.T
-	x.Foo(1)
-}
 -- @basic/p.go --
 package rm
 
 type T int
 
-func (t T) Foo() { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t T) Foo() { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=basic)
 }
 
 -- @basic/use/use.go --
@@ -60,6 +42,20 @@ var _ Fooer = rm.T(0)
 
 func _() {
 	var x rm.T
-	var t rm.T = x
-	t.Foo()
+	x.Foo()
+}
+-- use/use.go --
+package use
+
+import "example.com/rm"
+
+type Fooer interface{
+	Foo(int)
+}
+
+var _ Fooer = rm.T(0)
+
+func _() {
+	var x rm.T
+	x.Foo(1)
 }

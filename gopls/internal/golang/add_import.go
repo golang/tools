@@ -20,7 +20,7 @@ func AddImport(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, im
 	if err != nil {
 		return nil, err
 	}
-	return ComputeOneImportFixEdits(snapshot, pgf, &imports.ImportFix{
+	return ComputeImportFixEdits(snapshot.Options().Local, pgf.Src, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: importPath,
 		},

@@ -39,8 +39,8 @@ steps:
     args: ['tar', '-czf', 'artifacts.tar.gz', '/artifacts']
 
   # Upload artifacts to GCS.
-  - name: 'gcr.io/cloud-builders/gsutil'
-    args: ['cp', 'artifacts.tar.gz', 'gs://${_RESULT_BUCKET}/govim/${BUILD_ID}/artifacts.tar.gz']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['storage', 'cp', 'artifacts.tar.gz', 'gs://${_RESULT_BUCKET}/govim/${BUILD_ID}/artifacts.tar.gz']
 
   # Exit with the actual exit code of the integration tests.
   - name: 'ubuntu'

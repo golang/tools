@@ -1,0 +1,27 @@
+This test exercises the "go_file_metadata" MCP tool.
+
+-- flags --
+-mcp
+
+-- settings.json --
+{
+    "mcpTools": {
+        "go_file_metadata": true
+    }
+}
+-- go.mod --
+module example.com/cmd
+
+go 1.21
+
+-- main.go --
+package main
+
+//@mcptool("go_file_metadata", `{"file":"$WORKDIR/main.go"}`, output=metadata)
+
+func main() {
+
+}
+-- @metadata --
+File `$WORKDIR/main.go` is in package "example.com/cmd", which has the following files:
+	$WORKDIR/main.go

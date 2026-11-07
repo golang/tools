@@ -7,22 +7,16 @@ package golang
 import (
 	"context"
 	"fmt"
-	"go/ast"
 	"go/token"
-	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/imports"
 )
 
 // A fixer is a function that suggests a fix for a diagnostic produced
@@ -37,35 +31,37 @@ import (
 // The supplied token positions (start, end) must belong to
 // pkg.FileSet(), and the returned positions
 // (SuggestedFix.TextEdits[*].{Pos,End}) must belong to the returned
-// FileSet.
+// FileSet, which is not necessarily the same.
+// (See [insertDeclsAfter] for explanation.)
 //
 // A fixer may return (nil, nil) if no fix is available.
 type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
 
-// A singleFileFixer is a Fixer that inspects only a single file,
-// and does not depend on data types from the cache package.
-//
-// TODO(adonovan): move fillstruct and undeclaredname into this
-// package, so we can remove the import restriction and push
-// the singleFile wrapper down into each singleFileFixer?
-type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error)
+// A singleFileFixer is a [fixer] that inspects only a single file.
+type singleFileFixer func(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
 
-// singleFile adapts a single-file fixer to a Fixer.
+// singleFile adapts a [singleFileFixer] to a [fixer]
+// by discarding the snapshot and the context it needs.
 func singleFile(fixer1 singleFileFixer) fixer {
-	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.Types(), pkg.TypesInfo())
+	return func(_ context.Context, _ *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+		return fixer1(pkg, pgf, start, end)
 	}
 }
 
 // Names of ApplyFix.Fix created directly by the CodeAction handler.
 const (
-	fixExtractVariable   = "extract_variable"
-	fixExtractFunction   = "extract_function"
-	fixExtractMethod     = "extract_method"
-	fixInlineCall        = "inline_call"
-	fixInvertIfCondition = "invert_if_condition"
-	fixSplitLines        = "split_lines"
-	fixJoinLines         = "join_lines"
+	fixExtractVariable         = "extract_variable" // (or constant)
+	fixExtractVariableAll      = "extract_variable_all"
+	fixExtractFunction         = "extract_function"
+	fixExtractMethod           = "extract_method"
+	fixInlineCall              = "inline_call" // keep consistent with go/analysis/passes/inline Diagnostic.Category
+	fixInlineVariable          = "inline_variable"
+	fixInvertIfCondition       = "invert_if_condition"
+	fixSplitLines              = "split_lines"
+	fixJoinLines               = "join_lines"
+	fixCreateUndeclared        = "create_undeclared"
+	fixMissingInterfaceMethods = "stub_missing_interface_method"
+	fixMissingCalledFunction   = "stub_missing_called_function"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -90,26 +86,28 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
 	// steps.)
 	if fix == unusedparams.FixCategory {
-		return RemoveUnusedParameter(ctx, fh, rng, snapshot)
+		return removeParam(ctx, snapshot, fh, rng)
 	}
 
 	fixers := map[string]fixer{
 		// Fixes for analyzer-provided diagnostics.
 		// These match the Diagnostic.Category.
-		embeddirective.FixCategory: addEmbedImport,
-		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
-		stubmethods.FixCategory:    stubMethodsFixer,
-		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
+		fillstruct.FixCategory: singleFile(fillstruct.SuggestedFix),
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
-		fixExtractFunction:   singleFile(extractFunction),
-		fixExtractMethod:     singleFile(extractMethod),
-		fixExtractVariable:   singleFile(extractVariable),
-		fixInlineCall:        inlineCall,
-		fixInvertIfCondition: singleFile(invertIfCondition),
-		fixSplitLines:        singleFile(splitLines),
-		fixJoinLines:         singleFile(joinLines),
+		fixExtractFunction:         singleFile(extractFunction),
+		fixExtractMethod:           singleFile(extractMethod),
+		fixExtractVariable:         singleFile(extractVariableOne),
+		fixExtractVariableAll:      singleFile(extractVariableAll),
+		fixInlineCall:              inlineCall,
+		fixInlineVariable:          singleFile(inlineVariableOne),
+		fixInvertIfCondition:       singleFile(invertIfCondition),
+		fixSplitLines:              singleFile(splitLines),
+		fixJoinLines:               singleFile(joinLines),
+		fixCreateUndeclared:        singleFile(createUndeclared),
+		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
+		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {
@@ -130,6 +128,43 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	if suggestion == nil {
 		return nil, nil
 	}
+
+	// Refine #68818 so we learn which values of 'fix'
+	// break the assertion in suggestedFixToDocumentChange.
+	for _, edit := range suggestion.TextEdits {
+		if fixFset.File(edit.Pos) == nil {
+			switch fix {
+			case fillstruct.FixCategory:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractFunction:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractMethod:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractVariable:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixExtractVariableAll:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInlineCall:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInlineVariable:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixInvertIfCondition:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixSplitLines:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixJoinLines:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixCreateUndeclared:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixMissingInterfaceMethods:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			case fixMissingCalledFunction:
+				bug.Report("no token.File for TextEdit.Pos (#68818)")
+			}
+			break
+		}
+	}
+
 	return suggestedFixToDocumentChange(ctx, snapshot, fixFset, suggestion)
 }
 
@@ -144,7 +179,7 @@ func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot,
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
 		if tokFile == nil {
-			return nil, bug.Errorf("no file for edit position")
+			return nil, bug.Errorf("no file for edit position (#68818)")
 		}
 		end := edit.End
 		if !end.IsValid() {
@@ -181,37 +216,4 @@ func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot,
 		changes = append(changes, change)
 	}
 	return changes, nil
-}
-
-// addEmbedImport adds a missing embed "embed" import with blank name.
-func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, _, _ token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	// Like golang.AddImport, but with _ as Name and using our pgf.
-	protoEdits, err := ComputeOneImportFixEdits(snapshot, pgf, &imports.ImportFix{
-		StmtInfo: imports.ImportInfo{
-			ImportPath: "embed",
-			Name:       "_",
-		},
-		FixType: imports.AddImport,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("compute edits: %w", err)
-	}
-
-	var edits []analysis.TextEdit
-	for _, e := range protoEdits {
-		start, end, err := pgf.RangePos(e.Range)
-		if err != nil {
-			return nil, nil, err // e.g. invalid range
-		}
-		edits = append(edits, analysis.TextEdit{
-			Pos:     start,
-			End:     end,
-			NewText: []byte(e.NewText),
-		})
-	}
-
-	return pkg.FileSet(), &analysis.SuggestedFix{
-		Message:   "Add embed import",
-		TextEdits: edits,
-	}, nil
 }

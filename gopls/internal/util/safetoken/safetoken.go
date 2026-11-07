@@ -42,6 +42,7 @@ func Offset(f *token.File, pos token.Pos) (int, error) {
 }
 
 // Offsets returns Offset(start) and Offset(end).
+// It returns an error if either failed, or if start > end.
 func Offsets(f *token.File, start, end token.Pos) (int, int, error) {
 	startOffset, err := Offset(f, start)
 	if err != nil {
@@ -50,6 +51,9 @@ func Offsets(f *token.File, start, end token.Pos) (int, int, error) {
 	endOffset, err := Offset(f, end)
 	if err != nil {
 		return 0, 0, fmt.Errorf("end: %v", err)
+	}
+	if start > end {
+		return 0, 0, fmt.Errorf("start (offset %d) > end (offset %d)", start, end)
 	}
 	return startOffset, endOffset, nil
 }

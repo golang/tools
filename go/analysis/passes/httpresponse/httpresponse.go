@@ -9,12 +9,11 @@ package httpresponse
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -42,12 +41,12 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	// Fast path: if the package doesn't import net/http,
 	// skip the traversal.
-	if !analysisutil.Imports(pass.Pkg, "net/http") {
+	if !typesinternal.Imports(pass.Pkg, "net/http") {
 		return nil, nil
 	}
 
@@ -109,8 +108,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 // returns (*http.Response, error).
 func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 	fun, _ := expr.Fun.(*ast.SelectorExpr)
-	sig, _ := info.Types[fun].Type.(*types.Signature)
-	if sig == nil {
+	sig, ok := info.Types[fun].Type.(*types.Signature)
+	if !ok {
 		return false // the call is not of the form x.f()
 	}
 
@@ -118,8 +117,7 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 	if res.Len() != 2 {
 		return false // the function called does not return two values.
 	}
-	isPtr, named := typesinternal.ReceiverNamed(res.At(0))
-	if !isPtr || named == nil || !analysisutil.IsNamedType(named, "net/http", "Response") {
+	if !typesinternal.IsPointerToNamed(res.At(0).Type(), "net/http", "Response") {
 		return false // the first return type is not *http.Response.
 	}
 
@@ -134,11 +132,11 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 		return ok && id.Name == "http" // function in net/http package.
 	}
 
-	if analysisutil.IsNamedType(typ, "net/http", "Client") {
+	if typesinternal.IsTypeNamed(typ, "net/http", "Client") {
 		return true // method on http.Client.
 	}
-	ptr, ok := aliases.Unalias(typ).(*types.Pointer)
-	return ok && analysisutil.IsNamedType(ptr.Elem(), "net/http", "Client") // method on *http.Client.
+	ptr, ok := types.Unalias(typ).(*types.Pointer)
+	return ok && typesinternal.IsTypeNamed(ptr.Elem(), "net/http", "Client") // method on *http.Client.
 }
 
 // restOfBlock, given a traversal stack, finds the innermost containing
@@ -146,8 +144,8 @@ func isHTTPFuncOrMethodOnClient(info *types.Info, expr *ast.CallExpr) bool {
 // node, along with the number of call expressions encountered.
 func restOfBlock(stack []ast.Node) ([]ast.Stmt, int) {
 	var ncalls int
-	for i := len(stack) - 1; i >= 0; i-- {
-		if b, ok := stack[i].(*ast.BlockStmt); ok {
+	for i, n := range slices.Backward(stack) {
+		if b, ok := n.(*ast.BlockStmt); ok {
 			for j, v := range b.List {
 				if v == stack[i+1] {
 					return b.List[j:], ncalls
@@ -156,7 +154,7 @@ func restOfBlock(stack []ast.Node) ([]ast.Stmt, int) {
 			break
 		}
 
-		if _, ok := stack[i].(*ast.CallExpr); ok {
+		if _, ok := n.(*ast.CallExpr); ok {
 			ncalls++
 		}
 	}

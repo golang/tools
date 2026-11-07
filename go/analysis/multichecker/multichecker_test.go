@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build go1.12
-// +build go1.12
 
 package multichecker_test
 
@@ -24,7 +23,7 @@ func main() {
 	fail := &analysis.Analyzer{
 		Name: "fail",
 		Doc:  "always fail on a package 'sort'",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			if pass.Pkg.Path() == "sort" {
 				return nil, fmt.Errorf("failed")
 			}

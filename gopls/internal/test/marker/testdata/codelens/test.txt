@@ -30,3 +30,9 @@ func BenchmarkFuncWithCodeLens(b *testing.B) { //@codelens(re"()func", "run benc
 }
 
 func helper() {} // expect no code lens
+
+func _() {
+	// pacify unusedfunc
+	thisShouldNotHaveACodeLens(nil)
+	helper()
+}

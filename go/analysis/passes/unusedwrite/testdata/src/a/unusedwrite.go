@@ -30,6 +30,15 @@ func BadWrites() {
 		v.x = i // want "unused write to field x"
 		_ = v.y
 	}
+
+	// The analyzer can handle only simple control flow.
+	type T struct{ x, y int }
+	t := new(T)
+	if true {
+		t = new(T)
+	} // causes t below to become phi(alloc, alloc), not a simple alloc
+	t.x = 1 // false negative
+	print(t.y)
 }
 
 func (t T1) BadValueReceiverWrite(v T2) {

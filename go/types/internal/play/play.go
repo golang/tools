@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.23
+
 // The play program is a playground for go/types: a simple web-based
 // text editor into which the user can enter a Go program, select a
 // region, and see type information about it.
@@ -24,19 +26,20 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
 // TODO(adonovan):
 // - show line numbers next to textarea.
-// - show a (tree) breakdown of the representation of the expression's type.
 // - mention this in the go/types tutorial.
 // - display versions of go/types and go command.
 
@@ -114,12 +117,12 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 
 	fset := pkg.Fset
 	file := pkg.Syntax[0]
-	tokFile := fset.File(file.Pos())
+	tokFile := fset.File(file.FileStart)
 	startPos := tokFile.Pos(startOffset)
 	endPos := tokFile.Pos(endOffset)
 
 	// Syntax information
-	path, exact := astutil.PathEnclosingInterval(file, startPos, endPos)
+	path, exact := goastutil.PathEnclosingInterval(file, startPos, endPos)
 	fmt.Fprintf(out, "Path enclosing interval #%d-%d [exact=%t]:\n",
 		startOffset, endOffset, exact)
 	var innermostExpr ast.Expr
@@ -161,6 +164,26 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 			innermostExpr = e
 		}
 	}
+	// Show the Cursor.Enclosing stack too.
+	// It's usually the same, but may differ in edge
+	// cases (e.g. around FuncType.Func).
+	curFile, _ := inspector.New([]*ast.File{file}).Root().FirstChild()
+	if cur, ok := curFile.FindByPos(startPos, endPos); ok {
+		fmt.Fprintf(out, "Cursor.GoString = %#v\n", cur)
+		fmt.Fprintf(out, "Cursor.Enclosing = %v\n", slices.Collect(cur.Enclosing()))
+	} else {
+		fmt.Fprintf(out, "Cursor.FindPos failed\n")
+	}
+	// And show the astutil.Select result (enclosing, leftmost & rightmost enclosed).
+	if curEnclosing, curStart, curEnd, err := astutil.Select(curFile, startPos, endPos); err == nil {
+		format := func(cur inspector.Cursor) string {
+			return fmt.Sprintf("%T@%v", cur.Node(), fset.Position(cur.Node().Pos()))
+		}
+		fmt.Fprintf(out, "astutil.Select() = (%s, %s, %s)\n",
+			format(curEnclosing), format(curStart), format(curEnd))
+	} else {
+		fmt.Fprintf(out, "astutil.Select() = %v", err)
+	}
 	fmt.Fprintf(out, "\n")
 
 	// Expression type information
@@ -195,8 +218,11 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 			if tv.Value != nil {
 				fmt.Fprintf(out, ", and constant value %v", tv.Value)
 			}
-			fmt.Fprintf(out, "\n\n")
+			fmt.Fprintf(out, ", TypeSetOf=%v", typeparams.TypeSetOf(tv.Type))
+		} else {
+			fmt.Fprintf(out, "%T has no type", innermostExpr)
 		}
+		fmt.Fprintf(out, "\n\n")
 	}
 
 	// selection x.f information (if cursor is over .f)
@@ -222,6 +248,7 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// Object type information.
 	switch n := path[0].(type) {
 	case *ast.Ident:
+		// An embedded field is both a def and a use.
 		if obj, ok := pkg.TypesInfo.Defs[n]; ok {
 			if obj == nil {
 				fmt.Fprintf(out, "nil def") // e.g. package name, "_", type switch
@@ -232,6 +259,11 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 		if obj, ok := pkg.TypesInfo.Uses[n]; ok {
 			formatObj(out, fset, "use", obj)
 		}
+
+		if inst, ok := pkg.TypesInfo.Instances[n]; ok {
+			fmt.Fprintf(out, "Instances[ident] = %v.\n\n", inst)
+		}
+
 	default:
 		if obj, ok := pkg.TypesInfo.Implicits[n]; ok {
 			formatObj(out, fset, "implicit def", obj)
@@ -247,6 +279,20 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// Syntax debug output.
 	fmt.Fprintf(out, "Syntax:\n")
 	ast.Fprint(out, fset, path[0], nil) // ignore errors
+	fmt.Fprintf(out, "\n\n")
+
+	// Show inventory of all objects, including addresses to disambiguate.
+	fmt.Fprintf(out, "Objects:\n")
+	for curId := range curFile.Preorder((*ast.Ident)(nil)) {
+		id := curId.Node().(*ast.Ident)
+		if obj := pkg.TypesInfo.Defs[id]; obj != nil {
+			fmt.Fprintf(out, "%s: def %v (%p)\n", fset.Position(id.Pos()), obj, obj)
+		}
+		if obj, ok := pkg.TypesInfo.Uses[id]; ok {
+			fmt.Fprintf(out, "%s: use %v (%p)\n", fset.Position(id.Pos()), obj, obj)
+		}
+	}
+	fmt.Fprintf(out, "\n\n")
 
 	// Clean up the messy temp file name.
 	outStr := strings.ReplaceAll(out.String(), f.Name(), "play.go")
@@ -275,7 +321,7 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		origin = obj.Origin()
 
 	case *types.Func:
-		if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
+		if recv := obj.Signature().Recv(); recv != nil {
 			kind = fmt.Sprintf("method (with recv %v)", recv.Type())
 		}
 		origin = obj.Origin()
@@ -284,17 +330,25 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		if obj.IsAlias() {
 			kind = "type alias"
 		}
-		if named, ok := aliases.Unalias(obj.Type()).(*types.Named); ok {
+		if named, ok := types.Unalias(obj.Type()).(*types.Named); ok {
 			origin = named.Obj()
 		}
 	}
 
-	fmt.Fprintf(out, "%s of %s %s of type %v declared at %v",
-		ref, kind, obj.Name(), obj.Type(), fset.Position(obj.Pos()))
+	// Include the pointer value to help distinguish fn and fn.Origin().
+	// (Beware that every invocation creates new pointers so they are
+	// only comparable within a single result page. Hence the need
+	// for the inventory of objects below.)
+	fmt.Fprintf(out, "%s of %s %s of type %v declared at %v (%p)",
+		ref, kind, obj.Name(), obj.Type(), fset.Position(obj.Pos()), obj)
 	if origin != nil && origin != obj {
 		fmt.Fprintf(out, " (instantiation of %v)", origin.Type())
 	}
 	fmt.Fprintf(out, "\n\n")
+
+	fmt.Fprintf(out, "Type:\n")
+	describeType(out, obj.Type())
+	fmt.Fprintf(out, "\n")
 
 	// method set
 	if methods := typeutil.IntuitiveMethodSet(obj.Type(), nil); len(methods) > 0 {
@@ -315,6 +369,65 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		fmt.Fprintf(out, "%d:%d-%d:%d: %s\n",
 			start.Line, start.Column, end.Line, end.Column, scope)
 	}
+}
+
+// describeType formats t to out in a way that makes it clear what methods to call on t to
+// get at its parts.
+// describeType assumes t was constructed by the type checker, so it doesn't check
+// for recursion. The type checker replaces recursive alias types, which are illegal,
+// with a BasicType that says as much. Other types that it constructs are recursive
+// only via a name, and this function does not traverse names.
+func describeType(out *strings.Builder, t types.Type) {
+	depth := -1
+
+	var ft func(string, types.Type)
+	ft = func(prefix string, t types.Type) {
+		depth++
+		defer func() { depth-- }()
+
+		for range depth {
+			fmt.Fprint(out, ".  ")
+		}
+
+		fmt.Fprintf(out, "%s%T:", prefix, t)
+		switch t := t.(type) {
+		case *types.Basic:
+			fmt.Fprintf(out, " Name: %q\n", t.Name())
+		case *types.Pointer:
+			fmt.Fprintln(out)
+			ft("Elem: ", t.Elem())
+		case *types.Slice:
+			fmt.Fprintln(out)
+			ft("Elem: ", t.Elem())
+		case *types.Array:
+			fmt.Fprintf(out, " Len: %d\n", t.Len())
+			ft("Elem: ", t.Elem())
+		case *types.Map:
+			fmt.Fprintln(out)
+			ft("Key:  ", t.Key())
+			ft("Elem: ", t.Elem())
+		case *types.Chan:
+			fmt.Fprintf(out, " Dir: %s\n", chanDirs[t.Dir()])
+			ft("Elem: ", t.Elem())
+		case *types.Alias:
+			fmt.Fprintf(out, " Name: %q\n", t.Obj().Name())
+			ft("Rhs: ", t.Rhs())
+		default:
+			// For types we may have missed or which have too much to bother with,
+			// print their string representation.
+			// TODO(jba): print more about struct types (their fields) and interface and named
+			// types (their methods).
+			fmt.Fprintf(out, " %s\n", t)
+		}
+	}
+
+	ft("", t)
+}
+
+var chanDirs = []string{
+	"SendRecv",
+	"SendOnly",
+	"RecvOnly",
 }
 
 func handleRoot(w http.ResponseWriter, req *http.Request) { io.WriteString(w, mainHTML) }
@@ -365,12 +478,3 @@ textarea { width: 6in; }
 body { color: gray; }
 div#out { font-family: monospace; font-size: 80%; }
 `
-
-// TODO(adonovan): use go1.21 built-in.
-func min(x, y int) int {
-	if x < y {
-		return x
-	} else {
-		return y
-	}
-}

@@ -1,0 +1,38 @@
+This is a test of the refactor.inline.variable code action.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+import "fmt"
+
+func _(x int) {
+	s := fmt.Sprintf("+%d", x)
+	println(s) //@codeaction("s", "refactor.inline.variable", result=inlineS)
+}
+
+-- @inlineS/a/a.go --
+package a
+
+import "fmt"
+
+func _(x int) {
+	s := fmt.Sprintf("+%d", x)
+	println(fmt.Sprintf("+%d", x)) //@codeaction("s", "refactor.inline.variable", result=inlineS)
+}
+
+-- b/b.go --
+package b
+
+import "fmt"
+
+func _(x int) {
+	s2 := fmt.Sprintf("+%d", x)
+	{
+		x := "shadow"
+		println(s2, x) //@codeaction("s2", "refactor.inline.variable", err=re`refers to "x".*shadowed.*at line 8`)
+	}
+}

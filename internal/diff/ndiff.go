@@ -6,10 +6,29 @@ package diff
 
 import (
 	"bytes"
+	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/tools/internal/diff/lcs"
 )
+
+// Lines computes differences between two strings. All edits are at line boundaries.
+func Lines(before, after string) []Edit {
+	beforeLines, bOffsets := splitLines(before)
+	afterLines, _ := splitLines(after)
+	diffs := lcs.DiffLines(beforeLines, afterLines)
+
+	// Convert from LCS diffs to Edits
+	res := make([]Edit, len(diffs))
+	for i, d := range diffs {
+		res[i] = Edit{
+			Start: bOffsets[d.Start],
+			End:   bOffsets[d.End],
+			New:   strings.Join(afterLines[d.ReplStart:d.ReplEnd], ""),
+		}
+	}
+	return res
+}
 
 // Strings computes the differences between two strings.
 // The resulting edits respect rune boundaries.
@@ -72,7 +91,7 @@ func diffRunes(before, after []rune) []Edit {
 func runes(bytes []byte) []rune {
 	n := utf8.RuneCount(bytes)
 	runes := make([]rune, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		r, sz := utf8.DecodeRune(bytes)
 		bytes = bytes[sz:]
 		runes[i] = r

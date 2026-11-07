@@ -10,13 +10,12 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // imports implements the import verb for gopls.
 type imports struct {
 	EditFlags
-	app *Application
+	app *application
 }
 
 func (t *imports) Name() string      { return "imports" }
@@ -40,24 +39,27 @@ imports-flags:
 // - otherwise, prints the new versions to stdout.
 func (t *imports) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("imports expects 1 argument")
+		return commandLineErrorf("imports expects 1 argument")
 	}
 	t.app.editFlags = &t.EditFlags
-	conn, err := t.app.connect(ctx)
+	cli, _, err := t.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	uri := from.URI()
-	file, err := conn.openFile(ctx, uri)
+	file, err := cli.openFile(ctx, uri)
 	if err != nil {
 		return err
 	}
-	actions, err := conn.CodeAction(ctx, &protocol.CodeActionParams{
+	actions, err := cli.server.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
+		},
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{protocol.SourceOrganizeImports},
 		},
 	})
 	if err != nil {
@@ -65,9 +67,6 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
-		if a.Title != "Organize Imports" {
-			continue
-		}
 		for _, c := range a.Edit.DocumentChanges {
 			// This code action should affect only the specified file;
 			// it is safe to ignore others.

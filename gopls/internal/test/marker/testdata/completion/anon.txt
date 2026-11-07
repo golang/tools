@@ -29,9 +29,9 @@ func _() {
 		continue
 	}
 
-	s := struct{ f int }{  } //@item(anonF, "f", "int", "field"),item(structS, "s", "struct{...}", "var"),complete("  }", anonF, int)
+	s := struct{ f int }{  } //@item(anonF, "f", "int", "field"),item(structS, "s", "struct{...}", "var"),complete(re"()  }", anonF, int)
 
 	_ = map[struct{ x int }]int{ //@item(anonX, "x", "int", "field")
-		struct{ x int }{  }: 1, //@complete("  }", anonX, int, structS)
+		struct{ x int }{  }: 1, //@complete(re"()  }", anonX, int, structS)
 	}
 }

@@ -23,11 +23,10 @@ package cmd_test
 // - Subcommands that accept -write and -diff flags implement them
 //   consistently; factor their tests.
 // - Add missing test for 'vulncheck' subcommand.
-// - Add tests for client-only commands: serve, bug, help, api-json, licenses.
+// - Add tests for client-only commands: serve, help, api-json, licenses.
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -44,11 +43,10 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/tool"
 	"golang.org/x/tools/txtar"
 )
 
-// TestVersion tests the 'version' subcommand (../info.go).
+// TestVersion tests the 'version' subcommand (info.go).
 func TestVersion(t *testing.T) {
 	t.Parallel()
 
@@ -84,7 +82,18 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// TestCheck tests the 'check' subcommand (../check.go).
+func TestProfileFlags(t *testing.T) {
+	t.Parallel()
+	tree := writeTree(t, "")
+	cpuProfile := filepath.Join(t.TempDir(), "cpu.prof")
+	res := gopls(t, tree, "-profile.cpu="+cpuProfile, "version")
+	res.checkExit(true)
+	if info, err := os.Stat(cpuProfile); err != nil || info.Size() == 0 {
+		t.Errorf("expected non-empty profile file %s, got err=%v", cpuProfile, err)
+	}
+}
+
+// TestCheck tests the 'check' subcommand (check.go).
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +117,12 @@ var C int
 -- c/c2.go --
 package c
 var C int
+-- d/d.go --
+package d
+
+import "io/ioutil"
+
+var _ = ioutil.ReadFile
 `)
 
 	// no files
@@ -141,9 +156,25 @@ var C int
 		res.checkStdout(`c2.go:2:5-6: C redeclared in this block`)
 		res.checkStdout(`c.go:2:5-6: - other declaration of C`)
 	}
+
+	// No deprecated (hint) diagnostic without -severity.
+	{
+		res := gopls(t, tree, "check", "./d/d.go")
+		res.checkExit(true)
+		if len(res.stdout) > 0 {
+			t.Errorf("check ./d/d.go returned unexpected output:\n%s", res.stdout)
+		}
+	}
+
+	// Deprecated (hint) diagnostics with -severity=hint
+	{
+		res := gopls(t, tree, "check", "-severity=hint", "./d/d.go")
+		res.checkExit(true)
+		res.checkStdout(`ioutil.ReadFile is deprecated`)
+	}
 }
 
-// TestCallHierarchy tests the 'call_hierarchy' subcommand (../call_hierarchy.go).
+// TestCallHierarchy tests the 'call_hierarchy' subcommand (call_hierarchy.go).
 func TestCallHierarchy(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +217,7 @@ func h() {
 	}
 }
 
-// TestCodeLens tests the 'codelens' subcommand (../codelens.go).
+// TestCodeLens tests the 'codelens' subcommand (codelens.go).
 func TestCodeLens(t *testing.T) {
 	t.Parallel()
 
@@ -213,8 +244,8 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	{
 		res := gopls(t, tree, "codelens", "./a/a_test.go")
 		res.checkExit(true)
-		res.checkStdout(`a_test.go:3: "run test" \[gopls.test\]`)
-		res.checkStdout(`a_test.go:4: "run test" \[gopls.test\]`)
+		res.checkStdout(`a_test.go:3: "run test" \[gopls.run_tests\]`)
+		res.checkStdout(`a_test.go:4: "run test" \[gopls.run_tests\]`)
 	}
 	// no codelens with title/position
 	{
@@ -224,7 +255,7 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	}
 	// run the passing test
 	{
-		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:3", "run test")
+		res := gopls(t, tree, "-v", "codelens", "-exec", "./a/a_test.go:3", "run test")
 		res.checkExit(true)
 		res.checkStderr(`PASS: TestPass`)         // from go test
 		res.checkStderr("Info: all tests passed") // from gopls.test
@@ -238,7 +269,7 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	}
 }
 
-// TestDefinition tests the 'definition' subcommand (../definition.go).
+// TestDefinition tests the 'definition' subcommand (definition.go).
 func TestDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -280,7 +311,7 @@ func g() {
 	{
 		res := gopls(t, tree, "definition", "-json", "-markdown", "a.go:4:7")
 		res.checkExit(true)
-		var defn cmd.Definition
+		var defn cmd.DefinitionJSON
 		if res.toJSON(&defn) {
 			if !strings.HasPrefix(defn.Description, "```go\nfunc fmt.Println") {
 				t.Errorf("Description does not start with markdown code block. Got: %s", defn.Description)
@@ -289,7 +320,7 @@ func g() {
 	}
 }
 
-// TestExecute tests the 'execute' subcommand (../execute.go).
+// TestExecute tests the 'execute' subcommand (execute.go).
 func TestExecute(t *testing.T) {
 	t.Parallel()
 
@@ -363,7 +394,7 @@ func TestHello(t *testing.T) {
 	}
 }
 
-// TestFoldingRanges tests the 'folding_ranges' subcommand (../folding_range.go).
+// TestFoldingRanges tests the 'folding_ranges' subcommand (folding_range.go).
 func TestFoldingRanges(t *testing.T) {
 	t.Parallel()
 
@@ -393,7 +424,7 @@ func f(x int) {
 	}
 }
 
-// TestFormat tests the 'format' subcommand (../format.go).
+// TestFormat tests the 'format' subcommand (format.go).
 func TestFormat(t *testing.T) {
 	t.Parallel()
 
@@ -453,7 +484,7 @@ func f() {}
 	}
 }
 
-// TestHighlight tests the 'highlight' subcommand (../highlight.go).
+// TestHighlight tests the 'highlight' subcommand (highlight.go).
 func TestHighlight(t *testing.T) {
 	t.Parallel()
 
@@ -482,7 +513,7 @@ func f() {
 	}
 }
 
-// TestImplementations tests the 'implementation' subcommand (../implementation.go).
+// TestImplementations tests the 'implementation' subcommand (implementation.go).
 func TestImplementations(t *testing.T) {
 	t.Parallel()
 
@@ -511,7 +542,7 @@ func (T) String() string { return "" }
 	}
 }
 
-// TestImports tests the 'imports' subcommand (../imports.go).
+// TestImports tests the 'imports' subcommand (imports.go).
 func TestImports(t *testing.T) {
 	t.Parallel()
 
@@ -560,7 +591,7 @@ func _() {
 	}
 }
 
-// TestLinks tests the 'links' subcommand (../links.go).
+// TestLinks tests the 'links' subcommand (links.go).
 func TestLinks(t *testing.T) {
 	t.Parallel()
 
@@ -605,7 +636,7 @@ func f() {}
 	}
 }
 
-// TestReferences tests the 'references' subcommand (../references.go).
+// TestReferences tests the 'references' subcommand (references.go).
 func TestReferences(t *testing.T) {
 	t.Parallel()
 
@@ -643,7 +674,7 @@ func g() {
 	}
 }
 
-// TestSignature tests the 'signature' subcommand (../signature.go).
+// TestSignature tests the 'signature' subcommand (signature.go).
 func TestSignature(t *testing.T) {
 	t.Parallel()
 
@@ -674,7 +705,7 @@ func f() {
 	}
 }
 
-// TestPrepareRename tests the 'prepare_rename' subcommand (../prepare_rename.go).
+// TestPrepareRename tests the 'prepare_rename' subcommand (prepare_rename.go).
 func TestPrepareRename(t *testing.T) {
 	t.Parallel()
 
@@ -713,7 +744,7 @@ func oldname() {}
 	}
 }
 
-// TestRename tests the 'rename' subcommand (../rename.go).
+// TestRename tests the 'rename' subcommand (rename.go).
 func TestRename(t *testing.T) {
 	t.Parallel()
 
@@ -759,7 +790,7 @@ func oldname() {}
 	}
 }
 
-// TestSymbols tests the 'symbols' subcommand (../symbols.go).
+// TestSymbols tests the 'symbols' subcommand (symbols.go).
 func TestSymbols(t *testing.T) {
 	t.Parallel()
 
@@ -790,7 +821,7 @@ const c = 0
 	}
 }
 
-// TestSemtok tests the 'semtok' subcommand (../semantictokens.go).
+// TestSemtok tests the 'semtok' subcommand (semantictokens.go).
 func TestSemtok(t *testing.T) {
 	t.Parallel()
 
@@ -818,9 +849,9 @@ const c = 0
 		got := res.stdout
 		want := `
 /*⇒7,keyword,[]*/package /*⇒1,namespace,[]*/a
-/*⇒4,keyword,[]*/func /*⇒1,function,[definition]*/f()
-/*⇒3,keyword,[]*/var /*⇒1,variable,[definition]*/v /*⇒3,type,[defaultLibrary]*/int
-/*⇒5,keyword,[]*/const /*⇒1,variable,[definition readonly]*/c = /*⇒1,number,[]*/0
+/*⇒4,keyword,[]*/func /*⇒1,function,[definition signature]*/f()
+/*⇒3,keyword,[]*/var /*⇒1,variable,[definition static number]*/v /*⇒3,type,[defaultLibrary number]*/int
+/*⇒5,keyword,[]*/const /*⇒1,variable,[definition readonly number]*/c = /*⇒1,number,[]*/0
 `[1:]
 		if got != want {
 			t.Errorf("semtok: got <<%s>>, want <<%s>>", got, want)
@@ -849,14 +880,14 @@ package foo
 	oops := fmt.Sprintf("oops-%d", rand.Int())
 	{
 		env := []string{"TEST_GOPLS_BUG=" + oops}
-		res := goplsWithEnv(t, tree, env, "bug")
+		res := goplsWithEnv(t, tree, env, "execute")
 		res.checkExit(true)
 	}
 
 	res := gopls(t, tree, "stats")
 	res.checkExit(true)
 
-	var stats cmd.GoplsStats
+	var stats cmd.StatsJSON
 	if err := json.Unmarshal([]byte(res.stdout), &stats); err != nil {
 		t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 	}
@@ -892,8 +923,8 @@ package foo
 	{
 		got := fmt.Sprint(stats.BugReports)
 		wants := []string{
-			"cmd/info.go", // File containing call to bug.Report
-			oops,          // Description
+			"cmd/execute.go", // File containing call to bug.Report
+			oops,             // Description
 		}
 		for _, want := range wants {
 			if !strings.Contains(got, want) {
@@ -908,7 +939,7 @@ package foo
 		res2 := gopls(t, tree, "stats", "-anon")
 		res2.checkExit(true)
 
-		var stats2 cmd.GoplsStats
+		var stats2 cmd.StatsJSON
 		if err := json.Unmarshal([]byte(res2.stdout), &stats2); err != nil {
 			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 		}
@@ -930,7 +961,7 @@ package foo
 		res3 := goplsWithEnv(t, tree, []string{"GOPACKAGESDRIVER=off"}, "stats", "-anon")
 		res3.checkExit(true)
 
-		var statsAsMap3 map[string]interface{}
+		var statsAsMap3 map[string]any
 		if err := json.Unmarshal([]byte(res3.stdout), &statsAsMap3); err != nil {
 			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 		}
@@ -941,8 +972,8 @@ package foo
 	}
 }
 
-// TestFix tests the 'fix' subcommand (../suggested_fix.go).
-func TestFix(t *testing.T) {
+// TestCodeAction tests the 'codeaction' subcommand (codeaction.go).
+func TestCodeAction(t *testing.T) {
 	t.Parallel()
 
 	tree := writeTree(t, `
@@ -950,12 +981,12 @@ func TestFix(t *testing.T) {
 module example.com
 go 1.18
 
--- a.go --
+-- a/a.go --
 package a
 type T int
 func f() (int, string) { return }
 
--- b.go --
+-- a/b.go --
 package a
 import "io"
 var _ io.Reader = C{}
@@ -964,29 +995,64 @@ type C struct{}
 
 	// no arguments
 	{
-		res := gopls(t, tree, "fix")
+		res := gopls(t, tree, "codeaction")
 		res.checkExit(false)
 		res.checkStderr("expects at least 1 argument")
 	}
-	// success with default kinds, {quickfix}.
-	// -a is always required because no fix is currently "preferred" (!)
+	// list code actions in file
 	{
-		res := gopls(t, tree, "fix", "-a", "a.go")
+		res := gopls(t, tree, "codeaction", "a/a.go")
+		res.checkExit(true)
+		res.checkStdout(`edit	"Fill in return values" \[quickfix\]`)
+		res.checkStdout(`command	"Browse documentation for package a" \[source.doc\]`)
+	}
+	// list code actions in file, filtering by title
+	{
+		res := gopls(t, tree, "codeaction", "-title=Browse.*doc", "a/a.go")
 		res.checkExit(true)
 		got := res.stdout
-		want := `
-package a
-type T int
-func f() (int, string) { return 0, "" }
-
-`[1:]
+		want := `command	"Browse documentation for package a" [source.doc]` +
+			"\n" +
+			`command	"Browse gopls feature documentation" [gopls.doc.features]` +
+			"\n"
 		if got != want {
-			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+		}
+	}
+	// list code actions in file, filtering (hierarchically) by kind
+	{
+		res := gopls(t, tree, "codeaction", "-kind=source", "a/a.go")
+		res.checkExit(true)
+		got := res.stdout
+		want := `command	"Browse documentation for package a" [source.doc]` +
+			"\n" +
+			`command	"Split package \"a\"" [source.splitPackage]` +
+			"\n" +
+			`command	"Show compiler optimization details for \"a\"" [source.toggleCompilerOptDetails]` +
+			"\n"
+		if got != want {
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+		}
+	}
+	// list code actions at position (of io.Reader)
+	{
+		res := gopls(t, tree, "codeaction", "a/b.go:#31")
+		res.checkExit(true)
+		res.checkStdout(`command	"Browse documentation for type io.Reader" \[source.doc]`)
+	}
+	// list quick fixes at position (of type T)
+	{
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "a/a.go:#15")
+		res.checkExit(true)
+		got := res.stdout
+		want := `edit	"Fill in return values" [quickfix]` + "\n"
+		if got != want {
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
 	// success, with explicit CodeAction kind and diagnostics span.
 	{
-		res := gopls(t, tree, "fix", "-a", "b.go:#40", "quickfix")
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "-exec", "a/b.go:#40")
 		res.checkExit(true)
 		got := res.stdout
 		want := `
@@ -998,18 +1064,76 @@ var _ io.Reader = C{}
 
 type C struct{}
 
-// Read implements io.Reader.
+// Read implements [io.Reader].
 func (c C) Read(p []byte) (n int, err error) {
 	panic("unimplemented")
 }
 `[1:]
 		if got != want {
-			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
 }
 
-// TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (../workspace_symbol.go).
+// TestInspect tests the 'inspect' subcommand (inspect.go).
+func TestInspect(t *testing.T) {
+	t.Parallel()
+
+	tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+// Doc for someFunctionName
+func someFunctionName()
+`)
+
+	{ // no files
+		res := gopls(t, tree, "inspect")
+		res.checkExit(false)
+		res.checkStderr(`inspect expects 1 argument \(target\)`)
+	}
+	{ // gopls resolve target error
+		res := gopls(t, tree, "inspect", "example.com/b.someFunctionName")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/b")
+	}
+	{ // success
+		res := gopls(t, tree, "inspect", "example.com/a.someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+	}
+	{ // gopls resolve relative target
+		res := gopls(t, tree+"/a/", "inspect", "a.someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22")) // Prints definition location
+	}
+	{ // success with pkg flag
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+	}
+	{ // testing json and markdown
+		res := gopls(t, tree, "inspect", "-json", "-markdown", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		var insp cmd.InspectJSON
+		if !res.toJSON(&insp) {
+			t.Error("res.toJSON failed")
+		}
+		if !strings.Contains(insp.Hover, "```go\nfunc someFunctionName()") {
+			t.Errorf("Hover does not contain a markdown code block. Got: %s", insp.Hover)
+		}
+	}
+}
+
+// TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (workspace_symbol.go).
 func TestWorkspaceSymbol(t *testing.T) {
 	t.Parallel()
 
@@ -1036,6 +1160,57 @@ func someFunctionName()
 	}
 }
 
+func TestCommandLineErrors(t *testing.T) {
+	testenv.NeedsGoBuild(t)
+	t.Parallel()
+	tree := writeTree(t, "")
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantErrs []string
+	}{
+		{
+			name:     "MissingPositionalArgShowsUsage",
+			args:     []string{"definition"},
+			wantErrs: []string{"definition expects 1 argument", "Usage:\n  gopls \\[flags\\] definition \\[definition-flags\\] <position>"},
+		},
+		{
+			name:     "GlobalFlagAfterServe",
+			args:     []string{"serve", "-otel=http://localhost:4318"},
+			wantErrs: []string{`flag -otel must be placed before subcommand serve \(after gopls\)`},
+		},
+		{
+			name:     "MisplacedContainerFlag",
+			args:     []string{"remote", "-remote=localhost:12345", "sessions"},
+			wantErrs: []string{`flag -remote must be placed before subcommand remote \(after gopls\)`},
+		},
+
+		{
+			name:     "UnknownSubcommandFlag",
+			args:     []string{"-v", "execute", "-unknown"},
+			wantErrs: []string{"flag provided but not defined: -unknown"},
+		},
+		{
+			name:     "GlobalFlagAfterSubcommand",
+			args:     []string{"references", "-v", "./gopls/main.go:35:8"},
+			wantErrs: []string{`flag -v must be placed before subcommand references \(after gopls\)`},
+		},
+		{
+			name:     "GlobalFlagAfterNestedSubcommand",
+			args:     []string{"remote", "debug", "-v"},
+			wantErrs: []string{`gopls remote debug: flag -v must be placed before subcommand debug \(after gopls\)`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := gopls(t, tree, tc.args...)
+			res.checkExit(false)
+			for _, wantErr := range tc.wantErrs {
+				res.checkStderr(wantErr)
+			}
+		})
+	}
+}
+
 // -- test framework --
 
 func TestMain(m *testing.M) {
@@ -1059,7 +1234,7 @@ func goplsMain() {
 		version.VersionOverride = v
 	}
 
-	tool.Main(context.Background(), cmd.New(), os.Args[1:])
+	cmd.Main()
 }
 
 // writeTree extracts a txtar archive into a new directory and returns its path.
@@ -1179,7 +1354,7 @@ func (res *result) checkOutput(pattern, name, content string) {
 }
 
 // toJSON decodes res.stdout as JSON into to *ptr and reports its success.
-func (res *result) toJSON(ptr interface{}) bool {
+func (res *result) toJSON(ptr any) bool {
 	if err := json.Unmarshal([]byte(res.stdout), ptr); err != nil {
 		res.t.Errorf("invalid JSON %v", err)
 		return false

@@ -13,13 +13,13 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
 )
 
 // TestStdlib ensures that all packages in std and x/tools can be
-// type-checked using export data. Takes around 3s.
+// type-checked using export data.
 func TestStdlib(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
@@ -76,7 +76,7 @@ func TestStdlib(t *testing.T) {
 				if !ok {
 					return nil, fmt.Errorf("missing export data for %s", importPath)
 				}
-				return gcexportdata.Read(bytes.NewReader(data), pkg.Fset, packages, imported.PkgPath)
+				return gcimporter.IImportData(pkg.Fset, packages, data, imported.PkgPath)
 			}),
 		}
 
@@ -86,7 +86,7 @@ func TestStdlib(t *testing.T) {
 		check.Files(pkg.Syntax)
 
 		var out bytes.Buffer
-		if err := gcexportdata.Write(&out, pkg.Fset, newPkg); err != nil {
+		if err := gcimporter.IExportData(&out, pkg.Fset, newPkg); err != nil {
 			t.Fatalf("internal error writing export data: %v", err)
 		}
 		export[pkg.ID] = out.Bytes()

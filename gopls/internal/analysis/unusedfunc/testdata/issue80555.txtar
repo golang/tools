@@ -1,0 +1,11 @@
+Regression test for a false negative on a private module with name
+that looks like a standard package.
+
+-- go.mod --
+module myapp
+go 1.21
+
+-- a/a.go --
+package a
+
+func unused() // want `function "unused" is unused`

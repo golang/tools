@@ -22,19 +22,6 @@ func is[T any](x any) bool {
 	return ok
 }
 
-// TODO(adonovan): use go1.21's slices.Clone.
-func clone[T any](slice []T) []T { return append([]T{}, slice...) }
-
-// TODO(adonovan): use go1.21's slices.Index.
-func index[T comparable](slice []T, x T) int {
-	for i, elem := range slice {
-		if elem == x {
-			return i
-		}
-	}
-	return -1
-}
-
 func btoi(b bool) int {
 	if b {
 		return 1
@@ -103,6 +90,39 @@ func trivialConversion(fromValue constant.Value, from, to types.Type) bool {
 	return types.Identical(from, to)
 }
 
+// isInferredCompLit reports whether e is a CompositeLit without an
+// explicit type. Such expressions cannot be moved to an arbitrary context.
+func isInferredCompLit(e ast.Expr) bool {
+	lit, ok := e.(*ast.CompositeLit)
+	return ok && lit.Type == nil
+}
+
+// explicitType returns syntax for x with its implicit type T made
+// explicit. isPtr indicates whether the type denoted by T is a pointer.
+//
+// If x is an inferred composite literal {...}, the result is T{...},
+// or &E{...} if T is *E, or, if T is some other pointer type (e.g. a
+// named pointer type), the conversion T({...}).
+// Otherwise the result is the conversion T(x).
+//
+// The result shares structure with T and x.
+func explicitType(T ast.Expr, isPtr bool, x ast.Expr) ast.Expr {
+	if lit, ok := x.(*ast.CompositeLit); ok && lit.Type == nil {
+		T := ast.Unparen(T) // (T){...} is not valid
+		if !isPtr {
+			lit = new(*lit) // shallow copy
+			lit.Type = T
+			return lit // T{...}
+		}
+		if star, ok := T.(*ast.StarExpr); ok {
+			lit = new(*lit) // shallow copy
+			lit.Type = star.X
+			return &ast.UnaryExpr{Op: token.AND, X: lit} // &E{...}
+		}
+	}
+	return convert(T, x) // T(x)
+}
+
 func checkInfoFields(info *types.Info) {
 	assert(info.Defs != nil, "types.Info.Defs is nil")
 	assert(info.Implicits != nil, "types.Info.Implicits is nil")
@@ -110,22 +130,7 @@ func checkInfoFields(info *types.Info) {
 	assert(info.Selections != nil, "types.Info.Selections is nil")
 	assert(info.Types != nil, "types.Info.Types is nil")
 	assert(info.Uses != nil, "types.Info.Uses is nil")
-}
-
-func funcHasTypeParams(decl *ast.FuncDecl) bool {
-	// generic function?
-	if decl.Type.TypeParams != nil {
-		return true
-	}
-	// method on generic type?
-	if decl.Recv != nil {
-		t := decl.Recv.List[0].Type
-		if u, ok := t.(*ast.StarExpr); ok {
-			t = u.X
-		}
-		return is[*ast.IndexExpr](t) || is[*ast.IndexListExpr](t)
-	}
-	return false
+	assert(info.FileVersions != nil, "types.Info.FileVersions is nil")
 }
 
 // intersects reports whether the maps' key sets intersect.
@@ -151,7 +156,7 @@ func convert(T, x ast.Expr) *ast.CallExpr {
 	}
 	return &ast.CallExpr{
 		Fun:  T,
-		Args: []ast.Expr{x},
+		Args: []ast.Expr{ast.Unparen(x)},
 	}
 }
 

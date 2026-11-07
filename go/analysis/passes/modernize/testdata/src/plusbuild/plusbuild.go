@@ -1,0 +1,6 @@
+// want +3 `.build line is no longer needed`
+
+//go:build linux && amd64
+// +build linux,amd64
+
+package plusbuild

@@ -39,10 +39,9 @@ package protocol
 //          All fields are optional.
 //
 //    These types are useful as intermediate conversions of validated
-//    ranges (though MappedRange is superior as it is self contained
-//    and universally convertible).  Since their fields are optional
-//    they are also useful for parsing user-provided positions (e.g. in
-//    the CLI) before we have access to file contents.
+//    ranges. Since their fields are optional they are also useful for
+//    parsing user-provided positions (e.g. in the CLI) before we have
+//    access to file contents.
 //
 // 4. protocol, the LSP RPC message format.
 //
@@ -56,10 +55,6 @@ package protocol
 //    protocol.Mapper holds the (URI, Content) of a file, enabling
 //    efficient mapping between byte offsets, cmd ranges, and
 //    protocol ranges.
-//
-//    protocol.MappedRange holds a protocol.Mapper and valid (start,
-//    end int) byte offsets, enabling infallible, efficient conversion
-//    to any other format.
 
 import (
 	"bytes"
@@ -67,7 +62,6 @@ import (
 	"go/ast"
 	"go/token"
 	"sort"
-	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -169,7 +163,7 @@ func (m *Mapper) OffsetLocation(start, end int) (Location, error) {
 	if err != nil {
 		return Location{}, err
 	}
-	return m.RangeLocation(rng), nil
+	return m.URI.Location(rng), nil
 }
 
 // OffsetRange converts a byte-offset interval to a protocol (UTF-16) range.
@@ -195,7 +189,6 @@ func (m *Mapper) OffsetPosition(offset int) (Position, error) {
 	}
 	// No error may be returned after this point,
 	// even if the offset does not fall at a rune boundary.
-	// (See panic in MappedRange.Range reachable.)
 
 	line, col16 := m.lineCol16(offset)
 	return Position{Line: uint32(line), Character: uint32(col16)}, nil
@@ -251,15 +244,6 @@ func (m *Mapper) line(offset int) (int, int, bool) {
 	return line, m.lineStart[line], cr
 }
 
-// OffsetMappedRange returns a MappedRange for the given byte offsets.
-// A MappedRange can be converted to any other form.
-func (m *Mapper) OffsetMappedRange(start, end int) (MappedRange, error) {
-	if !(0 <= start && start <= end && end <= len(m.Content)) {
-		return MappedRange{}, fmt.Errorf("invalid offsets (%d, %d) (file %s has size %d)", start, end, m.URI, len(m.Content))
-	}
-	return MappedRange{m, start, end}, nil
-}
-
 // -- conversions from protocol (UTF-16) domain --
 
 // RangeOffsets converts a protocol (UTF-16) range to start/end byte offsets.
@@ -271,6 +255,9 @@ func (m *Mapper) RangeOffsets(r Range) (int, int, error) {
 	end, err := m.PositionOffset(r.End)
 	if err != nil {
 		return 0, 0, err
+	}
+	if start > end {
+		return 0, 0, fmt.Errorf("start (offset %d) > end (offset %d)", start, end)
 	}
 	return start, end, nil
 }
@@ -340,7 +327,7 @@ func (m *Mapper) PosLocation(tf *token.File, start, end token.Pos) (Location, er
 	if err != nil {
 		return Location{}, err
 	}
-	return m.RangeLocation(rng), nil
+	return m.URI.Location(rng), nil
 }
 
 // PosRange converts a token range to a protocol (UTF-16) range.
@@ -352,92 +339,30 @@ func (m *Mapper) PosRange(tf *token.File, start, end token.Pos) (Range, error) {
 	return m.OffsetRange(startOffset, endOffset)
 }
 
+// PosText returns the source text for the token range.
+func (m *Mapper) PosText(tf *token.File, start, end token.Pos) ([]byte, error) {
+	startOffset, endOffset, err := safetoken.Offsets(tf, start, end)
+	if err != nil {
+		return nil, err
+	}
+	return m.Content[startOffset:endOffset], nil
+}
+
 // NodeRange converts a syntax node range to a protocol (UTF-16) range.
 func (m *Mapper) NodeRange(tf *token.File, node ast.Node) (Range, error) {
 	return m.PosRange(tf, node.Pos(), node.End())
 }
 
-// RangeLocation pairs a protocol Range with its URI, in a Location.
-func (m *Mapper) RangeLocation(rng Range) Location {
-	return Location{URI: m.URI, Range: rng}
-}
-
-// PosMappedRange returns a MappedRange for the given token.Pos range.
-func (m *Mapper) PosMappedRange(tf *token.File, start, end token.Pos) (MappedRange, error) {
-	startOffset, endOffset, err := safetoken.Offsets(tf, start, end)
-	if err != nil {
-		return MappedRange{}, nil
-	}
-	return m.OffsetMappedRange(startOffset, endOffset)
-}
-
-// NodeMappedRange returns a MappedRange for the given node range.
-func (m *Mapper) NodeMappedRange(tf *token.File, node ast.Node) (MappedRange, error) {
-	return m.PosMappedRange(tf, node.Pos(), node.End())
-}
-
-// -- MappedRange --
-
-// A MappedRange represents a valid byte-offset range of a file.
-// Through its Mapper it can be converted into other forms such
-// as protocol.Range or UTF-8.
-//
-// Construct one by calling Mapper.OffsetMappedRange with start/end offsets.
-// From the go/token domain, call safetoken.Offsets first,
-// or use a helper such as parsego.File.MappedPosRange.
-//
-// Two MappedRanges produced the same Mapper are equal if and only if they
-// denote the same range.  Two MappedRanges produced by different Mappers
-// are unequal even when they represent the same range of the same file.
-type MappedRange struct {
-	Mapper     *Mapper
-	start, end int // valid byte offsets:  0 <= start <= end <= len(Mapper.Content)
-}
-
-// Offsets returns the (start, end) byte offsets of this range.
-func (mr MappedRange) Offsets() (start, end int) { return mr.start, mr.end }
-
-// -- convenience functions --
-
-// URI returns the URI of the range's file.
-func (mr MappedRange) URI() DocumentURI {
-	return mr.Mapper.URI
-}
-
-// Range returns the range in protocol (UTF-16) form.
-func (mr MappedRange) Range() Range {
-	rng, err := mr.Mapper.OffsetRange(mr.start, mr.end)
-	if err != nil {
-		panic(err) // can't happen
-	}
-	return rng
-}
-
-// Location returns the range in protocol location (UTF-16) form.
-func (mr MappedRange) Location() Location {
-	return mr.Mapper.RangeLocation(mr.Range())
-}
-
-// String formats the range in UTF-8 notation.
-func (mr MappedRange) String() string {
-	var s strings.Builder
-	startLine, startCol8 := mr.Mapper.OffsetLineCol8(mr.start)
-	fmt.Fprintf(&s, "%d:%d", startLine, startCol8)
-	if mr.end != mr.start {
-		endLine, endCol8 := mr.Mapper.OffsetLineCol8(mr.end)
-		if endLine == startLine {
-			fmt.Fprintf(&s, "-%d", endCol8)
-		} else {
-			fmt.Fprintf(&s, "-%d:%d", endLine, endCol8)
-		}
-	}
-	return s.String()
+// NodeText returns the source text for syntax node range.
+func (m *Mapper) NodeText(tf *token.File, node ast.Node) ([]byte, error) {
+	return m.PosText(tf, node.Pos(), node.End())
 }
 
 // LocationTextDocumentPositionParams converts its argument to its result.
 func LocationTextDocumentPositionParams(loc Location) TextDocumentPositionParams {
 	return TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
+		Range:        loc.Range,
+		Position:     loc.Range.Start, // not used
 	}
 }

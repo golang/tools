@@ -41,7 +41,7 @@ func TestVetSuite(t *testing.T) {
 	out := fmt.Sprint(cmd.Stdout)
 	_, out, _ = strings.Cut(out, "Registered analyzers:\n\n")
 	out, _, _ = strings.Cut(out, "\n\n")
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		name := strings.Fields(line)[0]
 		if !goplsAnalyzers[name] {
 			t.Errorf("gopls lacks vet analyzer %q", name)

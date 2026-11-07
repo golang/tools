@@ -6,7 +6,8 @@ package lcs
 
 import (
 	"log"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -58,6 +59,33 @@ var Btests = []Btest{
 	{"aabbaa", "aacaba", []string{"aaaa", "aaba"}},
 }
 
+type stringSeqs struct{ a, b string }
+
+func (s stringSeqs) lengths() (int, int) { return len(s.a), len(s.b) }
+func (s stringSeqs) commonPrefixLen(ai, aj, bi, bj int) int {
+	return commonPrefixLenString(s.a[ai:aj], s.b[bi:bj])
+}
+func (s stringSeqs) commonSuffixLen(ai, aj, bi, bj int) int {
+	return commonSuffixLenString(s.a[ai:aj], s.b[bi:bj])
+}
+
+func commonPrefixLenString(a, b string) int {
+	n := min(len(a), len(b))
+	i := 0
+	for i < n && a[i] == b[i] {
+		i++
+	}
+	return i
+}
+func commonSuffixLenString(a, b string) int {
+	n := min(len(a), len(b))
+	i := 0
+	for i < n && a[len(a)-1-i] == b[len(b)-1-i] {
+		i++
+	}
+	return i
+}
+
 func init() {
 	log.SetFlags(log.Lshortfile)
 }
@@ -72,10 +100,8 @@ func check(t *testing.T, str string, lcs lcs, want []string) {
 		got.WriteString(str[dd.X : dd.X+dd.Len])
 	}
 	ans := got.String()
-	for _, w := range want {
-		if ans == w {
-			return
-		}
+	if slices.Contains(want, ans) {
+		return
 	}
 	t.Fatalf("str=%q lcs=%v want=%q got=%q", str, lcs, want, ans)
 }
@@ -106,11 +132,11 @@ func lcslen(l lcs) int {
 }
 
 // return a random string of length n made of characters from s
-func randstr(s string, n int) string {
+func randstr(rng *rand.Rand, s string, n int) string {
 	src := []rune(s)
 	x := make([]rune, n)
-	for i := 0; i < n; i++ {
-		x[i] = src[rand.Intn(len(src))]
+	for i := range n {
+		x[i] = src[rng.Int64N(int64(len(src)))]
 	}
 	return string(x)
 }

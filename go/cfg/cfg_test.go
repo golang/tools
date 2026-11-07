@@ -127,12 +127,6 @@ func f10(ch chan int) {
 	}
 	live()
 }
-
-func f11() {
-	goto; // mustn't crash
-	dead()
-}
-
 `
 
 func TestDeadCode(t *testing.T) {

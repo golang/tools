@@ -26,6 +26,14 @@ func isEphemeralError(err error) bool {
 	return false
 }
 
+func getErrno(err error) (uintptr, bool) {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return uintptr(errno), true
+	}
+	return 0, false
+}
+
 // Note: it may be convenient to have this helper return fs.FileInfo, but
 // implementing this is actually quite involved on Windows. Since we only
 // currently use mtime, keep it simple.

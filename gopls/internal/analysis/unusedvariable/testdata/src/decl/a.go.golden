@@ -20,5 +20,13 @@ func c() {
 	var (
 		d string
 	)
+	
 	panic(d)
+}
+
+func issue81809(f func() (int, error)) error {
+	var err error
+	f()
+	_, err = f()
+	return err
 }

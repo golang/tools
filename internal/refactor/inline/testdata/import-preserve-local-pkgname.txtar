@@ -1,0 +1,56 @@
+Test that when choosing local package names, we prefer the
+name used by the callee over a disambiguating numeric suffix.
+
+-- go.mod --
+module example.com
+go 1.19
+
+-- main/main.go --
+package main
+
+import stringutil "example.com/string/util"
+import "example.com/util"
+
+func main() {
+	util.A() //@ inline(re"A", result)
+	stringutil.B()
+}
+
+-- util/util.go --
+package util
+
+import stringutil "example.com/string/util"
+import urlutil "example.com/url/util"
+
+func A() {
+	stringutil.A()
+	urlutil.A()
+}
+
+-- string/util/util.go --
+package util
+
+func A() {
+}
+
+func B() {
+}
+
+-- url/util/util.go --
+package util
+
+func A() {
+}
+
+-- result --
+package main
+
+import urlutil "example.com/url/util"
+
+import stringutil "example.com/string/util"
+
+func main() {
+	stringutil.A()
+	urlutil.A() //@ inline(re"A", result)
+	stringutil.B()
+}

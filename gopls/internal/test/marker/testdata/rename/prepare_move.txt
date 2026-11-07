@@ -1,0 +1,13 @@
+This test verifies the behavior of textDocument/prepareRename - we prompt with the full package path.
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.20
+
+-- b/b.go --
+package b //@ preparerename("b", "golang.org/lsptests/b")
+
+-- a/other.go --
+// We prompt with the full package path, but changing a package directory is disabled when the package name does not match its directory base name. 
+package other //@ preparerename("other", "golang.org/lsptests/a")

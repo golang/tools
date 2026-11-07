@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -154,7 +154,7 @@ func TestIssue53604(t *testing.T) {
 	e := packagestest.Export(t, packagestest.Modules, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"x/x.go": `package x; import "golang.org/fake/y"; var V = y.F()`,
 				"y/y.go": `package y; import "golang.org/fake/z"; var F = func () *int { return &z.Z } `,
 				"z/z.go": `package z; var Z int`,

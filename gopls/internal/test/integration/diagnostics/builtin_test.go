@@ -26,7 +26,7 @@ const (
 `
 	Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
-		loc := env.GoToDefinition(env.RegexpSearch("a.go", "iota"))
+		loc := env.FirstDefinition(env.RegexpSearch("a.go", "iota"))
 		if !strings.HasSuffix(string(loc.URI), "builtin.go") {
 			t.Fatalf("jumped to %q, want builtin.go", loc.URI)
 		}

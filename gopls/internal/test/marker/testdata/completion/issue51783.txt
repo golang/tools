@@ -33,15 +33,15 @@ func partial[R any, S ~[]E, E any](s S) R
 //@item(partial, "partial", "details", "kind")
 
 func _() {
-	_ = identity //@snippet("identity", identity, "identity(${1:})")
+	_ = identity //@snippet(re"()identity", identity, "identity(${1:})")
 
-	_ = clone //@snippet("clone", clone, "clone(${1:})")
+	_ = clone //@snippet(re"()clone", clone, "clone(${1:})")
 
-	_ = unconstrained //@snippet("unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
+	_ = unconstrained //@snippet(re"()unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
 
-	_ = partial //@snippet("partial", partial, "partial[${1:}](${2:})")
+	_ = partial //@snippet(re"()partial", partial, "partial[${1:}](${2:})")
 
 	// Result-type inference permits us to omit Y in this (rare) case,
 	// but completion doesn't support that.
-	var _ int = unconstrained //@snippet("unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
+	var _ int = unconstrained //@snippet(re"()unconstrained", unconstrained, "unconstrained[${1:}](${2:})")
 }

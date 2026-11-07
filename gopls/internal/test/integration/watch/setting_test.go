@@ -60,7 +60,7 @@ package subdir
 // use (true|false) or some other truthy value.
 func TestSubdirWatchPatterns_BadValues(t *testing.T) {
 	tests := []struct {
-		badValue    interface{}
+		badValue    any
 		wantMessage string
 	}{
 		{true, "invalid type bool (want string)"},

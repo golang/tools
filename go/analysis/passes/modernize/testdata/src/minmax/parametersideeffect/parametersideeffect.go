@@ -1,0 +1,31 @@
+package parametersideeffect
+
+func argumentWithSideEffectLHS() int {
+	n := 0
+	f := func() int { n++; return n }
+	x := f()
+	if f() > x { // condition contains expression with side-effect
+		x = f()
+	}
+	return x
+}
+
+func argumentWithSideEffectRHS() int {
+	n := 0
+	f := func() int { n++; return n }
+	x := f()
+	if x < f() { // condition contains expression with side-effect
+		x = f()
+	}
+	return x
+}
+
+func onlyFirstAssignmentHasSideEffect() int {
+	n := 0
+	f := func() int { n++; return n }
+	x := f()
+	if x < n { // want "if statement can be modernized using max"
+		x = n
+	}
+	return x
+}

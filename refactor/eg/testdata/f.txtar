@@ -1,0 +1,110 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+// Test
+
+import "sync"
+
+func before(s sync.RWMutex) { s.Lock() }
+func after(s sync.RWMutex)  { s.RLock() }
+
+-- in/f1/f1.go --
+package F1
+
+import "sync"
+
+func example(n int) {
+	var x struct {
+		mutex sync.RWMutex
+	}
+
+	var y struct {
+		sync.RWMutex
+	}
+
+	type l struct {
+		sync.RWMutex
+	}
+
+	var z struct {
+		l
+	}
+
+	var a struct {
+		*l
+	}
+
+	var b struct{ Lock func() }
+
+	// Match
+	x.mutex.Lock()
+
+	// Match
+	y.Lock()
+
+	// Match indirect
+	z.Lock()
+
+	// Should be no match however currently matches due to:
+	// https://golang.org/issue/8584
+	// Will start failing when this is fixed then just change golden to
+	// No match pointer indirect
+	// a.Lock()
+	a.Lock()
+
+	// No match
+	b.Lock()
+}
+
+-- out/f1/f1.go --
+package F1
+
+import "sync"
+
+func example(n int) {
+	var x struct {
+		mutex sync.RWMutex
+	}
+
+	var y struct {
+		sync.RWMutex
+	}
+
+	type l struct {
+		sync.RWMutex
+	}
+
+	var z struct {
+		l
+	}
+
+	var a struct {
+		*l
+	}
+
+	var b struct{ Lock func() }
+
+	// Match
+	x.mutex.RLock()
+
+	// Match
+	y.RLock()
+
+	// Match indirect
+	z.RLock()
+
+	// Should be no match however currently matches due to:
+	// https://golang.org/issue/8584
+	// Will start failing when this is fixed then just change golden to
+	// No match pointer indirect
+	// a.Lock()
+	a.RLock()
+
+	// No match
+	b.Lock()
+}

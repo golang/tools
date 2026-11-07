@@ -59,7 +59,7 @@ var selbadfcnflag = flag.Int("badfcnidx", 0, "[Testing only] select index of bad
 var goimpflag = flag.Bool("goimports", false, "Run 'goimports' on generated code.")
 var randctlflag = flag.Int("randctl", generator.RandCtlChecks|generator.RandCtlPanic, "Wraprand control flag")
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if *verbflag >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")

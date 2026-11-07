@@ -31,10 +31,9 @@ func _() {
 -- result --
 package c
 
-import (
-	"testdata/a"
-	. "testdata/a"
-)
+import "testdata/a"
+
+import . "testdata/a"
 
 func _() {
 	A()

@@ -136,9 +136,8 @@ func BenchmarkScanModuleCache(b *testing.B) {
 	start := time.Now()
 	ScanModuleCache(gomodcache, cache, nil)
 	b.Logf("initial scan took %v", time.Since(start))
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ScanModuleCache(gomodcache, cache, nil)
 	}
 }

@@ -55,8 +55,10 @@ func sideEffects(cBool chan bool, cInt chan int) {
 	f := map[int]int{       // want `declared (and|but) not used`
 		fInt(): <-cInt,
 	}
-	g := []int{<-cInt}       // want `declared (and|but) not used`
-	h := func(s string) {}   // want `declared (and|but) not used`
+	g := []int{<-cInt}     // want `declared (and|but) not used`
+	h := func(s string) {} // want `declared (and|but) not used`
+
+	// (ill-typed)
 	i := func(s string) {}() // want `declared (and|but) not used`
 }
 
@@ -65,10 +67,28 @@ func commentAbove() {
 	v := "s" // want `declared (and|but) not used`
 }
 
+func commentBelow() {
+	v := "s" // want `declared (and|but) not used`
+	// v is a variable
+}
+
+func commentSpaceBelow() {
+	v := "s" // want `declared (and|but) not used`
+
+	// v is a variable
+}
+
 func fBool() bool {
 	return true
 }
 
 func fInt() int {
 	return 1
+}
+
+func issue81809(path string) error {
+	b, err := os.Open(path) // want `declared (and|but) not used`
+	b = nil
+	b, err = os.Open(path)
+	return err
 }

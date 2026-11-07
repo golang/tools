@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package vta computes the call graph of a Go program using the Variable
-// Type Analysis (VTA) algorithm originally described in “Practical Virtual
+// Type Analysis (VTA) algorithm originally described in "Practical Virtual
 // Method Call Resolution for Java," Vijay Sundaresan, Laurie Hendren,
 // Chrislain Razafimahefa, Raja Vallée-Rai, Patrick Lam, Etienne Gagnon, and
 // Charles Godin.
@@ -65,17 +65,23 @@ import (
 
 // CallGraph uses the VTA algorithm to compute call graph for all functions
 // f:true in funcs. VTA refines the results of initial call graph and uses it
-// to establish interprocedural type flow. The resulting graph does not have
-// a root node.
+// to establish interprocedural type flow. If initial is nil, VTA uses a more
+// efficient approach to construct a CHA call graph.
+//
+// The resulting graph does not have a root node.
 //
 // CallGraph does not make any assumptions on initial types global variables
 // and function/method inputs can have. CallGraph is then sound, modulo use of
 // reflection and unsafe, if the initial call graph is sound.
+//
+// The supplied SSA functions must have been constructed with the
+// [ssa.InstantiateGenerics] mode flag.
 func CallGraph(funcs map[*ssa.Function]bool, initial *callgraph.Graph) *callgraph.Graph {
-	vtaG, canon := typePropGraph(funcs, initial)
+	callees := makeCalleesFunc(funcs, initial)
+	vtaG, canon := typePropGraph(funcs, callees)
 	types := propagate(vtaG, canon)
 
-	c := &constructor{types: types, initial: initial, cache: make(methodCache)}
+	c := &constructor{types: types, callees: callees, cache: make(methodCache)}
 	return c.construct(funcs)
 }
 
@@ -85,7 +91,7 @@ func CallGraph(funcs map[*ssa.Function]bool, initial *callgraph.Graph) *callgrap
 type constructor struct {
 	types   propTypeMap
 	cache   methodCache
-	initial *callgraph.Graph
+	callees calleesFunc
 }
 
 func (c *constructor) construct(funcs map[*ssa.Function]bool) *callgraph.Graph {
@@ -101,15 +107,15 @@ func (c *constructor) construct(funcs map[*ssa.Function]bool) *callgraph.Graph {
 func (c *constructor) constrct(g *callgraph.Graph, f *ssa.Function) {
 	caller := g.CreateNode(f)
 	for _, call := range calls(f) {
-		for _, c := range c.callees(call) {
+		for _, c := range c.resolves(call) {
 			callgraph.AddEdge(caller, call, g.CreateNode(c))
 		}
 	}
 }
 
-// callees computes the set of functions to which VTA resolves `c`. The resolved
-// functions are intersected with functions to which `initial` resolves `c`.
-func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
+// resolves computes the set of functions to which VTA resolves `c`. The resolved
+// functions are intersected with functions to which `c.initial` resolves `c`.
+func (c *constructor) resolves(call ssa.CallInstruction) []*ssa.Function {
 	cc := call.Common()
 	if cc.StaticCallee() != nil {
 		return []*ssa.Function{cc.StaticCallee()}
@@ -123,32 +129,24 @@ func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
 	// Cover the case of dynamic higher-order and interface calls.
 	var res []*ssa.Function
 	resolved := resolve(call, c.types, c.cache)
-	siteCallees(call, c.initial)(func(f *ssa.Function) bool {
+	for f := range siteCallees(call, c.callees) {
 		if _, ok := resolved[f]; ok {
 			res = append(res, f)
 		}
-		return true
-	})
+	}
 	return res
 }
 
 // resolve returns a set of functions `c` resolves to based on the
 // type propagation results in `types`.
-func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns map[*ssa.Function]struct{}) {
+func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) map[*ssa.Function]empty {
+	fns := make(map[*ssa.Function]empty)
 	n := local{val: c.Common().Value}
-	types.propTypes(n)(func(p propType) bool {
-		pfs := propFunc(p, c, cache)
-		if len(pfs) == 0 {
-			return true
+	for p := range types.propTypes(n) {
+		for _, f := range propFunc(p, c, cache) {
+			fns[f] = empty{}
 		}
-		if fns == nil {
-			fns = make(map[*ssa.Function]struct{})
-		}
-		for _, f := range pfs {
-			fns[f] = struct{}{}
-		}
-		return true
-	})
+	}
 	return fns
 }
 
@@ -171,9 +169,6 @@ func propFunc(p propType, c ssa.CallInstruction, cache methodCache) []*ssa.Funct
 // ssa.Program.MethodSets and ssa.Program.MethodValue
 // APIs. The cache is used to speed up querying of
 // methods of a type as the mentioned APIs are expensive.
-//
-// TODO(adonovan): Program.MethodValue already does this kind of
-// caching. Is this really necessary?
 type methodCache map[types.Type]map[string][]*ssa.Function
 
 // methods returns methods of a type `t` named `name`. First consults

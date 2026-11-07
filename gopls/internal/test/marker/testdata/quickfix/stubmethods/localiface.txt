@@ -1,0 +1,30 @@
+Test stubbing a method of a local interface.
+It works so long as the methods have no free type parameters.
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+func f[T any]() {
+	// nope: method C.f(T) would have a free type param, T.
+	type I interface{ f(T) }
+	var _ I = C(0) //@quickfixerr(re"C", re"missing method", re"found 0 CodeActions")
+
+	// ok: method C.f(int) is fine.
+	type J interface{ f(int) }
+	var _ J = C(0) //@quickfix(re"C", re"missing method", out)
+}
+
+type C int
+
+-- @out/a/a.go --
+@@ -15 +15,4 @@
++// f implements [J].
++func (c C) f(int) {
++	panic("unimplemented")
++}
+

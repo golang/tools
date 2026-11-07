@@ -1,0 +1,81 @@
+Test of hover for assembly files.
+
+Hovering over an assembly symbol that has a Go declaration reports the
+declaration's signature (with packages qualified by name, not path) and
+its doc comment, rendered as Markdown. Labels and asm-only symbols have
+no Go declaration and thus no hover.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+// foo is the best function.
+// It returns its input unchanged.
+//
+// # Details
+//
+// There is nothing more to say.
+func foo(int) int
+
+// x is a global variable.
+var x int
+
+// g returns a new T.
+func g() *b.T
+
+var _, _, _ = foo, x, g // pacify unused{func,var} analyzers
+
+-- a/asm.s --
+// portable assembly
+
+TEXT ·foo(SB), $0-8                 //@hover("·foo", "·foo", foo)
+	MOVQ ·x(SB), R0             //@hover("·x", "·x", x)
+	CALL ·foo(SB)               //@hover("·foo", "·foo", foo)
+	CALL ·g(SB)                 //@hover("·g", "·g", g)
+	CALL example·com∕b·B(SB)    //@hover("B", "example·com∕b·B", bB)
+loop:
+	JMP loop
+	RET
+
+-- b/b.go --
+package b
+
+// B is a helper function.
+func B() {}
+
+// T is a helper type.
+type T struct{}
+
+-- @foo --
+```go
+func foo(int) int
+```
+
+foo is the best function. It returns its input unchanged.
+
+### Details
+
+There is nothing more to say.
+-- @x --
+```go
+var x int
+```
+
+x is a global variable.
+-- @g --
+```go
+func g() *b.T
+```
+
+g returns a new T.
+-- @bB --
+```go
+func B()
+```
+
+B is a helper function.

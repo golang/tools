@@ -53,7 +53,7 @@ e e
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.input)
 			stdout = new(bytes.Buffer)
-			if err := digraph(test.cmd, test.args); err != nil {
+			if err := doDigraph(test.cmd, test.args); err != nil {
 				t.Fatal(err)
 			}
 
@@ -156,11 +156,38 @@ func TestAllpaths(t *testing.T) {
 			to:   "H",
 			want: "A B\nA C\nB D\nC D\nD E\nE F\nE G\nF H\nG H\n",
 		},
+		{
+			// C <--> B --> A --> D <--> E
+			//        ⋃
+			name: "non-regression test for #74842",
+			in:   "A D\nB A\nB B\nB C\nC B\nD E\nE D",
+			to:   "D",
+			want: "A D\nD E\nE D\n",
+		},
+		{
+			// A --> B --> D
+			//       ^
+			//       v
+			//       C[123]
+			name: "regression test for #74842",
+			in:   "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+			to:   "D",
+			want: "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+		},
+		{
+			// A -------> B --> D
+			//  \--> C ---^     |
+			//       ^----------+
+			name: "another regression test for #74842",
+			in:   "A B\nA C\nB D\nC B\nD C\n",
+			to:   "D",
+			want: "A B\nA C\nB D\nC B\nD C\n",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("allpaths", []string{"A", test.to}); err != nil {
+			if err := doDigraph("allpaths", []string{"A", test.to}); err != nil {
 				t.Fatal(err)
 			}
 
@@ -215,7 +242,7 @@ func TestSomepath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("somepath", []string{"A", test.to}); err != nil {
+			if err := doDigraph("somepath", []string{"A", test.to}); err != nil {
 				t.Fatal(err)
 			}
 
@@ -225,7 +252,7 @@ func TestSomepath(t *testing.T) {
 			got = strings.Join(lines[1:], "\n")
 
 			var oneMatch bool
-			for _, want := range strings.Split(test.wantAnyOf, "|") {
+			for want := range strings.SplitSeq(test.wantAnyOf, "|") {
 				if got == want {
 					oneMatch = true
 				}
@@ -345,7 +372,7 @@ func TestFocus(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
 			stdout = new(bytes.Buffer)
-			if err := digraph("focus", []string{test.focus}); err != nil {
+			if err := doDigraph("focus", []string{test.focus}); err != nil {
 				t.Fatal(err)
 			}
 			got := stdout.(fmt.Stringer).String()
@@ -360,22 +387,25 @@ func TestToDot(t *testing.T) {
 	in := `a b c
 b "d\"\\d"
 c "d\"\\d"`
-	want := `digraph {
-	"a" -> "b";
-	"a" -> "c";
-	"b" -> "d\"\\d";
-	"c" -> "d\"\\d";
+	want := `digraph "" {
+n0 [label="a"];
+n1 [label="b"];
+n2 [label="c"];
+n3 [label="d\"\\d"];
+n0 -> n1;
+n0 -> n2;
+n1 -> n3;
+n2 -> n3;
 }
 `
 	defer func(in io.Reader, out io.Writer) { stdin, stdout = in, out }(stdin, stdout)
 	stdin = strings.NewReader(in)
 	stdout = new(bytes.Buffer)
-	if err := digraph("to", []string{"dot"}); err != nil {
+	if err := doDigraph("to", []string{"dot"}); err != nil {
 		t.Fatal(err)
 	}
 	got := stdout.(fmt.Stringer).String()
 	if got != want {
-		t.Errorf("digraph(to, dot) = got %q, want %q", got, want)
+		t.Errorf("digraph(to, dot) = got\n  %q\nwant\n  %q", got, want)
 	}
-
 }

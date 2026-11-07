@@ -17,7 +17,8 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -26,6 +27,34 @@ var (
 	errNoMatch  = errors.New("not a surrounding match")
 	errLowScore = errors.New("not a high scoring candidate")
 )
+
+// labelDetails builds the LSP label details for a candidate. detail is the
+// type of the candidate, and description its import path, empty unless
+// accepting the candidate adds an import.
+//
+// The detail is rendered immediately after the label with no spacing, so a
+// function drops its "func" prefix and everything else gains a leading space.
+func labelDetails(kind protocol.CompletionItemKind, detail, description string) *protocol.CompletionItemLabelDetails {
+	switch kind {
+	case protocol.FunctionCompletion, protocol.MethodCompletion:
+		detail = strings.TrimPrefix(detail, "func")
+	case protocol.ModuleCompletion:
+		// The detail of a package is its quoted import path, which the
+		// description already reports.
+		detail = ""
+	default:
+		if detail != "" {
+			detail = " " + detail
+		}
+	}
+	if detail == "" && description == "" {
+		return nil
+	}
+	return &protocol.CompletionItemLabelDetails{
+		Detail:      detail,
+		Description: description,
+	}
+}
 
 // item formats a candidate to a CompletionItem.
 func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, error) {
@@ -50,7 +79,8 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 
 	var (
 		label         = cand.name
-		detail        = types.TypeString(obj.Type(), c.qf)
+		detail        = types.TypeString(obj.Type(), c.qual)
+		description   string // import path, if accepting the item adds an import
 		insert        = label
 		kind          = protocol.TextCompletion
 		snip          snippet.Builder
@@ -59,20 +89,21 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if obj.Type() == nil {
 		detail = ""
 	}
-	if isTypeName(obj) && c.wantTypeParams() {
-		x := cand.obj.(*types.TypeName)
-		if named, ok := aliases.Unalias(x.Type()).(*types.Named); ok {
-			tp := named.TypeParams()
-			label += golang.FormatTypeParams(tp)
-			insert = label // maintain invariant above (label == insert)
-		}
+
+	type hasTypeParams interface{ TypeParams() *types.TypeParamList }
+	if genericType, _ := obj.Type().(hasTypeParams); genericType != nil && isTypeName(obj) && c.wantTypeParams() {
+		// golang/go#71044: note that type names can be basic types, even in
+		// receiver position, for invalid code.
+		tparams := genericType.TypeParams()
+		label += typesutil.FormatTypeParams(tparams)
+		insert = label // maintain invariant above (label == insert)
 	}
 
 	snip.WriteText(insert)
 
 	switch obj := obj.(type) {
 	case *types.TypeName:
-		detail, kind = golang.FormatType(obj.Type(), c.qf)
+		detail, kind = golang.FormatType(obj.Type(), c.qual)
 	case *types.Const:
 		kind = protocol.ConstantCompletion
 	case *types.Var:
@@ -80,7 +111,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 			detail = "struct{...}" // for anonymous unaliased struct types
 		} else if obj.IsField() {
 			var err error
-			detail, err = golang.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qf, c.mq)
+			detail, err = golang.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qual, c.mq)
 			if err != nil {
 				return CompletionItem{}, err
 			}
@@ -95,7 +126,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 			break
 		}
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() == nil {
+		if obj.Signature().Recv() == nil {
 			kind = protocol.FunctionCompletion
 		} else {
 			kind = protocol.MethodCompletion
@@ -129,7 +160,7 @@ Suffixes:
 		switch mod {
 		case invoke:
 			if sig, ok := funcType.Underlying().(*types.Signature); ok {
-				s, err := golang.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qf, c.mq)
+				s, err := golang.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qual, c.mq)
 				if err != nil {
 					return CompletionItem{}, err
 				}
@@ -178,6 +209,10 @@ Suffixes:
 		}
 	}
 
+	// The label details hold the import path separately, so they use the
+	// detail from before the "(from ...)" text is appended to it.
+	labelDetail := detail
+
 	// If this candidate needs an additional import statement,
 	// add the additional text edits needed.
 	if cand.imp != nil {
@@ -188,6 +223,7 @@ Suffixes:
 		}
 
 		protocolEdits = append(protocolEdits, addlEdits...)
+		description = cand.imp.importPath
 		if kind != protocol.ModuleCompletion {
 			if detail != "" {
 				detail += " "
@@ -196,25 +232,15 @@ Suffixes:
 		}
 	}
 
+	// replacing suffix with conv.suffix was wrong (Issue 80268)
+	// That produced `(*[10]int)(array)` for passing an
+	// array to a function expecting an array pointer. But
+	// `(*[10]int)(array[:])` is what is wanted.
+	// (conv.suffix is always ")" or empty)
 	if cand.convertTo != nil {
-		typeName := types.TypeString(cand.convertTo, c.qf)
-
-		switch t := cand.convertTo.(type) {
-		// We need extra parens when casting to these types. For example,
-		// we need "(*int)(foo)", not "*int(foo)".
-		case *types.Pointer, *types.Signature:
-			typeName = "(" + typeName + ")"
-		case *types.Basic:
-			// If the types are incompatible (as determined by typeMatches), then we
-			// must need a conversion here. However, if the target type is untyped,
-			// don't suggest converting to e.g. "untyped float" (golang/go#62141).
-			if t.Info()&types.IsUntyped != 0 {
-				typeName = types.TypeString(types.Default(cand.convertTo), c.qf)
-			}
-		}
-
-		prefix = typeName + "(" + prefix
-		suffix = ")"
+		conv := c.formatConversion(cand.convertTo)
+		prefix = conv.prefix + prefix
+		suffix = suffix + conv.suffix
 	}
 
 	if prefix != "" {
@@ -238,15 +264,26 @@ Suffixes:
 	}
 
 	detail = strings.TrimPrefix(detail, "untyped ")
+	labelDetail = strings.TrimPrefix(labelDetail, "untyped ")
 	// override computed detail with provided detail, if something is provided.
 	if cand.detail != "" {
 		detail = cand.detail
+		labelDetail = cand.detail
 	}
+
+	// When completing right after "//" (cursor at the slashes with no space),
+	// prepend a space so the result is "// Name" rather than "//Name".
+	if c.completionContext.commentNeedsLeadingSpace {
+		insert = " " + insert
+		snip.PrependText(" ")
+	}
+
 	item := CompletionItem{
 		Label:               label,
 		InsertText:          insert,
 		AdditionalTextEdits: protocolEdits,
 		Detail:              detail,
+		LabelDetails:        labelDetails(kind, labelDetail, description),
 		Kind:                kind,
 		Score:               cand.score,
 		Depth:               len(cand.path),
@@ -275,10 +312,7 @@ Suffixes:
 	} else {
 		item.Documentation = doc.Synopsis(comment.Text())
 	}
-	// The desired pattern is `^// Deprecated`, but the prefix has been removed
-	// TODO(rfindley): It doesn't look like this does the right thing for
-	// multi-line comments.
-	if strings.HasPrefix(comment.Text(), "Deprecated") {
+	if internalastutil.Deprecation(comment) != "" {
 		if c.snapshot.Options().CompletionTags {
 			item.Tags = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 		} else if c.snapshot.Options().CompletionDeprecated {
@@ -287,6 +321,38 @@ Suffixes:
 	}
 
 	return item, nil
+}
+
+// conversionEdits represents the string edits needed to make a type conversion
+// of an expression.
+type conversionEdits struct {
+	prefix, suffix string
+}
+
+// formatConversion returns the edits needed to make a type conversion
+// expression, including parentheses if necessary.
+//
+// Returns empty conversionEdits if convertTo is nil.
+func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
+	if convertTo == nil {
+		return conversionEdits{}
+	}
+
+	typeName := types.TypeString(convertTo, c.qual)
+	switch t := convertTo.(type) {
+	// We need extra parens when casting to these types. For example,
+	// we need "(*int)(foo)", not "*int(foo)".
+	case *types.Pointer, *types.Signature:
+		typeName = "(" + typeName + ")"
+	case *types.Basic:
+		// If the types are incompatible (as determined by typeMatches), then we
+		// must need a conversion here. However, if the target type is untyped,
+		// don't suggest converting to e.g. "untyped float" (golang/go#62141).
+		if t.Info()&types.IsUntyped != 0 {
+			typeName = types.TypeString(types.Default(convertTo), c.qual)
+		}
+	}
+	return conversionEdits{prefix: typeName + "(", suffix: ")"}
 }
 
 // importEdits produces the text edits necessary to add the given import to the current file.
@@ -300,7 +366,7 @@ func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 		return nil, err
 	}
 
-	return golang.ComputeOneImportFixEdits(c.snapshot, pgf, &imports.ImportFix{
+	return golang.ComputeImportFixEdits(c.snapshot.Options().Local, pgf.Src, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: imp.importPath,
 			Name:       imp.name,
@@ -382,42 +448,43 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 		case *types.Slice:
 			visit(t.Elem())
 		case *types.Interface:
-			for i := 0; i < t.NumExplicitMethods(); i++ {
-				visit(t.ExplicitMethod(i).Type())
+			for method := range t.ExplicitMethods() {
+				visit(method.Type())
 			}
-			for i := 0; i < t.NumEmbeddeds(); i++ {
-				visit(t.EmbeddedType(i))
+			for etyp := range t.EmbeddedTypes() {
+				visit(etyp)
 			}
 		case *types.Union:
-			for i := 0; i < t.Len(); i++ {
-				visit(t.Term(i).Type())
+			for term := range t.Terms() {
+				visit(term.Type())
 			}
 		case *types.Signature:
 			if tp := t.TypeParams(); tp != nil {
 				// Generic signatures only appear as the type of generic
-				// function declarations, so this isn't really reachable.
-				for i := 0; i < tp.Len(); i++ {
-					visit(tp.At(i).Constraint())
+				// function or method declarations, so this isn't really
+				// reachable.
+				for tparam := range tp.TypeParams() {
+					visit(tparam.Constraint())
 				}
 			}
 			visit(t.Params())
 			visit(t.Results())
 		case *types.Tuple:
-			for i := 0; i < t.Len(); i++ {
-				visit(t.At(i).Type())
+			for v := range t.Variables() {
+				visit(v.Type())
 			}
 		case *types.Struct:
-			for i := 0; i < t.NumFields(); i++ {
-				visit(t.Field(i).Type())
+			for field := range t.Fields() {
+				visit(field.Type())
 			}
 		case *types.TypeParam:
 			free[t] = true
-		case *aliases.Alias:
-			visit(aliases.Unalias(t))
+		case *types.Alias:
+			visit(types.Unalias(t))
 		case *types.Named:
 			targs := t.TypeArgs()
-			for i := 0; i < targs.Len(); i++ {
-				visit(targs.At(i))
+			for t0 := range targs.Types() {
+				visit(t0)
 			}
 		case *types.Basic:
 			// nop
@@ -430,8 +497,7 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 
 	// Perform induction through constraints.
 restart:
-	for i := 0; i < sig.TypeParams().Len(); i++ {
-		tp := sig.TypeParams().At(i)
+	for tp := range sig.TypeParams().TypeParams() {
 		if free[tp] {
 			n := len(free)
 			visit(tp.Constraint())

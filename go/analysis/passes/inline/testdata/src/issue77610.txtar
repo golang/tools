@@ -1,0 +1,93 @@
+This test verifies that unused imports conservatively added by the inliner are
+removed in FormatSourceRemoveImports.
+
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+import "io"
+
+//go:fix inline
+func OldHello(w io.Writer) error { // want OldHello:"goFixInline a.OldHello"
+	return NewHello(w)
+}
+
+func NewHello(w io.Writer) error {
+	_, err := w.Write([]byte("Hello, World!"))
+	return err
+}
+
+-- b/b.go --
+package b
+
+import (
+	"strings"
+	"example.com/a"
+)
+
+func _() {
+    var buf strings.Builder
+	// The inliner wants to add an import for "io"; make sure post-processing of the fix removes it.
+	a.OldHello(&buf) // want "Call of a.OldHello should be inlined"
+}
+
+-- b/b.go.golden --
+package b
+
+import (
+	"strings"
+	"example.com/a"
+)
+
+func _() {
+    var buf strings.Builder
+	// The inliner wants to add an import for "io"; make sure post-processing of the fix removes it.
+	a.NewHello(&buf) // want "Call of a.OldHello should be inlined"
+}
+
+-- c/c.go --
+package c
+
+import "encoding/json"
+
+//go:fix inline
+func OldProcess(m json.Marshaler) error { // want OldProcess:"goFixInline c.OldProcess"
+	return NewProcess(m)
+}
+
+func NewProcess(m json.Marshaler) error {
+	_, err := m.MarshalJSON()
+	return err
+}
+
+-- d/d.go --
+package d
+
+import (
+	"time"
+
+	"example.com/c"
+)
+
+func _() {
+	t := time.Now()
+	// The inliner wants to add an import for "encoding/json"; make sure post-processing of the fix removes it.
+	c.OldProcess(t) // want "Call of c.OldProcess should be inlined"
+}
+
+-- d/d.go.golden --
+package d
+
+import (
+	"time"
+
+	"example.com/c"
+)
+
+func _() {
+	t := time.Now()
+	// The inliner wants to add an import for "encoding/json"; make sure post-processing of the fix removes it.
+	c.NewProcess(t) // want "Call of c.OldProcess should be inlined"
+}

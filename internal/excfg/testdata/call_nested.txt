@@ -1,0 +1,27 @@
+-- src.go --
+package p
+func f(int) int
+func g() int
+func main() {
+	x := f(g())
+	_ = x
+}
+-- want --
+B0: ExKindSubExpr, CFG block .0
+	g()
+	succs: B1
+
+B1: ExKindSubExpr, CFG block .0
+	f(B0)
+	succs: B2
+
+B2: ExKindStmt, CFG block .0
+	x := B1
+	succs: B3
+
+B3: ExKindStmt, CFG block .0
+	_ = x
+	succs: B4
+
+B4: ExKindStmt, CFG block .0
+	return

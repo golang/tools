@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/types"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -23,11 +25,9 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/xcontext"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 var loadID uint64 // atomic identifier for loads
@@ -42,7 +42,7 @@ var errNoPackages = errors.New("no packages returned")
 // errors associated with specific modules.
 //
 // If scopes contains a file scope there must be exactly one scope.
-func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
+func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes ...loadScope) (err error) {
 	if ctx.Err() != nil {
 		// Check context cancellation before incrementing id below: a load on a
 		// cancelled context should be a no-op.
@@ -52,11 +52,12 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	eventName := fmt.Sprintf("go/packages.Load #%d", id) // unique name for logging
 
 	var query []string
-	var standalone bool // whether this is a load of a standalone file
+	var standalone bool // whether this is a load of a standalone Go file
 
 	// Keep track of module query -> module path so that we can later correlate query
 	// errors with errors.
 	moduleQueries := make(map[string]string)
+
 	for _, scope := range scopes {
 		switch scope := scope.(type) {
 		case packageLoadScope:
@@ -74,16 +75,19 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			if len(scopes) > 1 {
 				panic(fmt.Sprintf("internal error: load called with multiple scopes when a file scope is present (file: %s)", uri))
 			}
-			fh := s.FindFile(uri)
-			if fh == nil || s.FileKind(fh) != file.Go {
-				// Don't try to load a file that doesn't exist, or isn't a go file.
+			fh, err := s.ReadFile(ctx, uri)
+			if err != nil {
+				continue // e.g. canceled
+			}
+			kind := s.FileKind(fh)
+			if !zeroConfigSupported(kind) {
 				continue
 			}
 			contents, err := fh.Content()
 			if err != nil {
-				continue
+				continue // file does not exist
 			}
-			if isStandaloneFile(contents, s.Options().StandaloneTags) {
+			if kind == file.Go && isStandaloneFile(contents, s.Options().StandaloneTags) {
 				standalone = true
 				query = append(query, uri.Path())
 			} else {
@@ -118,21 +122,13 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	startTime := time.Now()
 
-	inv, cleanupInvocation, err := s.GoCommandInvocation(allowNetwork, &gocommand.Invocation{
-		WorkingDir: s.view.root.Path(),
-	})
-	if err != nil {
-		return err
-	}
-	defer cleanupInvocation()
-
 	// Set a last resort deadline on packages.Load since it calls the go
 	// command, which may hang indefinitely if it has a bug. golang/go#42132
 	// and golang/go#42255 have more context.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	cfg := s.config(ctx, inv)
+	cfg := s.config(ctx, allowNetwork)
 	pkgs, err := packages.Load(cfg, query...)
 
 	// If the context was canceled, return early. Otherwise, we might be
@@ -156,6 +152,10 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		}
 	}
 
+	if err != nil {
+		return fmt.Errorf("packages.Load error: %w", err)
+	}
+
 	if standalone {
 		// Handle standalone package result.
 		//
@@ -165,28 +165,21 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		// package. We don't support this; theoretically we could, but it seems
 		// unnecessarily complicated.
 		//
-		// Prior to golang/go#64233 we just assumed that we'd get exactly one
-		// package here. The categorization of bug reports below may be a bit
-		// verbose, but anticipates that perhaps we don't fully understand
-		// possible failure modes.
-		errorf := bug.Errorf
-		if s.view.typ == GoPackagesDriverView {
-			errorf = fmt.Errorf // all bets are off
-		}
-
+		// It's possible that we get no packages here, for example if the file is a
+		// cgo file and cgo is not enabled.
 		var standalonePkg *packages.Package
 		for _, pkg := range pkgs {
 			if pkg.ID == "command-line-arguments" {
 				if standalonePkg != nil {
-					return errorf("internal error: go/packages returned multiple standalone packages")
+					return fmt.Errorf("go/packages returned multiple standalone packages")
 				}
 				standalonePkg = pkg
-			} else if packagesinternal.GetForTest(pkg) == "" && !strings.HasSuffix(pkg.ID, ".test") {
-				return errorf("internal error: go/packages returned unexpected package %q for standalone file", pkg.ID)
+			} else if pkg.ForTest == "" && !strings.HasSuffix(pkg.ID, ".test") {
+				return fmt.Errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
 			}
 		}
 		if standalonePkg == nil {
-			return errorf("internal error: go/packages failed to return non-test standalone package")
+			return fmt.Errorf("go/packages failed to return non-test standalone package")
 		}
 		if len(standalonePkg.CompiledGoFiles) > 0 {
 			pkgs = []*packages.Package{standalonePkg}
@@ -196,10 +189,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 
 	if len(pkgs) == 0 {
-		if err == nil {
-			err = errNoPackages
-		}
-		return fmt.Errorf("packages.Load error: %w", err)
+		return fmt.Errorf("packages.Load error: %w", errNoPackages)
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
@@ -249,8 +239,14 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			s.setBuiltin(pkg.GoFiles[0])
 			continue
 		}
+		if pkg.ForTest == "builtin" {
+			// We don't care about test variants of builtin. This caused test
+			// failures in https://go.dev/cl/620196, when a test file was added to
+			// builtin.
+			continue
+		}
 		// Skip test main packages.
-		if isTestMain(pkg, s.view.folder.Env.GOCACHE) {
+		if isTestMain(pkg) {
 			continue
 		}
 		// Skip filtered packages. They may be added anyway if they're
@@ -262,17 +258,17 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		if allFilesExcluded(pkg.GoFiles, filterFunc) {
 			continue
 		}
-		buildMetadata(newMetadata, pkg, cfg.Dir, standalone, s.view.typ != GoPackagesDriverView)
+		buildMetadata(newMetadata, cfg.Dir, standalone, pkg)
 	}
 
 	s.mu.Lock()
 
 	// Assert the invariant s.packages.Get(id).m == s.meta.metadata[id].
-	s.packages.Range(func(id PackageID, ph *packageHandle) {
+	for id, ph := range s.packages.All() {
 		if s.meta.Packages[id] != ph.mp {
 			panic("inconsistent metadata")
 		}
-	})
+	}
 
 	// Compute the minimal metadata updates (for Clone)
 	// required to preserve the above invariant.
@@ -301,7 +297,6 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	workspacePackages := computeWorkspacePackagesLocked(ctx, s, meta)
 	s.meta = meta
 	s.workspacePackages = workspacePackages
-	s.resetActivePackagesLocked()
 
 	s.mu.Unlock()
 
@@ -347,6 +342,48 @@ func (m *moduleErrorMap) Error() string {
 	return buf.String()
 }
 
+// config returns the configuration used for the snapshot's interaction with
+// the go/packages API. It uses the given working directory.
+//
+// TODO(rstambler): go/packages requires that we do not provide overlays for
+// multiple modules in one config, so buildOverlay needs to filter overlays by
+// module.
+// TODO(rfindley): ^^ is this still true?
+func (s *Snapshot) config(ctx context.Context, allowNetwork AllowNetwork) *packages.Config {
+	cfg := &packages.Config{
+		Context:    ctx,
+		Dir:        s.view.root.Path(),
+		Env:        s.view.Env(),
+		BuildFlags: slices.Clone(s.view.folder.Options.BuildFlags),
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedCompiledGoFiles |
+			packages.NeedImports |
+			packages.NeedDeps |
+			packages.NeedTypesSizes |
+			packages.NeedModule |
+			packages.NeedEmbedFiles |
+			packages.LoadMode(packagesinternal.DepsErrors) |
+			packages.NeedForTest,
+		Fset:    nil, // we do our own parsing
+		Overlay: s.buildOverlays(),
+		Logf: func(format string, args ...any) {
+			if s.view.folder.Options.VerboseOutput {
+				event.Log(ctx, fmt.Sprintf(format, args...))
+			}
+		},
+		Tests: true,
+	}
+	if !allowNetwork {
+		cfg.Env = append(cfg.Env, "GOPROXY=off")
+	}
+	// We want to type check cgo code if go/types supports it.
+	if typesinternal.SetUsesCgo(&types.Config{}) {
+		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
+	}
+	return cfg
+}
+
 // buildMetadata populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
@@ -354,33 +391,30 @@ func (m *moduleErrorMap) Error() string {
 // Returns the metadata.Package that was built (or which was already present in
 // updates), or nil if the package could not be built. Notably, the resulting
 // metadata.Package may have an ID that differs from pkg.ID.
-func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone, goListView bool) *metadata.Package {
+func buildMetadata(updates map[PackageID]*metadata.Package, loadDir string, standalone bool, pkg *packages.Package) *metadata.Package {
 	// Allow for multiple ad-hoc packages in the workspace (see #47584).
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
 
-	// debugging #60890
-	if pkg.PkgPath == "unsafe" && pkg.ID != "unsafe" {
-		bug.Reportf("PackagePath \"unsafe\" with ID %q", pkg.ID)
-	}
-
 	if metadata.IsCommandLineArguments(id) {
 		var f string // file to use as disambiguating suffix
-		if len(pkg.CompiledGoFiles) > 0 {
-			f = pkg.CompiledGoFiles[0]
+		if len(pkg.GoFiles) > 0 {
+			f = pkg.GoFiles[0]
 
-			// If there are multiple files,
-			// we can't use only the first.
-			// (Can this happen? #64557)
-			if len(pkg.CompiledGoFiles) > 1 {
-				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
+			// If there are multiple files, we can't use only the first. Note that we
+			// consider GoFiles, rather than CompiledGoFiles, as there can be
+			// multiple CompiledGoFiles in the presence of cgo processing, whereas a
+			// command-line-arguments package should always have exactly one nominal
+			// Go source file. (See golang/go#64557.)
+			if len(pkg.GoFiles) > 1 {
+				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.GoFiles)
 				return nil
 			}
 		} else if len(pkg.IgnoredFiles) > 0 {
 			// A file=empty.go query results in IgnoredFiles=[empty.go].
 			f = pkg.IgnoredFiles[0]
 		} else {
-			bug.Reportf("command-line-arguments package has neither CompiledGoFiles nor IgnoredFiles")
+			bug.Reportf("command-line-arguments package has neither GoFiles nor IgnoredFiles")
 			return nil
 		}
 		id = PackageID(pkg.ID + f)
@@ -406,7 +440,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 		ID:         id,
 		PkgPath:    pkgPath,
 		Name:       PackageName(pkg.Name),
-		ForTest:    PackagePath(packagesinternal.GetForTest(pkg)),
+		ForTest:    PackagePath(pkg.ForTest),
 		TypesSizes: pkg.TypesSizes,
 		LoadDir:    loadDir,
 		Module:     pkg.Module,
@@ -415,25 +449,24 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 		Standalone: standalone,
 	}
 
-	// debugging #60890
-	if mp.PkgPath == "unsafe" && mp.ID != "unsafe" {
-		bug.Reportf("PackagePath \"unsafe\" with ID %q", mp.ID)
-	}
-
 	updates[id] = mp
 
-	for _, filename := range pkg.CompiledGoFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.CompiledGoFiles = append(mp.CompiledGoFiles, uri)
+	copyURIs := func(dst *[]protocol.DocumentURI, src []string) {
+		for _, filename := range src {
+			*dst = append(*dst, protocol.URIFromPath(filename))
+		}
 	}
-	for _, filename := range pkg.GoFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.GoFiles = append(mp.GoFiles, uri)
+	// Copy SFiles to AsmFiles.
+	for _, filename := range pkg.OtherFiles {
+		if !strings.HasSuffix(filename, ".s") {
+			continue
+		}
+		mp.AsmFiles = append(mp.AsmFiles, protocol.URIFromPath(filename))
 	}
-	for _, filename := range pkg.IgnoredFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.IgnoredFiles = append(mp.IgnoredFiles, uri)
-	}
+	copyURIs(&mp.CompiledGoFiles, pkg.CompiledGoFiles)
+	copyURIs(&mp.GoFiles, pkg.GoFiles)
+	copyURIs(&mp.IgnoredFiles, pkg.IgnoredFiles)
+	copyURIs(&mp.OtherFiles, pkg.OtherFiles)
 
 	depsByImpPath := make(map[ImportPath]PackageID)
 	depsByPkgPath := make(map[PackagePath]PackageID)
@@ -520,7 +553,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 			continue
 		}
 
-		dep := buildMetadata(updates, imported, loadDir, false, goListView) // only top level packages can be standalone
+		dep := buildMetadata(updates, loadDir, false, imported) // only top level packages can be standalone
 
 		// Don't record edges to packages with no name, as they cause trouble for
 		// the importer (golang/go#60952).
@@ -586,22 +619,6 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 		diags = append(diags, depsDiags...)
 	}
 	return diags
-}
-
-// IsWorkspacePackage reports whether id points to a workspace package in s.
-//
-// Currently, the result depends on the current set of loaded packages, and so
-// is not guaranteed to be stable.
-func (s *Snapshot) IsWorkspacePackage(ctx context.Context, id PackageID) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	mg := s.meta
-	m := mg.Packages[id]
-	if m == nil {
-		return false
-	}
-	return isWorkspacePackageLocked(ctx, s, mg, m)
 }
 
 // isWorkspacePackageLocked reports whether p is a workspace package for the
@@ -749,7 +766,7 @@ func computeWorkspacePackagesLocked(ctx context.Context, s *Snapshot, meta *meta
 	// The provided context is used for reading snapshot files, which can only
 	// fail due to context cancellation. Don't let this happen as it could lead
 	// to inconsistent results.
-	ctx = xcontext.Detach(ctx)
+	ctx = context.WithoutCancel(ctx)
 	workspacePackages := make(map[PackageID]PackagePath)
 	for _, mp := range meta.Packages {
 		if !isWorkspacePackageLocked(ctx, s, meta, mp) {
@@ -783,9 +800,9 @@ func computeWorkspacePackagesLocked(ctx context.Context, s *Snapshot, meta *meta
 func allFilesHaveRealPackages(g *metadata.Graph, mp *metadata.Package) bool {
 	n := len(mp.CompiledGoFiles)
 checkURIs:
-	for _, uri := range append(mp.CompiledGoFiles[0:n:n], mp.GoFiles...) {
-		for _, id := range g.IDs[uri] {
-			if !metadata.IsCommandLineArguments(id) {
+	for _, uri := range slices.Concat(mp.CompiledGoFiles[0:n:n], mp.GoFiles) {
+		for _, pkg := range g.ForFile[uri] {
+			if !metadata.IsCommandLineArguments(pkg.ID) {
 				continue checkURIs
 			}
 		}
@@ -794,21 +811,31 @@ checkURIs:
 	return true
 }
 
-func isTestMain(pkg *packages.Package, gocache string) bool {
+func isTestMain(pkg *packages.Package) bool {
 	// Test mains must have an import path that ends with ".test".
 	if !strings.HasSuffix(pkg.PkgPath, ".test") {
 		return false
 	}
-	// Test main packages are always named "main".
+	// Real package paths may also end in ".test", so keep checking the
+	// synthetic test main shape below.
 	if pkg.Name != "main" {
 		return false
 	}
-	// Test mains always have exactly one GoFile that is in the build cache.
-	if len(pkg.GoFiles) > 1 {
+	if len(pkg.GoFiles) == 0 {
 		return false
 	}
-	if !pathutil.InDir(gocache, pkg.GoFiles[0]) {
+	if pkg.Dir == "" {
 		return false
+	}
+	// A synthetic test main package has the Dir of the package under test,
+	// but its generated GoFiles live elsewhere. We avoid relying on the
+	// heuristic that test mains always have exactly one GoFile in GOCACHE,
+	// as that may not be the case for users of GOCACHEPROG, or for future
+	// implementations of go test.
+	for _, goFile := range pkg.GoFiles {
+		if pathutil.InDir(pkg.Dir, goFile) {
+			return false
+		}
 	}
 	return true
 }

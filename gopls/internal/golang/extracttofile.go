@@ -25,7 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // canExtractToNewFile reports whether the code in the given range can be extracted to a new file.
@@ -34,11 +34,11 @@ func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 	return ok
 }
 
-// findImportEdits finds imports specs that needs to be added to the new file
-// or deleted from the old file if the range is extracted to a new file.
+// findImportChanges finds imports specs that need to be added to the destination file
+// or deleted from the old file if the given ranges are extracted.
 //
 // TODO: handle dot imports.
-func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds, deletes []*ast.ImportSpec, _ error) {
+func findImportChanges(file *ast.File, info *types.Info, ranges ...astutil.Range) (adds, deletes []*ast.ImportSpec, _ error) {
 	// make a map from a pkgName to its references
 	pkgNameReferences := make(map[*types.PkgName][]*ast.Ident)
 	for ident, use := range info.Uses {
@@ -47,23 +47,30 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 		}
 	}
 
-	// PkgName referenced in the extracted selection must be
+	// PkgName referenced in any extracted selection must be
 	// imported in the new file.
-	// PkgName only referenced in the extracted selection must be
+	// PkgName only referenced in extracted selections must be
 	// deleted from the original file.
 	for _, spec := range file.Imports {
 		if spec.Name != nil && spec.Name.Name == "." {
 			// TODO: support dot imports.
 			return nil, nil, errors.New("\"extract to new file\" does not support files containing dot imports")
 		}
-		pkgName, ok := typesutil.ImportedPkgName(info, spec)
-		if !ok {
+		pkgName := info.PkgNameOf(spec)
+		if pkgName == nil {
 			continue
 		}
 		usedInSelection := false
 		usedInNonSelection := false
 		for _, ident := range pkgNameReferences[pkgName] {
-			if posRangeContains(start, end, ident.Pos(), ident.End()) {
+			inSelection := false
+			for _, rng := range ranges {
+				if posRangeContains(rng.Start, rng.EndPos, ident.Pos(), ident.End()) {
+					inSelection = true
+					break
+				}
+			}
+			if inSelection {
 				usedInSelection = true
 			} else {
 				usedInNonSelection = true
@@ -81,7 +88,7 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 }
 
 // ExtractToNewFile moves selected declarations into a new file.
-func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.WorkspaceEdit, error) {
+func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChange, error) {
 	errorPrefix := "ExtractToNewFile"
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
@@ -94,9 +101,10 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
+	// Expand the selection, and compute the portion to extract.
 	start, end, firstSymbol, ok := selectedToplevelDecls(pgf, start, end)
 	if !ok {
-		return nil, bug.Errorf("invalid selection")
+		return nil, fmt.Errorf("invalid selection")
 	}
 
 	// select trailing empty lines
@@ -105,35 +113,46 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, err
 	}
 	rest := pgf.Src[offset:]
-	end += token.Pos(len(rest) - len(bytes.TrimLeft(rest, " \t\n")))
+	spaces := len(rest) - len(bytes.TrimLeft(rest, " \t\n"))
+	end += token.Pos(spaces)
+	src, err := pgf.PosText(start, end)
+	if err != nil {
+		return nil, err
+	}
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
 		return nil, bug.Errorf("invalid range: %v", err)
 	}
 
-	adds, deletes, err := findImportEdits(pgf.File, pkg.TypesInfo(), start, end)
+	adds, deletes, err := findImportChanges(pgf.File, pkg.TypesInfo(), astutil.RangeOf(start, end))
 	if err != nil {
 		return nil, err
 	}
 
-	var importDeletes []protocol.TextEdit
-	// For unparenthesised declarations like `import "fmt"` we remove
-	// the whole declaration because simply removing importSpec leaves
-	// `import \n`, which does not compile.
-	// For parenthesised declarations like `import ("fmt"\n "log")`
-	// we only remove the ImportSpec, because removing the whole declaration
-	// might remove other ImportsSpecs we don't want to touch.
-	unparenthesizedImports := unparenthesizedImports(pgf)
-	for _, importSpec := range deletes {
-		if decl := unparenthesizedImports[importSpec]; decl != nil {
-			importDeletes = append(importDeletes, removeNode(pgf, decl))
-		} else {
-			importDeletes = append(importDeletes, removeNode(pgf, importSpec))
-		}
-	}
+	importDeletes := importDeletesEdits(pgf, deletes)
 
 	var buf bytes.Buffer
+	if c := CopyrightComment(pgf.File); c != nil {
+		text, err := pgf.NodeText(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(text)
+		// One empty line between copyright header and following.
+		buf.WriteString("\n\n")
+	}
+
+	if c := buildConstraintComment(pgf.File); c != nil {
+		text, err := pgf.NodeText(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(text)
+		// One empty line between build constraint and following.
+		buf.WriteString("\n\n")
+	}
+
 	fmt.Fprintf(&buf, "package %s\n", pgf.File.Name.Name)
 	if len(adds) > 0 {
 		buf.WriteString("import (")
@@ -147,21 +166,19 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		buf.WriteString(")\n")
 	}
 
-	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
+	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.DirPath(), firstSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
-	fileStart := pgf.Tok.Pos(0) // TODO(adonovan): use go1.20 pgf.File.FileStart
-	buf.Write(pgf.Src[start-fileStart : end-fileStart])
+	buf.Write(src)
 
-	// TODO: attempt to duplicate the copyright header, if any.
 	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to format extracted source: %w", err)
 	}
 
-	return protocol.NewWorkspaceEdit(
+	return []protocol.DocumentChange{
 		// edit the original file
 		protocol.DocumentChangeEdit(fh, append(importDeletes, protocol.TextEdit{Range: replaceRange, NewText: ""})),
 		// create a new file
@@ -169,7 +186,27 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		// edit the created file
 		protocol.DocumentChangeEdit(newFile, []protocol.TextEdit{
 			{Range: protocol.Range{}, NewText: string(newFileContent)},
-		})), nil
+		})}, nil
+}
+
+// importDeletesEdits returns a list of [protocol.TextEdit] for each import deletion.
+func importDeletesEdits(pgf *parsego.File, deletes []*ast.ImportSpec) (edits []protocol.TextEdit) {
+	// For unparenthesised declarations like `import "fmt"` we remove
+	// the whole declaration because simply removing importSpec leaves
+	// `import \n`, which does not compile.
+	// For parenthesised declarations like `import ("fmt"\n "log")`
+	// we only remove the ImportSpec, because removing the whole declaration
+	// might remove other ImportsSpecs we don't want to touch.
+	// TODO(mkalil): This doesn't delete inline comments, and it probably should.
+	unparenthesizedImports := unparenthesizedImports(pgf)
+	for _, importSpec := range deletes {
+		var n ast.Node = importSpec
+		if decl := unparenthesizedImports[importSpec]; decl != nil {
+			n = decl
+		}
+		edits = append(edits, removeNode(pgf, n))
+	}
+	return edits
 }
 
 // chooseNewFile chooses a new filename in dir, based on the name of the
@@ -203,31 +240,42 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 	firstName := ""
 	for _, decl := range pgf.File.Decls {
 		if posRangeIntersects(start, end, decl.Pos(), decl.End()) {
-			var id *ast.Ident
-			switch v := decl.(type) {
+			var (
+				comment *ast.CommentGroup // (include comment preceding decl)
+				id      *ast.Ident
+			)
+			switch decl := decl.(type) {
 			case *ast.BadDecl:
 				return 0, 0, "", false
+
 			case *ast.FuncDecl:
 				// if only selecting keyword "func" or function name, extend selection to the
 				// whole function
-				if posRangeContains(v.Pos(), v.Name.End(), start, end) {
-					start, end = v.Pos(), v.End()
+				if posRangeContains(decl.Pos(), decl.Name.End(), start, end) {
+					pgf.CheckNode(decl) // #70553
+					start, end = decl.Pos(), decl.End()
+					// Inv: start, end are valid wrt pgf.Tok.
 				}
-				id = v.Name
+				comment = decl.Doc
+				id = decl.Name
+
 			case *ast.GenDecl:
 				// selection cannot intersect an import declaration
-				if v.Tok == token.IMPORT {
+				if decl.Tok == token.IMPORT {
 					return 0, 0, "", false
 				}
 				// if only selecting keyword "type", "const", or "var", extend selection to the
 				// whole declaration
-				if v.Tok == token.TYPE && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("type")), start, end) ||
-					v.Tok == token.CONST && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("const")), start, end) ||
-					v.Tok == token.VAR && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("var")), start, end) {
-					start, end = v.Pos(), v.End()
+				if decl.Tok == token.TYPE && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("type")), start, end) ||
+					decl.Tok == token.CONST && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("const")), start, end) ||
+					decl.Tok == token.VAR && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("var")), start, end) {
+					pgf.CheckNode(decl) // #70553
+					start, end = decl.Pos(), decl.End()
+					// Inv: start, end are valid wrt pgf.Tok.
 				}
-				if len(v.Specs) > 0 {
-					switch spec := v.Specs[0].(type) {
+				comment = decl.Doc
+				if len(decl.Specs) > 0 {
+					switch spec := decl.Specs[0].(type) {
 					case *ast.TypeSpec:
 						id = spec.Name
 					case *ast.ValueSpec:
@@ -243,16 +291,10 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 				// may be "_"
 				firstName = id.Name
 			}
-			// extends selection to docs comments
-			var c *ast.CommentGroup
-			switch decl := decl.(type) {
-			case *ast.GenDecl:
-				c = decl.Doc
-			case *ast.FuncDecl:
-				c = decl.Doc
-			}
-			if c != nil && c.Pos() < start {
-				start = c.Pos()
+			if comment != nil && comment.Pos() < start {
+				pgf.CheckNode(comment) // #70553
+				start = comment.Pos()
+				// Inv: start is valid wrt pgf.Tok.
 			}
 		}
 	}

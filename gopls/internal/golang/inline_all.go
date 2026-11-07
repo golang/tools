@@ -11,12 +11,17 @@ import (
 	"go/parser"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/analysis/driverutil"
+	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/moremaps"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 )
 
@@ -44,11 +49,11 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte, opts *inline.Options) (_ map[protocol.DocumentURI][]byte, inlineErr error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
-		funcPos, err := pgf.Mapper.PosPosition(pgf.Tok, origDecl.Name.NamePos)
+		funcRng, err := pgf.Mapper.PosRange(pgf.Tok, origDecl.Name.NamePos, origDecl.Name.NamePos)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +61,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		if err != nil {
 			return nil, err
 		}
-		refs, err = References(ctx, snapshot, fh, funcPos, false)
+		refs, err = References(ctx, snapshot, fh, funcRng, false)
 		if err != nil {
 			return nil, fmt.Errorf("finding references to rewrite: %v", err)
 		}
@@ -68,21 +73,24 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 	var (
 		pkgForRef = make(map[protocol.Location]PackageID)
 		pkgs      = make(map[PackageID]*cache.Package)
+		// The inliner assumes that input is well-typed, but that is frequently not
+		// the case within gopls.
+		// Until we're able to harden the inliner, report panics as errors to avoid
+		// crashing the server. Recover when inputs are not transitively
+		// error-free (golang/go#75236).
+		needRecover = false
 	)
 	{
 		needPkgs := make(map[PackageID]struct{})
 		for _, ref := range refs {
-			md, err := NarrowestMetadataForFile(ctx, snapshot, ref.URI)
+			md, err := snapshot.NarrowestMetadataForFile(ctx, ref.URI)
 			if err != nil {
 				return nil, fmt.Errorf("finding ref metadata: %v", err)
 			}
 			pkgForRef[ref] = md.ID
 			needPkgs[md.ID] = struct{}{}
 		}
-		var pkgIDs []PackageID
-		for id := range needPkgs { // TODO: use maps.Keys once it is available to us
-			pkgIDs = append(pkgIDs, id)
-		}
+		pkgIDs := moremaps.KeySlice(needPkgs)
 
 		refPkgs, err := snapshot.TypeCheck(ctx, pkgIDs...)
 		if err != nil {
@@ -92,6 +100,17 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		for _, p := range refPkgs {
 			pkgs[p.Metadata().ID] = p
 		}
+		needRecover = transitivelyIllTyped(snapshot, refPkgs...)
+	}
+
+	// Be defensive about panics if the inputs are ill-typed.
+	if needRecover {
+		if opts == nil {
+			opts = new(inline.Options)
+		} else {
+			opts = new(*opts)
+		}
+		opts.Recover = true
 	}
 
 	// Organize calls by top file declaration. Calls within a single file may
@@ -102,7 +121,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 	type fileCalls struct {
 		pkg   *cache.Package
 		pgf   *parsego.File
-		calls []*ast.CallExpr
+		calls []inspector.Cursor // of *ast.CallExpr, in pgf
 	}
 
 	refsByFile := make(map[protocol.DocumentURI]*fileCalls)
@@ -112,24 +131,39 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		if err != nil {
 			return nil, bug.Errorf("finding %s in %s: %v", ref.URI, refpkg.Metadata().ID, err)
 		}
+
 		start, end, err := pgf.RangePos(ref.Range)
 		if err != nil {
 			return nil, err // e.g. invalid range
 		}
 
-		// Look for the surrounding call expression.
 		var (
-			name *ast.Ident
-			call *ast.CallExpr
+			name    *ast.Ident
+			curCall inspector.Cursor
 		)
-		path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-		name, _ = path[0].(*ast.Ident)
-		if _, ok := path[1].(*ast.SelectorExpr); ok {
-			call, _ = path[2].(*ast.CallExpr)
-		} else {
-			call, _ = path[1].(*ast.CallExpr)
+		if cur, ok := pgf.Cursor().FindByPos(start, end); ok && is[*ast.Ident](cur.Node()) {
+			name = cur.Node().(*ast.Ident)
+
+			// Walk up enclosing expressions to find a call where name is the callee
+			// (c.Fun), rather than an argument (e.g. use(f) or s.M(f)).
+			// See https://golang.org/issue/80834.
+		loop:
+			for {
+				switch cur.ParentEdgeKind() {
+				case edge.SelectorExpr_Sel, // pkg.F(1), x.M(1), or T.M(t, 1)
+					edge.ParenExpr_X,     // ((F))(1)
+					edge.IndexExpr_X,     // F[T](1)
+					edge.IndexListExpr_X: // F[T1, T2](1)
+					cur = cur.Parent()
+				case edge.CallExpr_Fun: // F(1)
+					curCall = cur.Parent()
+					break loop
+				default:
+					break loop
+				}
+			}
 		}
-		if name == nil || call == nil {
+		if !curCall.Valid() {
 			// TODO(rfindley): handle this case with eta-abstraction:
 			// a reference to the target function f in a non-call position
 			//    use(f)
@@ -137,11 +171,32 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			//    use(func(...) { f(...) })
 			return nil, fmt.Errorf("cannot inline: found non-call function reference %v", ref)
 		}
+		// Inv: name != nil.
+
+		call := curCall.Node().(*ast.CallExpr)
+
+		// Heuristic: ignore references that overlap with type checker errors, as they may
+		// lead to invalid results (see golang/go#70268).
+		hasTypeErrors := false
+		for _, typeErr := range refpkg.TypeErrors() {
+			if call.Lparen <= typeErr.Pos && typeErr.Pos <= call.Rparen {
+				hasTypeErrors = true
+			}
+		}
+		if hasTypeErrors {
+			continue
+		}
+
+		if typeutil.StaticCallee(refpkg.TypesInfo(), call) == nil {
+			continue // dynamic call
+		}
+
 		// Sanity check.
 		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||
 			obj.Pkg() == nil ||
 			obj.Pkg().Path() != string(pkg.Metadata().PkgPath) {
+
 			return nil, bug.Errorf("cannot inline: corrupted reference %v", ref)
 		}
 
@@ -153,7 +208,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			}
 			refsByFile[ref.URI] = callInfo
 		}
-		callInfo.calls = append(callInfo.calls, call)
+		callInfo.calls = append(callInfo.calls, curCall)
 	}
 
 	// Inline each call within the same decl in sequence, re-typechecking after
@@ -164,6 +219,10 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 	// on separate files independently.
 	result := make(map[protocol.DocumentURI][]byte)
 	for uri, callInfo := range refsByFile {
+		// Each iteration of the loop below updates content, file,
+		// tpkg, tinfo, and calls (cursors used as inline.Caller.Call)
+		// together; at the top of the loop they all describe the same
+		// version of the file.
 		var (
 			calls   = callInfo.calls
 			fset    = callInfo.pkg.FileSet()
@@ -178,26 +237,57 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		// respect to the inlined outer call, and so the heuristic we use to find
 		// the next call (counting from top-to-bottom) does not work.
 		for i := range calls {
-			if i > 0 && calls[i-1].End() > calls[i].Pos() {
-				return nil, fmt.Errorf("%s: can't inline overlapping call %s", uri, types.ExprString(calls[i-1]))
+			if i > 0 {
+				prev, call := calls[i-1].Node().(*ast.CallExpr), calls[i].Node()
+				if prev.End() > call.Pos() {
+					return nil, fmt.Errorf("%s: can't inline overlapping call %s", uri, types.ExprString(prev))
+				}
 			}
 		}
 
 		currentCall := 0
 		for currentCall < len(calls) {
 			caller := &inline.Caller{
-				Fset:    fset,
-				Types:   tpkg,
-				Info:    tinfo,
-				File:    file,
-				Call:    calls[currentCall],
-				Content: content,
+				Fset:      fset,
+				Types:     tpkg,
+				Info:      tinfo,
+				Call:      calls[currentCall],
+				CountUses: nil, // TODO(adonovan): opt: amortize across callInfo.pkg
 			}
-			res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
+			res, err := inline.Inline(caller, callee, opts)
 			if err != nil {
 				return nil, fmt.Errorf("inlining failed: %v", err)
 			}
-			content = res.Content
+
+			// applyEdits transforms content by applying the specified edits
+			// (whose positions are defined by fset), reformatting the file, and
+			// removing unused imports (using pkg for names of imported packages).
+			// (Adapted from inline_test.applyEdits.)
+			applyEdits := func(content []byte, edits []refactor.Edit) ([]byte, error) {
+				dedits := make([]diff.Edit, len(edits))
+				for i, edit := range edits {
+					dedits[i] = diff.Edit{
+						Start: int(edit.Pos - file.FileStart),
+						End:   int(edit.End - file.FileStart),
+						New:   string(edit.NewText),
+					}
+				}
+				got, err := diff.ApplyBytes(content, dedits)
+				if err != nil {
+					return nil, err // inliner produced invalid edits
+				}
+				got, err = driverutil.FormatSourceRemoveImports(tpkg, got)
+				if err != nil {
+					return nil, err // failed to parse+print
+				}
+				return []byte(got), nil
+			}
+
+			content, err = applyEdits(content, res.Edits)
+			if err != nil {
+				return nil, fmt.Errorf("applying inliner edits failed: %v", err)
+			}
+
 			if post != nil {
 				content = post(content)
 			}
@@ -230,22 +320,24 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			// anything in the surrounding scope.
 			//
 			// TODO(rfindley): improve this.
+			logf := func(string, ...any) {}
+			if opts != nil {
+				logf = opts.Logf
+			}
 			tpkg, tinfo, err = reTypeCheck(logf, callInfo.pkg, map[protocol.DocumentURI]*ast.File{uri: file}, true)
 			if err != nil {
 				return nil, bug.Errorf("type checking after inlining failed: %v", err)
 			}
 
-			// Collect calls to the target function in the modified declaration.
-			var calls2 []*ast.CallExpr
-			ast.Inspect(file, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok {
-					fn := typeutil.StaticCallee(tinfo, call)
-					if fn != nil && fn.Pkg().Path() == string(pkg.Metadata().PkgPath) && fn.Name() == origDecl.Name.Name {
-						calls2 = append(calls2, call)
-					}
+			// Collect calls to the target function in the modified declaration,
+			// using a new inspector for the re-parsed file.
+			var calls2 []inspector.Cursor
+			for curCall := range inspector.New([]*ast.File{file}).Root().Preorder((*ast.CallExpr)(nil)) {
+				fn := typeutil.StaticCallee(tinfo, curCall.Node().(*ast.CallExpr))
+				if fn != nil && fn.Pkg().Path() == string(pkg.Metadata().PkgPath) && fn.Name() == origDecl.Name.Name {
+					calls2 = append(calls2, curCall)
 				}
-				return true
-			})
+			}
 
 			// If the number of calls has increased, this process will never cease.
 			// If the number of calls has decreased, assume that inlining removed a

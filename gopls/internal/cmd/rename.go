@@ -10,13 +10,12 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // rename implements the rename verb for gopls.
 type rename struct {
 	EditFlags
-	app *Application
+	app *application
 }
 
 func (r *rename) Name() string      { return "rename" }
@@ -42,17 +41,17 @@ rename-flags:
 // - otherwise, prints the new versions to stdout.
 func (r *rename) Run(ctx context.Context, args ...string) error {
 	if len(args) != 2 {
-		return tool.CommandLineErrorf("rename expects 2 arguments (position, new name)")
+		return commandLineErrorf("rename expects 2 arguments (position, new name)")
 	}
 	r.app.editFlags = &r.EditFlags
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -61,13 +60,12 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	p := protocol.RenameParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
-		NewName:      args[1],
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+		NewName:                    args[1],
 	}
-	edit, err := conn.Rename(ctx, &p)
+	edit, err := cli.server.Rename(ctx, &p)
 	if err != nil {
 		return err
 	}
-	return conn.client.applyWorkspaceEdit(edit)
+	return cli.applyWorkspaceEdit(edit)
 }

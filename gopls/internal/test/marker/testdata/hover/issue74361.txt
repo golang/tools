@@ -1,0 +1,40 @@
+-- flags --
+-skip_goarch=386,arm
+
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
+-- go.mod --
+module mod.com
+
+-- a/a.go --
+package a
+
+type (
+	Named  int
+	Alias  = Named
+	Alias2 = Alias
+)
+
+var (
+	named  Named
+	alias  Alias //@hover("alias", "alias", alias)
+	alias2 Alias2 //@hover("alias2", "alias2", alias2)
+)
+
+-- @alias --
+```go
+var alias Alias
+```
+
+---
+
+@hover("alias", "alias", alias)
+-- @alias2 --
+```go
+var alias2 Alias2
+```
+
+---
+
+@hover("alias2", "alias2", alias2)

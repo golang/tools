@@ -12,6 +12,8 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"regexp"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -19,11 +21,12 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
 // Definition handles the textDocument/definition request for Go files.
-func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "golang.Definition")
 	defer done()
 
@@ -31,13 +34,14 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(position)
+	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
 	}
+	cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 
-	// Handle the case where the cursor is in an import.
-	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, pos)
+	// Handle the case where the range is in an import.
+	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +51,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// Handle the case where the cursor is in the package name.
 	// We use "<= End" to accept a query immediately after the package name.
-	if pgf.File != nil && pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.End() {
+	if pgf.File != nil && astutil.NodeContains(pgf.File.Name, astutil.RangeOf(start, end)) {
 		// If there's no package documentation, just use current file.
 		declFile := pgf
 		for _, pgf := range pkg.CompiledGoFiles() {
@@ -64,51 +68,140 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Handle the case where the cursor is in a linkname directive.
-	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, position)
+	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, rng)
 	if !errors.Is(err, ErrNoLinkname) {
 		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in an embed directive.
-	locations, err = embedDefinition(pgf.Mapper, position)
+	locations, err = embedDefinition(pgf.Mapper, rng)
 	if !errors.Is(err, ErrNoEmbed) {
 		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in a doc link.
-	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, pos)
+	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, start, end)
 	if !errors.Is(err, errNoCommentReference) {
 		return locations, err // may be success or failure
 	}
 
-	// The general case: the cursor is on an identifier.
-	_, obj, _ := referencedObject(pkg, pgf, pos)
-	if obj == nil {
+	// Handle definition requests for various special kinds of syntax node.
+	switch node := cur.Node().(type) {
+	// Handle the case where the cursor is on a return statement by jumping to the result variables.
+	case *ast.ReturnStmt:
+		var funcType *ast.FuncType
+		for c := range cur.Enclosing() {
+			switch n := c.Node().(type) {
+			case *ast.FuncLit:
+				funcType = n.Type
+			case *ast.FuncDecl:
+				funcType = n.Type
+			}
+			if funcType != nil {
+				break
+			}
+		}
+		// Inv: funcType != nil, as a return stmt cannot appear outside a function.
+		if funcType.Results == nil {
+			return nil, nil // no result variables
+		}
+		loc, err := pgf.NodeLocation(funcType.Results)
+		if err != nil {
+			return nil, err
+		}
+		return []protocol.Location{loc}, nil
+
+	case *ast.BranchStmt:
+		// Handle the case where the cursor is on a goto, break or continue statement by returning the
+		// location of the label, the closing brace of the relevant block statement, or the
+		// start of the relevant loop, respectively.
+		label, isLabeled := pkg.TypesInfo().Uses[node.Label].(*types.Label)
+		switch node.Tok {
+		case token.GOTO:
+			if !isLabeled {
+				return nil, fmt.Errorf("undefined label")
+			}
+			loc, err := pgf.PosLocation(label.Pos(), label.Pos()+token.Pos(len(label.Name())))
+			if err != nil {
+				return nil, err
+			}
+			return []protocol.Location{loc}, nil
+
+		case token.BREAK, token.CONTINUE:
+			// Find innermost relevant ancestor for break/continue.
+			for c := range cur.Enclosing() {
+				if isLabeled {
+					l, ok := c.Parent().Node().(*ast.LabeledStmt)
+					if !(ok && l.Label.Name == label.Name()) {
+						continue
+					}
+				}
+				switch n := c.Node().(type) {
+				case *ast.ForStmt, *ast.RangeStmt:
+					var start, end token.Pos
+					if node.Tok == token.BREAK {
+						start, end = n.End()-token.Pos(len("}")), n.End()
+					} else { // CONTINUE
+						start, end = n.Pos(), n.Pos()+token.Pos(len("for"))
+					}
+					loc, err := pgf.PosLocation(start, end)
+					if err != nil {
+						return nil, err
+					}
+					return []protocol.Location{loc}, nil
+				case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+					if node.Tok == token.BREAK {
+						loc, err := pgf.PosLocation(n.End()-1, n.End())
+						if err != nil {
+							return nil, err
+						}
+						return []protocol.Location{loc}, nil
+					}
+				case *ast.FuncDecl, *ast.FuncLit:
+					// bad syntax; avoid jumping outside the current function
+					return nil, nil
+				}
+			}
+		}
+	}
+
+	// The general case: the cursor is on (or near) an identifier.
+	objects, err := objectsAt(pkg.TypesInfo(), cur)
+	if err != nil {
+		return nil, nil
+	}
+	obj := objects[0].obj
+	cur = objects[0].cur // nearby
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		// objectsAt can return a non-Ident (e.g. ImportSpec),
+		// but we dealt with them earlier. Can't happen?
 		return nil, nil
 	}
 
-	// Built-ins have no position.
-	if isBuiltin(obj) {
-		return builtinDefinition(ctx, snapshot, obj)
+	// If the query position was an embedded field, we want to jump
+	// to the field's type definition, not the field's definition (#42254).
+	if v, ok := obj.(*types.Var); ok && v.Embedded() {
+		// types.Info.Uses contains the embedded field's *types.TypeName.
+		if typeName := pkg.TypesInfo().Uses[id]; typeName != nil {
+			obj = typeName
+		}
+	}
+
+	// Non-go (e.g. assembly) symbols
+	//
+	// When already at the definition of a Go function without
+	// a body, we jump to its non-Go (C or assembly) definition.
+	for _, decl := range pgf.File.Decls {
+		if decl, ok := decl.(*ast.FuncDecl); ok &&
+			decl.Body == nil &&
+			astutil.NodeContains(decl.Name, astutil.RangeOf(start, end)) {
+			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
+		}
 	}
 
 	// Finally, map the object position.
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.Location{loc}, nil
-}
-
-// builtinDefinition returns the location of the fake source
-// declaration of a built-in in {builtin,unsafe}.go.
-func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) ([]protocol.Location, error) {
-	pgf, ident, err := builtinDecl(ctx, snapshot, obj)
-	if err != nil {
-		return nil, err
-	}
-
-	loc, err := pgf.NodeLocation(ident)
+	loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -173,11 +266,17 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 	if obj.Pkg() == types.Unsafe {
 		// package "unsafe":
 		// parse $GOROOT/src/unsafe/unsafe.go
-		unsafe := snapshot.Metadata("unsafe")
+		var unsafe *metadata.Package
+		if mps := snapshot.MetadataGraph().ForPackagePath[metadata.PackagePath("unsafe")]; len(mps) > 0 {
+			unsafe = mps[0]
+		}
 		if unsafe == nil {
 			// If the type checker somehow resolved 'unsafe', we must have metadata
 			// for it.
 			return nil, nil, bug.Errorf("no metadata for package 'unsafe'")
+		}
+		if len(unsafe.GoFiles) == 0 {
+			return nil, nil, bug.Errorf("no files for package 'unsafe'")
 		}
 		uri := unsafe.GoFiles[0]
 		fh, err := snapshot.ReadFile(ctx, uri)
@@ -220,72 +319,20 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 			return nil, nil, bug.Errorf("unknown built-in %v", obj)
 		}
 	}
+	_ = ident.Name // ident != nil
 
 	return pgf, ident, nil
-}
-
-// referencedObject returns the identifier and object referenced at the
-// specified position, which must be within the file pgf, for the purposes of
-// definition/hover/call hierarchy operations. It returns a nil object if no
-// object was found at the given position.
-//
-// If the returned identifier is a type-switch implicit (i.e. the x in x :=
-// e.(type)), the third result will be the type of the expression being
-// switched on (the type of e in the example). This facilitates workarounds for
-// limitations of the go/types API, which does not report an object for the
-// identifier x.
-//
-// For embedded fields, referencedObject returns the type name object rather
-// than the var (field) object.
-//
-// TODO(rfindley): this function exists to preserve the pre-existing behavior
-// of golang.Identifier. Eliminate this helper in favor of sharing
-// functionality with objectsAt, after choosing suitable primitives.
-func referencedObject(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
-	path := pathEnclosingObjNode(pgf.File, pos)
-	if len(path) == 0 {
-		return nil, nil, nil
-	}
-	var obj types.Object
-	info := pkg.TypesInfo()
-	switch n := path[0].(type) {
-	case *ast.Ident:
-		obj = info.ObjectOf(n)
-		// If n is the var's declaring ident in a type switch
-		// [i.e. the x in x := foo.(type)], it will not have an object. In this
-		// case, set obj to the first implicit object (if any), and return the type
-		// of the expression being switched on.
-		//
-		// The type switch may have no case clauses and thus no
-		// implicit objects; this is a type error ("unused x"),
-		if obj == nil {
-			if implicits, typ := typeSwitchImplicits(info, path); len(implicits) > 0 {
-				return n, implicits[0], typ
-			}
-		}
-
-		// If the original position was an embedded field, we want to jump
-		// to the field's type definition, not the field's definition.
-		if v, ok := obj.(*types.Var); ok && v.Embedded() {
-			// types.Info.Uses contains the embedded field's *types.TypeName.
-			if typeName := info.Uses[n]; typeName != nil {
-				obj = typeName
-			}
-		}
-		return n, obj, nil
-	}
-	return nil, nil, nil
 }
 
 // importDefinition returns locations defining a package referenced by the
 // import spec containing pos.
 //
 // If pos is not inside an import spec, it returns nil, nil.
-func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
+func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) ([]protocol.Location, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
-		if spec.Path.Pos() <= pos && pos <= spec.Path.End() {
+		if astutil.NodeContains(spec.Path, astutil.RangeOf(start, end)) {
 			imp = spec
 		}
 	}
@@ -333,12 +380,48 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	return locs, nil
 }
 
-// TODO(rfindley): avoid the duplicate column mapping here, by associating a
-// column mapper with each file handle.
-func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start, end token.Pos) (protocol.Location, error) {
+// ObjectLocation returns the location of the declaring identifier of obj.
+// If valid, obj.Pos() must be mapped by fset.
+// It may need to read the declaring file content, hence (ctx, s).
+// It supports the builtin and unsafe pseudo-packages.
+func ObjectLocation(ctx context.Context, fset *token.FileSet, snapshot *cache.Snapshot, obj types.Object) (protocol.Location, error) {
+	if isBuiltin(obj) {
+		// Returns fake source declaration in {builtin,unsafe}.go.
+		pgf, ident, err := builtinDecl(ctx, snapshot, obj)
+		if err != nil {
+			return protocol.Location{}, err
+		}
+		return pgf.NodeLocation(ident)
+	}
+
+	// An imported Go package has a package-local, unqualified name.
+	// When the name matches the imported package name, there is usually
+	// no identifier in the import spec with the local package name.
+	//
+	// For example:
+	// 	import "go/‸ast" 	// name "ast" matches package name
+	// 	import ‸a "go/ast"  	// name "a" does not match package name
+	//
+	// When the identifier does not appear in the source, have the range
+	// of the object be the import path, including quotes.
+	//
+	// But this is just a heuristic, and it's wrong in this case:
+	// 	import ‸ast "go/ast"  	// name matches (spurious result is `ast "go/`)
+	nameLen := len(obj.Name())
+	if pkgName, ok := obj.(*types.PkgName); ok && pkgName.Imported().Name() == pkgName.Name() {
+		nameLen = len(pkgName.Imported().Path()) + len(`""`)
+	}
+
+	var (
+		start = obj.Pos()
+		end   = start + token.Pos(nameLen)
+	)
 	file := fset.File(start)
+	if file == nil {
+		return protocol.Location{}, bug.Errorf("FileSet does not map Pos %d", start)
+	}
 	uri := protocol.URIFromPath(file.Name())
-	fh, err := s.ReadFile(ctx, uri)
+	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return protocol.Location{}, err
 	}
@@ -346,6 +429,45 @@ func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start,
 	if err != nil {
 		return protocol.Location{}, err
 	}
+	// TODO(rfindley): avoid the duplicate column mapping here, by associating a
+	// column mapper with each file handle.
 	m := protocol.NewMapper(fh.URI(), content)
 	return m.PosLocation(file, start, end)
+}
+
+// nonGoDefinition returns the location of the definition of a non-Go symbol.
+// Only assembly is supported for now.
+func nonGoDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string) ([]protocol.Location, error) {
+	// Examples:
+	//   TEXT runtime·foo(SB)
+	//   TEXT ·foo<ABIInternal>(SB)
+	// TODO(adonovan): why does ^TEXT cause it not to match?
+	pattern := regexp.MustCompile("TEXT\\b.*·(" + regexp.QuoteMeta(symbol) + ")[\\(<]")
+
+	for _, uri := range pkg.Metadata().OtherFiles {
+		if strings.HasSuffix(uri.Path(), ".s") {
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return nil, err // context cancelled
+			}
+			content, err := fh.Content()
+			if err != nil {
+				continue // can't read file
+			}
+			if match := pattern.FindSubmatchIndex(content); match != nil {
+				mapper := protocol.NewMapper(uri, content)
+				loc, err := mapper.OffsetLocation(match[2], match[3])
+				if err != nil {
+					return nil, err
+				}
+				return []protocol.Location{loc}, nil
+			}
+		}
+	}
+
+	// TODO(adonovan): try C files
+
+	// This may be reached for functions that aren't implemented
+	// in assembly (e.g. compiler intrinsics like getg).
+	return nil, fmt.Errorf("can't find non-Go definition of %s", symbol)
 }

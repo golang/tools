@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,11 +33,11 @@ import (
 )
 
 // Unique identifiers for client/server.
-var serverIndex int64
+var serverIndex atomic.Int64
 
 // The streamServer type is a jsonrpc2.streamServer that handles incoming
 // streams as a new LSP session, using a shared cache.
-type streamServer struct {
+type StreamServer struct {
 	cache *cache.Cache
 	// daemon controls whether or not to log new connections.
 	daemon bool
@@ -43,20 +45,47 @@ type streamServer struct {
 	// optionsOverrides is passed to newly created sessions.
 	optionsOverrides func(*settings.Options)
 
+	// onSessionExit is called whenever a session exits, with the session ID.
+	onSessionExit func(id string)
+
 	// serverForTest may be set to a test fake for testing.
 	serverForTest protocol.Server
+
+	// Keep track of active sessions, for interrogation.
+	sessionMu sync.Mutex
+	sessions  map[string]sessionServer
+}
+
+type sessionServer struct {
+	session *cache.Session
+	server  protocol.Server
 }
 
 // NewStreamServer creates a StreamServer using the shared cache. If
 // withTelemetry is true, each session is instrumented with telemetry that
 // records RPC statistics.
-func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) jsonrpc2.StreamServer {
-	return &streamServer{cache: cache, daemon: daemon, optionsOverrides: optionsFunc}
+func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) *StreamServer {
+	return &StreamServer{
+		cache:            cache,
+		daemon:           daemon,
+		optionsOverrides: optionsFunc,
+		sessions:         make(map[string]sessionServer),
+	}
+}
+
+// SetSessionExitFunc sets the function to call when sessions exit.
+// It is not concurrency safe, and must only be called at most once, before the
+// receiver is passed to jsonrpc2.Serve.
+func (s *StreamServer) SetSessionExitFunc(f func(id string)) {
+	if s.onSessionExit != nil {
+		panic("duplicate call to SetSessionExitFunc")
+	}
+	s.onSessionExit = f
 }
 
 // ServeStream implements the jsonrpc2.StreamServer interface, by handling
 // incoming streams using a new lsp server.
-func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
+func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
 	client := protocol.ClientDispatcher(conn)
 	session := cache.NewSession(ctx, s.cache)
 	svr := s.serverForTest
@@ -67,6 +96,18 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 			instance.AddService(svr, session)
 		}
 	}
+	s.sessionMu.Lock()
+	s.sessions[session.ID()] = sessionServer{session, svr}
+	s.sessionMu.Unlock()
+	defer func() {
+		s.sessionMu.Lock()
+		delete(s.sessions, session.ID())
+		s.sessionMu.Unlock()
+		if s.onSessionExit != nil {
+			s.onSessionExit(session.ID())
+		}
+	}()
+
 	// Clients may or may not send a shutdown message. Make sure the server is
 	// shut down.
 	// TODO(rFindley): this shutdown should perhaps be on a disconnected context.
@@ -86,12 +127,37 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 			handshaker(session, executable, s.daemon,
 				protocol.ServerHandler(svr,
 					jsonrpc2.MethodNotFound))))
+
 	if s.daemon {
 		log.Printf("Session %s: connected", session.ID())
 		defer log.Printf("Session %s: exited", session.ID())
 	}
+
 	<-conn.Done()
 	return conn.Err()
+}
+
+// Session returns the current active session for the given id, or (nil, nil)
+// if none exists.
+func (s *StreamServer) Session(id string) (*cache.Session, protocol.Server) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	ss := s.sessions[id]
+	return ss.session, ss.server // possibly nil for zero value
+}
+
+// FirstSession returns the first session by lexically sorted session ID, or
+// (nil, nil).
+func (s *StreamServer) FirstSession() (*cache.Session, protocol.Server) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	keys := slices.Collect(maps.Keys(s.sessions))
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	id := slices.Min(keys)
+	ss := s.sessions[id]
+	return ss.session, ss.server
 }
 
 // A forwarder is a jsonrpc2.StreamServer that handles an LSP stream by
@@ -142,6 +208,10 @@ func QueryServerState(ctx context.Context, addr string) (any, error) {
 // dialRemote is used for making calls into the gopls daemon. addr should be a
 // URL, possibly on the synthetic 'auto' network (e.g. tcp://..., unix://...,
 // or auto://...).
+//
+// Unlike [ConnectToRemote], dialRemote never starts a daemon: it is used by
+// commands that inspect a daemon, which must not perturb the state they
+// report on.
 func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	network, address := ParseAddr(addr)
 	if network == autoNetwork {
@@ -153,7 +223,7 @@ func dialRemote(ctx context.Context, addr string) (jsonrpc2.Conn, error) {
 	}
 	netConn, err := net.DialTimeout(network, address, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("dialing remote: %w", err)
+		return nil, fmt.Errorf("no gopls daemon is listening on %s;%s: %w", network, address, err)
 	}
 	serverConn := jsonrpc2.NewConn(jsonrpc2.NewHeaderStream(netConn))
 	serverConn.Go(ctx, jsonrpc2.MethodNotFound)
@@ -201,7 +271,7 @@ func (f *forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) e
 	// processing any client messages.
 
 	// Do a handshake with the server instance to exchange debug information.
-	index := atomic.AddInt64(&serverIndex, 1)
+	index := serverIndex.Add(1)
 	f.mu.Lock()
 	f.serverConn = serverConn
 	f.serverID = strconv.FormatInt(index, 10)
@@ -215,9 +285,9 @@ func (f *forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) e
 
 	select {
 	case <-serverConn.Done():
-		clientConn.Close()
+		clientConn.Close() // ignore error
 	case <-clientConn.Done():
-		serverConn.Close()
+		serverConn.Close() // ignore error
 	}
 
 	err = nil
@@ -267,8 +337,14 @@ func (f *forwarder) handshake(ctx context.Context) {
 	)
 }
 
-func ConnectToRemote(ctx context.Context, addr string) (net.Conn, error) {
-	dialer, err := newAutoDialer(addr, nil)
+// ConnectToRemote dials the gopls daemon at the given address, which may be
+// on the synthetic 'auto' network (see [ParseAddr]).
+//
+// If the address is an automatic address ("auto" or "auto;<id>") and argFunc
+// is non-nil, and no daemon is already listening at the resolved address, a
+// new daemon is started with the arguments returned by argFunc.
+func ConnectToRemote(ctx context.Context, addr string, argFunc func(network, address string) []string) (net.Conn, error) {
+	dialer, err := newAutoDialer(addr, argFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -312,37 +388,61 @@ func (f *forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	}
 }
 
-// addGoEnvToInitializeRequest builds a new initialize request in which we set
-// any environment variables output by `go env` and not already present in the
-// request.
-//
-// It returns an error if r is not an initialize request, or is otherwise
-// malformed.
-func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonrpc2.Request, error) {
-	var params protocol.ParamInitialize
-	if err := json.Unmarshal(r.Params(), &params); err != nil {
-		return nil, err
+// AddGoEnv populates the "env" property of params.InitializationOptions with
+// variables from `go env` run in the client environment, omitting GOWORK
+// unless explicitly set in the process environment.
+func AddGoEnv(ctx context.Context, params *protocol.ParamInitialize) error {
+	if params == nil {
+		return fmt.Errorf("nil initialize params")
 	}
-	var opts map[string]interface{}
+	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
 	case nil:
-		opts = make(map[string]interface{})
-	case map[string]interface{}:
+		opts = make(map[string]any)
+	case map[string]any:
 		opts = v
 	default:
-		return nil, fmt.Errorf("unexpected type for InitializationOptions: %T", v)
+		return fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
-		envOpt = make(map[string]interface{})
+		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf(`env option is %T, expected a map`, envOpt)
+	var env map[string]any
+	switch e := envOpt.(type) {
+	case map[string]any:
+		env = e
+	case map[string]string:
+		env = make(map[string]any, len(e))
+		for k, v := range e {
+			env[k] = v
+		}
+	default:
+		return fmt.Errorf(`env option is %T, expected a map`, envOpt)
 	}
-	goenv, err := getGoEnv(ctx, env)
+	var dir string
+	if d := params.RootURI.Path(); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			dir = d
+		}
+	}
+	if dir == "" {
+		// Editors connecting via the forwarder may populate WorkspaceFolders
+		// instead of the deprecated RootURI.
+		for _, folder := range params.WorkspaceFolders {
+			if uri, err := protocol.ParseDocumentURI(folder.URI); err == nil {
+				if d := uri.Path(); d != "" {
+					if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+						dir = d
+						break
+					}
+				}
+			}
+		}
+	}
+	goenv, err := getGoEnv(ctx, dir, env)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// We don't want to propagate GOWORK unless explicitly set since that could mess with
 	// path inference during cmd/go invocations, see golang/go#51825.
@@ -355,6 +455,23 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	}
 	opts["env"] = env
 	params.InitializationOptions = opts
+	return nil
+}
+
+// addGoEnvToInitializeRequest builds a new initialize request in which we set
+// any environment variables output by `go env` and not already present in the
+// request.
+//
+// It returns an error if r is not an initialize request, or is otherwise
+// malformed.
+func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonrpc2.Request, error) {
+	var params protocol.ParamInitialize
+	if err := json.Unmarshal(r.Params(), &params); err != nil {
+		return nil, err
+	}
+	if err := AddGoEnv(ctx, &params); err != nil {
+		return nil, err
+	}
 	call, ok := r.(*jsonrpc2.Call)
 	if !ok {
 		return nil, fmt.Errorf("%T is not a *jsonrpc2.Call", r)
@@ -368,7 +485,7 @@ func (f *forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.R
 		event.Log(outerCtx, "no debug instance to start")
 		return r
 	}
-	return func(ctx context.Context, result interface{}, outerErr error) error {
+	return func(ctx context.Context, result any, outerErr error) error {
 		if outerErr != nil {
 			return r(ctx, result, outerErr)
 		}
@@ -392,7 +509,7 @@ func (f *forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.R
 		addr, err = di.Serve(outerCtx, addr)
 		if err != nil {
 			event.Error(outerCtx, "starting debug server", err)
-			return r(ctx, result, outerErr)
+			return r(ctx, result, err)
 		}
 		urls := []string{"http://" + addr}
 		modified.URLs = append(urls, modified.URLs...)
@@ -429,7 +546,7 @@ type handshakeResponse struct {
 }
 
 // clientSession identifies a current client LSP session on the server. Note
-// that it looks similar to handshakeResposne, but in fact 'Logfile' and
+// that it looks similar to handshakeResponse, but in fact 'Logfile' and
 // 'DebugAddr' now refer to the client.
 type clientSession struct {
 	SessionID string `json:"sessionID"`
@@ -517,7 +634,7 @@ func sendError(ctx context.Context, reply jsonrpc2.Replier, err error) {
 	}
 }
 
-// ParseAddr parses the address of a gopls remote.
+// ParseAddr parses the address of a gopls remote (e.g. "tcp;localhost:12345").
 // TODO(rFindley): further document this syntax, and allow URI-style remote
 // addresses such as "auto://...".
 func ParseAddr(listen string) (network string, address string) {
@@ -526,8 +643,8 @@ func ParseAddr(listen string) (network string, address string) {
 	if listen == autoNetwork {
 		return autoNetwork, ""
 	}
-	if parts := strings.SplitN(listen, ";", 2); len(parts) == 2 {
-		return parts[0], parts[1]
+	if network, address, ok := strings.Cut(listen, ";"); ok {
+		return network, address
 	}
 	return "tcp", listen
 }

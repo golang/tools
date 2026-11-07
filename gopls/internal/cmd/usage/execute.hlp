@@ -7,11 +7,9 @@ The execute command sends an LSP ExecuteCommand request to gopls,
 with a set of optional JSON argument values.
 Some commands return a result, also JSON.
 
-Available commands are documented at:
-
-	https://github.com/golang/tools/blob/master/gopls/doc/commands.md
-
-This interface is experimental and commands may change or disappear without notice.
+Gopls' command set is defined by the command.Interface type; see
+https://pkg.go.dev/golang.org/x/tools/gopls/internal/protocol/command#Interface.
+It is not a stable interface: commands may change or disappear without notice.
 
 Examples:
 

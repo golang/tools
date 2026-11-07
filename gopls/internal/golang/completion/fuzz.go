@@ -20,11 +20,13 @@ import (
 // PJW: are there other packages where we can deduce usage constraints?
 
 // if we find fuzz completions, then return true, as those are the only completions to offer
-func (c *completer) fuzz(mset *types.MethodSet, imp *importInfo, cb func(candidate)) bool {
+func (c *completer) fuzz(testingF types.Type, imp *importInfo, cb func(candidate)) bool {
 	// 1. inside f.Fuzz? (only f.Failed and f.Name)
 	// 2. possible completing f.Fuzz?
 	//    [Ident,SelectorExpr,Callexpr,ExprStmt,BlockiStmt,FuncDecl(Fuzz...)]
 	// 3. before f.Fuzz, same (for 2., offer choice when looking at an F)
+
+	mset := types.NewMethodSet(testingF)
 
 	// does the path contain FuncLit as arg to f.Fuzz CallExpr?
 	inside := false
@@ -48,8 +50,8 @@ Loop:
 		}
 	}
 	if inside {
-		for i := 0; i < mset.Len(); i++ {
-			o := mset.At(i).Obj()
+		for method := range mset.Methods() {
+			o := method.Obj()
 			if o.Name() == "Failed" || o.Name() == "Name" {
 				cb(candidate{
 					obj:         o,
@@ -104,18 +106,19 @@ Loop:
 			return false
 		}
 
-		lbl := "Fuzz(func(t *testing.T"
+		var lbl strings.Builder
+		lbl.WriteString("Fuzz(func(t *testing.T")
 		for i, a := range add.Args {
 			info := c.pkg.TypesInfo().TypeOf(a)
 			if info == nil {
 				return false // How could this happen, but better safe than panic.
 			}
-			lbl += fmt.Sprintf(", %c %s", 'a'+i, info)
+			fmt.Fprintf(&lbl, ", %c %s", 'a'+i, info)
 		}
-		lbl += ")"
+		lbl.WriteString(")")
 		xx := CompletionItem{
-			Label:         lbl,
-			InsertText:    lbl,
+			Label:         lbl.String(),
+			InsertText:    lbl.String(),
 			Kind:          protocol.FunctionCompletion,
 			Depth:         0,
 			Score:         10, // pretty confident the user should see this
@@ -123,8 +126,8 @@ Loop:
 			isSlice:       false,
 		}
 		c.items = append(c.items, xx)
-		for i := 0; i < mset.Len(); i++ {
-			o := mset.At(i).Obj()
+		for method := range mset.Methods() {
+			o := method.Obj()
 			if o.Name() != "Fuzz" {
 				cb(candidate{
 					obj:         o,

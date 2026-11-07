@@ -11,10 +11,9 @@ package golang
 // placeholder for a more sophisticated one.
 //
 // TODO(adonovan):
-// - rewrite using html/template.
-//   Or factor with golang.org/x/pkgsite/internal/godoc/dochtml.
+// - rewrite using html/template. No, really, let's do this.
 // - emit breadcrumbs for parent + sibling packages.
-// - list promoted methods---we have type information!
+// - list promoted methods---we have type information! (golang/go#67158)
 // - gather Example tests, following go/doc and pkgsite.
 // - add option for doc.AllDecls: show non-exported symbols too.
 // - style the <li> bullets in the index as invisible.
@@ -27,7 +26,6 @@ package golang
 // - move this into a new package, golang/web, and then
 //   split out the various helpers without fear of polluting
 //   the golang package namespace?
-// - show "Deprecated" chip when appropriate.
 
 import (
 	"bytes"
@@ -38,19 +36,17 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
-	"html"
+	"html/template"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/slices"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -80,7 +76,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 		// External test packages don't have /pkg doc pages,
 		// so instead show the doc for the package under test.
 		// (This named-based heuristic is imperfect.)
-		if forTest := strings.TrimSuffix(pkg.Path(), "_test"); forTest != pkg.Path() {
+		if forTest, ok := strings.CutSuffix(pkg.Path(), "_test"); ok {
 			return PackagePath(forTest), "", makeTitle("package", nil, filepath.Base(forTest))
 		}
 
@@ -120,12 +116,10 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	if !sym.Exported() {
 		// Unexported method of exported type?
 		if fn, ok := sym.(*types.Func); ok {
-			if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
-				_, named := typesinternal.ReceiverNamed(recv)
-				if named != nil && named.Obj().Exported() {
-					sym = named.Obj()
-					goto below
-				}
+			_, named := typesinternal.RecvBase(fn)
+			if named != nil && named.Obj().Exported() {
+				sym = named.Obj()
+				goto below
 			}
 		}
 
@@ -140,15 +134,14 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	}
 
 	// package-level symbol?
-	if isPackageLevel(sym) {
+	if typesinternal.IsPackageLevel(sym) {
 		return pkgpath, sym.Name(), makeTitle(objectKind(sym), sym.Pkg(), sym.Name())
 	}
 
 	// Inv: sym is field or method, or local.
 	switch sym := sym.(type) {
 	case *types.Func: // => method
-		sig := sym.Type().(*types.Signature)
-		isPtr, named := typesinternal.ReceiverNamed(sig.Recv())
+		isPtr, named := typesinternal.RecvBase(sym)
 		if named != nil {
 			if !named.Obj().Exported() {
 				return wholePackage(sym.Pkg()) // exported method of unexported type
@@ -194,20 +187,18 @@ type thing struct {
 }
 
 func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) thing {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	cur, _, _, _ := astutil.Select(pgf.Cursor(), start, end)
 
 	// In an import spec?
-	if len(path) >= 3 { // [...ImportSpec GenDecl File]
-		if spec, ok := path[len(path)-3].(*ast.ImportSpec); ok {
-			if pkgname, ok := typesutil.ImportedPkgName(pkg.TypesInfo(), spec); ok {
-				return thing{pkg: pkgname.Imported()}
-			}
+	if spec, _ := cursorutil.FirstEnclosing[*ast.ImportSpec](cur); spec != nil {
+		if pkgname := pkg.TypesInfo().PkgNameOf(spec); pkgname != nil {
+			return thing{pkg: pkgname.Imported()}
 		}
 	}
 
 	// Definition or reference to symbol?
 	var obj types.Object
-	if id, ok := path[0].(*ast.Ident); ok {
+	if id, ok := cur.Node().(*ast.Ident); ok {
 		obj = pkg.TypesInfo().ObjectOf(id)
 
 		// Treat use to PkgName like ImportSpec.
@@ -215,7 +206,7 @@ func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) t
 			return thing{pkg: pkgname.Imported()}
 		}
 
-	} else if sel, ok := path[0].(*ast.SelectorExpr); ok {
+	} else if sel, ok := cur.Node().(*ast.SelectorExpr); ok {
 		// e.g. selection is "fmt.Println" or just a portion ("mt.Prin")
 		obj = pkg.TypesInfo().Uses[sel.Sel]
 	}
@@ -223,34 +214,20 @@ func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) t
 		return thing{symbol: obj}
 	}
 
-	// Find enclosing declaration.
-	if n := len(path); n > 1 {
-		switch decl := path[n-2].(type) {
-		case *ast.FuncDecl:
-			// method?
-			if fn := pkg.TypesInfo().Defs[decl.Name]; fn != nil {
-				return thing{enclosing: fn}
-			}
-
-		case *ast.GenDecl:
-			// path=[... Spec? GenDecl File]
-			for _, spec := range decl.Specs {
-				if n > 2 && spec == path[n-3] {
-					var name *ast.Ident
-					switch spec := spec.(type) {
-					case *ast.ValueSpec:
-						// var, const: use first name
-						name = spec.Names[0]
-					case *ast.TypeSpec:
-						name = spec.Name
-					}
-					if name != nil {
-						return thing{enclosing: pkg.TypesInfo().Defs[name]}
-					}
-					break
-				}
-			}
+	// Find outermost enclosing declaration.
+	var id *ast.Ident
+	for cur := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil), (*ast.TypeSpec)(nil)) {
+		switch n := cur.Node().(type) {
+		case *ast.FuncDecl: // function or method
+			id = n.Name
+		case *ast.ValueSpec:
+			id = n.Names[0] // var, const: use first name
+		case *ast.TypeSpec:
+			id = n.Name
 		}
+	}
+	if obj := pkg.TypesInfo().Defs[id]; obj != nil {
+		return thing{enclosing: obj}
 	}
 
 	return thing{} // nothing to see here
@@ -270,6 +247,13 @@ type Web interface {
 // The posURL function returns a URL that when visited, has the side
 // effect of causing gopls to direct the client editor to navigate to
 // the specified file/line/column position, in UTF-8 coordinates.
+//
+// TODO(adonovan): this function could use some unit tests; we
+// shouldn't have to use integration tests to cover microdetails of
+// HTML rendering. (It is tempting to abstract this function so that
+// it depends only on FileSet/File/Types/TypeInfo/etc, but we should
+// bend the tests to the production interfaces, not the other way
+// around.)
 func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) {
 	// We can't use doc.NewFromFiles (even with doc.PreserveAST
 	// mode) as it calls ast.NewPackage which assumes that each
@@ -282,7 +266,7 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 	// TODO(adonovan): simulate that too.
 	fileMap := make(map[string]*ast.File)
 	for _, f := range pkg.Syntax() {
-		fileMap[pkg.FileSet().File(f.Pos()).Name()] = f
+		fileMap[pkg.FileSet().File(f.FileStart).Name()] = f
 	}
 	astpkg := &ast.Package{
 		Name:  pkg.Types().Name(),
@@ -322,77 +306,53 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 			filterValues(&t.Vars)
 			filterFuncs(&t.Funcs)
 			filterFuncs(&t.Methods)
-			return unexported(t.Name)
+			if unexported(t.Name) {
+				// If an unexported type has an exported constructor function,
+				// treat the constructor as an ordinary standalone function.
+				// We will sort Funcs again below.
+				docpkg.Funcs = append(docpkg.Funcs, t.Funcs...)
+				return true // delete this type
+			}
+			return false // keep this type
+		})
+		slices.SortFunc(docpkg.Funcs, func(x, y *doc.Func) int {
+			return strings.Compare(x.Name, y.Name)
 		})
 	}
 
-	var docHTML func(comment string) []byte
+	// docHTML renders the doc comment as Markdown.
+	// The fileNode is used to deduce the enclosing file
+	// for the correct import mapping.
+	//
+	// It is not concurrency-safe.
+	var docHTML func(fileNode ast.Node, comment string) []byte
 	{
 		// Adapt doc comment parser and printer
 		// to our representation of Go packages
 		// so that doc links (e.g. "[fmt.Println]")
 		// become valid links.
-
-		printer := docpkg.Printer()
-		printer.DocLinkURL = func(link *comment.DocLink) string {
-			path := pkg.Metadata().PkgPath
-			if link.ImportPath != "" {
-				path = PackagePath(link.ImportPath)
-			}
-			fragment := link.Name
-			if link.Recv != "" {
-				fragment = link.Recv + "." + link.Name
-			}
-			return web.PkgURL(viewID, path, fragment)
-		}
-		parser := docpkg.Parser()
-		parser.LookupPackage = func(name string) (importPath string, ok bool) {
-			// Ambiguous: different files in the same
-			// package may have different import mappings,
-			// but the hook doesn't provide the file context.
-			// TODO(adonovan): conspire with docHTML to
-			// pass the doc comment's enclosing file through
-			// a shared variable, so that we can compute
-			// the correct per-file mapping.
-			//
-			// TODO(adonovan): check for PkgName.Name
-			// matches, but also check for
-			// PkgName.Imported.Namer matches, since some
-			// packages are typically imported under a
-			// non-default name (e.g. pathpkg "path") but
-			// may be referred to in doc links using their
-			// canonical name.
-			for _, f := range pkg.Syntax() {
-				for _, imp := range f.Imports {
-					pkgName, ok := typesutil.ImportedPkgName(pkg.TypesInfo(), imp)
-					if ok && pkgName.Name() == name {
-						return pkgName.Imported().Path(), true
-					}
+		printer := &comment.Printer{
+			DocLinkURL: func(link *comment.DocLink) string {
+				path := pkg.Metadata().PkgPath
+				if link.ImportPath != "" {
+					path = PackagePath(link.ImportPath)
 				}
-			}
-			return "", false
+				fragment := link.Name
+				if link.Recv != "" {
+					fragment = link.Recv + "." + link.Name
+				}
+				return web.PkgURL(viewID, path, fragment)
+			},
 		}
-		parser.LookupSym = func(recv, name string) (ok bool) {
-			// package-level decl?
-			if recv == "" {
-				return pkg.Types().Scope().Lookup(name) != nil
-			}
-
-			// method?
-			tname, ok := pkg.Types().Scope().Lookup(recv).(*types.TypeName)
-			if !ok {
-				return false
-			}
-			m, _, _ := types.LookupFieldOrMethod(tname.Type(), true, pkg.Types(), name)
-			return is[*types.Func](m)
-		}
-		docHTML = func(comment string) []byte {
-			return printer.HTML(parser.Parse(comment))
+		parse := newDocCommentParser(pkg)
+		docHTML = func(fileNode ast.Node, comment string) []byte {
+			doc := parse(fileNode, comment)
+			return printer.HTML(doc)
 		}
 	}
 
 	scope := pkg.Types().Scope()
-	escape := html.EscapeString
+	escape := template.HTMLEscapeString
 
 	title := fmt.Sprintf("%s package - %s - Gopls packages",
 		pkg.Types().Name(), escape(pkg.Types().Path()))
@@ -414,6 +374,18 @@ header {
   left: 0;
   width: 100%;
   padding: 0.3em;
+}
+
+.deprecation {
+  background-color: #c6c8ca; /* pkgsite's --color-border */
+  border-radius: 0.125rem;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: normal;
+  line-height: 1.375;
+  padding: 0.125rem 0.25rem;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .Documentation-sinceVersion {
@@ -459,8 +431,7 @@ window.addEventListener('load', function() {
 	// option emits an <option> for the specified symbol.
 	//
 	// recvType is the apparent receiver type, which may
-	// differ from ReceiverNamed(obj.Signature.Recv).Name
-	// for promoted methods.
+	// differ from RecvBase(obj).Name for promoted methods.
 	option := func(obj types.Object, recvType string) {
 		// Render functions/methods as "(recv) Method(p1, ..., pN)".
 		fragment := obj.Name()
@@ -469,7 +440,7 @@ window.addEventListener('load', function() {
 		label := obj.Name() // for a type
 		if fn, ok := obj.(*types.Func); ok {
 			var buf strings.Builder
-			sig := fn.Type().(*types.Signature)
+			sig := fn.Signature()
 			if sig.Recv() != nil {
 				fmt.Fprintf(&buf, "(%s) ", sig.Recv().Name())
 				fragment = recvType + "." + fn.Name()
@@ -551,9 +522,9 @@ window.addEventListener('load', function() {
 
 				// method of package-level named type?
 				if fn, ok := obj.(*types.Func); ok {
-					sig := fn.Type().(*types.Signature)
+					sig := fn.Signature()
 					if sig.Recv() != nil {
-						_, named := typesinternal.ReceiverNamed(sig.Recv())
+						_, named := typesinternal.RecvBase(fn)
 						if named != nil {
 							fragment := named.Obj().Name() + "." + fn.Name()
 							return web.PkgURL(viewID, PackagePath(fn.Pkg().Path()), fragment)
@@ -585,7 +556,7 @@ window.addEventListener('load', function() {
 		// appear as separate decls. We should too.
 		var buf bytes.Buffer
 		for _, file := range pkg.CompiledGoFiles() {
-			if goplsastutil.NodeContains(file.File, n.Pos()) {
+			if astutil.NodeContainsPos(file.File, n.Pos()) {
 				pos := n.Pos()
 
 				// emit emits source in the interval [pos:to] and updates pos.
@@ -595,15 +566,12 @@ window.addEventListener('load', function() {
 					if !to.IsValid() {
 						bug.Reportf("invalid Pos")
 					}
-					start, err := safetoken.Offset(file.Tok, pos)
+					text, err := file.PosText(pos, to)
 					if err != nil {
-						bug.Reportf("invalid start Pos: %v", err)
+						bug.Reportf("invalid pos range: %v", err)
+						return
 					}
-					end, err := safetoken.Offset(file.Tok, to)
-					if err != nil {
-						bug.Reportf("invalid end Pos: %v", err)
-					}
-					buf.WriteString(escape(string(file.Src[start:end])))
+					buf.WriteString(escape(string(text)))
 					pos = to
 				}
 				ast.Inspect(n, func(n ast.Node) bool {
@@ -612,7 +580,7 @@ window.addEventListener('load', function() {
 						emit(n.Pos())
 						pos = n.End()
 						if url := linkify(n); url != "" {
-							fmt.Fprintf(&buf, "<a class='id' href='%s'>%s</a>", url, escape(n.Name))
+							fmt.Fprintf(&buf, "<a class='id' href='%s'>%s</a>", escape(url), escape(n.Name))
 						} else {
 							buf.WriteString(escape(n.Name)) // plain
 						}
@@ -648,7 +616,7 @@ window.addEventListener('load', function() {
 	fnString := func(fn *types.Func) string {
 		pkgRelative := typesinternal.NameRelativeTo(pkg.Types())
 
-		sig := fn.Type().(*types.Signature)
+		sig := fn.Signature()
 
 		// Emit "func (recv T) F".
 		var buf bytes.Buffer
@@ -693,13 +661,38 @@ window.addEventListener('load', function() {
 				cloneTparams(sig.RecvTypeParams()),
 				cloneTparams(sig.TypeParams()),
 				types.NewTuple(append(
-					typesSeqToSlice[*types.Var](sig.Params())[:3],
-					types.NewVar(0, nil, "", types.Typ[types.Invalid]))...),
+					slices.Collect(sig.Params().Variables())[:3],
+					types.NewParam(0, nil, "", types.Typ[types.Invalid]))...),
 				sig.Results(),
 				false) // any final ...T parameter is truncated
 		}
 		types.WriteSignature(&buf, sig, pkgRelative)
 		return strings.ReplaceAll(buf.String(), ", invalid type)", ", ...)")
+	}
+
+	// deprecatedHTML returns an HTML "deprecated" tag (with a
+	// leading space) if any of the doc comments contains a
+	// deprecation notice, or "" otherwise.
+	// See https://go.dev/wiki/Deprecated.
+	//
+	// (The comments are available because we use doc.PreserveAST.)
+	deprecatedHTML := func(docs ...*ast.CommentGroup) string {
+		for _, doc := range docs {
+			if astutil.Deprecation(doc) != "" {
+				return " <span class='deprecation'>deprecated</span>"
+			}
+		}
+		return ""
+	}
+
+	// typeDoc returns the doc comments of a go/doc type: that of
+	// its TypeSpec, and that of its (possibly synthetic) GenDecl.
+	typeDoc := func(t *doc.Type) []*ast.CommentGroup {
+		docs := []*ast.CommentGroup{t.Decl.Doc}
+		if len(t.Decl.Specs) == 1 {
+			docs = append(docs, t.Decl.Specs[0].(*ast.TypeSpec).Doc)
+		}
+		return docs
 	}
 
 	fmt.Fprintf(&buf, "<main>\n")
@@ -715,7 +708,12 @@ window.addEventListener('load', function() {
 		"https://pkg.go.dev/"+string(pkg.Types().Path()))
 
 	// package doc
-	fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docpkg.Doc))
+	for _, f := range pkg.Syntax() {
+		if f.Doc != nil {
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(f.Doc, docpkg.Doc))
+			break
+		}
+	}
 
 	// symbol index
 	fmt.Fprintf(&buf, "<h2 id='hdr-Index'>Index</h2>\n")
@@ -728,13 +726,13 @@ window.addEventListener('load', function() {
 	}
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
-		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-			obj.Name(), escape(fnString(obj)))
+		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a>%s</li>\n",
+			obj.Name(), escape(fnString(obj)), deprecatedHTML(fn.Decl.Doc))
 	}
 	for _, doctype := range docpkg.Types {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
-		fmt.Fprintf(&buf, "<li><a href='#%[1]s'>type %[1]s</a></li>\n",
-			tname.Name())
+		fmt.Fprintf(&buf, "<li><a href='#%[1]s'>type %[1]s</a>%[2]s</li>\n",
+			tname.Name(), deprecatedHTML(typeDoc(doctype)...))
 
 		if len(doctype.Funcs)+len(doctype.Methods) > 0 {
 			fmt.Fprintf(&buf, "<ul>\n")
@@ -742,16 +740,17 @@ window.addEventListener('load', function() {
 			// constructors
 			for _, docfn := range doctype.Funcs {
 				obj := scope.Lookup(docfn.Name).(*types.Func)
-				fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-					docfn.Name, escape(fnString(obj)))
+				fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a>%s</li>\n",
+					docfn.Name, escape(fnString(obj)), deprecatedHTML(docfn.Decl.Doc))
 			}
 			// methods
 			for _, docmethod := range doctype.Methods {
 				method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-				fmt.Fprintf(&buf, "<li><a href='#%s.%s'>%s</a></li>\n",
+				fmt.Fprintf(&buf, "<li><a href='#%s.%s'>%s</a>%s</li>\n",
 					doctype.Name,
 					docmethod.Name,
-					escape(fnString(method.(*types.Func))))
+					escape(fnString(method.(*types.Func))),
+					deprecatedHTML(docmethod.Decl.Doc))
 			}
 			fmt.Fprintf(&buf, "</ul>\n")
 		}
@@ -767,13 +766,18 @@ window.addEventListener('load', function() {
 				fmt.Fprintf(&buf, "<a id='%s'></a>\n", escape(name))
 			}
 
+			// deprecation tag (if any)
+			if tag := deprecatedHTML(v.Decl.Doc); tag != "" {
+				fmt.Fprintf(&buf, "<div>%s</div>\n", strings.TrimSpace(tag))
+			}
+
 			// declaration
 			decl2 := *v.Decl // shallow copy
 			decl2.Doc = nil
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 			// comment (if any)
-			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(v.Doc))
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(v.Decl, v.Doc))
 		}
 	}
 	fmt.Fprintf(&buf, "<h2 id='hdr-Constants'>Constants</h2>\n")
@@ -806,15 +810,15 @@ window.addEventListener('load', function() {
 		for _, docfn := range funcs {
 			obj := scope.Lookup(docfn.Name).(*types.Func)
 
-			fmt.Fprintf(&buf, "<h3 id='%s'>func %s %s</h3>\n",
-				docfn.Name, objHTML(pkg.FileSet(), web, obj), addedInHTML(obj))
+			fmt.Fprintf(&buf, "<h3 id='%s'>func %s%s %s</h3>\n",
+				docfn.Name, objHTML(pkg.FileSet(), web, obj), deprecatedHTML(docfn.Decl.Doc), addedInHTML(obj))
 
 			// decl: func F(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
 				nodeHTML(docfn.Decl.Type))
 
 			// comment (if any)
-			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docfn.Doc))
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docfn.Decl, docfn.Doc))
 		}
 	}
 	funcs(docpkg.Funcs)
@@ -825,8 +829,8 @@ window.addEventListener('load', function() {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
 
 		// title and source link
-		fmt.Fprintf(&buf, "<h3 id='%s'>type %s %s</h3>\n",
-			doctype.Name, objHTML(pkg.FileSet(), web, tname), addedInHTML(tname))
+		fmt.Fprintf(&buf, "<h3 id='%s'>type %s%s %s</h3>\n",
+			doctype.Name, objHTML(pkg.FileSet(), web, tname), deprecatedHTML(typeDoc(doctype)...), addedInHTML(tname))
 
 		// declaration
 		// TODO(adonovan): excise non-exported struct fields somehow.
@@ -835,7 +839,7 @@ window.addEventListener('load', function() {
 		fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 		// comment (if any)
-		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(doctype.Doc))
+		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(doctype.Decl, doctype.Doc))
 
 		// subelements
 		values(doctype.Consts) // constants of type T
@@ -845,10 +849,10 @@ window.addEventListener('load', function() {
 		// methods on T
 		for _, docmethod := range doctype.Methods {
 			method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s %s</h4>\n",
+			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s%s %s</h4>\n",
 				doctype.Name, docmethod.Name,
 				docmethod.Orig, // T or *T
-				objHTML(pkg.FileSet(), web, method), addedInHTML(method))
+				objHTML(pkg.FileSet(), web, method), deprecatedHTML(docmethod.Decl.Doc), addedInHTML(method))
 
 			// decl: func (x T) M(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
@@ -856,7 +860,7 @@ window.addEventListener('load', function() {
 
 			// comment (if any)
 			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-				docHTML(docmethod.Doc))
+				docHTML(docmethod.Decl, docmethod.Doc))
 		}
 	}
 
@@ -864,7 +868,9 @@ window.addEventListener('load', function() {
 	fmt.Fprintf(&buf, "<h2 id='hdr-SourceFiles'>Source files</h2>\n")
 	for _, filename := range docpkg.Filenames {
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-			sourceLink(filepath.Base(filename), web.SrcURL(filename, 1, 1)))
+			sourceLinkHTML(
+				template.HTML(template.HTMLEscapeString(filepath.Base(filename))),
+				web.SrcURL(filename, 1, 1)))
 	}
 
 	fmt.Fprintf(&buf, "</main>\n")
@@ -872,20 +878,4 @@ window.addEventListener('load', function() {
 	fmt.Fprintf(&buf, "</html>\n")
 
 	return buf.Bytes(), nil
-}
-
-// typesSeq abstracts various go/types sequence types:
-// MethodSet, Tuple, TypeParamList, TypeList.
-// TODO(adonovan): replace with go1.23 iterators.
-type typesSeq[T any] interface {
-	Len() int
-	At(int) T
-}
-
-func typesSeqToSlice[T any](seq typesSeq[T]) []T {
-	slice := make([]T, seq.Len())
-	for i := range slice {
-		slice[i] = seq.At(i)
-	}
-	return slice
 }

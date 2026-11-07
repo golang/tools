@@ -34,11 +34,11 @@ type Int64Data struct {
 	IsGauge bool
 	// Rows holds the per group values for the metric.
 	Rows []int64
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
-	key    *keys.Int64
+	key    *keys.Int
 }
 
 // Float64Data is a concrete implementation of Data for float64 scalar metrics.
@@ -49,11 +49,11 @@ type Float64Data struct {
 	IsGauge bool
 	// Rows holds the per group values for the metric.
 	Rows []float64
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
-	key    *keys.Float64
+	key    *keys.Float
 }
 
 // HistogramInt64Data is a concrete implementation of Data for int64 histogram metrics.
@@ -62,11 +62,11 @@ type HistogramInt64Data struct {
 	Info *HistogramInt64
 	// Rows holds the per group values for the metric.
 	Rows []*HistogramInt64Row
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
-	key    *keys.Int64
+	key    *keys.Int
 }
 
 // HistogramInt64Row holds the values for a single row of a HistogramInt64Data.
@@ -89,11 +89,11 @@ type HistogramFloat64Data struct {
 	Info *HistogramFloat64
 	// Rows holds the per group values for the metric.
 	Rows []*HistogramFloat64Row
-	// End is the last time this metric was updated.
+	// EndTime is the last time this metric was updated.
 	EndTime time.Time
 
 	groups [][]label.Label
-	key    *keys.Float64
+	key    *keys.Float
 }
 
 // HistogramFloat64Row holds the values for a single row of a HistogramFloat64Data.

@@ -12,7 +12,7 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 func TestSearchForEnclosing(t *testing.T) {
@@ -43,24 +43,26 @@ func TestSearchForEnclosing(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "a.go", test.src, parser.AllErrors)
+			file, err := parser.ParseFile(fset, "a.go", test.src, parser.AllErrors|parser.SkipObjectResolution)
 			if err != nil {
 				t.Fatal(err)
 			}
-			column := 1 + bytes.IndexRune([]byte(test.src), 'X')
-			pos := posAt(1, column, fset, "a.go")
-			path := pathEnclosingObjNode(file, pos)
-			if path == nil {
+			var (
+				files  = []*ast.File{file}
+				column = 1 + bytes.IndexRune([]byte(test.src), 'X')
+				pos    = posAt(1, column, fset, "a.go")
+			)
+			cur, ok := inspector.New(files).Root().FindByPos(pos, pos)
+			if !ok {
 				t.Fatalf("no ident found at (1, %d)", column)
 			}
 			info := newInfo()
-			if _, err = (*types.Config)(nil).Check("p", fset, []*ast.File{file}, info); err != nil {
+			if _, err = (*types.Config)(nil).Check("p", fset, files, info); err != nil {
 				t.Fatal(err)
 			}
-			obj := searchForEnclosing(info, path)
+			obj := searchForEnclosing(info, cur)
 			if obj == nil {
 				if test.wantTypeName != "" {
 					t.Errorf("searchForEnclosing(...) = <nil>, want %q", test.wantTypeName)
@@ -95,13 +97,13 @@ func posAt(line, column int, fset *token.FileSet, fname string) token.Pos {
 // newInfo returns a types.Info with all maps populated.
 func newInfo() *types.Info {
 	info := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
-		Scopes:     make(map[ast.Node]*types.Scope),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 	return info
 }

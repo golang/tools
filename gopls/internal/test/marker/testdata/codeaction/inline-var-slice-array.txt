@@ -1,0 +1,25 @@
+This test checks that refactor.inline.variable is rejected for an array
+variable that is sliced. Slicing an array implicitly takes its address:
+the resulting slice refers to the array's elements, so the array may be
+modified through it.
+
+Previously, inlining arr was offered at both uses below:
+1. At arr[:], producing [3]int{1, 2, 3}[:], which does not compile
+   (cannot slice unaddressable value).
+2. At fmt.Println(arr), which would change the printed value, since arr
+   was modified through s.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- a/a.go --
+package a
+
+func _() {
+	var arr = [3]int{1, 2, 3}
+	s := arr[:] //@codeaction("arr", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+	s[0] = 9
+	println(arr) //@codeaction("arr", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+}
+

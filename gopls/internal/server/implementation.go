@@ -21,10 +21,10 @@ func (s *server) Implementation(ctx context.Context, params *protocol.Implementa
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.implementation", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Implementation", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -32,5 +32,5 @@ func (s *server) Implementation(ctx context.Context, params *protocol.Implementa
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	return golang.Implementation(ctx, snapshot, fh, params.Position)
+	return golang.Implementation(ctx, snapshot, fh, params.Range)
 }

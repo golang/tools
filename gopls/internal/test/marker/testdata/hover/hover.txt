@@ -1,33 +1,154 @@
-This test demonstrates some features of the new marker test runner.
+This test demonstrates some basic features of hover.
+
+One of those features is the display of per-file variation in
+configuration, including GODEBUG. We use panicnil from go1.21 as an
+arbitrary GODEBUG; if it goes away, pick another from
+https://go.dev/doc/godebug#history.
+
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
+-- flags --
+-min_go_command=go1.21
+
+-- go.mod --
+module example.com
+
+go 1.18
 
 -- a.go --
 // package comment
 package aa //@hover("aa", "aa", aa)
 
-const abc = 0x2a //@hover("b", "abc", abc),hover(" =", "abc", abc)
+const abc = 0x2a //@hover("b", "abc", abc),hover(re"() =", "abc", abc)
+
+func _() {
+	// hover over foo should include this comment
+	foo := func() {} //@hover("foo", "foo", foo)
+
+	// hover over buzz should include this comment
+	buzz := 10 //@hover("buzz", "buzz", buzz)
+
+	notbazz := 10 // hover over bazz should not include this comment
+	bazz := 10 //@hover("bazz", "bazz", bazz)
+	println(foo, buzz, bazz, notbazz)
+}
+
+// hover over bar should include this comment
+var bar = func() {} //@hover("bar", "bar", bar)
+
+-- @bar --
+```go
+var bar func()
+```
+
+---
+
+hover over bar should include this comment
+-- @bazz --
+```go
+var bazz int
+```
+-- @buzz --
+```go
+var buzz int
+```
+
+---
+
+hover over buzz should include this comment
+-- @foo --
+```go
+var foo func()
+```
+
+---
+
+hover over foo should include this comment
+-- a2.go --
+
+//go:build go1.21
+
+package aa //@hover("aa", "aa", aa2)
+
 -- typeswitch.go --
 package aa
 
 func _() {
-	var y interface{}
+	var y any
 	switch x := y.(type) { //@hover("x", "x", x)
 	case int:
-		println(x) //@hover("x", "x", xint),hover(")", "x", xint)
+		println(x) //@hover("x", "x", xint)
 	}
 }
+-- cmd/main.go --
+//go:debug panicnil=0
+
+// Note that since GODEBUG shows only settings that differ from
+// the current toolchain, the output here depends on the toolchain used.
+package main //@hover("main", "main", main)
+
+func main() {
+}
+
 -- @abc --
 ```go
 const abc untyped int = 0x2a // 42
 ```
 
-@hover("b", "abc", abc),hover(" =", "abc", abc)
+---
+
+@hover("b", "abc", abc),hover(re"() =", "abc", abc)
 -- @x --
 ```go
-var x interface{}
+var x any
 ```
 -- @xint --
 ```go
 var x int
 ```
 -- @aa --
+```go
+package aa
+```
+
+---
+
 package comment
+
+
+---
+
+ - Package path: example.com
+ - Module: example.com
+ - Language version: go1.18
+-- @aa2 --
+```go
+package aa
+```
+
+---
+
+package comment
+
+
+---
+
+ - Package path: example.com
+ - Module: example.com
+ - Language version (current file): go1.21
+-- @main --
+```go
+package main
+```
+
+---
+
+Note that since GODEBUG shows only settings that differ from the current toolchain, the output here depends on the toolchain used.
+
+
+---
+
+ - Package path: example.com/cmd
+ - Module: example.com
+ - Language version: go1.18

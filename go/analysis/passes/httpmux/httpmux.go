@@ -9,12 +9,12 @@ import (
 	"go/constant"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typesinternal"
@@ -45,7 +45,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		}
 	}
-	if !analysisutil.Imports(pass.Pkg, "net/http") {
+	if !typesinternal.Imports(pass.Pkg, "net/http") {
 		return nil, nil
 	}
 	// Look for calls to ServeMux.Handle or ServeMux.HandleFunc.
@@ -78,19 +78,20 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if fn == nil {
 		return false
 	}
-	if analysisutil.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
+	if typesinternal.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return true
 	}
 	if !isMethodNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return false
 	}
-	recv := fn.Type().(*types.Signature).Recv() // isMethodNamed() -> non-nil
-	isPtr, named := typesinternal.ReceiverNamed(recv)
-	return isPtr && analysisutil.IsNamedType(named, "net/http", "ServeMux")
+	recv := fn.Signature().Recv() // isMethodNamed() -> non-nil
+	return typesinternal.IsPointerToNamed(recv.Type(), "net/http", "ServeMux")
 }
 
 // isMethodNamed reports when a function f is a method,
 // in a package with the path pkgPath and the name of f is in names.
+//
+// (Unlike [analysis.IsMethodNamed], it ignores the receiver type name.)
 func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f == nil {
 		return false
@@ -98,15 +99,10 @@ func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f.Pkg() == nil || f.Pkg().Path() != pkgPath {
 		return false // not at pkgPath
 	}
-	if f.Type().(*types.Signature).Recv() == nil {
+	if f.Signature().Recv() == nil {
 		return false // not a method
 	}
-	for _, n := range names {
-		if f.Name() == n {
-			return true
-		}
-	}
-	return false // not in names
+	return slices.Contains(names, f.Name())
 }
 
 // stringConstantExpr returns expression's string constant value.

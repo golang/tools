@@ -1,4 +1,6 @@
-# Gopls: Troubleshooting
+---
+title: "Gopls: Troubleshooting"
+---
 
 If you suspect that `gopls` is crashing or not working correctly, please follow the troubleshooting steps below.
 
@@ -10,7 +12,7 @@ VS Code users should follow [their troubleshooting guide](https://github.com/gol
 
 1. Verify that your project is in good shape by working with it outside of your editor. Running a command like `go build ./...` in the workspace directory will compile everything. For modules, `go mod tidy` is another good check, though it may modify your `go.mod`.
 1. Check that your editor isn't showing any diagnostics that indicate a problem with your workspace. They may appear as diagnostics on a Go file's package declaration, diagnostics in a go.mod file, or as a status or progress message. Problems in the workspace configuration can cause many different symptoms. See the [workspace setup instructions](workspace.md) for help.
-1. Make sure `gopls` is up to date by following the [installation instructions](../README.md#installation), then [restarting gopls](#restart-gopls).
+1. Make sure `gopls` is up to date by following the [installation instructions](index.md#installation), then [restarting gopls](#restart-gopls).
 1. Optionally, [ask for help](#ask-for-help) on Gophers Slack.
 1. Finally, [report the issue](#file-an-issue) to the `gopls` developers.
 
@@ -33,7 +35,7 @@ We can't diagnose a problem from just a description. When filing an issue, pleas
 1. The output of `gopls version` on the command line.
 1. A complete gopls log file from a session where the issue occurred. It should have a `go env for <workspace folder>` log line near the beginning. It's also helpful to tell us the timestamp the problem occurred, so we can find it the log. See the [instructions](#capture-logs) for information on how to capture gopls logs.
 
-Your editor may have a command that fills out some of the necessary information, such as `:GoReportGitHubIssue` in `vim-go`. Otherwise, you can use `gopls bug` on the command line. If neither of those work you can start from scratch directly on the [Go issue tracker](https://github.com/golang/go/issues/new?title=x%2Ftools%2Fgopls%3A%20%3Cfill%20this%20in%3E).
+Your editor may have a command that fills out some of the necessary information, such as `:GoReportGitHubIssue` in `vim-go`. Otherwise, use the [Go issue tracker](https://github.com/golang/go/issues/new?title=x%2Ftools%2Fgopls%3A%20%3Cfill%20this%20in%3E).
 
 ## Capture logs
 
@@ -41,7 +43,7 @@ You may have to change your editor's configuration to pass a `-logfile` flag to 
 
 To increase the level of detail in your logs, start `gopls` with the `-rpc.trace` flag. To start a debug server that will allow you to see profiles and memory usage, start `gopls` with `serve --debug=localhost:6060`. You will then be able to view debug information by navigating to `localhost:6060`.
 
-If you are unsure of how to pass a flag to `gopls` through your editor, please see the [documentation for your editor](../README.md#editors).
+If you are unsure of how to pass a flag to `gopls` through your editor, please see the [documentation for your editor](index.md#editors).
 
 ## Debug memory usage
 

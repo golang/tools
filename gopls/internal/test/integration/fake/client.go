@@ -73,6 +73,10 @@ func (c *Client) SemanticTokensRefresh(context.Context) error { return nil }
 
 func (c *Client) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 
+func (c *Client) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
+	return nil
+}
+
 func (c *Client) ShowMessage(ctx context.Context, params *protocol.ShowMessageParams) error {
 	if c.hooks.OnShowMessage != nil {
 		return c.hooks.OnShowMessage(ctx, params)
@@ -99,7 +103,7 @@ func (c *Client) LogMessage(ctx context.Context, params *protocol.LogMessagePara
 	return nil
 }
 
-func (c *Client) Event(ctx context.Context, event *interface{}) error {
+func (c *Client) Event(ctx context.Context, event *any) error {
 	return nil
 }
 
@@ -114,8 +118,8 @@ func (c *Client) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, 
 	return []protocol.WorkspaceFolder{}, nil
 }
 
-func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.ScopeURI != nil && *item.ScopeURI == "" {
 			return nil, fmt.Errorf(`malformed ScopeURI ""`)
@@ -169,6 +173,15 @@ func (c *Client) RegisterCapability(ctx context.Context, params *protocol.Regist
 			}
 			c.editor.mu.Lock()
 			c.editor.watchPatterns = globs
+			c.editor.mu.Unlock()
+		}
+		if registration.Method == "textDocument/semanticTokens" {
+			opts, err := marshalUnmarshal[protocol.SemanticTokensOptions](registration.RegisterOptions)
+			if err != nil {
+				return fmt.Errorf("unmarshaling registration options: %v", err)
+			}
+			c.editor.mu.Lock()
+			c.editor.semTokOpts = opts
 			c.editor.mu.Unlock()
 		}
 	}

@@ -2,7 +2,7 @@ Basic test of implementation query.
 
 -- go.mod --
 module example.com
-go 1.12
+go 1.18
 
 -- implementation/implementation.go --
 package implementation
@@ -19,8 +19,8 @@ type ImpS struct{} //@loc(ImpS, "ImpS"),implementation("ImpS", Laugher, OtherLau
 func (ImpS) Laugh() { //@loc(LaughS, "Laugh"),implementation("Laugh", Laugh, OtherLaugh)
 }
 
-type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherImpS, embedsImpP)
-	Laugh() //@loc(Laugh, "Laugh"),implementation("Laugh", LaughP, OtherLaughP, LaughS, OtherLaughS)
+type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherLaugher, OtherImpS, EmbedsImpP)
+	Laugh() //@loc(Laugh, "Laugh"),implementation("Laugh", LaughP, OtherLaughP, LaughS, OtherLaugh, OtherLaughS)
 }
 
 type Foo struct { //@implementation("Foo", Joker)
@@ -35,13 +35,21 @@ type cryer int //@implementation("cryer", Cryer)
 
 func (cryer) Cry(other.CryType) {} //@loc(CryImpl, "Cry"),implementation("Cry", Cry)
 
-type Empty interface{} //@implementation("Empty")
+type Empty any //@implementation("Empty")
 
-var _ interface{ Joke() } //@implementation("Joke", ImpJoker)
+var _ interface{ Joke() } //@implementation("Joke", Joke, ImpJoker)
 
-type embedsImpP struct { //@loc(embedsImpP, "embedsImpP")
+type EmbedsImpP struct { //@loc(EmbedsImpP, "EmbedsImpP")
 	ImpP //@implementation("ImpP", Laugher, OtherLaugher)
 }
+
+var _ error //@defloc(StdError, "error")
+
+type MyError struct {} //@implementation("MyError", StdError)
+
+var _ error = MyError{} // pacify ptrtoerror analyzer
+
+func (MyError) Error() string { return "bah" }
 
 -- other/other.go --
 package other

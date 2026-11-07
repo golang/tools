@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:generate go run ../../doc/generate
+//go:generate go run ./generate
 
 // The doc package provides JSON metadata that documents gopls' public
 // interfaces.
@@ -18,24 +18,33 @@ var JSON string
 
 // API is a JSON-encodable representation of gopls' public interfaces.
 //
+// Unless otherwise noted, documentation strings (Doc, Title) are
+// CommonMark Markdown, suitable for direct inclusion in a Markdown
+// document (as in gopls/doc/*.md) or for use as a VS Code
+// "markdownDescription". They must not use extensions specific to
+// particular renderers, such as go.dev's heading attributes ({#id}),
+// since clients of this API may display them using any renderer.
+// The exception is [Analyzer.Doc], which is in go/doc/comment syntax
+// and must be converted before use as Markdown.
+//
 // TODO(adonovan): document these data types.
 type API struct {
 	Options   map[string][]*Option
-	Commands  []*Command
 	Lenses    []*Lens
 	Analyzers []*Analyzer
 	Hints     []*Hint
 }
 
 type Option struct {
-	Name       string
-	Type       string // T = bool | string | int | enum | any | []T | map[T]T | time.Duration
-	Doc        string
-	EnumKeys   EnumKeys
-	EnumValues []EnumValue
-	Default    string
-	Status     string
-	Hierarchy  string
+	Name               string
+	Type               string // T = bool | string | int | enum | any | []T | map[T]T | time.Duration
+	Doc                string // Markdown
+	EnumKeys           EnumKeys
+	EnumValues         []EnumValue
+	Default            string
+	Status             string
+	Hierarchy          string
+	DeprecationMessage string // plain text (e.g. VS Code "deprecationMessage")
 }
 
 type EnumKeys struct {
@@ -45,40 +54,36 @@ type EnumKeys struct {
 
 type EnumKey struct {
 	Name    string // in JSON syntax (quoted)
-	Doc     string
+	Doc     string // Markdown
 	Default string
+	Status  string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type EnumValue struct {
-	Value string // in JSON syntax (quoted)
-	Doc   string // doc comment; always starts with `Value`
-}
-
-type Command struct {
-	Command   string // e.g. "gopls.run_tests"
-	Title     string
-	Doc       string
-	ArgDoc    string
-	ResultDoc string
+	Value  string // in JSON syntax (quoted)
+	Doc    string // Markdown, derived from doc comment; always starts with `Value`
+	Status string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type Lens struct {
 	FileType string // e.g. "Go", "go.mod"
 	Lens     string
-	Title    string
-	Doc      string
+	Title    string // Markdown, a single line
+	Doc      string // Markdown
 	Default  bool
+	Status   string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type Analyzer struct {
 	Name    string
-	Doc     string // from analysis.Analyzer.Doc ("title: summary\ndescription"; not Markdown)
+	Doc     string // from analysis.Analyzer.Doc ("title: summary\ndescription"; go/doc/comment, not Markdown)
 	URL     string
 	Default bool
 }
 
 type Hint struct {
 	Name    string
-	Doc     string
+	Doc     string // Markdown
 	Default bool
+	Status  string // = "" | "advanced" | "experimental" | "deprecated"
 }

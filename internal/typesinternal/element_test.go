@@ -1,0 +1,167 @@
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package typesinternal_test
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+
+	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/typesinternal"
+)
+
+const elementSrc = `
+package p
+
+type A = int
+
+type B = *map[chan int][]func() [2]bool
+
+type C = T
+
+type T struct{ x int }
+func (T) method() uint
+func (*T) ptrmethod() complex128
+
+type D = A
+
+type E = struct{ x int }
+
+type F = func(int8, int16) (int32, int64)
+
+type G = struct { U }
+
+type U struct{}
+func (U) method() uint32
+
+`
+
+func TestForEachElement(t *testing.T) {
+	// Add generic method, if go1.27.
+	// It doesn't change the outcome:
+	// complex64 is not expected in the result.
+	elementSrc := elementSrc
+	if testenv.Go1Point() >= 27 {
+		elementSrc += `
+// generic method: T.generic[U] is not explored.
+func (T) generic[U any](complex64) {}
+
+// method of generic type
+type H[T any] uintptr
+func (H[T]) m(T) uint16
+type Hf64 = H[float64]
+`
+		// (still available: uint8 uint64 float32)
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "a.go", elementSrc, 0)
+	if err != nil {
+		t.Fatal(err) // parse error
+	}
+	var config types.Config
+	pkg, err := config.Check(f.Name.Name, fset, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err) // type error
+	}
+
+	type testcase struct {
+		name string   // name of a type alias whose RHS type's elements to compute
+		want []string // strings of types that are/are not elements (! => not)
+	}
+	tests := []testcase{
+		// simple type
+		{"A", []string{"int"}},
+
+		// compound type
+		{"B", []string{
+			"*map[chan int][]func() [2]bool",
+			"map[chan int][]func() [2]bool",
+			"chan int",
+			"int",
+			"[]func() [2]bool",
+			"func() [2]bool",
+			"[2]bool",
+			"bool",
+		}},
+
+		// defined struct type with methods, incl. pointer methods.
+		// Observe that it descends into the field type, but
+		// the result does not include the struct type itself.
+		// (This follows the Go toolchain behavior, and finesses the need
+		// to create wrapper methods for that struct type.)
+		{"C", []string{"T", "*T", "int", "uint", "complex128", "!complex64", "!struct{x int}"}},
+
+		// alias type
+		{"D", []string{"int"}},
+
+		// struct type not beneath a defined type
+		{"E", []string{"struct{x int}", "int"}},
+
+		// signature types: the params/results tuples
+		// are traversed but not included.
+		{"F", []string{"func(int8, int16) (int32, int64)",
+			"int8", "int16", "int32", "int64"}},
+
+		// struct with embedded field that has methods
+		{"G", []string{"*U", "struct{U}", "uint32", "U"}},
+	}
+	if testenv.Go1Point() >= 27 {
+		tests = append(tests, []testcase{
+			// H[float64].m is a ground type, so it is visited, giving us uint16.
+			{"Hf64", []string{"*H[float64]", "H[float64]", "float64", "uint16"}},
+		}...)
+	}
+	var msets typeutil.MethodSetCache
+	for _, test := range tests {
+		tname, ok := pkg.Scope().Lookup(test.name).(*types.TypeName)
+		if !ok {
+			t.Errorf("no such type %q", test.name)
+			continue
+		}
+		T := types.Unalias(tname.Type())
+
+		toStr := func(T types.Type) string {
+			return types.TypeString(T, func(*types.Package) string { return "" })
+		}
+
+		got := make(map[string]bool)
+		set := new(typeutil.Map) // for de-duping
+		typesinternal.ForEachElement(msets.MethodSet, T, func(T types.Type, access bool) bool {
+			if !access {
+				return false // inaccessible to reflection
+			}
+			seen, _ := set.Set(T, true).(bool)
+			if !seen {
+				got[toStr(T)] = true
+			}
+			return seen
+		})
+
+		// Assert than all expected (and no unexpected) elements were found.
+		fail := false
+		for _, typstr := range test.want {
+			found := got[typstr]
+			typstr, unwanted := strings.CutPrefix(typstr, "!")
+			if found && unwanted {
+				fail = true
+				t.Errorf("ForEachElement(%s): unwanted element %q", T, typstr)
+			} else if !found && !unwanted {
+				fail = true
+				t.Errorf("ForEachElement(%s): element %q not found", T, typstr)
+			}
+		}
+		if fail {
+			t.Logf("got elements:\n%s", strings.Join(slices.Sorted(maps.Keys(got)), "\n"))
+		}
+	}
+}

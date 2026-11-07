@@ -1,0 +1,84 @@
+This test checks the param name and type of the generated missing method based on CallExpr.
+
+-- basic_stub.go --
+package fromcallparams
+
+type A struct{}
+
+func untypedParams() {
+	a := A{}
+	a.untyped("s", 42, 4.12, make(map[string]int), []int{1}, [1]int{1}, make(chan string)) //@quickfix("untyped", re"has no field or method", basic)
+}
+-- @basic/basic_stub.go --
+@@ -5 +5,4 @@
++func (a A) untyped(s string, i int, f float64, m map[string]int, param5 []int, param6 [1]int, ch chan string) {
++	panic("unimplemented")
++}
++
+-- nonexistent_type.go --
+package fromcallparams
+
+type B struct{}
+
+func invalidBasicKindParam() {
+	b := B{}
+	b.basicKind(NonExistentType{}) //@quickfix("basicKind", re"has no field or method", nonexistent),diag(re"NonExistentType",re"undefined: NonExistentType")
+}
+-- @nonexistent/nonexistent_type.go --
+@@ -5 +5,4 @@
++func (b B) basicKind(param any) {
++	panic("unimplemented")
++}
++
+-- pass_param_by_ident.go --
+package fromcallparams
+
+type C struct{}
+
+func passParamByIdent() {
+	c := C{}
+	stringVar := "some string"
+	intVar := 1
+	sliceVar := []int{1}
+	c.ident(stringVar, intVar, sliceVar) //@quickfix("ident", re"has no field or method", ident)
+}
+-- @ident/pass_param_by_ident.go --
+@@ -5 +5,4 @@
++func (c C) ident(stringVar string, intVar int, sliceVar []int) {
++	panic("unimplemented")
++}
++
+-- tail_param_name.go --
+package fromcallparams
+
+type Tail struct{}
+
+type TypeWithLongName struct{}
+
+func TailParamName() {
+	t := Tail{}
+	t.longName(TypeWithLongName{}) //@quickfix("longName", re"has no field or method", trail)
+}
+-- @trail/tail_param_name.go --
+@@ -5 +5,4 @@
++func (t Tail) longName(name TypeWithLongName) {
++	panic("unimplemented")
++}
++
+-- selector_param_name.go --
+package fromcallparams
+
+import "net/http"
+
+type Select struct{}
+
+func selectExpr() {
+	s := Select{}
+	s.sel(http.ErrNotMultipart) //@quickfix("sel", re"has no field or method", select)
+}
+-- @select/selector_param_name.go --
+@@ -7 +7,4 @@
++func (s Select) sel(multipart *http.ProtocolError) {
++	panic("unimplemented")
++}
++

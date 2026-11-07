@@ -1,0 +1,14 @@
+This test checks the "nearby" logic of golang.objectsAt
+as used by Definition. The query is on the "*" of "*T"
+yet resolves to T.
+
+-- go.mod --
+module mod.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type T int	//@ loc(T, "T")
+
+var _ * T	//@ def("*", T)

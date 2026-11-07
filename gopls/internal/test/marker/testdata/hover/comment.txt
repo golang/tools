@@ -1,10 +1,5 @@
 This test checks hovering over doc links in comments.
 
-Requires go1.20+ for the unsafe package test.
-
--- flags --
--min_go=go1.20
-
 -- go.mod --
 module mod.com
 
@@ -16,46 +11,66 @@ package p
 import (
 	"unsafe"
 
-	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, strconv)
+	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, utilPkgRef)
 )
 
-// [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+// [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase),hover(re"()NumberBase", "NumberBase", NumberBase),hover(re"NumberBase()", "NumberBase", NumberBase)
 const NumberBase = 10
 
 // [Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
 func Conv(s string) int {
-	// [util.ParseInt] parses s and returns the integer corresponding to it. //@hover("util", "util", util),hover("ParseInt", "ParseInt", strconvParseInt)
+	// [util.ParseInt] parses s and returns the integer corresponding to it. //@hover("util", "util", utilPkgRef),hover("ParseInt", "ParseInt", strconvParseInt)
 	// [NumberBase] is the base to use for number parsing.
 	i, _ := util.ParseInt(s, NumberBase, 64)
 	return int(i)
 }
 
-// unsafeConv converts s to a byte slice using [unsafe.Pointer]. hover("Pointer", "Pointer", unsafePointer)
-func unsafeConv(s string) []byte {
+// UnsafeConv converts s to a byte slice using [unsafe.Pointer]. hover("Pointer", "Pointer", unsafePointer)
+func UnsafeConv(s string) []byte {
 	p := unsafe.StringData(s)
 	b := unsafe.Slice(p, len(s))
 	return b
 }
 
 -- util/conv.go --
-// Package util provides utility functions.
-package util
+// Package util provides utility functions. Use [a.A] for xyz.
+//
+// Also can reference local functions [ParseInt].
+package util //@hover("util", "util", utilPkgName)
 
-import "strconv"
+import (
+	"strconv"
+
+	"mod.com/util/a"
+)
 
 // ParseInt interprets a string s in the given base (0, 2 to 36) and
 // bit size (0 to 64) and returns the corresponding value i.
 func ParseInt(s string, base int, bitSize int) (int64, error) {
+	a.A()
 	return strconv.ParseInt(s, base, bitSize)
 }
+
+-- util/other.go --
+// Hover over package when this file doesn't import the doc link still works.
+package util //@hover("util", "util", utilPkgName)
+
+-- util/a/a.go --
+package a
+
+func A() {}
 
 -- @Conv --
 ```go
 func Conv(s string) int
 ```
 
-\[Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
+---
 
+[Conv](file://$WORKDIR/a.go#13,6) converts s to an int. //@hover("Conv", "Conv", Conv)
+
+
+---
 
 [`p.Conv` on pkg.go.dev](https://pkg.go.dev/mod.com#Conv)
 -- @NumberBase --
@@ -63,20 +78,51 @@ func Conv(s string) int
 const NumberBase untyped int = 10
 ```
 
-\[NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+---
 
+[NumberBase](file://$WORKDIR/a.go#10,7) is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase),hover(re"()NumberBase", "NumberBase", NumberBase),hover(re"NumberBase()", "NumberBase", NumberBase)
+
+
+---
 
 [`p.NumberBase` on pkg.go.dev](https://pkg.go.dev/mod.com#NumberBase)
--- @strconv --
-Package util provides utility functions.
 -- @strconvParseInt --
 ```go
 func ParseInt(s string, base int, bitSize int) (int64, error)
 ```
 
+---
+
 ParseInt interprets a string s in the given base (0, 2 to 36) and bit size (0 to 64) and returns the corresponding value i.
 
 
+---
+
 [`util.ParseInt` on pkg.go.dev](https://pkg.go.dev/mod.com/util#ParseInt)
--- @util --
-Package util provides utility functions.
+-- @utilPkgRef --
+```go
+package util
+```
+
+---
+
+Package util provides utility functions. Use [a.A](file://$WORKDIR/util/a/a.go#3,6) for xyz.
+
+Also can reference local functions [ParseInt](file://$WORKDIR/util/conv.go#14,6).
+-- @utilPkgName --
+```go
+package util
+```
+
+---
+
+Package util provides utility functions. Use [a.A](file://$WORKDIR/util/a/a.go#3,6) for xyz.
+
+Also can reference local functions [ParseInt](file://$WORKDIR/util/conv.go#14,6).
+
+
+---
+
+ - Package path: mod.com/util
+ - Module: mod.com
+ - Language version: go1.20

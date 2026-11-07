@@ -107,7 +107,6 @@ func TestCalleeEffects(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.descr, func(t *testing.T) {
 			fset := token.NewFileSet()
 			mustParse := func(filename string, content any) *ast.File {
@@ -133,12 +132,13 @@ func TestCalleeEffects(t *testing.T) {
 			}
 
 			info := &types.Info{
-				Defs:       make(map[*ast.Ident]types.Object),
-				Uses:       make(map[*ast.Ident]types.Object),
-				Types:      make(map[ast.Expr]types.TypeAndValue),
-				Implicits:  make(map[ast.Node]types.Object),
-				Selections: make(map[*ast.SelectorExpr]*types.Selection),
-				Scopes:     make(map[ast.Node]*types.Scope),
+				Defs:         make(map[*ast.Ident]types.Object),
+				Uses:         make(map[*ast.Ident]types.Object),
+				Types:        make(map[ast.Expr]types.TypeAndValue),
+				Implicits:    make(map[ast.Node]types.Object),
+				Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+				Scopes:       make(map[ast.Node]*types.Scope),
+				FileVersions: make(map[*ast.File]string),
 			}
 			conf := &types.Config{Error: func(err error) { t.Error(err) }}
 			pkg, err := conf.Check("p", fset, []*ast.File{calleeFile}, info)

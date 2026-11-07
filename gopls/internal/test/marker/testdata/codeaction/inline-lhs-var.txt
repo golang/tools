@@ -1,0 +1,33 @@
+We should not offer a code action to inline 'v' where it appears on the
+left-hand side of an assignment
+
+Regression test for issue #75200.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- c/c.go --
+package c
+
+import "fmt"
+
+func _() {
+    v := 13
+    v = 78 //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    v += 78 //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    v -= 78 //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    v *= 78 //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    v++ //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    v-- //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    fmt.Println(v)
+
+    x := &v //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    x = (&v) //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+    x = &(v) //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
+
+    fmt.Println(x)
+}

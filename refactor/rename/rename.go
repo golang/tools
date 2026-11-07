@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package rename contains the implementation of the 'gorename' command
-// whose main function is in golang.org/x/tools/cmd/gorename.
-// See the Usage constant for the command documentation.
-package rename // import "golang.org/x/tools/refactor/rename"
+// Package rename contains the obsolete implementation of the deleted
+// golang.org/x/tools/cmd/gorename. This logic has not worked properly
+// since the advent of Go modules, and should be deleted too.
+//
+// Use gopls instead, either via the Rename LSP method or the "gopls
+// rename" subcommand.
+package rename
 
 import (
 	"bytes"
@@ -262,7 +265,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	if requiresGlobalRename(fromObjects, to) {
 		// For a local refactoring, we needn't load more
 		// packages, but if the renaming affects the package's
-		// API, we we must load all packages that depend on the
+		// API, we must load all packages that depend on the
 		// package defining the object, plus their tests.
 
 		if Verbose {
@@ -322,7 +325,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	// to preserve assignability.
 	for _, obj := range fromObjects {
 		if obj, ok := obj.(*types.Func); ok {
-			recv := obj.Type().(*types.Signature).Recv()
+			recv := obj.Signature().Recv()
 			if recv != nil && types.IsInterface(recv.Type()) {
 				r.changeMethods = true
 				break
@@ -332,7 +335,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 
 	// Only the initially imported packages (iprog.Imported) and
 	// their external tests (iprog.Created) should be inspected or
-	// modified, as only they have type-checked functions bodies.
+	// modified, as only they have type-checked function bodies.
 	// The rest are just dependencies, needed only for package-level
 	// type information.
 	for _, info := range iprog.Imported {
@@ -487,8 +490,8 @@ func (r *renamer) update() error {
 	var generatedFileNames []string
 	for _, info := range r.packages {
 		for _, f := range info.Files {
-			tokenFile := r.iprog.Fset.File(f.Pos())
-			if filesToUpdate[tokenFile] && generated(f, tokenFile) {
+			tokenFile := r.iprog.Fset.File(f.FileStart)
+			if filesToUpdate[tokenFile] && ast.IsGenerated(f) {
 				generatedFileNames = append(generatedFileNames, tokenFile.Name())
 			}
 		}
@@ -502,7 +505,7 @@ func (r *renamer) update() error {
 	for _, info := range r.packages {
 		first := true
 		for _, f := range info.Files {
-			tokenFile := r.iprog.Fset.File(f.Pos())
+			tokenFile := r.iprog.Fset.File(f.FileStart)
 			if filesToUpdate[tokenFile] {
 				if first {
 					npkgs++

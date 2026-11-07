@@ -1,0 +1,81 @@
+-- go.mod --
+module example.com
+
+go 1.24
+
+-- baz/baz.go --
+package baz
+
+type Baz int
+
+type Baz2 int
+
+type GenericBaz[T any] struct{}
+
+-- test.go --
+package t
+
+import "example.com/baz"
+
+type Foo int
+
+//go:fix inline
+type Bar = Foo // want Bar:"goFixInline alias"
+
+type _ struct {
+	// Bar should not be inlined, since that would cause
+	// a field name change.
+	Bar
+}
+
+type _ struct {
+	// *Bar should not be inlined, since that would cause
+	// a field name change.
+	*Bar
+}
+
+//go:fix inline
+type Baz = baz.Baz // want Baz:"goFixInline alias"
+
+type _ struct {
+	// fine, since will end up with the same name.
+	Baz // want `Type alias Baz should be inlined`
+}
+
+type _ struct {
+	// fine, since will end up with the same name.
+	*Baz // want `Type alias Baz should be inlined`
+}
+
+//go:fix inline
+type StructAlias = struct {} // want StructAlias:"goFixInline alias"
+
+type _ struct {
+	// type _ struct { struct{} } would not be a valid Go.
+	StructAlias
+}
+
+//go:fix inline
+type GenericFoo[T any] = Foo // want GenericFoo:"goFixInline alias"
+
+type _ struct {
+	GenericFoo[int]
+}
+
+type _ struct {
+	GenericFoo[Baz] // want `Type alias Baz should be inlined`
+}
+
+//go:fix inline
+type Baz2[T any] = baz.Baz2 // want Baz2:"goFixInline alias"
+
+type _ struct {
+	Baz2[int] // want `Type alias Baz2\[int\] should be inlined`
+}
+
+//go:fix inline
+type GenericBaz[T any] = baz.GenericBaz[T] // want GenericBaz:"goFixInline alias"
+
+type _ struct {
+	GenericBaz[int] // want `Type alias GenericBaz\[int\] should be inlined`
+}

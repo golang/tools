@@ -8,15 +8,16 @@ package ssa
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // MethodValue returns the Function implementing method sel, building
 // wrapper methods on demand. It returns nil if sel denotes an
-// interface or generic method.
+// interface or generic method, or a method of a generic type.
 //
 // Precondition: sel.Kind() == MethodVal.
 //
@@ -27,60 +28,77 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 	if sel.Kind() != types.MethodVal {
 		panic(fmt.Sprintf("MethodValue(%s) kind != MethodVal", sel))
 	}
+
+	method := sel.Obj().(*types.Func)
+	if method.Signature().TypeParams().Len() > 0 {
+		return nil // generic method
+	}
+
 	T := sel.Recv()
 	if types.IsInterface(T) {
 		return nil // interface method or type parameter
 	}
 
+	// We can avoid materializing sel.Type(): it will be parameterized iff
+	// the receiver type T is too (see go.dev/issue/81308).
 	if prog.isParameterized(T) {
-		return nil // generic method
+		return nil // method on generic type
 	}
 
 	if prog.mode&LogSource != 0 {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	var b builder
+	key := methodKeyOf(method.Pkg(), method.Name())
 
-	m := func() *Function {
+	// The critical section returns a builder only if it created a
+	// new Function. In the common case, a method created by an
+	// earlier call, it allocates nothing: a builder declared out
+	// here would escape to the heap on every call.
+	fn, b := func() (*Function, *builder) {
 		prog.methodsMu.Lock()
 		defer prog.methodsMu.Unlock()
 
 		// Get or create SSA method set.
 		mset, ok := prog.methodSets.At(T).(*methodSet)
 		if !ok {
-			mset = &methodSet{mapping: make(map[string]*Function)}
+			mset = &methodSet{mapping: make(map[methodKey]*Function)}
 			prog.methodSets.Set(T, mset)
 		}
 
 		// Get or create SSA method.
-		id := sel.Obj().Id()
-		fn, ok := mset.mapping[id]
-		if !ok {
-			obj := sel.Obj().(*types.Func)
-			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
-			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel))
-				fn.buildshared = b.shared()
-				b.enqueue(fn)
-			} else {
-				fn = prog.objectMethod(obj, &b)
-			}
-			if fn.Signature.Recv() == nil {
-				panic(fn)
-			}
-			mset.mapping[id] = fn
-		} else {
-			b.waitForSharedFunction(fn)
+		if fn, ok := mset.mapping[key]; ok {
+			return fn, nil
 		}
-
-		return fn
+		b := new(builder)
+		var fn *Function
+		needsPromotion := len(sel.Index()) > 1
+		needsIndirection := !isPointer(recvType(method)) && isPointer(T)
+		if needsPromotion || needsIndirection {
+			fn = createWrapper(prog, toSelection(sel), nil)
+			fn.buildshared = b.shared()
+			b.enqueue(fn)
+		} else {
+			fn = prog.objectMethod(method, nil, b)
+		}
+		if fn.Signature.Recv() == nil {
+			panic(fn)
+		}
+		mset.mapping[key] = fn
+		return fn, b
 	}()
 
-	b.iterate()
+	if b != nil {
+		b.iterate()
+	} else if !fn.buildshared.isTransitivelyDone() {
+		// fn was created by an earlier call and another builder
+		// is still building it: wait for that to finish.
+		var b builder
+		b.waitForSharedFunction(fn)
+		b.iterate()
+	}
 
-	return m
+	return fn
 }
 
 // objectMethod returns the Function for a given method symbol.
@@ -91,23 +109,20 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 // objectMethod panics if the function is not a method.
 //
 // Acquires prog.objectMethodsMu.
-func (prog *Program) objectMethod(obj *types.Func, b *builder) *Function {
+func (prog *Program) objectMethod(obj *types.Func, targs []types.Type, b *builder) *Function {
 	sig := obj.Type().(*types.Signature)
 	if sig.Recv() == nil {
 		panic("not a method: " + obj.String())
 	}
 
+	// Instantiation of generic?
+	if orig := obj.Origin(); orig != obj || len(targs) > 0 {
+		return prog.objectMethod(orig, nil, b).instance(receiverTypeArgs(obj), targs, b)
+	}
+
 	// Belongs to a created package?
 	if fn := prog.FuncValue(obj); fn != nil {
 		return fn
-	}
-
-	// Instantiation of generic?
-	if originObj := obj.Origin(); originObj != obj {
-		origin := prog.objectMethod(originObj, b)
-		assert(origin.typeparams.Len() > 0, "origin is not generic")
-		targs := receiverTypeArgs(obj)
-		return origin.instance(targs, b)
 	}
 
 	// Consult/update cache of methods created from types.Func.
@@ -134,6 +149,15 @@ func (prog *Program) objectMethod(obj *types.Func, b *builder) *Function {
 // identified by (pkg, name).  It returns nil if the method exists but
 // is an interface method or generic method, and panics if T has no such method.
 func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string) *Function {
+	// Fast path: the method was created and built by an earlier
+	// call. RTA calls LookupMethod once per (call site, concrete
+	// type) pair, so this is the common case; it avoids computing
+	// the method set of T and searching it, which dominates the
+	// cost of the slow path below.
+	if fn := prog.existingMethod(T, methodKeyOf(pkg, name)); fn != nil {
+		return fn
+	}
+
 	sel := prog.MethodSets.MethodSet(T).Lookup(pkg, name)
 	if sel == nil {
 		panic(fmt.Sprintf("%s has no method %s", T, types.Id(pkg, name)))
@@ -141,9 +165,46 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 	return prog.MethodValue(sel)
 }
 
+// existingMethod returns the Function implementing the method of
+// the concrete type T identified by key, if it has already been
+// created and built, or nil. A recorded method implies that T was
+// found to be concrete and non-parameterized and the method
+// non-generic when it was created.
+//
+// Acquires prog.methodsMu.
+func (prog *Program) existingMethod(T types.Type, key methodKey) *Function {
+	prog.methodsMu.Lock()
+	defer prog.methodsMu.Unlock()
+	if mset, ok := prog.methodSets.At(T).(*methodSet); ok {
+		if fn := mset.mapping[key]; fn != nil && fn.buildshared.isTransitivelyDone() {
+			return fn
+		}
+	}
+	return nil
+}
+
 // methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
 type methodSet struct {
-	mapping map[string]*Function // populated lazily
+	mapping map[methodKey]*Function // populated lazily
+}
+
+// methodKey identifies a method within a method set the same way
+// types.Id does, by name for exported methods and by package path
+// and name for unexported ones, without building a string.
+type methodKey struct {
+	path string // package path, or "" if name is exported
+	name string
+}
+
+func methodKeyOf(pkg *types.Package, name string) methodKey {
+	if token.IsExported(name) {
+		return methodKey{"", name}
+	}
+	path := "_" // as types.Id does when pkg is nil
+	if pkg != nil {
+		path = pkg.Path()
+	}
+	return methodKey{path, name}
 }
 
 // RuntimeTypes returns a new unordered slice containing all types in
@@ -158,124 +219,31 @@ type methodSet struct {
 //
 // Thread-safe.
 //
-// Acquires prog.runtimeTypesMu.
+// Acquires prog.makeInterfaceTypesMu.
 func (prog *Program) RuntimeTypes() []types.Type {
-	prog.runtimeTypesMu.Lock()
-	defer prog.runtimeTypesMu.Unlock()
-	return prog.runtimeTypes.Keys()
-}
+	prog.makeInterfaceTypesMu.Lock()
+	defer prog.makeInterfaceTypesMu.Unlock()
 
-// forEachReachable calls f for type T and each type reachable from
-// its type through reflection.
-//
-// The function f must use memoization to break cycles and
-// return false when the type has already been visited.
-//
-// TODO(adonovan): publish in typeutil and share with go/callgraph/rta.
-func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types.Type) bool) {
-	var visit func(T types.Type, skip bool)
-	visit = func(T types.Type, skip bool) {
-		if !skip {
-			if !f(T) {
-				return
+	// Compute the derived types on demand, since many SSA clients
+	// never call RuntimeTypes, and those that do typically call
+	// it once (often within ssautil.AllFunctions, which will
+	// eventually not use it; see Go issue #69291.) This
+	// eliminates the need to eagerly compute all the element
+	// types during SSA building.
+	var runtimeTypes []types.Type
+	var set typeutil.Map // for de-duping identical types
+	for t := range prog.makeInterfaceTypes {
+		typesinternal.ForEachElement(prog.MethodSets.MethodSet, t, func(t types.Type, access bool) bool {
+			if !access {
+				return false // inaccessible to reflection
 			}
-		}
-
-		// Recursion over signatures of each method.
-		tmset := msets.MethodSet(T)
-		for i := 0; i < tmset.Len(); i++ {
-			sig := tmset.At(i).Type().(*types.Signature)
-			// It is tempting to call visit(sig, false)
-			// but, as noted in golang.org/cl/65450043,
-			// the Signature.Recv field is ignored by
-			// types.Identical and typeutil.Map, which
-			// is confusing at best.
-			//
-			// More importantly, the true signature rtype
-			// reachable from a method using reflection
-			// has no receiver but an extra ordinary parameter.
-			// For the Read method of io.Reader we want:
-			//   func(Reader, []byte) (int, error)
-			// but here sig is:
-			//   func([]byte) (int, error)
-			// with .Recv = Reader (though it is hard to
-			// notice because it doesn't affect Signature.String
-			// or types.Identical).
-			//
-			// TODO(adonovan): construct and visit the correct
-			// non-method signature with an extra parameter
-			// (though since unnamed func types have no methods
-			// there is essentially no actual demand for this).
-			//
-			// TODO(adonovan): document whether or not it is
-			// safe to skip non-exported methods (as RTA does).
-			visit(sig.Params(), true)  // skip the Tuple
-			visit(sig.Results(), true) // skip the Tuple
-		}
-
-		switch T := T.(type) {
-		case *aliases.Alias:
-			visit(aliases.Unalias(T), skip) // emulates the pre-Alias behavior
-
-		case *types.Basic:
-			// nop
-
-		case *types.Interface:
-			// nop---handled by recursion over method set.
-
-		case *types.Pointer:
-			visit(T.Elem(), false)
-
-		case *types.Slice:
-			visit(T.Elem(), false)
-
-		case *types.Chan:
-			visit(T.Elem(), false)
-
-		case *types.Map:
-			visit(T.Key(), false)
-			visit(T.Elem(), false)
-
-		case *types.Signature:
-			if T.Recv() != nil {
-				panic(fmt.Sprintf("Signature %s has Recv %s", T, T.Recv()))
+			seen, _ := set.Set(t, true).(bool)
+			if !seen {
+				runtimeTypes = append(runtimeTypes, t)
 			}
-			visit(T.Params(), true)  // skip the Tuple
-			visit(T.Results(), true) // skip the Tuple
-
-		case *types.Named:
-			// A pointer-to-named type can be derived from a named
-			// type via reflection.  It may have methods too.
-			visit(types.NewPointer(T), false)
-
-			// Consider 'type T struct{S}' where S has methods.
-			// Reflection provides no way to get from T to struct{S},
-			// only to S, so the method set of struct{S} is unwanted,
-			// so set 'skip' flag during recursion.
-			visit(T.Underlying(), true) // skip the unnamed type
-
-		case *types.Array:
-			visit(T.Elem(), false)
-
-		case *types.Struct:
-			for i, n := 0, T.NumFields(); i < n; i++ {
-				// TODO(adonovan): document whether or not
-				// it is safe to skip non-exported fields.
-				visit(T.Field(i).Type(), false)
-			}
-
-		case *types.Tuple:
-			for i, n := 0, T.Len(); i < n; i++ {
-				visit(T.At(i).Type(), false)
-			}
-
-		case *types.TypeParam, *types.Union:
-			// forEachReachable must not be called on parameterized types.
-			panic(T)
-
-		default:
-			panic(T)
-		}
+			return seen
+		})
 	}
-	visit(T, false)
+
+	return runtimeTypes
 }

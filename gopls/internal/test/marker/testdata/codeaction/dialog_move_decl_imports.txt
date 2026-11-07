@@ -1,0 +1,544 @@
+Test move declaration refactoring: import additions and deletions.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- go.mod --
+module golang.org/lsptests/movedeclimports
+
+go 1.20
+
+-- dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- dest/has_import.go --
+package dest
+
+import "strings"
+
+func Join(a, b string) string {
+	return strings.Join([]string{a, b}, "")
+}
+
+-- src/single.go --
+package src
+
+import "bytes"
+
+func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
+	b.WriteString("hello")
+}
+
+-- src/dup_import.go --
+package src
+
+import "strings"
+
+func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
+	return strings.HasPrefix(s, "a")
+}
+
+-- src/newfile.go --
+package src
+
+import "bytes"
+
+func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
+	return new(bytes.Buffer)
+}
+
+-- src/shared.go --
+package src
+
+import "fmt"
+
+func MoveMe() { //@codeaction(re"MoveMe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_shared_import)
+	fmt.Println("moving")
+}
+
+func StayMe() {
+	fmt.Println("staying")
+}
+
+-- @move_shared_import/src/shared.go --
+package src
+
+import "fmt"
+
+func StayMe() {
+	fmt.Println("staying")
+}
+
+-- src/multi_spec.go --
+package src
+
+import (
+	"bytes"
+	"strings"
+)
+
+func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
+	b.Reset()
+}
+
+func StayStrings(s string) bool {
+	return strings.Contains(s, "x")
+}
+
+-- src/widget.go --
+package src
+
+import "bytes"
+
+// Widget's method is in another file, and both files import "bytes".
+type Widget struct { //@codeaction(re"Widget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_import)
+	buf *bytes.Buffer
+}
+
+-- @move_multi_file_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+// Widget's method is in another file, and both files import "bytes".
+type Widget struct { //@codeaction(re"Widget", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_import)
+	buf *bytes.Buffer
+}
+
+func (w *Widget) Reset() {
+	w.buf = new(bytes.Buffer)
+}
+-- @move_multi_file_import/src/widget.go --
+package src
+
+
+
+-- @move_multi_file_import/src/widget_methods.go --
+package src
+
+import (
+	
+	"strings"
+)
+
+func StayUpper(s string) string {
+	return strings.ToUpper(s)
+}
+
+-- src/widget_methods.go --
+package src
+
+import (
+	"bytes"
+	"strings"
+)
+
+func (w *Widget) Reset() {
+	w.buf = new(bytes.Buffer)
+}
+
+func StayUpper(s string) string {
+	return strings.ToUpper(s)
+}
+
+-- src/gadget.go --
+package src
+
+import "bytes"
+
+// UsesBytes's method is in another file, which imports "bytes" as bytes2.
+type UsesBytes struct { //@codeaction(re"UsesBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_renamed_import)
+	buf *bytes.Buffer
+}
+
+-- @move_multi_file_renamed_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+import bytes2 "bytes"
+
+func Existing() {}
+
+// UsesBytes's method is in another file, which imports "bytes" as bytes2.
+type UsesBytes struct { //@codeaction(re"UsesBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_file_renamed_import)
+	buf *bytes.Buffer
+}
+
+func (g *UsesBytes) Reset() {
+	g.buf = new(bytes2.Buffer)
+}
+-- @move_multi_file_renamed_import/src/gadget.go --
+package src
+
+
+
+-- @move_multi_file_renamed_import/src/gadget_methods.go --
+package src
+
+
+
+-- src/gadget_methods.go --
+package src
+
+import bytes2 "bytes"
+
+func (g *UsesBytes) Reset() {
+	g.buf = new(bytes2.Buffer)
+}
+
+-- dest/thing.go --
+package dest
+
+type Thing int
+
+-- src/uses_dest.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// UsesDest refers to dest in its signature and body. The dest. qualifiers
+// are dropped, and the dest import is removed from src.
+func UsesDest(t dest.Thing) dest.Thing { //@codeaction(re"UsesDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest)
+	dest.Existing()
+	return t
+}
+
+-- @move_uses_dest/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// UsesDest refers to dest in its signature and body. The dest. qualifiers
+// are dropped, and the dest import is removed from src.
+func UsesDest(t Thing) Thing { //@codeaction(re"UsesDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest)
+	Existing()
+	return t
+}
+-- @move_uses_dest/src/uses_dest.go --
+package src
+
+
+
+-- src/uses_dest_renamed.go --
+package src
+
+import d "golang.org/lsptests/movedeclimports/dest"
+
+// UsesDestRenamed refers to dest through a renamed import.
+func UsesDestRenamed() { //@codeaction(re"UsesDestRenamed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_renamed)
+	d.Existing()
+}
+
+-- @move_uses_dest_renamed/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// UsesDestRenamed refers to dest through a renamed import.
+func UsesDestRenamed() { //@codeaction(re"UsesDestRenamed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_renamed)
+	Existing()
+}
+-- @move_uses_dest_renamed/src/uses_dest_renamed.go --
+package src
+
+
+
+-- src/uses_dest_shared.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// MovesWithDest drops its dest. qualifier, but src keeps the dest import
+// because StaysWithDest still uses it.
+func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_shared)
+	dest.Existing()
+}
+
+func StaysWithDest() {
+	dest.Existing()
+}
+
+-- @move_uses_dest_shared/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// MovesWithDest drops its dest. qualifier, but src keeps the dest import
+// because StaysWithDest still uses it.
+func MovesWithDest() { //@codeaction(re"MovesWithDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_shared)
+	Existing()
+}
+-- @move_uses_dest_shared/src/uses_dest_shared.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+func StaysWithDest() {
+	dest.Existing()
+}
+
+-- src/uses_dest_spec.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// Only DestThing moves out of the group; its dest. qualifier is dropped.
+var (
+	DestThing dest.Thing //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
+	OtherThing dest.Thing
+)
+
+-- src/calls_dest.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// CallsDest refers to the dest package, which must not import itself.
+func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
+	dest.Existing()
+}
+
+-- @move_no_self_import/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// CallsDest refers to the dest package, which must not import itself.
+func CallsDest() { //@codeaction(re"CallsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_no_self_import)
+	Existing()
+}
+-- @move_no_self_import/src/calls_dest.go --
+package src
+
+
+
+-- src/commented.go --
+package src
+
+import "bytes" // for Buffer
+
+// Commented's method is in another file, which imports "bytes" without a comment.
+type Commented struct { //@codeaction(re"Commented", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_commented_import)
+	buf *bytes.Buffer
+}
+
+-- @move_commented_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+// Commented's method is in another file, which imports "bytes" without a comment.
+type Commented struct { //@codeaction(re"Commented", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_commented_import)
+	buf *bytes.Buffer
+}
+
+func (c *Commented) Reset() {
+	c.buf = new(bytes.Buffer)
+}
+-- @move_commented_import/src/commented.go --
+package src
+
+ // for Buffer
+
+-- @move_commented_import/src/commented_methods.go --
+package src
+
+
+
+-- src/commented_methods.go --
+package src
+
+import "bytes"
+
+func (c *Commented) Reset() {
+	c.buf = new(bytes.Buffer)
+}
+
+-- src/order.go --
+package src
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+// Describe needs several imports. Their order in dest must be deterministic.
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+
+-- @move_import_order_existing/dest/dest.go --
+package dest
+
+import "bytes"
+
+import "errors"
+
+import "fmt"
+
+import "strings"
+
+import "unicode"
+
+func Existing() {}
+
+// Describe needs several imports. Their order in dest must be deterministic.
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+-- @move_import_order_existing/src/order.go --
+package src
+
+import (
+	
+	
+	
+	
+	
+)
+
+-- @move_import_order_new/dest/describe.go --
+package dest
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+// Describe needs several imports. Their order in dest must be deterministic.
+func Describe(b *bytes.Buffer) error { //@codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/describe.go"}`, result=move_import_order_new), codeaction(re"Describe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_import_order_existing)
+	if b == nil {
+		return errors.New("nil buffer")
+	}
+	fmt.Fprint(b, strings.ToUpper("x"), unicode.MaxRune)
+	return nil
+}
+-- @move_import_order_new/src/order.go --
+package src
+
+import (
+	
+	
+	
+	
+	
+)
+
+-- @move_single_import/src/single.go --
+package src
+
+
+
+-- @move_single_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+func WriteBuf(b *bytes.Buffer) { //@codeaction(re"WriteBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_single_import)
+	b.WriteString("hello")
+}
+-- @move_dup_import/src/dup_import.go --
+package src
+
+
+
+-- @move_dup_import/dest/has_import.go --
+package dest
+
+import "strings"
+
+func Join(a, b string) string {
+	return strings.Join([]string{a, b}, "")
+}
+
+func HasPrefix(s string) bool { //@codeaction(re"HasPrefix", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/has_import.go"}`, result=move_dup_import)
+	return strings.HasPrefix(s, "a")
+}
+-- @move_new_file_import/src/newfile.go --
+package src
+
+
+
+-- @move_new_file_import/dest/newfile.go --
+package dest
+
+import (
+	"bytes"
+)
+
+func MakeBuf() *bytes.Buffer { //@codeaction(re"MakeBuf", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/newfile.go"}`, result=move_new_file_import)
+	return new(bytes.Buffer)
+}
+-- @move_shared_import/dest/dest.go --
+package dest
+
+import "fmt"
+
+func Existing() {}
+
+func MoveMe() { //@codeaction(re"MoveMe", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_shared_import)
+	fmt.Println("moving")
+}
+-- @move_multi_spec_import/src/multi_spec.go --
+package src
+
+import (
+	
+	"strings"
+)
+
+func StayStrings(s string) bool {
+	return strings.Contains(s, "x")
+}
+
+-- @move_multi_spec_import/dest/dest.go --
+package dest
+
+import "bytes"
+
+func Existing() {}
+
+func MoveBytes(b *bytes.Buffer) { //@codeaction(re"MoveBytes", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_multi_spec_import)
+	b.Reset()
+}
+-- @move_uses_dest_spec/dest/dest.go --
+package dest
+
+func Existing() {}
+
+var DestThing Thing //@codeaction(re"DestThing", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_uses_dest_spec)
+-- @move_uses_dest_spec/src/uses_dest_spec.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// Only DestThing moves out of the group; its dest. qualifier is dropped.
+var (
+	OtherThing dest.Thing
+)
+

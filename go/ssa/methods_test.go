@@ -90,3 +90,64 @@ func selections[T any]() {
 		}
 	}
 }
+
+// TestMethodValueNoAlloc checks that MethodValue and LookupMethod
+// allocate nothing once the method has been created.
+func TestMethodValueNoAlloc(t *testing.T) {
+	input := `
+package p
+
+type S int
+
+func (S) Exported()    {}
+func (S) unexported()  {}
+func (*S) PtrExported() {}
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "input.go", input, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := ssautil.BuildPackage(&types.Config{}, fset,
+		types.NewPackage("p", ""), []*ast.File{f}, ssa.SanityCheckFunctions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := p.Prog
+	S := p.Pkg.Scope().Lookup("S").Type()
+
+	// Cover a value method, an unexported method (whose Id would
+	// need a new string), and a wrapper (value method via *S).
+	for _, tc := range []struct {
+		T    types.Type
+		name string
+	}{
+		{S, "Exported"},
+		{S, "unexported"},
+		{types.NewPointer(S), "Exported"},
+		{types.NewPointer(S), "PtrExported"},
+	} {
+		sel := prog.MethodSets.MethodSet(tc.T).Lookup(p.Pkg, tc.name)
+		if sel == nil {
+			t.Fatalf("no method %s.%s", tc.T, tc.name)
+		}
+		fn := prog.MethodValue(sel) // create (and build) the method
+		if fn == nil {
+			t.Fatalf("MethodValue(%s.%s) = nil", tc.T, tc.name)
+		}
+		if allocs := testing.AllocsPerRun(100, func() {
+			if prog.MethodValue(sel) != fn {
+				t.Errorf("MethodValue(%s.%s) changed", tc.T, tc.name)
+			}
+		}); allocs > 0 {
+			t.Errorf("MethodValue(%s.%s) allocated %v times per call", tc.T, tc.name, allocs)
+		}
+		if allocs := testing.AllocsPerRun(100, func() {
+			if prog.LookupMethod(tc.T, p.Pkg, tc.name) != fn {
+				t.Errorf("LookupMethod(%s.%s) changed", tc.T, tc.name)
+			}
+		}); allocs > 0 {
+			t.Errorf("LookupMethod(%s.%s) allocated %v times per call", tc.T, tc.name, allocs)
+		}
+	}
+}

@@ -7,6 +7,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/modindex"
 )
 
 // refreshTimer implements delayed asynchronous refreshing of state.
@@ -59,11 +61,8 @@ func (t *refreshTimer) schedule() {
 
 	if t.timer == nil {
 		// Don't refresh more than twice per minute.
-		delay := 30 * time.Second
 		// Don't spend more than ~2% of the time refreshing.
-		if adaptive := 50 * t.duration; adaptive > delay {
-			delay = adaptive
-		}
+		delay := max(30*time.Second, 50*t.duration)
 		t.timer = time.AfterFunc(delay, func() {
 			start := time.Now()
 			t.mu.Lock()
@@ -147,6 +146,63 @@ func newImportsState(backgroundCtx context.Context, modCache *sharedModCache, en
 	s.refreshTimer = newRefreshTimer(s.refreshProcessEnv)
 	s.refreshTimer.schedule()
 	return s
+}
+
+// modcacheState holds a modindex.Index and controls its updates
+type modcacheState struct {
+	gomodcache   string
+	refreshTimer *refreshTimer
+
+	// (index, indexErr) is zero in the initial state.
+	// Thereafter they hold the memoized result pair for getIndex.
+	mu       sync.Mutex
+	index    *modindex.Index
+	indexErr error
+}
+
+// newModcacheState constructs a new modcacheState for goimports.
+// The returned state is automatically updated until [modcacheState.stopTimer] is called.
+func newModcacheState(gomodcache string) *modcacheState {
+	s := &modcacheState{
+		gomodcache: gomodcache,
+	}
+	s.refreshTimer = newRefreshTimer(s.refreshIndex)
+	go s.refreshIndex()
+	return s
+}
+
+// getIndex reads the module cache index.
+func (s *modcacheState) getIndex() (*modindex.Index, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.index == nil && s.indexErr == nil {
+		// getIndex was called before refreshIndex finished.
+		// Read, but don't update, whatever index is present.
+		s.index, s.indexErr = modindex.Read(s.gomodcache)
+	}
+
+	return s.index, s.indexErr
+}
+
+func (s *modcacheState) refreshIndex() {
+	index, err := modindex.Update(s.gomodcache)
+	s.mu.Lock()
+	if err != nil {
+		if s.indexErr != nil {
+			s.indexErr = err // prefer most recent error
+		} else if s.index != nil {
+			// Keep using stale s.index.
+			log.Printf("modcacheState.refreshIndex: %v", err)
+		}
+	} else {
+		s.index, s.indexErr = index, nil // success
+	}
+	s.mu.Unlock()
+}
+
+func (s *modcacheState) stopTimer() {
+	s.refreshTimer.stop()
 }
 
 // stopTimer stops scheduled refreshes of this imports state.

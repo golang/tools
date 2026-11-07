@@ -1,0 +1,44 @@
+Regression test for https://go.dev/issue/76287:
+ensure that inlining a function that wraps go1.26's new(expr)
+correctly inserts a conversion as needed, just as it would for a
+declared generic function equivalent to 'new'.
+
+- f uses a declared _new(expr) function.
+- g uses the built-in new(expr) function.
+
+-- go.mod --
+module testdata
+go 1.26
+
+-- common.go --
+package p
+
+func _new[T any](x T) *T { return &x }
+
+-- f.go --
+package p
+
+func f(x int64) *int64 { return _new(x) }
+
+var _ *int64 = f(42) //@ inline(re"f", f)
+
+-- g.go --
+package p
+
+func g(x int64) *int64 { return new(x) }
+
+var _ *int64 = g(42) //@ inline(re"g", g)
+
+-- f --
+package p
+
+func f(x int64) *int64 { return _new(x) }
+
+var _ *int64 = _new(int64(42)) //@ inline(re"f", f)
+
+-- g --
+package p
+
+func g(x int64) *int64 { return new(x) }
+
+var _ *int64 = new(int64(42)) //@ inline(re"g", g)

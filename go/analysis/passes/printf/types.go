@@ -10,7 +10,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -73,18 +72,14 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		return true
 	}
 
-	if typ, _ := aliases.Unalias(typ).(*types.TypeParam); typ != nil {
+	if typ, _ := types.Unalias(typ).(*types.TypeParam); typ != nil {
 		// Avoid infinite recursion through type parameters.
 		if m.seen[typ] {
 			return true
 		}
 		m.seen[typ] = true
-		terms, err := typeparams.StructuralTerms(typ)
-		if err != nil {
-			return true // invalid type (possibly an empty type set)
-		}
-
-		if len(terms) == 0 {
+		ts := typeparams.TypeSetOf(typ)
+		if ts.Unrestricted() {
 			// No restrictions on the underlying of typ. Type parameters implementing
 			// error, fmt.Formatter, or fmt.Stringer were handled above, and %v and
 			// %T was handled in matchType. We're about to check restrictions the
@@ -104,7 +99,7 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		// parameters.
 		reportReason := len(m.seen) == 1
 
-		for _, term := range terms {
+		for term := range ts.Terms() {
 			if !m.match(term.Type(), topLevel) {
 				if reportReason {
 					if term.Tilde() {
@@ -191,6 +186,9 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		case *types.Map: // see below
 		default:
 			// Check whether the rest can print pointers.
+			if m.t&argPointer == 0 && m.t&argInt != 0 {
+				m.reason = "use %p for a pointer"
+			}
 			return m.t&argPointer != 0
 		}
 		// If it's a top-level pointer to a struct, array, slice, type param, or
@@ -205,8 +203,7 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 	case *types.Struct:
 		// report whether all the elements of the struct match the expected type. For
 		// instance, with "%d" all the elements must be printable with the "%d" format.
-		for i := 0; i < typ.NumFields(); i++ {
-			typf := typ.Field(i)
+		for typf := range typ.Fields() {
 			if !m.match(typf.Type(), false) {
 				return false
 			}
@@ -229,14 +226,20 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 			types.Bool:
 			return m.t&argBool != 0
 
+		case types.Byte:
+			return m.t&(argInt|argByte) != 0
+
+		case types.Rune, types.UntypedRune:
+			return m.t&(argInt|argRune) != 0
+
 		case types.UntypedInt,
 			types.Int,
 			types.Int8,
 			types.Int16,
-			types.Int32,
+			// see case Rune for int32
 			types.Int64,
 			types.Uint,
-			types.Uint8,
+			// see case Byte for uint8
 			types.Uint16,
 			types.Uint32,
 			types.Uint64,
@@ -258,10 +261,10 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 			return m.t&argString != 0
 
 		case types.UnsafePointer:
-			return m.t&(argPointer|argInt) != 0
-
-		case types.UntypedRune:
-			return m.t&(argInt|argRune) != 0
+			if m.t&argPointer == 0 && m.t&argInt != 0 {
+				m.reason = "use %p for a pointer"
+			}
+			return m.t&argPointer != 0
 
 		case types.UntypedNil:
 			return false
@@ -276,7 +279,7 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 }
 
 func isConvertibleToString(typ types.Type) bool {
-	if bt, ok := aliases.Unalias(typ).(*types.Basic); ok && bt.Kind() == types.UntypedNil {
+	if bt, ok := types.Unalias(typ).(*types.Basic); ok && bt.Kind() == types.UntypedNil {
 		// We explicitly don't want untyped nil, which is
 		// convertible to both of the interfaces below, as it
 		// would just panic anyway.

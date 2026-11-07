@@ -8,12 +8,14 @@ package eg // import "golang.org/x/tools/refactor/eg"
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
 	"go/printer"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 )
 
@@ -158,6 +160,10 @@ type Transformer struct {
 // described in the package documentation.
 // tmplInfo is the type information for tmplFile.
 func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.File, tmplInfo *types.Info, verbose bool) (*Transformer, error) {
+	// These maps are required by types.Info.TypeOf.
+	if tmplInfo.Types == nil || tmplInfo.Defs == nil || tmplInfo.Uses == nil {
+		return nil, errors.New("eg.NewTransformer: types.Info argument missing one of Types, Defs or Uses")
+	}
 	// Check the template.
 	beforeSig := funcSig(tmplPkg, "before")
 	if beforeSig == nil {
@@ -204,8 +210,8 @@ func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.F
 	}
 
 	wildcards := make(map[*types.Var]bool)
-	for i := 0; i < beforeSig.Params().Len(); i++ {
-		wildcards[beforeSig.Params().At(i)] = true
+	for v := range beforeSig.Params().Variables() {
+		wildcards[v] = true
 	}
 
 	// checkExprTypes returns an error if Tb (type of before()) is not
@@ -350,18 +356,10 @@ func stmtAndExpr(fn *ast.FuncDecl) ([]ast.Stmt, ast.Expr, error) {
 
 // mergeTypeInfo adds type info from src to dst.
 func mergeTypeInfo(dst, src *types.Info) {
-	for k, v := range src.Types {
-		dst.Types[k] = v
-	}
-	for k, v := range src.Defs {
-		dst.Defs[k] = v
-	}
-	for k, v := range src.Uses {
-		dst.Uses[k] = v
-	}
-	for k, v := range src.Selections {
-		dst.Selections[k] = v
-	}
+	maps.Copy(dst.Types, src.Types)
+	maps.Copy(dst.Defs, src.Defs)
+	maps.Copy(dst.Uses, src.Uses)
+	maps.Copy(dst.Selections, src.Selections)
 }
 
 // (debugging only)

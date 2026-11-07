@@ -12,7 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -72,7 +72,7 @@ func writeFileData(path string, content []byte, rel RelativeTo) error {
 
 // isWindowsErrLockViolation reports whether err is ERROR_LOCK_VIOLATION
 // on Windows.
-var isWindowsErrLockViolation = func(err error) bool { return false }
+var isWindowsErrLockViolation = func(error) bool { return false }
 
 // Workdir is a temporary working directory for tests. It exposes file
 // operations in terms of relative paths, and fakes file watching by triggering
@@ -103,7 +103,7 @@ type Workdir struct {
 }
 
 // NewWorkdir writes the txtar-encoded file data in txt to dir, and returns a
-// Workir for operating on these files using
+// Workdir for operating on these files using relative paths.
 func NewWorkdir(dir string, files map[string][]byte) (*Workdir, error) {
 	w := &Workdir{RelativeTo: RelativeTo(dir)}
 	for name, data := range files {
@@ -156,21 +156,8 @@ func (w *Workdir) EntireFile(path string) protocol.Location {
 
 // ReadFile reads a text file specified by a workdir-relative path.
 func (w *Workdir) ReadFile(path string) ([]byte, error) {
-	backoff := 1 * time.Millisecond
-	for {
-		b, err := os.ReadFile(w.AbsPath(path))
-		if err != nil {
-			if runtime.GOOS == "plan9" && strings.HasSuffix(err.Error(), " exclusive use file already open") {
-				// Plan 9 enforces exclusive access to locked files.
-				// Give the owner time to unlock it and retry.
-				time.Sleep(backoff)
-				backoff *= 2
-				continue
-			}
-			return nil, err
-		}
-		return b, nil
-	}
+	// Retry in case of (e.g.) Plan 9 locking of go.mod files.
+	return robustio.ReadFile(w.AbsPath(path))
 }
 
 // RegexpSearch searches the file corresponding to path for the first position
@@ -294,7 +281,7 @@ func (w *Workdir) RenameFile(ctx context.Context, oldPath, newPath string) error
 		if err := robustio.RemoveAll(oldAbs); err != nil {
 			// If we failed to remove the old file, that may explain the Rename error too.
 			// Make a best effort to back out the write to the new path.
-			robustio.RemoveAll(newAbs)
+			robustio.RemoveAll(newAbs) // ignore error
 			return renameErr
 		}
 	}
@@ -333,8 +320,7 @@ func (w *Workdir) CheckForFileChanges(ctx context.Context) error {
 		return nil
 	}
 	w.watcherMu.Lock()
-	watchers := make([]func(context.Context, []protocol.FileEvent), len(w.watchers))
-	copy(watchers, w.watchers)
+	watchers := slices.Clone(w.watchers)
 	w.watcherMu.Unlock()
 	for _, w := range watchers {
 		w(ctx, evts)
@@ -368,7 +354,7 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 		// must read the file contents.
 		id := fileID{mtime: info.ModTime()}
 		if time.Since(info.ModTime()) < 2*time.Second {
-			data, err := os.ReadFile(fp)
+			data, err := robustio.ReadFile(fp)
 			if err != nil {
 				return err
 			}
@@ -395,7 +381,7 @@ func (w *Workdir) pollFiles() ([]protocol.FileEvent, error) {
 				// In this case, read the content to check whether the file actually
 				// changed.
 				if oldID.mtime.Equal(id.mtime) && oldID.hash != "" && id.hash == "" {
-					data, err := os.ReadFile(fp)
+					data, err := robustio.ReadFile(fp)
 					if err != nil {
 						return err
 					}

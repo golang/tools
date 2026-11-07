@@ -1,4 +1,6 @@
-# Gopls: Web-based features
+---
+title: "Gopls: Web-based features"
+---
 
 The LSP
 [`window.showDocument`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#window_showDocument) request
@@ -37,7 +39,7 @@ Restarting the gopls process causes this secret to change, rendering
 all existing previous URLs invalid; existing pages will display a banner
 indicating that they have become disconnected.
 
-TODO: combine the web server and the debug server; see golang/go#68229.
+TODO: combine the web server and the debug server; see https://go.dev/issue/68229.
 
 Gopls supports two-way communication between the web browser and the
 client editor. All of the web-based reports contain links to
@@ -49,10 +51,10 @@ your source code has been modified but not saved.
 like your editor to raise its window when handling this event.)
 
 <a name='doc'></a>
-## View package documentation
+## `source.doc`: Browse package documentation
 
 In any Go source file, a code action request returns a command to
-"View package documentation". This command opens a browser window
+"Browse package documentation". This command opens a browser window
 showing the documentation for the current Go package, presented using
 a similar design to https://pkg.go.dev.
 
@@ -61,7 +63,7 @@ internal ones that may be unpublished externally. Reloading the page
 updates the documentation to reflect your changes. It is not necessary
 to save modified Go source files.
 
-<img title="View package documentation" src="../assets/browse-pkg-doc.png" width='80%'>
+<img title="Browse package documentation" src="../assets/browse-pkg-doc.png" width='80%'>
 
 Clicking on the link for a package-level symbol or method, which in
 `pkg.go.dev` would ordinarily take you to a source-code viewer such as
@@ -69,13 +71,13 @@ GitHub or Google Code Search, causes your editor to navigate to the
 relevant source file and line.
 
 Client support:
-- **VS Code**: Use the "Source Action... > View package documentation" menu.
+- **VS Code**: Use the "Source Action... > Browse documentation for package P" menu.
 - **Emacs + eglot**: Use `M-x go-browse-doc` in [go-mode](https://github.com/dominikh/go-mode.el).
 - **Vim + coc.nvim**: ??
 
 
 <a name='freesymbols'></a>
-## View free symbols
+## `source.freesymbols`: Browse free symbols
 
 When studying code, either to understand it or to evaluate a different
 organization or factoring, it is common to need to know what the
@@ -84,14 +86,14 @@ considering extracting it into its own function and want to know what
 parameters it would take, or just to understand how one piece of a long
 function relates to the preceding pieces.
 
-If you select a chunk of code, and apply the "[View free
-symbols](../commands.md#gopls.free_symbols)" command, your editor will
+If you select a chunk of code, and invoke the "Browse free symbols"
+[code action](transformation.md#code-actions), your editor will
 open a browser displaying a report on the free symbols of the
 selection. A symbol is "free" if it is referenced from within the
 selection but defined outside of it. In essence, these are the inputs
 to the selected chunk.
 
-<img title="View free symbols" src="../assets/browse-free-symbols.png" width='80%'>
+<img title="Browse free symbols" src="../assets/browse-free-symbols.png" width='80%'>
 
 The report classifies the symbols into imported, local, and
 package-level symbols. The imported symbols are grouped by package,
@@ -102,23 +104,22 @@ editor to navigate to its declaration.
 TODO: explain dotted paths.
 
 Client support:
-- **VS Code**: Use the "Source Action... > View free symbols" menu.
+- **VS Code**: Use the "Source Action... > Browse free symbols" menu.
 - **Emacs + eglot**: Use `M-x go-browse-freesymbols` in [go-mode](https://github.com/dominikh/go-mode.el).
 - **Vim + coc.nvim**: ??
 
 
 <a name='assembly'></a>
-## View assembly
+## `source.assembly`: Browse assembly
 
 When you're optimizing the performance of your code or investigating
 an unexpected crash, it may sometimes be helpful to inspect the
 assembly code produced by the compiler for a given Go function.
 
-If you position the cursor or selection within a function f, a code
-action will offer the "[View assembly for
-f](../commands.md#gopls.assembly)" command. This opens a web-based
-listing of the assembly for the function, plus any functions nested
-within it.
+If you position the cursor or selection within a function f,
+gopls offers the "Browse assembly for f" [code action](transformation.md#code-actions).
+This opens a web-based listing of the assembly for the function, plus
+any functions nested within it.
 
 Each time you edit your source and reload the page, the current
 package is recompiled and the listing is updated. It is not necessary
@@ -134,7 +135,7 @@ Each instruction is displayed with a link that causes your editor to
 navigate to the source line responsible for the instruction, according
 to the debug information.
 
-<img title="View assembly" src="../assets/browse-assembly.png" width="80%">
+<img title="Browse assembly" src="../assets/browse-assembly.png" width="80%">
 
 The example above shows the arm64 assembly listing of
 [`time.NewTimer`](https://pkg.go.dev/time#NewTimer).
@@ -142,11 +143,43 @@ Observe that the indicated instruction links to a source location
 inside a different function, `syncTimer`, because the compiler
 inlined the call from `NewTimer` to `syncTimer`.
 
-Viewing assembly is not yet supported for generic functions, package
+Browsing assembly is not yet supported for generic functions, package
 initializers (`func init`), or functions in test packages.
 (Contributions welcome!)
 
 Client support:
-- **VS Code**: Use the "Source Action... > View GOARCH assembly for f" menu.
+- **VS Code**: Use the "Source Action... > Browse GOARCH assembly for f" menu.
 - **Emacs + eglot**: Use `M-x go-browse-assembly` in [go-mode](https://github.com/dominikh/go-mode.el).
 - **Vim + coc.nvim**: ??
+
+
+<a name='splitpkg'></a>
+## `source.splitPackage`: Split package into components
+
+The web-based "Split package" tool can help you split a complex
+package into two or more components, ensuring that the dependencies
+among those components are acyclic.
+
+Follow the instructions on the page to choose a set of named components,
+assign each declaration to the most appropriate component, and then
+visualize the dependencies between those components created by references
+from one symbol to another.
+
+The figure below shows the tool operating on the `fmt` package, which
+could (in principle) be split into three subpackages, one for
+formatting (`Printf` and friends), one for scanning (`Scanf`), and one
+for their common dependencies.
+
+<img title="Split package 'fmt'" src="../assets/splitpkg.png" width="55%">
+
+(Try playing with the tool on this package: it's an instructive
+exercise. The figure below shows the solution.)
+
+<img title="Split package 'fmt'" src="../assets/splitpkg-deps.png" width="55%">
+
+The tool does not currently perform the code transformation (moving
+declarations to new packages, renaming symbols to export them as
+needed), but we hope to add that in a future release.
+
+Client support:
+- **VS Code**: Use the "Source Action... > Split package P" menu.

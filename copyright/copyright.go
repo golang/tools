@@ -10,12 +10,13 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
+// (used only by tests)
 func checkCopyright(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -52,7 +53,7 @@ license that can be found in the LICENSE file.`)
 
 func checkFile(toolsDir, filename string) (bool, error) {
 	// Only check Go files.
-	if !strings.HasSuffix(filename, "go") {
+	if !strings.HasSuffix(filename, ".go") {
 		return false, nil
 	}
 	// Don't check testdata files.
@@ -64,50 +65,25 @@ func checkFile(toolsDir, filename string) (bool, error) {
 	if strings.HasSuffix(normalized, "cmd/goyacc/yacc.go") {
 		return false, nil
 	}
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return false, err
-	}
+
+	// Parse the file header only, with comments.
+	//
+	// Parsing only the header avoids spurious parse errors
+	// due to version skew when the gopls module relies on
+	// a newer version of Go than x/tools.
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filename, content, parser.ParseComments)
+	f, err := parser.ParseFile(fset, filename, nil, parser.PackageClauseOnly|parser.ParseComments)
 	if err != nil {
 		return false, err
 	}
+
 	// Don't require headers on generated files.
-	if isGenerated(fset, parsed) {
+	if ast.IsGenerated(f) {
 		return false, nil
 	}
-	shouldAddCopyright := true
-	for _, c := range parsed.Comments {
-		// The copyright should appear before the package declaration.
-		if c.Pos() > parsed.Package {
-			break
-		}
-		if copyrightRe.MatchString(c.Text()) {
-			shouldAddCopyright = false
-			break
-		}
-	}
-	return shouldAddCopyright, nil
-}
 
-// Copied from golang.org/x/tools/gopls/internal/golang/util.go.
-// Matches cgo generated comment as well as the proposed standard:
-//
-//	https://golang.org/s/generatedcode
-var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
-
-func isGenerated(fset *token.FileSet, file *ast.File) bool {
-	for _, commentGroup := range file.Comments {
-		for _, comment := range commentGroup.List {
-			if matched := generatedRx.MatchString(comment.Text); !matched {
-				continue
-			}
-			// Check if comment is at the beginning of the line in source.
-			if pos := fset.Position(comment.Slash); pos.Column == 1 {
-				return true
-			}
-		}
-	}
-	return false
+	// The copyright must appear before the package declaration.
+	return !slices.ContainsFunc(f.Comments, func(c *ast.CommentGroup) bool {
+		return copyrightRe.MatchString(c.Text())
+	}), nil
 }

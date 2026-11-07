@@ -14,79 +14,81 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor/inline"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // enclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
-func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-
-	var call *ast.CallExpr
-loop:
-	for _, n := range path {
-		switch n := n.(type) {
-		case *ast.FuncLit:
-			break loop
-		case *ast.CallExpr:
-			call = n
-			break loop
+func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (inspector.Cursor, *types.Func, error) {
+	cur, ok := pgf.Cursor().FindByPos(start, end)
+	if !ok {
+		return inspector.Cursor{}, nil, fmt.Errorf("no enclosing call")
+	}
+	var curCall inspector.Cursor
+	for cur := range cur.Enclosing((*ast.FuncLit)(nil), (*ast.CallExpr)(nil)) {
+		if is[*ast.CallExpr](cur.Node()) {
+			curCall = cur
 		}
+		break
 	}
-	if call == nil {
-		return nil, nil, fmt.Errorf("no enclosing call")
+	if !curCall.Valid() {
+		return inspector.Cursor{}, nil, fmt.Errorf("no enclosing call")
 	}
+	call := curCall.Node().(*ast.CallExpr)
 	if safetoken.Line(pgf.Tok, call.Lparen) != safetoken.Line(pgf.Tok, start) {
-		return nil, nil, fmt.Errorf("enclosing call is not on this line")
+		return inspector.Cursor{}, nil, fmt.Errorf("enclosing call is not on this line")
 	}
 	fn := typeutil.StaticCallee(pkg.TypesInfo(), call)
 	if fn == nil {
-		return nil, nil, fmt.Errorf("not a static call to a Go function")
+		return inspector.Cursor{}, nil, fmt.Errorf("not a static call to a Go function")
 	}
-	return call, fn, nil
+	return curCall, fn, nil
 }
 
 func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.Package, callerPGF *parsego.File, start, end token.Pos) (_ *token.FileSet, _ *analysis.SuggestedFix, err error) {
+	countInlineCall.Inc()
 	// Find enclosing static call.
-	call, fn, err := enclosingStaticCall(callerPkg, callerPGF, start, end)
+	curCall, fn, err := enclosingStaticCall(callerPkg, callerPGF, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Locate callee by file/line and analyze it.
-	calleePosn := safetoken.StartPosition(callerPkg.FileSet(), fn.Pos())
-	calleePkg, calleePGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(calleePosn.Filename))
+	calleePkg, calleePGF, calleePos, err := NarrowestDeclaringPackage(ctx, snapshot, callerPkg, fn)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	var calleeDecl *ast.FuncDecl
 	for _, decl := range calleePGF.File.Decls {
-		if decl, ok := decl.(*ast.FuncDecl); ok {
-			posn := safetoken.StartPosition(calleePkg.FileSet(), decl.Name.Pos())
-			if posn.Line == calleePosn.Line && posn.Column == calleePosn.Column {
-				calleeDecl = decl
-				break
-			}
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if funcDecl.Name.Pos() == calleePos {
+			calleeDecl = funcDecl
+			break
 		}
 	}
 	if calleeDecl == nil {
 		return nil, nil, fmt.Errorf("can't find callee")
 	}
 
-	// The inliner assumes that input is well-typed,
-	// but that is frequently not the case within gopls.
-	// Until we are able to harden the inliner,
+	// The inliner assumes that input is well-typed, but that is frequently
+	// not the case within gopls. Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
-	bad := func(p *cache.Package) bool { return len(p.ParseErrors())+len(p.TypeErrors()) > 0 }
-	if bad(calleePkg) || bad(callerPkg) {
+	// Recover when the inputs are not transitively error-free
+	// (golang/go#75236).
+	if transitivelyIllTyped(snapshot, callerPkg, calleePkg) {
 		defer func() {
 			if x := recover(); x != nil {
 				err = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
@@ -105,23 +107,55 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 
 	// Inline the call.
 	caller := &inline.Caller{
-		Fset:    callerPkg.FileSet(),
-		Types:   callerPkg.Types(),
-		Info:    callerPkg.TypesInfo(),
-		File:    callerPGF.File,
-		Call:    call,
-		Content: callerPGF.Src,
+		Fset:      callerPkg.FileSet(),
+		Types:     callerPkg.Types(),
+		Info:      callerPkg.TypesInfo(),
+		Call:      curCall,
+		CountUses: nil, // (use inefficient default implementation)
 	}
 
-	res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
+	res, err := inline.Inline(caller, callee, &inline.Options{
+		Logf: logf,
+		// inlineAllCalls needs per-call recovery in its loops without aborting the whole process.
+		Recover: transitivelyIllTyped(snapshot, callerPkg, calleePkg),
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
-		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, res.Content)),
+		TextEdits: res.Edits,
 	}, nil
+}
+
+// transitivelyIllTyped is a heuristic for whether any root package has
+// parse/type errors, or any package in the roots' forward dependency
+// closure has list/deps errors (golang/go#75236).
+//
+// It is only a heuristic: type errors in dependencies are not discovered
+// by re-type-checking the whole closure here (too expensive for Inline).
+// Incomplete types from such errors are handled by hardening call sites
+// such as escape. The precise predicate we want is a transitively
+// error-free / "Compiles" check; see golang/go#82159.
+func transitivelyIllTyped(snapshot *cache.Snapshot, roots ...*cache.Package) bool {
+	var ids []PackageID
+	for _, root := range roots {
+		if len(root.ParseErrors())+len(root.TypeErrors()) > 0 {
+			return true
+		}
+		mp := root.Metadata()
+		if len(mp.Errors) > 0 || len(mp.DepsErrors) > 0 {
+			return true
+		}
+		ids = append(ids, mp.ID)
+	}
+	for mp := range snapshot.MetadataGraph().ForwardReflexiveTransitiveClosure(ids...) {
+		if len(mp.Errors) > 0 || len(mp.DepsErrors) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // TODO(adonovan): change the inliner to instead accept an io.Writer.
@@ -133,4 +167,111 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 	} else {
 		return func(string, ...any) {}
 	}
+}
+
+// canInlineVariable reports whether the selection is within an
+// identifier that is a use of a variable that has an initializer
+// expression and is not reassigned or address-taken. If so, it returns
+// cursors for the identifier and the initializer expression.
+func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (curUse, curRHS inspector.Cursor, ok bool) {
+	curUse, found := curFile.FindByPos(start, end)
+	if !found {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+	id, ok := curUse.Node().(*ast.Ident)
+	if !ok || typesinternal.IsAssignedOrAddressTaken(info, curUse) {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+	v, ok := info.Uses[id].(*types.Var)
+	if !ok || v.Kind() != types.LocalVar {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+	curIdent, found := curFile.FindByPos(v.Pos(), v.Pos())
+	if !found {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+	// Reject modified or address-taken variables; inlining would require
+	// dataflow analysis to prove the initial definition reaches this use.
+	root, found := moreiters.First(curIdent.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+	if !found {
+		root = curFile
+	}
+	for cur := range root.Preorder((*ast.Ident)(nil)) {
+		id := cur.Node().(*ast.Ident)
+		if info.Uses[id] == v && typesinternal.IsAssignedOrAddressTaken(info, cur) {
+			return inspector.Cursor{}, inspector.Cursor{}, false
+		}
+	}
+
+	curParent := curIdent.Parent()
+	kind, index := curIdent.ParentEdge()
+	switch kind {
+	case edge.ValueSpec_Names:
+		// var v = expr
+		spec := curParent.Node().(*ast.ValueSpec)
+		if len(spec.Names) == len(spec.Values) {
+			return curUse, curParent.ChildAt(edge.ValueSpec_Values, index), true
+		}
+	case edge.AssignStmt_Lhs:
+		// v := expr
+		stmt := curParent.Node().(*ast.AssignStmt)
+		if len(stmt.Lhs) == len(stmt.Rhs) {
+			return curUse, curParent.ChildAt(edge.AssignStmt_Rhs, index), true
+		}
+	}
+	return inspector.Cursor{}, inspector.Cursor{}, false
+}
+
+// inlineVariableOne computes a fix to replace the selected variable by
+// its initialization expression.
+func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	countInlineVariable.Inc()
+	info := pkg.TypesInfo()
+	curUse, curRHS, ok := canInlineVariable(info, pgf.Cursor(), start, end)
+	if !ok {
+		return nil, nil, fmt.Errorf("cannot inline variable here")
+	}
+
+	// Check that free symbols of rhs are unshadowed at curUse.
+	var (
+		use   = curUse.Node().(*ast.Ident)
+		rhs   = curRHS.Node().(ast.Expr)
+		pos   = use.Pos()
+		scope = info.Scopes[pgf.File].Innermost(pos)
+	)
+	for curIdent := range curRHS.Preorder((*ast.Ident)(nil)) {
+		if curIdent.ParentEdgeKind() == edge.SelectorExpr_Sel {
+			continue // ignore f in x.f
+		}
+		id := curIdent.Node().(*ast.Ident)
+		obj1 := info.Uses[id]
+		if obj1 == nil {
+			continue // undefined; or a def, not a use
+		}
+		if v, ok := obj1.(*types.Var); ok && v.IsField() {
+			continue // a field reference T{F: 0} is non-lexical
+		}
+		if astutil.NodeContainsPos(rhs, obj1.Pos()) {
+			continue // not free (id is defined within RHS)
+		}
+		_, obj2 := scope.LookupParent(id.Name, pos)
+		// Inv: obj2 is non-nil.
+		if obj1 != obj2 {
+			return nil, nil, fmt.Errorf("cannot inline variable: its initializer expression refers to %q, which is shadowed by the declaration at line %d", id.Name, safetoken.Position(pgf.Tok, obj2.Pos()).Line)
+		}
+	}
+
+	// Add parens to 'new' as needed by the 'use' context.
+	rhs = astutil.MaybeParenthesize(curUse.Parent().Node(), use, rhs)
+
+	return pkg.FileSet(), &analysis.SuggestedFix{
+		Message: fmt.Sprintf("Replace variable %q by its initializer expression", use.Name),
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     use.Pos(),
+				End:     use.End(),
+				NewText: []byte(FormatNode(pkg.FileSet(), rhs)),
+			},
+		},
+	}, nil
 }

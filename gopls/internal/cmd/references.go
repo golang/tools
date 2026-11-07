@@ -11,14 +11,13 @@ import (
 	"sort"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/tool"
 )
 
 // references implements the references verb for gopls
 type references struct {
 	IncludeDeclaration bool `flag:"d,declaration" help:"include the declaration of the specified identifier in the results"`
 
-	app *Application
+	app *application
 }
 
 func (r *references) Name() string      { return "references" }
@@ -40,17 +39,17 @@ references-flags:
 
 func (r *references) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
-		return tool.CommandLineErrorf("references expects 1 argument (position)")
+		return commandLineErrorf("references expects 1 argument (position)")
 	}
 
-	conn, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -64,13 +63,13 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		},
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	locations, err := conn.References(ctx, &p)
+	locations, err := cli.server.References(ctx, &p)
 	if err != nil {
 		return err
 	}
 	var spans []string
 	for _, l := range locations {
-		f, err := conn.openFile(ctx, l.URI)
+		f, err := cli.openFile(ctx, l.URI)
 		if err != nil {
 			return err
 		}

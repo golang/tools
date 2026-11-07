@@ -1,0 +1,52 @@
+This test verifies the fix for golang/go#73972: extraction should
+not modify the return statements of anonymous functions.
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- a.go --
+package extract
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+	b := strings.ContainsFunc("a", func(_ rune) bool { //@codeaction("b", "refactor.extract.function", end=end, result=ext)
+		return false
+	})
+	if b {
+		return
+	} //@loc(end, "}")
+	fmt.Println(b)
+}
+
+-- @ext/a.go --
+package extract
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+	b, shouldReturn := newFunction()
+	if shouldReturn {
+		return
+	} //@loc(end, "}")
+	fmt.Println(b)
+}
+
+func newFunction() (bool, bool) {
+	b := strings.ContainsFunc("a", func(_ rune) bool { //@codeaction("b", "refactor.extract.function", end=end, result=ext)
+		return false
+	})
+	if b {
+		return false, true
+	}
+	return b, false
+}
+

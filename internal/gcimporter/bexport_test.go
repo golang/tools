@@ -18,7 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/gcimporter"
 )
 
@@ -31,8 +30,8 @@ func fileLine(fset *token.FileSet, obj types.Object) string {
 }
 
 func equalType(x, y types.Type) error {
-	x = aliases.Unalias(x)
-	y = aliases.Unalias(y)
+	x = types.Unalias(x)
+	y = types.Unalias(y)
 	if reflect.TypeOf(x) != reflect.TypeOf(y) {
 		return fmt.Errorf("unequal kinds: %T vs %T", x, y)
 	}
@@ -137,6 +136,9 @@ func equalType(x, y types.Type) error {
 			return fmt.Errorf("unequal receivers: %s vs %s", x.Recv(), y.Recv())
 		}
 		if x.Recv() != nil {
+			if xk, yk := x.Recv().Kind(), y.Recv().Kind(); xk != yk {
+				return fmt.Errorf("receiver: unequal var kinds: %v vs %v", xk, yk)
+			}
 			// TODO(adonovan): fix: this assertion fires for interface methods.
 			// The type of the receiver of an interface method is a named type
 			// if the Package was loaded from export data, or an unnamed (interface)
@@ -184,6 +186,9 @@ func equalType(x, y types.Type) error {
 		for i := 0; i < x.Len(); i++ {
 			if err := equalType(x.At(i).Type(), y.At(i).Type()); err != nil {
 				return fmt.Errorf("tuple element %d: %s", i, err)
+			}
+			if xk, yk := x.At(i).Kind(), y.At(i).Kind(); xk != yk {
+				return fmt.Errorf("tuple element %d: unequal var kinds: %v vs %v", i, xk, yk)
 			}
 		}
 	case *types.TypeParam:
@@ -245,7 +250,7 @@ func cmpNamed(x, y *types.Named) error {
 		// Calling equalType here leads to infinite recursion, so just compare
 		// strings.
 		if xm.String() != ym.String() {
-			return fmt.Errorf("unequal methods: %s vs %s", x, y)
+			return fmt.Errorf("unequal methods: %s vs %s", xm, ym)
 		}
 	}
 	return nil
@@ -260,8 +265,8 @@ func makeExplicit(typ types.Type) types.Type {
 			methods = append(methods, iface.Method(i))
 		}
 		var embeddeds []types.Type
-		for i := 0; i < iface.NumEmbeddeds(); i++ {
-			embeddeds = append(embeddeds, iface.EmbeddedType(i))
+		for etyp := range iface.EmbeddedTypes() {
+			embeddeds = append(embeddeds, etyp)
 		}
 		return types.NewInterfaceType(methods, embeddeds)
 	}
@@ -319,7 +324,7 @@ func TestVeryLongFile(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
 	if err != nil {
 		t.Fatalf("BImportData(%s): %v", pkg.Path(), err)
 	}

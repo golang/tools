@@ -46,7 +46,7 @@ func HandlerServer(h Handler) StreamServer {
 	})
 }
 
-// ListenAndServe starts an jsonrpc2 server on the given address.  If
+// ListenAndServe starts a jsonrpc2 server on the given address.  If
 // idleTimeout is non-zero, ListenAndServe exits after there are no clients for
 // this duration, otherwise it exits only on error.
 func ListenAndServe(ctx context.Context, network, addr string, server StreamServer, idleTimeout time.Duration) error {

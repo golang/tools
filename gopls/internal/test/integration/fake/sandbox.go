@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/robustio"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -55,6 +55,9 @@ type SandboxConfig struct {
 	// ProxyFiles holds a txtar-encoded archive of files to populate a file-based
 	// Go proxy.
 	ProxyFiles map[string][]byte
+	// CacheFiles holds a txtar-encoded archive of files to populate the sandbox's
+	// module cache.
+	CacheFiles map[string][]byte
 	// GOPROXY is the explicit GOPROXY value that should be used for the sandbox.
 	//
 	// This option is incompatible with ProxyFiles.
@@ -85,7 +88,7 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 	defer func() {
 		// Clean up if we fail at any point in this constructor.
 		if err != nil {
-			sb.Close()
+			sb.Close() // ignore error
 		}
 	}()
 
@@ -111,6 +114,25 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 		sb.goproxy, err = WriteProxy(proxydir, config.ProxyFiles)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if len(config.CacheFiles) > 0 {
+		modcache := sb.GOMODCACHE()
+		if err := os.MkdirAll(modcache, 0755); err != nil {
+			return nil, err
+		}
+		for name, content := range config.CacheFiles {
+			fname := filepath.Join(modcache, name)
+			dir := filepath.Dir(fname)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(fname, content, 0644); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := modindex.Update(modcache); err != nil {
+			return nil, fmt.Errorf("failed to create modindex: %w", err)
 		}
 	}
 	// Short-circuit writing the workdir if we're given an absolute path, since
@@ -199,20 +221,24 @@ func (sb *Sandbox) GOPATH() string {
 	return sb.gopath
 }
 
+// GOMODCACHE returns the default module cache directory in the sandbox ($GOPATH/pkg/mod).
+func (sb *Sandbox) GOMODCACHE() string {
+	return filepath.Join(sb.gopath, "pkg", "mod")
+}
+
 // GoEnv returns the default environment variables that can be used for
 // invoking Go commands in the sandbox.
 func (sb *Sandbox) GoEnv() map[string]string {
-	vars := map[string]string{
+	return map[string]string{
 		"GOPATH":           sb.GOPATH(),
 		"GOPROXY":          sb.goproxy,
 		"GO111MODULE":      "",
 		"GOSUMDB":          "off",
 		"GOPACKAGESDRIVER": "off",
+		"GOTOOLCHAIN":      "local", // tests should not download toolchains
+		// Explicitly empty so the go command defaults to $GOPATH/pkg/mod within the sandbox.
+		"GOMODCACHE": "",
 	}
-	if testenv.Go1Point() >= 5 {
-		vars["GOMODCACHE"] = ""
-	}
-	return vars
 }
 
 // goCommandInvocation returns a new gocommand.Invocation initialized with the
@@ -234,10 +260,10 @@ func (sb *Sandbox) goCommandInvocation() gocommand.Invocation {
 	return inv
 }
 
-// RunGoCommand executes a go command in the sandbox. If checkForFileChanges is
-// true, the sandbox scans the working directory and emits file change events
-// for any file changes it finds.
-func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env []string, checkForFileChanges bool) error {
+// RunGoCommand executes a go command in the sandbox and returns its standard
+// output. If checkForFileChanges is true, the sandbox scans the working
+// directory and emits file change events for any file changes it finds.
+func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env []string, checkForFileChanges bool) ([]byte, error) {
 	inv := sb.goCommandInvocation()
 	inv.Verb = verb
 	inv.Args = args
@@ -247,7 +273,7 @@ func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env
 	}
 	stdout, stderr, _, err := sb.goCommandRunner.RunRaw(ctx, inv)
 	if err != nil {
-		return fmt.Errorf("go command failed (stdout: %s) (stderr: %s): %v", stdout.String(), stderr.String(), err)
+		return nil, fmt.Errorf("go command failed (stdout: %s) (stderr: %s): %v", stdout.String(), stderr.String(), err)
 	}
 	// Since running a go command may result in changes to workspace files,
 	// check if we need to send any "watched" file events.
@@ -256,10 +282,10 @@ func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env
 	//                 for benchmarks. Consider refactoring.
 	if sb.Workdir != nil && checkForFileChanges {
 		if err := sb.Workdir.CheckForFileChanges(ctx); err != nil {
-			return fmt.Errorf("checking for file changes: %w", err)
+			return nil, fmt.Errorf("checking for file changes: %w", err)
 		}
 	}
-	return nil
+	return stdout.Bytes(), nil
 }
 
 // GoVersion checks the version of the go command.
@@ -272,10 +298,11 @@ func (sb *Sandbox) GoVersion(ctx context.Context) (int, error) {
 // Close removes all state associated with the sandbox.
 func (sb *Sandbox) Close() error {
 	var goCleanErr error
-	if sb.gopath != "" {
+	// Careful: sb may not be fully initialized.
+	if sb.gopath != "" && sb.Workdir != nil {
 		// Important: run this command in RootDir so that it doesn't interact with
 		// any toolchain downloads that may occur
-		goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)
+		_, goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)
 	}
 	err := robustio.RemoveAll(sb.rootdir)
 	if err != nil || goCleanErr != nil {

@@ -11,15 +11,6 @@ it doesn't even reach the Indent function.
 module testdata
 go 1.12
 
--- a/generic.go --
-package a
-
-func _() {
-	f[int]() //@ inline(re"f", re"type parameters are not yet supported")
-}
-
-func f[T any]() {}
-
 -- a/nobody.go --
 package a
 

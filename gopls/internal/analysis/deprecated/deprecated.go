@@ -18,7 +18,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	internalastutil "golang.org/x/tools/internal/astutil"
 )
 
 //go:embed doc.go
@@ -26,7 +27,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "deprecated",
-	Doc:              analysisinternal.MustExtractDoc(doc, "deprecated"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "deprecated"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              checkDeprecated,
 	FactTypes:        []analysis.Fact{(*deprecationFact)(nil)},
@@ -35,7 +36,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // checkDeprecated is a simplified copy of staticcheck.CheckDeprecated.
-func checkDeprecated(pass *analysis.Pass) (interface{}, error) {
+func checkDeprecated(pass *analysis.Pass) (any, error) {
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	deprs, err := collectDeprecatedNames(pass, inspector)
@@ -155,49 +156,37 @@ type deprecatedNames struct {
 // them both as Facts and the return value. This is a simplified copy
 // of staticcheck's fact_deprecated analyzer.
 func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (deprecatedNames, error) {
-	extractDeprecatedMessage := func(docs []*ast.CommentGroup) string {
+	doDocs := func(names []*ast.Ident, docs ...*ast.CommentGroup) {
 		for _, doc := range docs {
-			if doc == nil {
+			// Find the first doc with a deprecation marker.
+			alt := strings.TrimPrefix(internalastutil.Deprecation(doc), "Deprecated: ")
+			if alt == "" {
 				continue
 			}
-			parts := strings.Split(doc.Text(), "\n\n")
-			for _, part := range parts {
-				if !strings.HasPrefix(part, "Deprecated: ") {
-					continue
-				}
-				alt := part[len("Deprecated: "):]
-				alt = strings.Replace(alt, "\n", " ", -1)
-				return strings.TrimSpace(alt)
-			}
-		}
-		return ""
-	}
 
-	doDocs := func(names []*ast.Ident, docs *ast.CommentGroup) {
-		alt := extractDeprecatedMessage([]*ast.CommentGroup{docs})
-		if alt == "" {
+			for _, name := range names {
+				obj := pass.TypesInfo.ObjectOf(name)
+				pass.ExportObjectFact(obj, &deprecationFact{alt})
+			}
 			return
 		}
+	}
 
-		for _, name := range names {
-			obj := pass.TypesInfo.ObjectOf(name)
-			pass.ExportObjectFact(obj, &deprecationFact{alt})
+	// Is package deprecated?
+	//
+	// Don't mark package syscall as deprecated, even though
+	// it is. A lot of people still use it for simple
+	// constants like SIGKILL, and I am not comfortable
+	// telling them to use x/sys for that.
+	if pass.Pkg.Path() != "syscall" {
+		for _, f := range pass.Files {
+			if depr := internalastutil.Deprecation(f.Doc); depr != "" {
+				pass.ExportPackageFact(&deprecationFact{depr})
+				break
+			}
 		}
 	}
 
-	var docs []*ast.CommentGroup
-	for _, f := range pass.Files {
-		docs = append(docs, f.Doc)
-	}
-	if alt := extractDeprecatedMessage(docs); alt != "" {
-		// Don't mark package syscall as deprecated, even though
-		// it is. A lot of people still use it for simple
-		// constants like SIGKILL, and I am not comfortable
-		// telling them to use x/sys for that.
-		if pass.Pkg.Path() != "syscall" {
-			pass.ExportPackageFact(&deprecationFact{alt})
-		}
-	}
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
 		(*ast.FuncDecl)(nil),
@@ -237,14 +226,16 @@ func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (depr
 			names = node.Names
 		case *ast.StructType:
 			for _, field := range node.Fields.List {
-				doDocs(field.Names, field.Doc)
+				doDocs(field.Names, field.Doc, field.Comment)
 			}
 		case *ast.InterfaceType:
 			for _, field := range node.Methods.List {
-				doDocs(field.Names, field.Doc)
+				doDocs(field.Names, field.Doc, field.Comment)
 			}
 		}
 		if docs != nil && len(names) > 0 {
+			// Only consider line comments for struct fields and interface
+			// methods.
 			doDocs(names, docs)
 		}
 	})

@@ -1,0 +1,40 @@
+Test that inlining a function that calls a v2 package (with /v2 suffix)
+does not add an unnecessary explicit rename when the package name matches
+the base name before the /v2 suffix. See golang/go#80747.
+
+-- go.mod --
+module example.com
+go 1.19
+
+-- main/main.go --
+package main
+
+import "example.com/foo"
+
+func main() {
+	foo.V1() //@ inline(re"V1", result)
+}
+
+-- foo/foo.go --
+package foo
+
+import "example.com/foo/v2"
+
+func V1() {
+	foo.V2()
+}
+
+-- foo/v2/foo.go --
+package foo
+
+func V2() {
+}
+
+-- result --
+package main
+
+import "example.com/foo/v2"
+
+func main() {
+	foo.V2() //@ inline(re"V1", result)
+}

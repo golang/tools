@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -131,7 +132,7 @@ func isBoldTitle(s string) bool {
 }
 
 func indent(buf *bytes.Buffer, s string) {
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		if l != "" {
 			buf.WriteByte('\t')
 			buf.WriteString(l)
@@ -142,7 +143,7 @@ func indent(buf *bytes.Buffer, s string) {
 
 func unwrap(buf *bytes.Buffer, s string) {
 	var cont bool
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		l = strings.TrimSpace(l)
 		if len(l) == 0 {
 			if cont {
@@ -270,10 +271,8 @@ func hasClass(name string) selector {
 	return func(n *html.Node) bool {
 		for _, a := range n.Attr {
 			if a.Key == "class" {
-				for _, c := range strings.Fields(a.Val) {
-					if c == name {
-						return true
-					}
+				if slices.Contains(strings.Fields(a.Val), name) {
+					return true
 				}
 			}
 		}

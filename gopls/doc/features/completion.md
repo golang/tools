@@ -1,3 +1,5 @@
-# Gopls: Completion
+---
+title: "Gopls: Completion"
+---
 
-TODO(golang/go#62022): document
+TODO(https://go.dev/issue/62022): document

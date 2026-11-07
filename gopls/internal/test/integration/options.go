@@ -5,8 +5,10 @@
 package integration
 
 import (
+	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -14,9 +16,14 @@ import (
 )
 
 type runConfig struct {
-	editor        fake.EditorConfig
-	sandbox       fake.SandboxConfig
-	modes         Mode
+	editor  fake.EditorConfig
+	sandbox fake.SandboxConfig
+	// modes determines the execution modes for the test.
+	//
+	// If nil (unset), the runner falls back to its DefaultModes.
+	// If non-nil but empty (*modes == NoMode), the test runs in 0 modes (effectively skipping it).
+	// If non-nil and non-empty, the test runs only in the specified modes.
+	modes         *Mode
 	noLogsOnError bool
 	writeGoSum    []string
 }
@@ -24,10 +31,13 @@ type runConfig struct {
 func defaultConfig() runConfig {
 	return runConfig{
 		editor: fake.EditorConfig{
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				// Shorten the diagnostic delay to speed up test execution (else we'd add
 				// the default delay to each assertion about diagnostics)
 				"diagnosticsDelay": "10ms",
+				// Disable watched file debouncing in standard tests to speed up execution
+				// and avoid race conditions with rapid file modifications.
+				"watchedFileDelay": "0s",
 			},
 		},
 	}
@@ -51,6 +61,13 @@ func ProxyFiles(txt string) RunOption {
 	})
 }
 
+// CacheFiles configures a module cache using the given txtar-encoded string.
+func CacheFiles(txt string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.sandbox.CacheFiles = fake.UnpackTxt(txt)
+	})
+}
+
 // WriteGoSum causes the environment to write a go.sum file for the requested
 // relative directories (via `go list -mod=mod`), before starting gopls.
 //
@@ -69,10 +86,10 @@ func WriteGoSum(dirs ...string) RunOption {
 // modes.
 func Modes(modes Mode) RunOption {
 	return optionSetter(func(opts *runConfig) {
-		if opts.modes != 0 {
+		if opts.modes != nil {
 			panic("modes set more than once")
 		}
-		opts.modes = modes
+		opts.modes = &modes
 	})
 }
 
@@ -108,15 +125,13 @@ func CapabilitiesJSON(capabilities []byte) RunOption {
 //
 // As a special case, the env setting must not be provided via Settings: use
 // EnvVars instead.
-type Settings map[string]interface{}
+type Settings map[string]any
 
 func (s Settings) set(opts *runConfig) {
 	if opts.editor.Settings == nil {
-		opts.editor.Settings = make(map[string]interface{})
+		opts.editor.Settings = make(map[string]any)
 	}
-	for k, v := range s {
-		opts.editor.Settings[k] = v
-	}
+	maps.Copy(opts.editor.Settings, s)
 }
 
 // WorkspaceFolders configures the workdir-relative workspace folders or uri
@@ -131,6 +146,22 @@ func WorkspaceFolders(relFolders ...string) RunOption {
 
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.WorkspaceFolders = relFolders
+	})
+}
+
+// NoDefaultWorkspaceFiles is used to specify whether the fake editor
+// should give a default workspace folder to the LSP server.
+// When it's true, the editor will pass original WorkspaceFolders to the LSP server.
+func NoDefaultWorkspaceFiles() RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.NoDefaultWorkspaceFiles = true
+	})
+}
+
+// RootPath configures the roo path which will be converted to rootUri and sent to the LSP server.
+func RootPath(relpath string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.RelRootPath = relpath
 	})
 }
 
@@ -160,9 +191,7 @@ func (e EnvVars) set(opts *runConfig) {
 	if opts.editor.Env == nil {
 		opts.editor.Env = make(map[string]string)
 	}
-	for k, v := range e {
-		opts.editor.Env[k] = v
-	}
+	maps.Copy(opts.editor.Env, e)
 }
 
 // FakeGoPackagesDriver configures gopls to run with a fake GOPACKAGESDRIVER
@@ -190,5 +219,16 @@ func InGOPATH() RunOption {
 func MessageResponder(f func(*protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error)) RunOption {
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.MessageResponder = f
+	})
+}
+
+// DelayMessages can be used to fuzz message delivery delays for the purpose of
+// reproducing test flakes.
+//
+// (Even though this option may be unused, keep it around to aid in debugging
+// future flakes.)
+func DelayMessages(upto time.Duration) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.MaxMessageDelay = upto
 	})
 }

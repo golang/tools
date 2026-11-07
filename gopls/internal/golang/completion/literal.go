@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -55,9 +54,9 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	// TODO(adonovan): think about aliases:
 	// they should probably be treated more like Named.
 	// Should this use Deref not Unpointer?
-	if is[*types.Named](aliases.Unalias(literalType)) &&
+	if is[*types.Named](types.Unalias(literalType)) &&
 		expType != nil &&
-		!is[*types.Named](aliases.Unalias(typesinternal.Unpointer(expType))) {
+		!is[*types.Named](types.Unalias(typesinternal.Unpointer(expType))) {
 
 		return
 	}
@@ -74,22 +73,28 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		cand.addressable = true
 	}
 
-	if !c.matchingCandidate(&cand) || cand.convertTo != nil {
+	// Only suggest a literal conversion if the exact type is known.
+	if !c.matchingCandidate(&cand) || (cand.convertTo != nil && !c.inference.needsExactType) {
 		return
 	}
 
 	var (
-		qf  = c.qf
-		sel = enclosingSelector(c.path, c.pos)
+		qual       = c.qual
+		sel        = enclosingSelector(c.path, c.pos)
+		conversion conversionEdits
 	)
+
+	if cand.convertTo != nil {
+		conversion = c.formatConversion(cand.convertTo)
+	}
 
 	// Don't qualify the type name if we are in a selector expression
 	// since the package name is already present.
 	if sel != nil {
-		qf = func(_ *types.Package) string { return "" }
+		qual = func(_ *types.Package) string { return "" }
 	}
 
-	snip, typeName := c.typeNameSnippet(literalType, qf)
+	snip, typeName := c.typeNameSnippet(literalType, qual)
 
 	// A type name of "[]int" doesn't work very will with the matcher
 	// since "[" isn't a valid identifier prefix. Here we strip off the
@@ -97,15 +102,20 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	matchName := typeName
 	switch t := literalType.(type) {
 	case *types.Slice:
-		matchName = types.TypeString(t.Elem(), qf)
+		matchName = types.TypeString(t.Elem(), qual)
 	case *types.Array:
-		matchName = types.TypeString(t.Elem(), qf)
+		matchName = types.TypeString(t.Elem(), qual)
 	}
 
 	addlEdits, err := c.importEdits(imp)
 	if err != nil {
 		event.Error(ctx, "error adding import for literal candidate", err)
 		return
+	}
+
+	var importPath string
+	if imp != nil {
+		importPath = imp.importPath
 	}
 
 	// If prefix matches the type name, client may want a composite literal.
@@ -128,15 +138,27 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			}
 		}
 
+		info := literalInfo{
+			typeName: typeName,
+			score:    float64(score),
+			edits:    addlEdits,
+			path:     importPath,
+		}
+
 		switch t := literalType.Underlying().(type) {
 		case *types.Struct, *types.Array, *types.Slice, *types.Map:
-			c.compositeLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+			item := c.compositeLiteral(t, snip.Clone(), info)
+			item.addConversion(c, conversion)
+			c.items = append(c.items, item)
 		case *types.Signature:
 			// Add a literal completion for a signature type that implements
 			// an interface. For example, offer "http.HandlerFunc()" when
 			// expected type is "http.Handler".
 			if expType != nil && types.IsInterface(expType) {
-				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+				if item, ok := c.basicLiteral(t, snip.Clone(), info); ok {
+					item.addConversion(c, conversion)
+					c.items = append(c.items, item)
+				}
 			}
 		case *types.Basic:
 			// Add a literal completion for basic types that implement our
@@ -144,7 +166,10 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			// implements http.FileSystem), or are identical to our expected
 			// type (i.e. yielding a type conversion such as "float64()").
 			if expType != nil && (types.IsInterface(expType) || types.Identical(expType, literalType)) {
-				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+				if item, ok := c.basicLiteral(t, snip.Clone(), info); ok {
+					item.addConversion(c, conversion)
+					c.items = append(c.items, item)
+				}
 			}
 		}
 	}
@@ -153,14 +178,25 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	// invocation. We also include the type name to allow for more
 	// flexible fuzzy matching.
 	if score := c.matcher.Score("make." + matchName); !cand.hasMod(reference) && score > 0 {
+		info := literalInfo{
+			typeName: typeName,
+			score:    float64(score),
+			edits:    addlEdits,
+			path:     importPath,
+		}
+
 		switch literalType.Underlying().(type) {
 		case *types.Slice:
 			// The second argument to "make()" for slices is required, so default to "0".
-			c.makeCall(snip.Clone(), typeName, "0", float64(score), addlEdits)
+			item := c.makeCall(snip.Clone(), "0", info)
+			item.addConversion(c, conversion)
+			c.items = append(c.items, item)
 		case *types.Map, *types.Chan:
 			// Maps and channels don't require the second argument, so omit
 			// to keep things simple for now.
-			c.makeCall(snip.Clone(), typeName, "", float64(score), addlEdits)
+			item := c.makeCall(snip.Clone(), "", info)
+			item.addConversion(c, conversion)
+			c.items = append(c.items, item)
 		}
 	}
 
@@ -168,7 +204,10 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	if score := c.matcher.Score("func"); !cand.hasMod(reference) && score > 0 && (expType == nil || !types.IsInterface(expType)) {
 		switch t := literalType.Underlying().(type) {
 		case *types.Signature:
-			c.functionLiteral(ctx, t, float64(score))
+			if item, ok := c.functionLiteral(ctx, t, float64(score)); ok {
+				item.addConversion(c, conversion)
+				c.items = append(c.items, item)
+			}
 		}
 	}
 }
@@ -179,9 +218,9 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 // correct type, so scale down highScore.
 const literalCandidateScore = highScore / 2
 
-// functionLiteral adds a function literal completion item for the
-// given signature.
-func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, matchScore float64) {
+// functionLiteral returns a function literal completion item for the
+// given signature, if applicable.
+func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, matchScore float64) (CompletionItem, bool) {
 	snip := &snippet.Builder{}
 	snip.WriteText("func(")
 
@@ -194,13 +233,13 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		paramNameCount = make(map[string]int)
 		hasTypeParams  bool
 	)
-	for i := 0; i < sig.Params().Len(); i++ {
+	for i := range sig.Params().Len() {
 		var (
 			p    = sig.Params().At(i)
 			name = p.Name()
 		)
 
-		if tp, _ := aliases.Unalias(p.Type()).(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := types.Unalias(p.Type()).(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			hasTypeParams = true
 		}
 
@@ -217,7 +256,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				if ctx.Err() == nil {
 					event.Error(ctx, "formatting var type", err)
 				}
-				return
+				return CompletionItem{}, false
 			}
 			name = abbreviateTypeName(typeName)
 		}
@@ -238,7 +277,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		}
 	}
 
-	for i := 0; i < sig.Params().Len(); i++ {
+	for i := range sig.Params().Len() {
 		if hasTypeParams && !c.opts.placeholders {
 			// If there are type params in the args then the user must
 			// choose the concrete types. If placeholders are disabled just
@@ -278,20 +317,20 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		// of "i int, j int".
 		if i == sig.Params().Len()-1 || !types.Identical(p.Type(), sig.Params().At(i+1).Type()) {
 			snip.WriteText(" ")
-			typeStr, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, p, c.qf, c.mq)
+			typeStr, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, p, c.qual, c.mq)
 			if err != nil {
 				// In general, the only error we should encounter while formatting is
 				// context cancellation.
 				if ctx.Err() == nil {
 					event.Error(ctx, "formatting var type", err)
 				}
-				return
+				return CompletionItem{}, false
 			}
 			if sig.Variadic() && i == sig.Params().Len()-1 {
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
 			}
 
-			if tp, ok := aliases.Unalias(p.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+			if tp, ok := types.Unalias(p.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
 					snip.WriteText(typeStr)
 				})
@@ -311,8 +350,8 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		results.Len() == 1 && results.At(0).Name() != ""
 
 	var resultHasTypeParams bool
-	for i := 0; i < results.Len(); i++ {
-		if tp, ok := aliases.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+	for v := range results.Variables() {
+		if tp, ok := types.Unalias(v.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
 	}
@@ -320,10 +359,10 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	if resultsNeedParens {
 		snip.WriteText("(")
 	}
-	for i := 0; i < results.Len(); i++ {
+	for i := range results.Len() {
 		if resultHasTypeParams && !c.opts.placeholders {
 			// Leave an empty tabstop if placeholders are disabled and there
-			// are type args that need specificying.
+			// are type args that need specifying.
 			snip.WritePlaceholder(nil)
 			break
 		}
@@ -336,16 +375,16 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			snip.WriteText(name + " ")
 		}
 
-		text, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qf, c.mq)
+		text, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qual, c.mq)
 		if err != nil {
 			// In general, the only error we should encounter while formatting is
 			// context cancellation.
 			if ctx.Err() == nil {
 				event.Error(ctx, "formatting var type", err)
 			}
-			return
+			return CompletionItem{}, false
 		}
-		if tp, ok := aliases.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+		if tp, ok := types.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			snip.WritePlaceholder(func(snip *snippet.Builder) {
 				snip.WriteText(text)
 			})
@@ -361,16 +400,18 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	snip.WriteFinalTabstop()
 	snip.WriteText("}")
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:   "func(...) {}",
 		Score:   matchScore * literalCandidateScore,
 		Kind:    protocol.VariableCompletion,
 		snippet: snip,
-	})
+	}, true
 }
 
 // conventionalAcronyms contains conventional acronyms for type names
 // in lower case. For example, "ctx" for "context" and "err" for "error".
+//
+// Keep this up to date with golang.conventionalVarNames.
 var conventionalAcronyms = map[string]string{
 	"context":        "ctx",
 	"error":          "err",
@@ -383,11 +424,6 @@ var conventionalAcronyms = map[string]string{
 // non-identifier runes. For example, "[]int" becomes "i", and
 // "struct { i int }" becomes "s".
 func abbreviateTypeName(s string) string {
-	var (
-		b            strings.Builder
-		useNextUpper bool
-	)
-
 	// Trim off leading non-letters. We trim everything between "[" and
 	// "]" to handle array types like "[someConst]int".
 	var inBracket bool
@@ -408,32 +444,26 @@ func abbreviateTypeName(s string) string {
 		return acr
 	}
 
-	for i, r := range s {
-		// Stop if we encounter a non-identifier rune.
-		if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
-			break
-		}
-
-		if i == 0 {
-			b.WriteRune(unicode.ToLower(r))
-		}
-
-		if unicode.IsUpper(r) {
-			if useNextUpper {
-				b.WriteRune(unicode.ToLower(r))
-				useNextUpper = false
-			}
-		} else {
-			useNextUpper = true
-		}
-	}
-
-	return b.String()
+	return golang.AbbreviateVarName(s)
 }
 
-// compositeLiteral adds a composite literal completion item for the given typeName.
+// literalInfo describes a literal completion item.
+type literalInfo struct {
+	typeName string
+	score    float64
+	edits    []protocol.TextEdit
+	path     string // import path the item adds, empty if it adds none
+}
+
+// labelDetails returns the label details of a literal item: the import path
+// alone, with no detail, since the label of a literal is already its type.
+func (info literalInfo) labelDetails(kind protocol.CompletionItemKind) *protocol.CompletionItemLabelDetails {
+	return labelDetails(kind, "", info.path)
+}
+
+// compositeLiteral returns a composite literal completion item for the given typeName.
 // T is an (unnamed, unaliased) struct, array, slice, or map type.
-func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
+func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, info literalInfo) CompletionItem {
 	snip.WriteText("{")
 	// Don't put the tab stop inside the composite literal curlies "{}"
 	// for structs that have no accessible fields.
@@ -442,45 +472,49 @@ func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeNa
 	}
 	snip.WriteText("}")
 
-	nonSnippet := typeName + "{}"
+	nonSnippet := info.typeName + "{}"
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:               nonSnippet,
 		InsertText:          nonSnippet,
-		Score:               matchScore * literalCandidateScore,
+		Score:               info.score * literalCandidateScore,
 		Kind:                protocol.VariableCompletion,
-		AdditionalTextEdits: edits,
+		AdditionalTextEdits: info.edits,
+		LabelDetails:        info.labelDetails(protocol.VariableCompletion),
 		snippet:             snip,
-	})
+	}
 }
 
-// basicLiteral adds a literal completion item for the given basic
+// basicLiteral returns a literal completion item for the given basic
 // type name typeName.
-func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
+//
+// If T is untyped, this function returns false.
+func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, info literalInfo) (CompletionItem, bool) {
 	// Never give type conversions like "untyped int()".
 	if isUntyped(T) {
-		return
+		return CompletionItem{}, false
 	}
 
 	snip.WriteText("(")
 	snip.WriteFinalTabstop()
 	snip.WriteText(")")
 
-	nonSnippet := typeName + "()"
+	nonSnippet := info.typeName + "()"
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:               nonSnippet,
 		InsertText:          nonSnippet,
 		Detail:              T.String(),
-		Score:               matchScore * literalCandidateScore,
+		Score:               info.score * literalCandidateScore,
 		Kind:                protocol.VariableCompletion,
-		AdditionalTextEdits: edits,
+		AdditionalTextEdits: info.edits,
+		LabelDetails:        info.labelDetails(protocol.VariableCompletion),
 		snippet:             snip,
-	})
+	}, true
 }
 
-// makeCall adds a completion item for a "make()" call given a specific type.
-func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg string, matchScore float64, edits []protocol.TextEdit) {
+// makeCall returns a completion item for a "make()" call given a specific type.
+func (c *completer) makeCall(snip *snippet.Builder, secondArg string, info literalInfo) CompletionItem {
 	// Keep it simple and don't add any placeholders for optional "make()" arguments.
 
 	snip.PrependText("make(")
@@ -495,50 +529,57 @@ func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg s
 	snip.WriteText(")")
 
 	var nonSnippet strings.Builder
-	nonSnippet.WriteString("make(" + typeName)
+	nonSnippet.WriteString("make(" + info.typeName)
 	if secondArg != "" {
 		nonSnippet.WriteString(", ")
 		nonSnippet.WriteString(secondArg)
 	}
 	nonSnippet.WriteByte(')')
 
-	c.items = append(c.items, CompletionItem{
-		Label:               nonSnippet.String(),
-		InsertText:          nonSnippet.String(),
-		Score:               matchScore * literalCandidateScore,
+	return CompletionItem{
+		Label:      nonSnippet.String(),
+		InsertText: nonSnippet.String(),
+		// make() should be just below other literal completions
+		Score:               info.score * literalCandidateScore * 0.99,
 		Kind:                protocol.FunctionCompletion,
-		AdditionalTextEdits: edits,
+		AdditionalTextEdits: info.edits,
+		LabelDetails:        info.labelDetails(protocol.FunctionCompletion),
 		snippet:             snip,
-	})
+	}
 }
 
 // Create a snippet for a type name where type params become placeholders.
-func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) (*snippet.Builder, string) {
+func (c *completer) typeNameSnippet(literalType types.Type, qual types.Qualifier) (*snippet.Builder, string) {
 	var (
 		snip     snippet.Builder
 		typeName string
-		// TODO(adonovan): think more about aliases.
-		// They should probably be treated more like Named.
-		named, _ = aliases.Unalias(literalType).(*types.Named)
+		tparams  *types.TypeParamList
 	)
 
-	if named != nil && named.Obj() != nil && named.TypeParams().Len() > 0 && !c.fullyInstantiated(named) {
+	t, ok := literalType.(typesinternal.NamedOrAlias) // = *Named | *Alias
+	if ok {
+		tparams = t.TypeParams()
+	}
+	if tparams.Len() > 0 && !c.fullyInstantiated(t) {
+		// tparams.Len() > 0 implies t != nil.
+		// Inv: t is not "error" or "unsafe.Pointer", so t.Obj() != nil and has a Pkg().
+
 		// We are not "fully instantiated" meaning we have type params that must be specified.
-		if pkg := qf(named.Obj().Pkg()); pkg != "" {
+		if pkg := qual(t.Obj().Pkg()); pkg != "" {
 			typeName = pkg + "."
 		}
 
 		// We do this to get "someType" instead of "someType[T]".
-		typeName += named.Obj().Name()
+		typeName += t.Obj().Name()
 		snip.WriteText(typeName + "[")
 
 		if c.opts.placeholders {
-			for i := 0; i < named.TypeParams().Len(); i++ {
+			for i := range tparams.Len() {
 				if i > 0 {
 					snip.WriteText(", ")
 				}
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
-					snip.WriteText(types.TypeString(named.TypeParams().At(i), qf))
+					snip.WriteText(types.TypeString(tparams.At(i), qual))
 				})
 			}
 		} else {
@@ -548,7 +589,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		typeName += "[...]"
 	} else {
 		// We don't have unspecified type params so use default type formatting.
-		typeName = types.TypeString(literalType, qf)
+		typeName = types.TypeString(literalType, qual)
 		snip.WriteText(typeName)
 	}
 
@@ -557,25 +598,34 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 
 // fullyInstantiated reports whether all of t's type params have
 // specified type args.
-func (c *completer) fullyInstantiated(t *types.Named) bool {
-	tps := t.TypeParams()
-	tas := t.TypeArgs()
+func (c *completer) fullyInstantiated(t typesinternal.NamedOrAlias) bool {
+	targs := t.TypeArgs()
+	tparams := t.TypeParams()
 
-	if tps.Len() != tas.Len() {
+	if tparams.Len() != targs.Len() {
 		return false
 	}
 
-	for i := 0; i < tas.Len(); i++ {
-		// TODO(adonovan) think about generic aliases.
-		switch ta := aliases.Unalias(tas.At(i)).(type) {
+	for targ := range targs.Types() {
+
+		// The expansion of an alias can have free type parameters,
+		// whether or not the alias itself has type parameters:
+		//
+		//   func _[K comparable]() {
+		//     type Set      = map[K]bool // free(Set)      = {K}
+		//     type MapTo[V] = map[K]V    // free(Map[foo]) = {V}
+		//   }
+		//
+		// So, we must Unalias.
+		switch targ := types.Unalias(targ).(type) {
 		case *types.TypeParam:
 			// A *TypeParam only counts as specified if it is currently in
 			// scope (i.e. we are in a generic definition).
-			if !c.typeParamInScope(ta) {
+			if !c.typeParamInScope(targ) {
 				return false
 			}
 		case *types.Named:
-			if !c.fullyInstantiated(ta) {
+			if !c.fullyInstantiated(targ) {
 				return false
 			}
 		}

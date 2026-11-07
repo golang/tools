@@ -67,6 +67,11 @@ func (uri *DocumentURI) UnmarshalText(data []byte) (err error) {
 	return
 }
 
+// Clean returns the cleaned uri by triggering filepath.Clean underlying.
+func (uri DocumentURI) Clean() DocumentURI {
+	return URIFromPath(filepath.Clean(uri.Path()))
+}
+
 // Path returns the file path for the given URI.
 //
 // DocumentURI("").Path() returns the empty string.
@@ -86,17 +91,33 @@ func (uri DocumentURI) Path() string {
 	return filepath.FromSlash(filename)
 }
 
+// Base returns the base name of the file path of the given URI.
+func (uri DocumentURI) Base() string {
+	return filepath.Base(uri.Path())
+}
+
 // Dir returns the URI for the directory containing the receiver.
 func (uri DocumentURI) Dir() DocumentURI {
 	// This function could be more efficiently implemented by avoiding any call
 	// to Path(), but at least consolidates URI manipulation.
-	return URIFromPath(filepath.Dir(uri.Path()))
+	return URIFromPath(uri.DirPath())
+}
+
+// DirPath returns the file path to the directory containing this URI, which
+// must be a file URI.
+func (uri DocumentURI) DirPath() string {
+	return filepath.Dir(uri.Path())
 }
 
 // Encloses reports whether uri's path, considered as a sequence of segments,
 // is a prefix of file's path.
 func (uri DocumentURI) Encloses(file DocumentURI) bool {
 	return pathutil.InDir(uri.Path(), file.Path())
+}
+
+// Location returns the Location for the specified range of this URI's file.
+func (uri DocumentURI) Location(rng Range) Location {
+	return Location{URI: uri, Range: rng}
 }
 
 func filename(uri DocumentURI) (string, error) {
@@ -115,9 +136,13 @@ func filename(uri DocumentURI) (string, error) {
 			if b < ' ' || b == 0x7f || // control character
 				b == '%' || b == '+' || // URI escape
 				b == ':' || // Windows drive letter
-				b == '@' || b == '&' || b == '?' { // authority or query
+				b == '&' || b == '?' { // authority or query
 				goto slow
 			}
+			// We do not reject '@' as it cannot be part of the
+			// authority (e.g. user:pass@example.com) in a
+			// "file:///" URL, and '@' commonly appears in file
+			// paths such as GOMODCACHE/module@version/...
 		}
 		return rest, nil
 	}
@@ -141,6 +166,7 @@ slow:
 
 // ParseDocumentURI interprets a string as a DocumentURI, applying VS
 // Code workarounds; see [DocumentURI.UnmarshalText] for details.
+// If "s" is a file name, use [URIFromPath] instead.
 func ParseDocumentURI(s string) (DocumentURI, error) {
 	if s == "" {
 		return "", nil
@@ -180,13 +206,13 @@ func URIFromPath(path string) DocumentURI {
 	if path == "" {
 		return ""
 	}
-	if !isWindowsDrivePath(path) {
+	if !IsWindowsDrivePath(path) {
 		if abs, err := filepath.Abs(path); err == nil {
 			path = abs
 		}
 	}
 	// Check the file path again, in case it became absolute.
-	if isWindowsDrivePath(path) {
+	if IsWindowsDrivePath(path) {
 		path = "/" + strings.ToUpper(string(path[0])) + path[1:]
 	}
 	path = filepath.ToSlash(path)
@@ -199,10 +225,10 @@ func URIFromPath(path string) DocumentURI {
 
 const fileScheme = "file"
 
-// isWindowsDrivePath returns true if the file path is of the form used by
+// IsWindowsDrivePath returns true if the file path is of the form used by
 // Windows. We check if the path begins with a drive letter, followed by a ":".
 // For example: C:/x/y/z.
-func isWindowsDrivePath(path string) bool {
+func IsWindowsDrivePath(path string) bool {
 	if len(path) < 3 {
 		return false
 	}

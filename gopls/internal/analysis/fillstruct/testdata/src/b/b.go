@@ -1,4 +1,4 @@
-package fillstruct
+package b
 
 type B struct {
 	ExportedInt   int

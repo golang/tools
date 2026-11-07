@@ -1,0 +1,23 @@
+This test checks definition operations in function return statements. 
+Go to definition on 'return' should go to the result parameter list.
+
+-- go.mod --
+module mod.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+func Hi() string { //@loc(HiReturn, "string")
+    return "Hello" //@def("return", HiReturn)
+}
+
+func Bye() (int, int, int) { //@loc(ByeReturn, "(int, int, int)")
+    return 1, 2, 3 //@def("return", ByeReturn)
+}
+
+func TestLit() {
+    f := func(a, b int) bool { return a*b < 100 } //@loc(FuncLitReturn, "bool"),def("return", FuncLitReturn)
+    f(1, 2)
+}

@@ -1,0 +1,44 @@
+This test checks that completion gives correct completion for
+incomplete for range statement without init variables.
+See https://github.com/golang/vscode-go/issues/4025.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test
+
+go 1.21
+
+-- for_range_assign.go --
+package a
+
+func _() {
+	phoneBook := map[string]string{"a": "b"}
+	for := range pho //@acceptcompletion(re"pho()", "phoneBook", for_range_assign)
+}
+
+-- @for_range_assign/for_range_assign.go --
+package a
+
+func _() {
+	phoneBook := map[string]string{"a": "b"}
+	for := range phoneBook //@acceptcompletion(re"pho()", "phoneBook", for_range_assign)
+}
+
+-- for_range.go --
+package a
+
+func _() {
+	phoneBook := map[string]string{"a": "b"}
+	for range pho //@acceptcompletion(re"pho()", "phoneBook", for_range)
+}
+
+-- @for_range/for_range.go --
+package a
+
+func _() {
+	phoneBook := map[string]string{"a": "b"}
+	for range phoneBook //@acceptcompletion(re"pho()", "phoneBook", for_range)
+}
+

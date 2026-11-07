@@ -7,6 +7,9 @@ Package present implements parsing and rendering of present files,
 which can be slide presentations as in golang.org/x/tools/cmd/present
 or articles as in golang.org/x/blog (the Go blog).
 
+This package assumes presentation authors are trusted,
+and should not be used with untrusted inputs.
+
 # File Format
 
 Present files begin with a header giving the title of the document
@@ -29,7 +32,7 @@ The date line may be written without a time:
 
 	2 Jan 2006
 
-In this case, the time will be interpreted as 10am UTC on that date.
+In this case, the time will be interpreted as 11am UTC on that date.
 
 The tags line is a comma-separated list of tags that may be used to categorize
 the document.

@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -26,6 +27,24 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
+
+// bestPackage offers the best package name for a package declaration when
+// one is not present in the given file.
+func bestPackage(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (string, error) {
+	suggestions, err := packageSuggestions(ctx, snapshot, uri, "")
+	if err != nil {
+		return "", err
+	}
+	// sort with the same way of sortItems.
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		if suggestions[i].score != suggestions[j].score {
+			return suggestions[i].score > suggestions[j].score
+		}
+		return suggestions[i].name < suggestions[j].name
+	})
+
+	return suggestions[0].name, nil
+}
 
 // packageClauseCompletions offers completions for a package declaration when
 // one is not present in the given file.
@@ -62,7 +81,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 			Score:      pkg.score,
 		})
 	}
-
+	sortItems(items)
 	return items, surrounding, nil
 }
 
@@ -76,7 +95,7 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 	fset := token.NewFileSet()
 	expr, _ := parser.ParseExprFrom(fset, m.URI.Path(), pgf.Src, parser.Mode(0))
 	if expr == nil {
-		return nil, fmt.Errorf("unparseable file (%s)", m.URI)
+		return nil, fmt.Errorf("unparsable file (%s)", m.URI)
 	}
 	tok := fset.File(expr.Pos())
 	cursor := tok.Pos(offset)
@@ -89,14 +108,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 			if !strings.HasPrefix(PACKAGE, name.Name) {
 				return nil, fmt.Errorf("cursor in non-matching ident")
 			}
-			return &Selection{
+			sel := &Selection{
 				content: name.Name,
 				cursor:  cursor,
 				tokFile: tok,
 				start:   name.Pos(),
 				end:     name.End(),
 				mapper:  m,
-			}, nil
+			}
+			sel.check()
+			return sel, nil
 		}
 	}
 
@@ -112,14 +133,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 		return nil, err
 	}
 	if offset > start && string(bytes.TrimRight(pgf.Src[start:offset], " ")) == PACKAGE {
-		return &Selection{
+		sel := &Selection{
 			content: string(pgf.Src[start:offset]),
 			cursor:  cursor,
 			tokFile: tok,
 			start:   expr.Pos(),
 			end:     cursor,
 			mapper:  m,
-		}, nil
+		}
+		sel.check()
+		return sel, nil
 	}
 
 	// If the cursor is after the start of the expression, no package
@@ -134,14 +157,16 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 	}
 
 	// The surrounding range in this case is the cursor.
-	return &Selection{
+	sel := &Selection{
 		content: "",
 		tokFile: tok,
 		start:   cursor,
 		end:     cursor,
 		cursor:  cursor,
 		mapper:  m,
-	}, nil
+	}
+	sel.check()
+	return sel, nil
 }
 
 func cursorInComment(file *token.File, cursor token.Pos, src []byte) bool {
@@ -196,16 +221,26 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		return candidate{obj: obj, name: name, detail: name, score: score}
 	}
 
+	var currentPackageName string
+	// TODO: consider propagating error.
+	if md, err := snapshot.NarrowestMetadataForFile(ctx, fileURI); err == nil {
+		currentPackageName = string(md.Name)
+	}
+
 	matcher := fuzzy.NewMatcher(prefix)
 
 	// Always try to suggest a main package
 	defer func() {
+		mainScore := lowScore
+		if currentPackageName == "main" {
+			mainScore = highScore
+		}
 		if score := float64(matcher.Score("main")); score > 0 {
-			packages = append(packages, toCandidate("main", score*lowScore))
+			packages = append(packages, toCandidate("main", score*mainScore))
 		}
 	}()
 
-	dirPath := filepath.Dir(fileURI.Path())
+	dirPath := fileURI.DirPath()
 	dirName := filepath.Base(dirPath)
 	if !isValidDirName(dirName) {
 		return packages, nil
@@ -227,7 +262,7 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		// Only add packages that are previously used in the current directory.
 		var relevantPkg bool
 		for _, uri := range mp.CompiledGoFiles {
-			if filepath.Dir(uri.Path()) == dirPath {
+			if uri.DirPath() == dirPath {
 				relevantPkg = true
 				break
 			}
@@ -254,15 +289,20 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		seenPkgs[testPkgName] = struct{}{}
 	}
 
-	// Add current directory name as a low relevance suggestion.
 	if _, ok := seenPkgs[pkgName]; !ok {
+		// Add current directory name as a low relevance suggestion.
+		dirNameScore := lowScore
+		// if current package name is empty, the dir name is the best choice.
+		if currentPackageName == "" {
+			dirNameScore = highScore
+		}
 		if score := float64(matcher.Score(string(pkgName))); score > 0 {
-			packages = append(packages, toCandidate(string(pkgName), score*lowScore))
+			packages = append(packages, toCandidate(string(pkgName), score*dirNameScore))
 		}
 
 		testPkgName := pkgName + "_test"
 		if score := float64(matcher.Score(string(testPkgName))); score > 0 {
-			packages = append(packages, toCandidate(string(testPkgName), score*lowScore))
+			packages = append(packages, toCandidate(string(testPkgName), score*dirNameScore))
 		}
 	}
 

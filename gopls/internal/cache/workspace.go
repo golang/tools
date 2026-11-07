@@ -13,11 +13,12 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
 )
 
 // isGoWork reports if uri is a go.work file.
 func isGoWork(uri protocol.DocumentURI) bool {
-	return filepath.Base(uri.Path()) == "go.work"
+	return uri.Base() == "go.work"
 }
 
 // goWorkModules returns the URIs of go.mod files named by the go.work file.
@@ -62,7 +63,22 @@ func localModFiles(relativeTo string, goWorkOrModPaths []string) map[protocol.Do
 
 // isGoMod reports if uri is a go.mod file.
 func isGoMod(uri protocol.DocumentURI) bool {
-	return filepath.Base(uri.Path()) == "go.mod"
+	return uri.Base() == "go.mod"
+}
+
+// isWorkspaceFile reports if uri matches a set of globs defined in workspaceFiles
+func isWorkspaceFile(uri protocol.DocumentURI, workspaceFiles []string) bool {
+	for _, workspaceFile := range workspaceFiles {
+		g, err := glob.Parse(workspaceFile)
+		if err != nil {
+			continue
+		}
+
+		if g.Match(uri.Path()) {
+			return true
+		}
+	}
+	return false
 }
 
 // goModModules returns the URIs of "workspace" go.mod files defined by a

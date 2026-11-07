@@ -1,0 +1,28 @@
+Test for completion on promoted fields in struct literals before Go 1.27.
+Ref: go.dev/issues/78553
+
+-- go.mod --
+module mod.com
+
+go 1.26
+
+-- main.go --
+package main
+
+type E1 struct {
+	A int //@item(fieldA, "A", "int", "field")
+}
+
+type T struct {
+	E1    //@item(fieldE1, "E1", "E1", "field"),item(structE1, "E1", "struct{...}", "struct")
+	C int //@item(fieldC, "C", "int", "field"),item(structT, "T", "struct{...}", "struct")
+}
+
+//@item(literalE1, "E1{}", "", "var")
+//@item(funcMain, "main", "func()", "func")
+
+func main() {
+	_ = T{
+		//@complete("", fieldE1, fieldC, literalE1, funcMain, structE1, structT)
+	}
+}

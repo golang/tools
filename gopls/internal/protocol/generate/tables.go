@@ -6,14 +6,14 @@ package main
 
 import "log"
 
-// prop combines the name of a property with the name of the structure it is in.
+// prop combines the name of a property (class.field) with the name of
+// the structure it is in, using LSP field capitalization.
 type prop [2]string
 
 const (
-	nothing = iota
-	wantStar
-	wantOpt
-	wantOptStar
+	nothing     = iota
+	wantOpt     // omitempty
+	wantOptStar // omitempty, indirect
 )
 
 // goplsStar records the optionality of each field in the protocol.
@@ -34,20 +34,32 @@ var goplsStar = map[prop]int{
 	{"CompletionItem", "kind"}:                         wantOpt, // need temporary variables
 	{"CompletionParams", "context"}:                    wantOpt, // needs nil checks
 
-	{"Diagnostic", "severity"}:            wantOpt,     // nil checks or more careful thought
+	{"Diagnostic", "severity"}:            wantOpt,     // needs nil checks or more careful thought
 	{"DidSaveTextDocumentParams", "text"}: wantOptStar, // capabilities_test.go:112 logic
 	{"DocumentHighlight", "kind"}:         wantOpt,     // need temporary variables
-	{"Hover", "range"}:                    wantOpt,     // complex expressions
-	{"InlayHint", "kind"}:                 wantOpt,     // temporary variables
 
+	{"FoldingRange", "startLine"}:      wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "startCharacter"}: wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "endLine"}:        wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "endCharacter"}:   wantOptStar, // unset != zero (#71489)
+
+	{"Hover", "range"}:    wantOpt, // complex expressions
+	{"InlayHint", "kind"}: wantOpt, // temporary variables
+
+	{"PublishDiagnosticsParams", "version"}:                   wantOpt,     // zero => missing (#73501)
+	{"SignatureHelp", "activeParameter"}:                      wantOptStar, // unset != zero
+	{"SignatureInformation", "activeParameter"}:               wantOptStar, // unset != zero
 	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D
-	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     //A.B.C.D
+	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt,     // A.B.C.D
 	{"TextDocumentContentChangePartial", "range"}:             wantOptStar, // == nil test
+	{"TextDocumentContentChangePartial", "rangeLength"}:       wantOptStar, // unset != zero
 	{"TextDocumentSyncOptions", "change"}:                     wantOpt,     // &constant
+	{"WorkDoneProgressBegin", "percentage"}:                   wantOptStar, // unset != zero
 	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt,     // test failures
+	{"WorkDoneProgressReport", "percentage"}:                  wantOptStar, // unset != zero
 	{"WorkspaceClientCapabilities", "didChangeConfiguration"}: wantOpt,     // A.B.C.D
 	{"WorkspaceClientCapabilities", "didChangeWatchedFiles"}:  wantOpt,     // A.B.C.D
 }
@@ -57,32 +69,36 @@ var usedGoplsStar = make(map[prop]bool)
 
 // For gopls compatibility, use a different, typically more restrictive, type for some fields.
 var renameProp = map[prop]string{
-	{"CancelParams", "id"}:   "interface{}",
+	{"CancelParams", "id"}:   "any",
 	{"Command", "arguments"}: "[]json.RawMessage",
 	{"CodeAction", "data"}:   "json.RawMessage", // delay unmarshalling commands
-	{"Diagnostic", "code"}:   "interface{}",
+	{"Diagnostic", "code"}:   "any",
 	{"Diagnostic", "data"}:   "json.RawMessage", // delay unmarshalling quickfixes
 
-	{"DocumentDiagnosticReportPartialResult", "relatedDocuments"}: "map[DocumentURI]interface{}",
+	{"DocumentDiagnosticReportPartialResult", "relatedDocuments"}: "map[DocumentURI]any",
 
 	{"ExecuteCommandParams", "arguments"}: "[]json.RawMessage",
+	{"FileCreate", "uri"}:                 "DocumentURI", // see go.dev/issue/74652
+	{"FileDelete", "uri"}:                 "DocumentURI",
+	{"FileRename", "oldUri"}:              "DocumentURI",
+	{"FileRename", "newUri"}:              "DocumentURI",
 	{"FoldingRange", "kind"}:              "string",
 	{"Hover", "contents"}:                 "MarkupContent",
 	{"InlayHint", "label"}:                "[]InlayHintLabelPart",
 
-	{"RelatedFullDocumentDiagnosticReport", "relatedDocuments"}:      "map[DocumentURI]interface{}",
-	{"RelatedUnchangedDocumentDiagnosticReport", "relatedDocuments"}: "map[DocumentURI]interface{}",
+	{"RelatedFullDocumentDiagnosticReport", "relatedDocuments"}:      "map[DocumentURI]any",
+	{"RelatedUnchangedDocumentDiagnosticReport", "relatedDocuments"}: "map[DocumentURI]any",
 
 	// PJW: this one is tricky.
-	{"ServerCapabilities", "codeActionProvider"}: "interface{}",
+	{"ServerCapabilities", "codeActionProvider"}: "any",
 
-	{"ServerCapabilities", "inlayHintProvider"}: "interface{}",
+	{"ServerCapabilities", "inlayHintProvider"}: "any",
 	// slightly tricky
-	{"ServerCapabilities", "renameProvider"}: "interface{}",
+	{"ServerCapabilities", "renameProvider"}: "any",
 	// slightly tricky
-	{"ServerCapabilities", "semanticTokensProvider"}: "interface{}",
+	{"ServerCapabilities", "semanticTokensProvider"}: "any",
 	// slightly tricky
-	{"ServerCapabilities", "textDocumentSync"}: "interface{}",
+	{"ServerCapabilities", "textDocumentSync"}: "any",
 	{"TextDocumentSyncOptions", "save"}:        "SaveOptions",
 	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChange",
 }
@@ -120,11 +136,9 @@ var usedDisambiguate = make(map[string]bool)
 var goplsType = map[string]string{
 	"And_RegOpt_textDocument_colorPresentation": "WorkDoneProgressOptionsAndTextDocumentRegistrationOptions",
 	"ConfigurationParams":                       "ParamConfiguration",
-	"DocumentDiagnosticParams":                  "string",
-	"DocumentDiagnosticReport":                  "string",
 	"DocumentUri":                               "DocumentURI",
 	"InitializeParams":                          "ParamInitialize",
-	"LSPAny":                                    "interface{}",
+	"LSPAny":                                    "any",
 
 	"Lit_SemanticTokensOptions_range_Item1": "PRangeESemanticTokensOptions",
 
@@ -132,18 +146,18 @@ var goplsType = map[string]string{
 	"Or_DidChangeConfigurationRegistrationOptions_section": "OrPSection_workspace_didChangeConfiguration",
 	"Or_InlayHintLabelPart_tooltip":                        "OrPTooltipPLabel",
 	"Or_InlayHint_tooltip":                                 "OrPTooltip_textDocument_inlayHint",
-	"Or_LSPAny":                                            "interface{}",
+	"Or_LSPAny":                                            "any",
 
 	"Or_ParameterInformation_documentation":            "string",
 	"Or_ParameterInformation_label":                    "string",
 	"Or_PrepareRenameResult":                           "PrepareRenamePlaceholder",
-	"Or_ProgressToken":                                 "interface{}",
+	"Or_ProgressToken":                                 "any",
 	"Or_Result_textDocument_completion":                "CompletionList",
 	"Or_Result_textDocument_declaration":               "Or_textDocument_declaration",
 	"Or_Result_textDocument_definition":                "[]Location",
-	"Or_Result_textDocument_documentSymbol":            "[]interface{}",
+	"Or_Result_textDocument_documentSymbol":            "[]any",
 	"Or_Result_textDocument_implementation":            "[]Location",
-	"Or_Result_textDocument_semanticTokens_full_delta": "interface{}",
+	"Or_Result_textDocument_semanticTokens_full_delta": "any",
 	"Or_Result_textDocument_typeDefinition":            "[]Location",
 	"Or_Result_workspace_symbol":                       "[]SymbolInformation",
 	"Or_TextDocumentContentChangeEvent":                "TextDocumentContentChangePartial",
@@ -154,7 +168,7 @@ var goplsType = map[string]string{
 
 	"Tuple_ParameterInformation_label_Item1": "UIntCommaUInt",
 	"WorkspaceFoldersServerCapabilities":     "WorkspaceFolders5Gn",
-	"[]LSPAny":                               "[]interface{}",
+	"[]LSPAny":                               "[]any",
 
 	"[]Or_Result_textDocument_codeAction_Item0_Elem": "[]CodeAction",
 	"[]PreviousResultId":                             "[]PreviousResultID",
@@ -181,11 +195,13 @@ var methodNames = map[string]string{
 	"codeAction/resolve":                     "ResolveCodeAction",
 	"codeLens/resolve":                       "ResolveCodeLens",
 	"completionItem/resolve":                 "ResolveCompletionItem",
+	"command/resolve":                        "ResolveCommand",
 	"documentLink/resolve":                   "ResolveDocumentLink",
 	"exit":                                   "Exit",
 	"initialize":                             "Initialize",
 	"initialized":                            "Initialized",
 	"inlayHint/resolve":                      "Resolve",
+	"interactive/listEnum":                   "InteractiveListEnum",
 	"notebookDocument/didChange":             "DidChangeNotebookDocument",
 	"notebookDocument/didClose":              "DidCloseNotebookDocument",
 	"notebookDocument/didOpen":               "DidOpenNotebookDocument",
@@ -258,6 +274,8 @@ var methodNames = map[string]string{
 	"workspace/inlineValue/refresh":          "InlineValueRefresh",
 	"workspace/semanticTokens/refresh":       "SemanticTokensRefresh",
 	"workspace/symbol":                       "Symbol",
+	"workspace/textDocumentContent":          "TextDocumentContent",
+	"workspace/textDocumentContent/refresh":  "TextDocumentContentRefresh",
 	"workspace/willCreateFiles":              "WillCreateFiles",
 	"workspace/willDeleteFiles":              "WillDeleteFiles",
 	"workspace/willRenameFiles":              "WillRenameFiles",
@@ -271,4 +289,51 @@ func methodName(method string) string {
 		log.Fatalf("unknown method %q", method)
 	}
 	return ans
+}
+
+// prependMethodDocComments specifies doc comments that will be prepend to
+// an LSP method name defined in both Server and Client interface.
+var prependMethodDocComments = map[string]string{
+	"ResolveCommand": `// ResolveCommand handles the interactive resolution of a command prior to
+	// its execution.
+	//
+	// It processes an [ExecuteCommandParams] to determine if the command requires
+	// interactive input, or to validate user-provided answers submitted via the
+	// embedded [InteractiveParams]. 
+	//
+	// If the command requires user input (e.g., the initial probe) or if the
+	// provided answers are invalid, it returns a modified [ExecuteCommandParams]
+	// populated with FormFields to prompt the user. If the input is valid and
+	// complete, or if the command requires no interaction at all, it returns an
+	// [ExecuteCommandParams] with an empty form, signaling the client to proceed
+	// with execution.
+	//
+	// See [InteractiveParams] for the complete multi-step client-server handshake
+	// and the architectural reasoning behind dedicated ResolveXXX methods.`,
+	"InteractiveListEnum": `// InteractiveListEnum is the request handler for fetching dynamic enum options.
+	//
+	// This method is called by the client when the user interacts with a
+	// FormFieldTypeLazyEnum field (e.g., typing in a combo box). The server
+	// uses the provided Action and Params to determine the context (e.g.,
+	// "search workspace symbols for interfaces") and returns a filtered list
+	// of matching entries.`,
+}
+
+// prependMethodDocComments specifies doc comments that will be prepend to
+// an LSP type's properties existing doc comments.
+var appendTypePropDocComments = map[string]map[string]string{
+	"TextDocumentPositionParams": {"position": `	//
+	// Deprecated: gopls should use [TextDocumentPositionParams.Range] instead.
+`},
+}
+
+// appendTypeProp specifies block of code (typically properties with doc comment)
+// that will be append to a struct.
+var appendTypeProp = map[string]string{
+	"ExecuteCommandParams": `
+	// Support interactive command execution.
+	//
+	// Note: This is a non-standard protocol extension. See golang/go#76331.
+	InteractiveParams
+`,
 }

@@ -1,0 +1,62 @@
+
+This test checks functionality of the printf-like directives and operands highlight.
+-- flags --
+-ignore_extra_diags
+-- highlights.go --
+package highlightprintf
+import (
+	"fmt"
+)
+
+func BasicPrintfHighlights() {
+	fmt.Printf("Hello %s, you have %d new messages!", "Alice", 5) //@hiloc(normals, "%s", write),hiloc(normalarg0, "\"Alice\"", read),highlightall(normals, normalarg0)
+	fmt.Printf("Hello %s, you have %d new messages!", "Alice", 5) //@hiloc(normald, "%d", write),hiloc(normalargs1, "5", read),highlightall(normald, normalargs1)
+}
+
+func ComplexPrintfHighlights() {
+	fmt.Printf("Hello %#3.4s, you have %-2.3d new messages!", "Alice", 5) //@hiloc(complexs, "%#3.4s", write),hiloc(complexarg0, "\"Alice\"", read),highlightall(complexs, complexarg0)
+	fmt.Printf("Hello %#3.4s, you have %-2.3d new messages!", "Alice", 5) //@hiloc(complexd, "%-2.3d", write),hiloc(complexarg1, "5", read),highlightall(complexd, complexarg1)
+}
+
+func MissingDirectives() {
+	fmt.Printf("Hello %s, you have 5 new messages!", "Alice", 5) //@hiloc(missings, "%s", write),hiloc(missingargs0, "\"Alice\"", read),highlightall(missings, missingargs0)
+}
+
+func TooManyDirectives() {
+	fmt.Printf("Hello %s, you have %d new %s %q messages!", "Alice", 5) //@hiloc(toomanys, "%s", write),hiloc(toomanyargs0, "\"Alice\"", read),highlightall(toomanys, toomanyargs0)
+	fmt.Printf("Hello %s, you have %d new %s %q messages!", "Alice", 5) //@hiloc(toomanyd, "%d", write),hiloc(toomanyargs1, "5", read),highlightall(toomanyd, toomanyargs1)
+}
+
+func VerbIsPercentage() {
+	fmt.Printf("%4.2% %d", 6) //@hiloc(z1, "%d", write),hiloc(z2, "6", read),highlightall(z1, z2)
+}
+
+func SpecialChars() {
+	fmt.Printf("Hello \n %s, you \t \n have %d new messages!", "Alice", 5) //@hiloc(specials, "%s", write),hiloc(specialargs0, "\"Alice\"", read),highlightall(specials, specialargs0)
+	fmt.Printf("Hello \n %s, you \t \n have %d new messages!", "Alice", 5) //@hiloc(speciald, "%d", write),hiloc(specialargs1, "5", read),highlightall(speciald, specialargs1)
+}
+
+func Escaped() {
+	fmt.Printf("Hello %% \n %s, you \t%% \n have %d new m%%essages!", "Alice", 5) //@hiloc(escapeds, "%s", write),hiloc(escapedargs0, "\"Alice\"", read),highlightall(escapeds, escapedargs0)
+	fmt.Printf("Hello %% \n %s, you \t%% \n have %d new m%%essages!", "Alice", 5) //@hiloc(escapedd, "%s", write),hiloc(escapedargs1, "\"Alice\"", read),highlightall(escapedd, escapedargs1)
+	fmt.Printf("%d \nss \x25[2]d", 234, 123) //@hiloc(zz1, "%d", write),hiloc(zz2, "234", read),highlightall(zz1,zz2)
+	fmt.Printf("%d \nss \x25[2]d", 234, 123) //@hiloc(zz3, "\\x25[2]d", write),hiloc(zz4, "123", read),highlightall(zz3,zz4)
+}
+
+func Indexed() {
+	fmt.Printf("%[1]d", 3) //@hiloc(i1, "%[1]d", write),hiloc(i2, "3", read),highlightall(i1, i2)
+	fmt.Printf("%[1]*d", 3, 6) //@hiloc(i3, "[1]*", write),hiloc(i4, "3", read),hiloc(i5, "d", write),hiloc(i6, "6", read),highlightall(i3, i4),highlightall(i5, i6)
+	fmt.Printf("%[2]*[1]d", 3, 4) //@hiloc(i7, "[2]*", write),hiloc(i8, "4", read),hiloc(i9, "[1]d", write),hiloc(i10, "3", read),highlightall(i7, i8),highlightall(i9, i10)
+	fmt.Printf("%[2]*.[1]*[3]d", 4, 5, 6) //@hiloc(i11, "[2]*", write),hiloc(i12, "5", read),hiloc(i13, ".[1]*", write),hiloc(i14, "4", read),hiloc(i15, "[3]d", write),hiloc(i16, "6", read),highlightall(i11, i12),highlightall(i13, i14),highlightall(i15, i16)
+}
+
+func MultipleIndexed() {
+	fmt.Printf("%[1]d %[1].2d", 3) //@hiloc(m1, "%[1]d", write),hiloc(m2, "3", read),hiloc(m3, "%[1].2d", write),highlightall(m1, m2, m3)
+}
+
+// This test checks that gopls doesn't crash (index out of bounds)
+// while haven't fill the last non-variadic argument.
+func NoEffectOnUnfinishedArg() {
+	var s string //@hiloc(var, "s", write)
+	fmt.Fprintf(s) //@hiloc(firstArg, "s", read),highlightall(var, firstArg)
+}

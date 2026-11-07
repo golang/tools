@@ -1,0 +1,19 @@
+start the gopls MCP server in headless mode
+
+Usage:
+  gopls [flags] mcp [mcp-flags]
+
+Starts the gopls MCP server in headless mode, without needing an LSP client.
+Starts the server over stdio or sse with http, depending on whether the listen flag is provided.
+
+Examples:
+  $ gopls mcp -listen=localhost:3000
+  $ gopls mcp  //start over stdio
+  -instructions
+    	if set, print gopls' MCP instructions and exit
+  -listen=string
+    	the address on which to run the mcp server
+  -logfile=string
+    	filename to log to; if unset, logs to stderr
+  -rpc.trace
+    	print MCP rpc traces; cannot be used with -listen

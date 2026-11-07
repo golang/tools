@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
 // Smoke test that simultaneous editing sessions in the same workspace works.
@@ -27,24 +26,15 @@ func main() {
 	fmt.Println("Hello World.")
 }`
 
+	// Simultaneous editing requires a shared server (Forwarded or SeparateProcess).
+	// Include Forwarded unconditionally plus
+	// SeparateProcess if enabled by flags.
 	WithOptions(
-		Modes(DefaultModes()&(Forwarded|SeparateProcess)),
+		Modes(Forwarded|(DefaultModes()&SeparateProcess)),
 	).Run(t, sharedProgram, func(t *testing.T, env1 *Env) {
 		// Create a second test session connected to the same workspace and server
 		// as the first.
-		awaiter := NewAwaiter(env1.Sandbox.Workdir)
-		editor, err := fake.NewEditor(env1.Sandbox, env1.Editor.Config()).Connect(env1.Ctx, env1.Server, awaiter.Hooks())
-		if err != nil {
-			t.Fatal(err)
-		}
-		env2 := &Env{
-			T:       t,
-			Ctx:     env1.Ctx,
-			Sandbox: env1.Sandbox,
-			Server:  env1.Server,
-			Editor:  editor,
-			Awaiter: awaiter,
-		}
+		env2 := ConnectGoplsEnv(t, env1.Ctx, env1.Sandbox, env1.Editor.Config(), env1.Server)
 		env2.Await(InitialWorkspaceLoad)
 		// In editor #1, break fmt.Println as before.
 		env1.OpenFile("main.go")
@@ -67,5 +57,32 @@ func main() {
 		env1.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
+	})
+}
+
+// TestForwardedSmoke exercises standard LSP operations in Forwarded mode.
+func TestForwardedSmoke(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+
+go 1.18
+-- main.go --
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+`
+	WithOptions(
+		Modes(Forwarded),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		loc := env.RegexpSearch("main.go", "Println")
+		if content, _ := env.Hover(loc); content == nil || content.Value == "" {
+			t.Errorf("hover failed in forwarded mode")
+		}
 	})
 }

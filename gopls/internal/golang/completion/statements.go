@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // addStatementCandidates adds full statement completion candidates
@@ -293,8 +294,10 @@ func (c *completer) addErrCheck() {
 		label = fmt.Sprintf("%[1]s != nil { %[2]s.Fatal(%[1]s) }", errVar, testVar)
 	} else {
 		snip.WriteText("return ")
-		for i := 0; i < result.Len()-1; i++ {
-			snip.WriteText(formatZeroValue(result.At(i).Type(), c.qf))
+		for i := range result.Len() - 1 {
+			if zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qual); isValid {
+				snip.WriteText(zero)
+			}
 			snip.WriteText(", ")
 		}
 		snip.WritePlaceholder(func(b *snippet.Builder) {
@@ -348,8 +351,7 @@ func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	}
 
 	sig := enclosingFunc.sig
-	for i := 0; i < sig.Params().Len(); i++ {
-		param := sig.Params().At(i)
+	for param := range sig.Params().Variables() {
 		if param.Name() == "_" {
 			continue
 		}
@@ -398,17 +400,20 @@ func (c *completer) addReturnZeroValues() {
 	snip.WriteText("return ")
 	fmt.Fprintf(&label, "return ")
 
-	for i := 0; i < result.Len(); i++ {
+	for i := range result.Len() {
 		if i > 0 {
 			snip.WriteText(", ")
 			fmt.Fprintf(&label, ", ")
 		}
 
-		zero := formatZeroValue(result.At(i).Type(), c.qf)
+		zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qual)
+		if !isValid {
+			zero = ""
+		}
 		snip.WritePlaceholder(func(b *snippet.Builder) {
 			b.WriteText(zero)
 		})
-		fmt.Fprintf(&label, zero)
+		fmt.Fprint(&label, zero)
 	}
 
 	c.items = append(c.items, CompletionItem{

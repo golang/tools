@@ -39,7 +39,7 @@ func BenchmarkRename(b *testing.B) {
 				defer stopAndRecord()
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				names++
 				newName := fmt.Sprintf("%s%d", test.baseName, names)
 				env.Rename(loc, newName)

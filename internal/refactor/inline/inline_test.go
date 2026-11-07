@@ -22,17 +22,43 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/expect"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/expect"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/txtar"
 )
 
 // TestData executes test scenarios specified by files in testdata/*.txtar.
+// Each txtar file describes two sets of files, some containing Go source
+// and others expected results.
+//
+// The Go source files and go.mod are parsed and type-checked as a Go module.
+// Some of these files contain marker comments (in a form described below) describing
+// the inlinings to perform and whether they should succeed or fail. A marker
+// indicating success refers to another file in the txtar, not a .go
+// file, that should contain the contents of the first file after inlining.
+//
+// The marker format for success is
+//
+//	@inline(re"pat", wantfile)
+//
+// The first call in the marker's line that matches pat is inlined, and the contents
+// of the resulting file must match the contents of wantfile.
+//
+// The marker format for failure is
+//
+//	@inline(re"pat", re"errpat")
+//
+// The first argument selects the call for inlining as before, and the second
+// is a regular expression that must match the text of resulting error.
 func TestData(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
@@ -41,7 +67,6 @@ func TestData(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, file := range files {
-		file := file
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			t.Parallel()
 
@@ -51,15 +76,22 @@ func TestData(t *testing.T) {
 				testenv.NeedsTool(t, "cgo")
 			}
 
+			// Some tests need specific Go versions.
+			// TODO(adonovan): remove when go1.26 is assured.
+			if strings.HasSuffix(t.Name(), "newexpr.txtar") {
+				testenv.NeedsGo1Point(t, 26)
+			}
+
 			// Extract archive to temporary tree.
 			ar, err := txtar.ParseFile(file)
 			if err != nil {
 				t.Fatal(err)
 			}
-			dir := t.TempDir()
-			if err := extractTxtar(ar, dir); err != nil {
+			fs, err := txtar.FS(ar)
+			if err != nil {
 				t.Fatal(err)
 			}
+			dir := testfiles.CopyToTmp(t, fs)
 
 			// Load packages.
 			cfg := &packages.Config{
@@ -78,28 +110,29 @@ func TestData(t *testing.T) {
 			// Report parse/type errors; they may be benign.
 			packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 				for _, err := range pkg.Errors {
-					t.Log(err)
+					t.Logf("warning: %v", err)
 				}
 			})
 
 			// Process @inline notes in comments in initial packages.
 			for _, pkg := range pkgs {
 				for _, file := range pkg.Syntax {
+					tokFile := pkg.Fset.File(file.FileStart)
 					// Read file content (for @inline regexp, and inliner).
-					content, err := os.ReadFile(pkg.Fset.File(file.Pos()).Name())
+					content, err := os.ReadFile(tokFile.Name())
 					if err != nil {
 						t.Error(err)
 						continue
 					}
 
 					// Read and process @inline notes.
-					notes, err := expect.ExtractGo(pkg.Fset, file)
+					notes, err := expect.ExtractGo(tokFile, file)
 					if err != nil {
-						t.Errorf("parsing notes in %q: %v", pkg.Fset.File(file.Pos()).Name(), err)
+						t.Errorf("parsing notes in %q: %v", tokFile.Name(), err)
 						continue
 					}
 					for _, note := range notes {
-						posn := pkg.Fset.PositionFor(note.Pos, false)
+						posn := tokFile.PositionFor(note.Pos, false)
 						if note.Name != "inline" {
 							t.Errorf("%s: invalid marker @%s", posn, note.Name)
 							continue
@@ -118,8 +151,9 @@ func TestData(t *testing.T) {
 						var want any
 						switch x := note.Args[1].(type) {
 						case string, expect.Identifier:
+							name := fmt.Sprint(x)
 							for _, file := range ar.Files {
-								if file.Name == fmt.Sprint(x) {
+								if file.Name == name {
 									want = file.Data
 									break
 								}
@@ -157,7 +191,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	// Find extent of pattern match within commented line.
 	var startPos, endPos token.Pos
 	{
-		tokFile := pkg.Fset.File(file.Pos())
+		tokFile := pkg.Fset.File(file.FileStart)
 		lineStartOffset := int(tokFile.LineStart(posn.Line)) - tokFile.Base()
 		line := content[lineStartOffset:]
 		if i := bytes.IndexByte(line, '\n'); i >= 0 {
@@ -183,19 +217,15 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	// Find innermost call enclosing the pattern match.
 	var caller *inline.Caller
 	{
-		path, _ := astutil.PathEnclosingInterval(file, startPos, endPos)
-		for _, n := range path {
-			if call, ok := n.(*ast.CallExpr); ok {
-				caller = &inline.Caller{
-					Fset:    pkg.Fset,
-					Types:   pkg.Types,
-					Info:    pkg.TypesInfo,
-					File:    file,
-					Call:    call,
-					Content: content,
-				}
-				break
+		cur, _ := inspector.New([]*ast.File{file}).Root().FindByPos(startPos, endPos)
+		for curCall := range cur.Enclosing((*ast.CallExpr)(nil)) {
+			caller = &inline.Caller{
+				Fset:  pkg.Fset,
+				Types: pkg.Types,
+				Info:  pkg.TypesInfo,
+				Call:  curCall,
 			}
+			break
 		}
 		if caller == nil {
 			return fmt.Errorf("no enclosing call")
@@ -203,7 +233,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Is it a static function call?
-	fn := typeutil.StaticCallee(caller.Info, caller.Call)
+	fn := typeutil.StaticCallee(caller.Info, caller.Call.Node().(*ast.CallExpr))
 	if fn == nil {
 		return fmt.Errorf("cannot inline: not a static call")
 	}
@@ -265,7 +295,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 			return nil, err
 		}
 
-		check := checkNoMutation(caller.File)
+		check := checkNoMutation(file)
 		defer check()
 		return inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	}()
@@ -280,18 +310,29 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Inline succeeded.
-	got := res.Content
+	got, err := applyEdits(caller.Types, file.FileStart, content, res.Edits)
+	if err != nil {
+		return err
+	}
 	if want, ok := want.([]byte); ok {
 		got = append(bytes.TrimSpace(got), '\n')
 		want = append(bytes.TrimSpace(want), '\n')
-		if diff := diff.Unified("want", "got", string(want), string(got)); diff != "" {
-			return fmt.Errorf("Inline returned wrong output:\n%s\nWant:\n%s\nDiff:\n%s",
-				got, want, diff)
+		// If the "want" file begins "...", it need only be a substring of the "got" result,
+		// rather than an exact match.
+		if rest, ok := bytes.CutPrefix(want, []byte("...\n")); ok {
+			want = rest
+			if !bytes.Contains(got, want) {
+				return fmt.Errorf("Inline returned wrong output:\n%s\nWant substring:\n%s", got, want)
+			}
+		} else {
+			if diff := diff.Unified("want", "got", string(want), string(got)); diff != "" {
+				return fmt.Errorf("Inline returned wrong output:\n-- got --\n%s\n-- want --\n%s\n-- diff --\n%s",
+					got, want, diff)
+			}
 		}
 		return nil
 	}
 	return fmt.Errorf("Inline succeeded unexpectedly: want error matching %q, got <<%s>>", want, got)
-
 }
 
 // findFuncByPosition returns the FuncDecl at the specified (package-agnostic) position.
@@ -332,7 +373,7 @@ const funcName = "f"
 // strategy with the checklist of concerns enumerated in the package
 // doc comment.
 type testcase struct {
-	descr          string // description; substrings enable options (e.g. "IgnoreEffects")
+	descr          string // description; substrings enable test or inliner options (e.g. "IgnoreEffects", "NoPackageClause")
 	callee, caller string // Go source files (sans package decl) of caller, callee
 	want           string // expected new portion of caller file, or "error: regexp"
 }
@@ -340,16 +381,22 @@ type testcase struct {
 func TestErrors(t *testing.T) {
 	runTests(t, []testcase{
 		{
-			"Generic functions are not yet supported.",
+			"Inference of type parameters is not yet supported.",
 			`func f[T any](x T) T { return x }`,
 			`var _ = f(0)`,
-			`error: type parameters are not yet supported`,
+			`error: type parameter inference is not yet supported`,
 		},
 		{
 			"Methods on generic types are not yet supported.",
 			`type G[T any] struct{}; func (G[T]) f(x T) T { return x }`,
 			`var _ = G[int]{}.f(0)`,
-			`error: type parameters are not yet supported`,
+			`error: generic methods not yet supported`,
+		},
+		{
+			"[NoPackageClause] Can't inline a callee using newer Go to a caller using older Go (#75726).",
+			"//go:build go1.23\n\npackage p\nfunc f() int { return 0 }",
+			"//go:build go1.22\n\npackage p\nvar _ = f()",
+			`error: cannot inline call to p.f \(declared using go1.23\) into a file using go1.22`,
 		},
 	})
 }
@@ -379,7 +426,7 @@ func TestBasics(t *testing.T) {
 			`func f(s string, i int) { print(s, s, i, i) }`,
 			`func _() { f("hi", 0)  }`,
 			`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s, 0, 0)
 }`,
 		},
@@ -410,6 +457,13 @@ func TestBasics(t *testing.T) {
 	}
 }`,
 		},
+		{
+			"Explicit type parameters.",
+			`func f[T any](x T) T { return x }`,
+			`var _ = f[int](0)`,
+			// TODO(jba): remove the unnecessary conversion.
+			`var _ = int(0)`,
+		},
 	})
 }
 
@@ -427,7 +481,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s string) { print(s, s) }`,
 				`func _() { f("hi")  }`,
 				`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s)
 }`,
 			},
@@ -442,7 +496,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(a [2]int) { print(a, a) }`,
 				`func _() { f([2]int{1, 2})  }`,
 				`func _() {
-	var a [2]int = [2]int{1, 2}
+	a := [2]int{1, 2}
 	print(a, a)
 }`,
 			},
@@ -457,7 +511,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s S) { print(s, s) }; type S struct { x int }`,
 				`func _() { f(S{x: 1})  }`,
 				`func _() {
-	var s S = S{x: 1}
+	s := S{x: 1}
 	print(s, s)
 }`,
 			},
@@ -474,7 +528,7 @@ func TestDuplicable(t *testing.T) {
 			},
 			{
 				"Implicit conversions from underlying types are duplicable.",
-				`func f(i I) { print(i, i) }; type I int`,
+				`func f(i I) { print(i, i) }; type I int; func print(args ...any) {}`,
 				`func _() { f(1)  }`,
 				`func _() { print(I(1), I(1)) }`,
 			},
@@ -502,7 +556,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]byte(s)) }`,
 				`func _() {
 	var s string
-	var b []byte = []byte(s)
+	b := []byte(s)
 	print(b, b)
 }`,
 			},
@@ -512,7 +566,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]uint8(s)) }`,
 				`func _() {
 	var s string
-	var b []uint8 = []uint8(s)
+	b := []uint8(s)
 	print(b, b)
 }`,
 			},
@@ -522,7 +576,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]rune(s)) }`,
 				`func _() {
 	var s string
-	var r []rune = []rune(s)
+	r := []rune(s)
 	print(r, r)
 }`,
 			},
@@ -532,7 +586,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f(B(s)) }`,
 				`func _() {
 	var s string
-	var b B = B(s)
+	b := B(s)
 	print(b, b)
 }`,
 			},
@@ -547,7 +601,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(i int) { print(i, i) }`,
 				`func _() { f(len(""))  }`,
 				`func _() {
-	var i int = len("")
+	i := len("")
 	print(i, i)
 }`,
 			},
@@ -556,7 +610,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(c complex128) { print(c, c) }`,
 				`func _() { f(complex(1.0, 2.0)) }`,
 				`func _() {
-	var c complex128 = complex(1.0, 2.0)
+	c := complex(1.0, 2.0)
 	print(c, c)
 }`,
 			},
@@ -567,7 +621,7 @@ func TestDuplicable(t *testing.T) {
 func f1(i int) int { return i + 1 }`,
 				`func _() { f(f1(1))  }`,
 				`func _() {
-	var i int = f1(1)
+	i := f1(1)
 	print(i, i)
 }`,
 			},
@@ -578,7 +632,6 @@ func f1(i int) int { return i + 1 }`,
 				`func _() { print(F(f1), F(f1)) }`,
 			},
 		})
-
 	})
 }
 
@@ -731,13 +784,25 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var local int; _ = local }`,
 		},
 		{
-			"Arguments that are used are detected",
+			"Arguments that are used by other arguments are detected",
 			`func f(x, y int) { print(x) }`,
 			`func _() { var z int; f(z, z) }`,
+			`func _() { var z int; print(z) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z, 1, 2, 3, z) }`,
+			`func _() { var z int; print([]int{1, 2, 3, z}) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected, 2",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z) }`,
 			`func _() {
 	var z int
-	var _ int = z
-	print(z)
+	_ = z
+	print([]int{})
 }`,
 		},
 		{
@@ -759,7 +824,7 @@ func TestSubstitution(t *testing.T) {
 			`func f(x int) { _ = func() { y := 1; print(y); print(x) } }`,
 			`func _(y int) { f(y) } `,
 			`func _(y int) {
-	var x int = y
+	x := y
 	_ = func() { y := 1; print(y); print(x) }
 }`,
 		},
@@ -781,10 +846,13 @@ func TestTailCallStrategy(t *testing.T) {
 			`func _() { println() }`,
 		},
 		{
-			"void with defer", // => literalized
+			"void with defer (last stmt is void tail-call)",
 			`func f() { defer f(); println() }`,
 			`func _() { f() }`,
-			`func _() { func() { defer f(); println() }() }`,
+			`func _() {
+	defer f()
+	println()
+}`,
 		},
 		// Tests for issue #63336:
 		{
@@ -804,6 +872,126 @@ func TestTailCallStrategy(t *testing.T) {
 			`func f() error { return E{} }; type E struct{error}`,
 			`func _() any { return f() }`,
 			`func _() any { return error(E{}) }`,
+		},
+	})
+}
+
+func TestVoidTailCallStrategy(t *testing.T) {
+	// Void tail-call allows defer in the callee when the call is
+	// immediately before an (explicit or implicit) return whose
+	// results are pure. See golang/go#63352 and golang/go#80984.
+	runTests(t, []testcase{
+		{
+			"f(); return with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); return }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+	return
+}`,
+		},
+		{
+			"explicit bare return: func f() { defer ...; return }",
+			`func f() { defer println("cleanup") }`,
+			`func _() { f(); return }`,
+			`func _() { defer println("cleanup"); return }`,
+		},
+		{
+			"f() as last statement with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f() }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+}`,
+		},
+		{
+			"f(); return 0 with pure return and defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() int { f(); return 0 }`,
+			`func _() int {
+	defer println("cleanup")
+	println("work")
+	return 0
+}`,
+		},
+		{
+			"f(); return g() with impure return and defer => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { f(); return g() }`,
+			`func _() int { func() { defer println("cleanup"); println("work") }(); return g() }`,
+		},
+		{
+			"statement between call and return => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); println("between"); return }`,
+			`func _() { func() { defer println("cleanup"); println("work") }(); println("between"); return }`,
+		},
+		{
+			"labeled void tail-call with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() {
+	goto label
+label:
+	f()
+	return
+}`,
+			`func _() {
+	goto label
+label:
+	{
+		defer println("cleanup")
+		println("work")
+	}
+	return
+}`,
+		},
+		{
+			"last stmt in loop body is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { for { f() } }`,
+			`func _() {
+	for {
+		func() { defer println("cleanup"); println("work") }()
+	}
+}`,
+		},
+		{
+			"last stmt in if branch with code after is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f() }; println("after") }`,
+			`func _() {
+	if true {
+		func() { defer println("cleanup"); println("work") }()
+	}
+	println("after")
+}`,
+		},
+		{
+			"f(); return inside if with defer is still void tail",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f(); return }; println("after") }`,
+			`func _() {
+	if true {
+		defer println("cleanup")
+		println("work")
+		return
+	}
+	println("after")
+}`,
+		},
+		{
+			"impure return after switch is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { switch { case true: f() }; return g() }`,
+			`func _() int {
+	switch {
+	case true:
+		func() { defer println("cleanup"); println("work") }()
+	}
+	return g()
+}`,
 		},
 	})
 }
@@ -1017,13 +1205,20 @@ func TestVariadic(t *testing.T) {
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { var args []any = slice; defer f(&args); println(args) }() }`,
+			`func _(slice []any) {
+	args := slice
+	defer f(&args)
+	println(args)
+}`,
 		},
 		{
-			"Variadic cancellation (literalization with parameter elimination).",
+			"Variadic cancellation (void tail-call with parameter elimination).",
 			`func f(args ...any) { defer f(); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { defer f(); println(slice) }() }`,
+			`func _(slice []any) {
+	defer f()
+	println(slice)
+}`,
 		},
 		{
 			"Variadic cancellation (reduction).",
@@ -1032,10 +1227,16 @@ func TestVariadic(t *testing.T) {
 			`func _(slice []any) { println(slice) }`,
 		},
 		{
-			"Variadic elimination (literalization).",
-			`func f(x any, rest ...any) { defer println(x, rest) }`, // defer => literalization
+			"Undo variadic elimination",
+			`func f(args ...int) []int { return append([]int{1}, args...) }`,
+			`func _(a, b int) { f(a, b) }`,
+			`func _(a, b int) { _ = append([]int{1}, a, b) }`,
+		},
+		{
+			"Variadic elimination (void tail-call).",
+			`func f(x any, rest ...any) { defer println(x, rest) }`,
 			`func _() { f(1, 2, 3) }`,
-			`func _() { func() { defer println(any(1), []any{2, 3}) }() }`,
+			`func _() { defer println(1, []any{2, 3}) }`,
 		},
 		{
 			"Variadic elimination (reduction).",
@@ -1071,7 +1272,7 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) { x++ }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	x++
 }`,
 		},
@@ -1081,7 +1282,7 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func _() { f(g(0), g(1), g(2), g(3)) }`,
 			`func _() {
 	var w, _ any = g(0), g(1)
-	println(w, any(g(2)), g(3))
+	println(w, g(2), g(3))
 }`,
 		},
 		{
@@ -1096,22 +1297,32 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) int { return <-h(g(2), x) }; func g(int) int; func h(int, int) chan int`,
 			`func _() { f(g(1)) }`,
 			`func _() {
-	var x int = g(1)
+	x := g(1)
 	<-h(g(2), x)
 }`,
 		},
 		{
-			"No binding decl due to shadowing of int",
+			// Omitting the type of z avoids shadowing of the built-in
+			// type name int by the earlier parameter named int, so a
+			// binding decl is possible.
+			"Binding decl omits type to avoid shadowing of int",
 			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func(int, y any, z int) { defer g(0); println(int, y, z) }(g(1), g(2), g(3)) }`,
+			`func _() {
+	var (
+		int, y any = g(1), g(2)
+		z          = g(3)
+	)
+	defer g(0)
+	println(int, y, z)
+}`,
 		},
 		{
 			"An indirect method selection (*x).g acts as a read.",
 			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (T) g(x any) any { return x }`,
 			`func _(x *T) { f(x, recover()) }`,
 			`func _(x *T) {
-	var y any = recover()
+	y := recover()
 	x.g(y)
 }`,
 		},
@@ -1125,13 +1336,23 @@ func TestParameterBindingDecl(t *testing.T) {
 			"Literalization can make use of a binding decl (all params).",
 			`func f(x, y int) int { defer println(); return y + x }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x, y int = g(1), g(2); defer println(); return y + x }()) }`,
+			`func _() { println(func() int { x, y := g(1), g(2); defer println(); return y + x }()) }`,
 		},
 		{
 			"Literalization can make use of a binding decl (some params).",
 			`func f(x, y int) int { z := y + x; defer println(); return z }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x int = g(1); z := g(2) + x; defer println(); return z }()) }`,
+			`func _() { println(func() int { x := g(1); z := g(2) + x; defer println(); return z }()) }`,
+		},
+		{
+			"Binding decl keeps type for interface conversion.",
+			`func f(x any) { defer println(); println(x, x) }; func g() int`,
+			`func _() { f(g()) }`,
+			`func _() {
+	var x any = g()
+	defer println()
+	println(x, x)
+}`,
 		},
 		{
 			"Literalization can't yet use of a binding decl if named results.",
@@ -1198,9 +1419,63 @@ func TestEmbeddedFields(t *testing.T) {
 			`func (x T) _() { x.f() }`,
 			`func (x T) _() {
 	{
-		var x *T = &x
+		x := &x
 		g()
 		print(*x)
+	}
+}`,
+		},
+	})
+}
+
+func TestSubstitutionGroups(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			// b -> a
+			"Basic",
+			`func f(a, b int) { print(a, b) }`,
+			`func _() { var a int; f(a, a) }`,
+			`func _() { var a int; print(a, a) }`,
+		},
+		{
+			// a <-> b
+			"Cocycle",
+			`func f(a, b int) { print(a, b) }`,
+			`func _() { var a, b int; f(a+b, a+b) }`,
+			`func _() { var a, b int; print(a+b, a+b) }`,
+		},
+		{
+			// a <-> b
+			// a -> c
+			// Don't compute b as substitutable due to bad cycle traversal.
+			"Middle cycle",
+			`func f(a, b, c int) { var d int; print(a, b, c, d) }`,
+			`func _() { var a, b, c, d int; f(a+b+c, a+b, d) }`,
+			`func _() {
+	var a, b, c, d int
+	{
+		a, b, c := a+b+c, a+b, d
+		var d int
+		print(a, b, c, d)
+	}
+}`,
+		},
+		{
+			// a -> b
+			// b -> c
+			// b -> d
+			// c
+			//
+			// Only c should be substitutable.
+			"Singleton",
+			`func f(a, b, c, d int) { var e int; print(a, b, c, d, e) }`,
+			`func _() { var a, b, c, d, e int; f(a+b, c+d, c, e) }`,
+			`func _() {
+	var a, b, c, d, e int
+	{
+		a, b, d := a+b, c+d, e
+		var e int
+		print(a, b, c, d, e)
 	}
 }`,
 		},
@@ -1220,7 +1495,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, c, b) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, g(3), b)
 }`,
 		},
@@ -1241,7 +1516,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), g(2), y, g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, y, b, g(3))
 }`,
 		},
@@ -1250,7 +1525,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), y, g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), y
+	a, b := g(1), y
 	print(a, g(2), b, g(3))
 }`,
 		},
@@ -1271,7 +1546,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; var x, y, z int`,
 			`func _() { f(x, y, z) }`,
 			`func _() {
-	var c int = z
+	c := z
 	print(x, y, recover().(int), c)
 }`,
 		},
@@ -1280,7 +1555,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; func g(int) int; var x, y, z int`,
 			`func _() { f(x, y, g(0))  }`,
 			`func _() {
-	var a, b, c int = x, y, g(0)
+	a, b, c := x, y, g(0)
 	print(a, b, recover().(int), c)
 }`,
 		},
@@ -1289,13 +1564,13 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d, e int) { print(b, a, c, e, d) }; func g(int) int; var x, y int`,
 			`func _() { f(x, g(1), g(2), y, g(3))  }`,
 			`func _() {
-	var a, b, c, d int = x, g(1), g(2), y
+	a, b, c, d := x, g(1), g(2), y
 	print(b, a, c, g(3), d)
 }`,
 		},
 		{
 			// In this example, the set() call is rejected as a substitution
-			// candidate due to a shadowing conflict (x). This must entail that the
+			// candidate due to a shadowing conflict (z). This must entail that the
 			// selection x.y (R) is also rejected, because it is lower numbered.
 			//
 			// Incidentally this program (which panics when executed) illustrates
@@ -1303,12 +1578,13 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			// as x.y are not ordered wrt writes, depending on the compiler.
 			// Changing x.y to identity(x).y forces the ordering and avoids the panic.
 			"Hazards with args already rejected (e.g. due to shadowing) are detected too.",
-			`func f(x, y int) int { return x + y }; func set[T any](ptr *T, old, new T) int { println(old); *ptr = new; return 0; }`,
-			`func _() { x := new(struct{ y int }); f(x.y, set(&x, x, nil)) }`,
+			`func f(x, y int) (z int) { return x + y }; func set[T any](ptr *T, old, new T) int { println(old); *ptr = new; return 0; }`,
+			`func _() { x := new(struct{ y int }); z := x; f(x.y, set(&x, z, nil)) }`,
 			`func _() {
 	x := new(struct{ y int })
+	z := x
 	{
-		var x, y int = x.y, set(&x, x, nil)
+		x, y := x.y, set(&x, z, nil)
 		_ = x + y
 	}
 }`,
@@ -1321,7 +1597,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = &y }; func g(int) int`,
 			`func _() { f(g(1), g(2)) }`,
 			`func _() {
-	var _, y int = g(1), g(2)
+	_, y := g(1), g(2)
 	_ = &y
 }`,
 		},
@@ -1333,7 +1609,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = x }; func g(int) int; var v int`,
 			`func _() { f(v, g(2)) }`,
 			`func _() {
-	var x, _ int = v, g(2)
+	x, _ := v, g(2)
 	_ = x
 }`,
 		},
@@ -1341,7 +1617,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			"Defer f() evaluates f() before unknown effects",
 			`func f(int, y any, z int) { defer println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func() { defer println(any(g(1)), any(g(2)), g(3)) }() }`,
+			`func _() { defer println(g(1), g(2), g(3)) }`,
 		},
 		{
 			"Effects are ignored when IgnoreEffects",
@@ -1369,7 +1645,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x int
 	)
 	_ = x + x + len(y+y)
@@ -1382,7 +1658,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x string
 	)
 	_ = x + y + y
@@ -1469,6 +1745,24 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func _() { T(1).g() }`,
 		},
 		{
+			"Implicit reference is made explicit outside of selector",
+			`type T int; func (x *T) f() bool { return x == x.id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == t.id() }`,
+		},
+		{
+			"Implicit parenthesized reference is not made explicit in selector",
+			`type T int; func (x *T) f() bool { return x == (x).id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == (t).id() }`,
+		},
+		{
+			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
+			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
+			`func _() { var t *T; _ = t.f() }`,
+			`func _() { var t *T; _ = func() bool { x := *t; return x == x.id() }() }`,
+		},
+		{
 			"Check for shadowing error on type used in the conversion.",
 			`func f(x T) { _ = &x == (*T)(nil) }; type T int16`,
 			`func _() { type T bool; f(1) }`,
@@ -1481,22 +1775,306 @@ func TestRedundantConversions(t *testing.T) {
 	runTests(t, []testcase{
 		{
 			"Type conversion must be added if the constant is untyped.",
-			`func f(i int32) { print(i) }`,
+			`func f(i int32) { print(i) }; func print(x any) {}`,
 			`func _() { f(1)  }`,
 			`func _() { print(int32(1)) }`,
 		},
 		{
 			"Type conversion must not be added if the constant is typed.",
-			`func f(i int32) { print(i) }`,
+			`func f(i int32) { print(i) }; func print(x any) {}`,
 			`func _() { f(int32(1))  }`,
 			`func _() { print(int32(1)) }`,
+		},
+		{
+			"No type conversion for argument to interface parameter",
+			`type T int; func f(x any) { g(x) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"No type conversion for parenthesized argument to interface parameter",
+			`type T int; func f(x any) { g((x)) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g((T(1))) }`,
+		},
+		{
+			"Type conversion for argument to type parameter",
+			`type T int; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(any(T(1))) }`,
+		},
+		{
+			"Strip redundant interface conversions",
+			`type T interface{ M() }; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(nil)) }`,
+			`func _() { g(any(nil)) }`,
+		},
+		{
+			"No type conversion for argument to variadic interface parameter",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"Type conversion for variadic argument",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f([]any{T(1)}...) }`,
+			`func _() { g([]any{T(1)}...) }`,
+		},
+		{
+			"Type conversion for argument to interface channel",
+			`type T int; var c chan any; func f(x T) { c <- x }`,
+			`func _() { f(1) }`,
+			`func _() { c <- T(1) }`,
+		},
+		{
+			"No type conversion for argument to concrete channel",
+			`type T int32; var c chan T; func f(x T) { c <- x }`,
+			`func _() { f(1) }`,
+			`func _() { c <- 1 }`,
+		},
+		{
+			"Type conversion for interface map key",
+			`type T int; var m map[any]any; func f(x T) { m[x] = 1 }`,
+			`func _() { f(1) }`,
+			`func _() { m[T(1)] = 1 }`,
+		},
+		{
+			"No type conversion for interface to interface map key",
+			`type T int; var m map[any]any; func f(x any) { m[x] = 1 }`,
+			`func _() { f(T(1)) }`,
+			`func _() { m[T(1)] = 1 }`,
+		},
+		{
+			"No type conversion for concrete map key",
+			`type T int; var m map[T]any; func f(x T) { m[x] = 1 }`,
+			`func _() { f(1) }`,
+			`func _() { m[1] = 1 }`,
+		},
+		{
+			"Type conversion for interface literal key/value",
+			`type T int; type m map[any]any; func f(x, y T) { _ = m{x: y} }`,
+			`func _() { f(1, 2) }`,
+			`func _() { _ = m{T(1): T(2)} }`,
+		},
+		{
+			"No type conversion for concrete literal key/value",
+			`type T int; type m map[T]T; func f(x, y T) { _ = m{x: y} }`,
+			`func _() { f(1, 2) }`,
+			`func _() { _ = m{1: 2} }`,
+		},
+		{
+			"Type conversion for interface literal element",
+			`type T int; type s []any; func f(x T) { _ = s{x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = s{T(1)} }`,
+		},
+		{
+			"No type conversion for concrete literal element",
+			`type T int; type s []T; func f(x T) { _ = s{x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = s{1} }`,
+		},
+		{
+			"Type conversion for interface unkeyed struct field",
+			`type T int; type s struct{any}; func f(x T) { _ = s{x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = s{T(1)} }`,
+		},
+		{
+			"No type conversion for concrete unkeyed struct field",
+			`type T int; type s struct{T}; func f(x T) { _ = s{x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = s{1} }`,
+		},
+		{
+			"Type conversion for interface field value",
+			`type T int; type S struct{ F any }; func f(x T) { _ = S{F: x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = S{F: T(1)} }`,
+		},
+		{
+			"No type conversion for concrete field value",
+			`type T int; type S struct{ F T }; func f(x T) { _ = S{F: x} }`,
+			`func _() { f(1) }`,
+			`func _() { _ = S{F: 1} }`,
+		},
+		{
+			"Type conversion for argument to interface channel",
+			`type T int; var c chan any; func f(x any) { c <- x }`,
+			`func _() { f(T(1)) }`,
+			`func _() { c <- T(1) }`,
+		},
+		{
+			"No type conversion for argument to concrete channel",
+			`type T int32; var c chan T; func f(x T) { c <- x }`,
+			`func _() { f(1) }`,
+			`func _() { c <- 1 }`,
+		},
+		{
+			"No type conversion for assignment to an explicit interface type",
+			`type T int; func f(x any) { var y any; y = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any
+	y = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for short variable assignment to an explicit interface type",
+			`type T int; func f(e error) { var err any; i, err := 1, e; _, _ = i, err }`,
+			`func _() { f(nil) }`,
+			`func _() {
+	var err any
+	i, err := 1, nil
+	_, _ = i, err
+}`,
+		},
+		{
+			"No type conversion for initializer of an explicit interface type",
+			`type T int; func f(x any) { var y any = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for use as a composite literal key",
+			`type T int; func f(x any) { _ = map[any]any{x: 1} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = map[any]any{T(1): 1} }`,
+		},
+		{
+			"No type conversion for use as a composite literal value",
+			`type T int; func f(x any) { _ = []any{x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = []any{T(1)} }`,
+		},
+		{
+			"No type conversion for use as a composite literal field",
+			`type T int; func f(x any) { _ = struct{ F any }{F: x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = struct{ F any }{F: T(1)} }`,
+		},
+		{
+			"No type conversion for use in a send statement",
+			`type T int; func f(x any) { var c chan any; c <- x }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var c chan any
+	c <- T(1)
+}`,
+		},
+	})
+}
+
+// TestInferredCompLits tests inlining of calls involving composite
+// literals {...} whose type is inferred from the assignment context
+// (go1.28; see go.dev/issue/12854 and go.dev/issue/82039).
+// Each such literal must remain in a context that supplies its type,
+// or have its type made explicit.
+func TestInferredCompLits(t *testing.T) {
+	testenv.NeedsGo1Point(t, 28) // TODO(adonovan): remove when go1.28 is assured.
+
+	runTests(t, []testcase{
+		{
+			"Argument used in interface context.",
+			`type T struct{ x, y int }; func f(t T) { g(t) }; func g(any) {}`,
+			`func _() { f({1, 2}) }`,
+			`func _() { g(T{1, 2}) }`,
+		},
+		{
+			"Argument used twice is bound to an explicitly typed var.",
+			`type T struct{ x, y int }; func f(t T) int { return t.x + t.y }`,
+			`func _() int { return f({1, 2}) }`,
+			`func _() int {
+	var t T = {1, 2}
+	return t.x + t.y
+}`,
+		},
+		{
+			"Argument assigned to var of known type.",
+			`type T struct{ x, y int }; func f(t T) T { var u T = t; return u }`,
+			`func _() T { return f({1, 2}) }`,
+			`func _() T {
+	var u T = {1, 2}
+	return u
+}`,
+		},
+		{
+			"Argument of pointer type is selected.",
+			`type T struct{ x, y int }; func f(p *T) int { return p.x }`,
+			`func _() int { return f({1, 2}) }`,
+			`func _() int { return (&T{1, 2}).x }`,
+		},
+		{
+			"Argument referenced twice in assignment context.",
+			`type T struct{ x, y int }; func f(t T) { g(t); g(t) }; func g(T) {}`,
+			`func _() { f({1, 2}) }`,
+			`func _() {
+	var t T = {1, 2}
+	g(t)
+	g(t)
+}`,
+		},
+		{
+			"Argument to empty function is discarded.",
+			`type T struct{ x, y int }; func f(t T) {}`,
+			`func _() { v := 1; f({v, 2}) }`,
+			`func _() { v := 1; _ = T{v, 2} }`,
+		},
+		{
+			"Result assigned to new var.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() {
+	x := T{1, 2}
+	_ = x
+}`,
+		},
+		{
+			"Result is selected.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return T{1, 2}.x }`,
+		},
+		{
+			"Result discarded in statement context.",
+			`type T struct{ x, y int }; func f() T { return {1, 2} }`,
+			`func _() { f() }`,
+			`func _() { _ = T{1, 2} }`,
+		},
+		{
+			"Result of pointer type assigned to new var.",
+			`type T struct{ x, y int }; func f() *T { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() { x := &T{1, 2}; _ = x }`,
+		},
+		{
+			"Result of pointer type is selected.",
+			`type T struct{ x, y int }; func f() *T { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return (&T{1, 2}).x }`,
+		},
+		{
+			"Result of named pointer type assigned to new var needs a conversion.",
+			`type T struct{ x, y int }; type PT *T; func f() PT { return {1, 2} }`,
+			`func _() { x := f(); _ = x }`,
+			`func _() { x := PT({1, 2}); _ = x }`,
+		},
+		{
+			"Result of named pointer type is selected via a conversion.",
+			`type T struct{ x, y int }; type PT *T; func f() PT { return {1, 2} }`,
+			`func _() int { return f().x }`,
+			`func _() int { return PT({1, 2}).x }`,
 		},
 	})
 }
 
 func runTests(t *testing.T, tests []testcase) {
 	for _, test := range tests {
-		test := test
 		t.Run(test.descr, func(t *testing.T) {
 			fset := token.NewFileSet()
 			mustParse := func(filename string, content any) *ast.File {
@@ -1507,8 +2085,15 @@ func runTests(t *testing.T, tests []testcase) {
 				return f
 			}
 
+			addPackageClause := func(src string) string {
+				if !strings.Contains(test.descr, "NoPackageClause") {
+					src = "package p\n" + src
+				}
+				return src
+			}
+
 			// Parse callee file and find first func decl named f.
-			calleeContent := "package p\n" + test.callee
+			calleeContent := addPackageClause(test.callee)
 			calleeFile := mustParse("callee.go", calleeContent)
 			var decl *ast.FuncDecl
 			for _, d := range calleeFile.Decls {
@@ -1521,42 +2106,36 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatalf("declaration of func %s not found: %s", funcName, test.callee)
 			}
 
-			// Parse caller file and find first call to f().
-			callerContent := "package p\n" + test.caller
+			// Parse caller file.
+			callerContent := addPackageClause(test.caller)
 			callerFile := mustParse("caller.go", callerContent)
-			var call *ast.CallExpr
-			ast.Inspect(callerFile, func(n ast.Node) bool {
-				if n, ok := n.(*ast.CallExpr); ok {
-					switch fun := n.Fun.(type) {
-					case *ast.SelectorExpr:
-						if fun.Sel.Name == funcName {
-							call = n
-						}
-					case *ast.Ident:
-						if fun.Name == funcName {
-							call = n
-						}
-					}
-				}
-				return call == nil
-			})
-			if call == nil {
-				t.Fatalf("call to %s not found: %s", funcName, test.caller)
-			}
 
 			// Type check both files as one package.
 			info := &types.Info{
-				Defs:       make(map[*ast.Ident]types.Object),
-				Uses:       make(map[*ast.Ident]types.Object),
-				Types:      make(map[ast.Expr]types.TypeAndValue),
-				Implicits:  make(map[ast.Node]types.Object),
-				Selections: make(map[*ast.SelectorExpr]*types.Selection),
-				Scopes:     make(map[ast.Node]*types.Scope),
+				Defs:         make(map[*ast.Ident]types.Object),
+				Uses:         make(map[*ast.Ident]types.Object),
+				Types:        make(map[ast.Expr]types.TypeAndValue),
+				Implicits:    make(map[ast.Node]types.Object),
+				Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+				Scopes:       make(map[ast.Node]*types.Scope),
+				FileVersions: make(map[*ast.File]string),
 			}
 			conf := &types.Config{Error: func(err error) { t.Error(err) }}
 			pkg, err := conf.Check("p", fset, []*ast.File{callerFile, calleeFile}, info)
 			if err != nil {
 				t.Fatal("transformation introduced type errors")
+			}
+
+			// Find first call to f() in caller file.
+			var curCall inspector.Cursor
+			for cur := range inspector.New([]*ast.File{callerFile}).Root().Preorder((*ast.CallExpr)(nil)) {
+				if id := typesinternal.UsedIdent(info, cur.Node().(*ast.CallExpr).Fun); id != nil && id.Name == funcName {
+					curCall = cur
+					break
+				}
+			}
+			if !curCall.Valid() {
+				t.Fatalf("call to %s not found: %s", funcName, test.caller)
 			}
 
 			// Analyze callee and inline call.
@@ -1570,14 +2149,12 @@ func runTests(t *testing.T, tests []testcase) {
 				}
 
 				caller := &inline.Caller{
-					Fset:    fset,
-					Types:   pkg,
-					Info:    info,
-					File:    callerFile,
-					Call:    call,
-					Content: []byte(callerContent),
+					Fset:  fset,
+					Types: pkg,
+					Info:  info,
+					Call:  curCall,
 				}
-				check := checkNoMutation(caller.File)
+				check := checkNoMutation(callerFile)
 				defer check()
 				return inline.Inline(caller, callee, &inline.Options{
 					Logf:          t.Logf,
@@ -1587,7 +2164,7 @@ func runTests(t *testing.T, tests []testcase) {
 			res, err := doIt()
 
 			// Want error?
-			if rest := strings.TrimPrefix(test.want, "error: "); rest != test.want {
+			if rest, ok := strings.CutPrefix(test.want, "error: "); ok {
 				if err == nil {
 					t.Fatalf("unexpected success: want error matching %q", rest)
 				}
@@ -1605,7 +2182,10 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatal(err)
 			}
 
-			gotContent := res.Content
+			gotContent, err := applyEdits(pkg, callerFile.FileStart, []byte(callerContent), res.Edits)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			// Compute a single-hunk line-based diff.
 			srcLines := strings.Split(callerContent, "\n")
@@ -1668,20 +2248,6 @@ func checkTranscode(callee *inline.Callee) error {
 	return nil
 }
 
-// TODO(adonovan): publish this a helper (#61386).
-func extractTxtar(ar *txtar.Archive, dir string) error {
-	for _, file := range ar.Files {
-		name := filepath.Join(dir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-			return err
-		}
-		if err := os.WriteFile(name, file.Data, 0666); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // deepHash computes a cryptographic hash of an ast.Node so that
 // if the data structure is mutated, the hash changes.
 // It assumes Go variables do not change address.
@@ -1704,7 +2270,7 @@ func deepHash(n ast.Node) any {
 	var visit func(reflect.Value)
 	visit = func(v reflect.Value) {
 		switch v.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			ptr := v.UnsafePointer()
 			writeUint64(uint64(uintptr(ptr)))
 			if !v.IsNil() {
@@ -1745,14 +2311,22 @@ func deepHash(n ast.Node) any {
 				visit(v.Elem())
 			}
 
-		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer:
-			panic(v) // unreachable in AST
+		case reflect.String:
+			writeUint64(uint64(v.Len()))
+			hasher.Write([]byte(v.String()))
 
-		default: // bool, string, number
-			if v.Kind() == reflect.String { // proper framing
-				writeUint64(uint64(v.Len()))
-			}
+		case reflect.Int:
+			writeUint64(uint64(v.Int()))
+
+		case reflect.Uint:
+			writeUint64(uint64(v.Uint()))
+
+		case reflect.Bool, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			// Bools and fixed width numbers can be handled by binary.Write.
 			binary.Write(hasher, le, v.Interface())
+
+		default: // reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer, reflect.Uintptr
+			panic(v) // unreachable in AST
 		}
 	}
 	visit(reflect.ValueOf(n))
@@ -1760,4 +2334,47 @@ func deepHash(n ast.Node) any {
 	var hash [sha256.Size]byte
 	hasher.Sum(hash[:0])
 	return hash
+}
+
+func TestDeepHash(t *testing.T) {
+	// This test reproduces a bug in DeepHash that was encountered during work on
+	// the inliner.
+	//
+	// TODO(rfindley): consider replacing this with a fuzz test.
+	id := &ast.Ident{
+		NamePos: 2,
+		Name:    "t",
+	}
+	c := &ast.CallExpr{
+		Fun: id,
+	}
+	h1 := deepHash(c)
+	id.NamePos = 1
+	h2 := deepHash(c)
+	if h1 == h2 {
+		t.Fatal("bad")
+	}
+}
+
+// applyEdits transforms content by applying the specified edits
+// to the file whose positions are defined by fset), reformatting the file, and
+// removing unused imports (using pkg for names of imported packages).
+func applyEdits(pkg *types.Package, fileStart token.Pos, content []byte, edits []refactor.Edit) ([]byte, error) {
+	dedits := make([]diff.Edit, len(edits))
+	for i, edit := range edits {
+		dedits[i] = diff.Edit{
+			Start: int(edit.Pos - fileStart),
+			End:   int(edit.End - fileStart),
+			New:   string(edit.NewText),
+		}
+	}
+	got, err := diff.ApplyBytes(content, dedits)
+	if err != nil {
+		return nil, err
+	}
+	got, err = driverutil.FormatSourceRemoveImports(pkg, got)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(got), nil
 }

@@ -55,3 +55,26 @@ func (a Action) String() string {
 		return "Unknown"
 	}
 }
+
+// EventsToModifications converts a slice of protocol.FileEvent into a slice of
+// on-disk file.Modification values.
+func EventsToModifications(events []protocol.FileEvent) []Modification {
+	mods := make([]Modification, len(events))
+	for i, e := range events {
+		var action Action
+		switch e.Type {
+		case protocol.Changed:
+			action = Change
+		case protocol.Created:
+			action = Create
+		case protocol.Deleted:
+			action = Delete
+		}
+		mods[i] = Modification{
+			URI:    e.URI,
+			Action: action,
+			OnDisk: true,
+		}
+	}
+	return mods
+}

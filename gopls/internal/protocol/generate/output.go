@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -30,7 +31,7 @@ var (
 
 func generateOutput(model *Model) {
 	for _, r := range model.Requests {
-		genDecl(model, r.Method, r.Params, r.Result, r.Direction)
+		genDecl(model, r.Method, r.Params, r.Result, r.Direction, r.Line == 0)
 		genCase(model, r.Method, r.Params, r.Result, r.Direction)
 		genFunc(model, r.Method, r.Params, r.Result, r.Direction, false)
 	}
@@ -38,7 +39,7 @@ func generateOutput(model *Model) {
 		if n.Method == "$/cancelRequest" {
 			continue // handled internally by jsonrpc2
 		}
-		genDecl(model, n.Method, n.Params, nil, n.Direction)
+		genDecl(model, n.Method, n.Params, nil, n.Direction, n.Line == 0)
 		genCase(model, n.Method, n.Params, nil, n.Direction)
 		genFunc(model, n.Method, n.Params, nil, n.Direction, true)
 	}
@@ -49,7 +50,7 @@ func generateOutput(model *Model) {
 	genMarshal()
 }
 
-func genDecl(model *Model, method string, param, result *Type, dir string) {
+func genDecl(model *Model, method string, param, result *Type, dir string, experiment bool) {
 	fname := methodName(method)
 	p := ""
 	if notNil(param) {
@@ -71,8 +72,28 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 		p = ", *ParamConfiguration"
 		ret = "([]LSPAny, error)"
 	}
-	fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
-	msg := fmt.Sprintf("\t%s\t%s(context.Context%s) %s\n", lspLink(model, fragment), fname, p, ret)
+
+	var msg string
+	{
+		var sb strings.Builder
+
+		if doc, ok := prependMethodDocComments[fname]; ok {
+			sb.WriteString(doc)
+			sb.WriteString("\n\t//\n")
+		}
+
+		if experiment {
+			sb.WriteString("\t// Note: This is a non-standard protocol extension.\n")
+		} else {
+			fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
+			fmt.Fprintf(&sb, "\t%s", lspLink(model, fragment))
+		}
+
+		fmt.Fprintf(&sb, "\t%s(context.Context%s) %s\n", fname, p, ret)
+
+		msg = sb.String()
+	}
+
 	switch dir {
 	case "clientToServer":
 		sdecls[method] = msg
@@ -87,6 +108,18 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 }
 
 func genCase(model *Model, method string, param, result *Type, dir string) {
+	extends := func(x, y string) bool {
+		for _, struc := range model.Structures {
+			if struc.Name == x {
+				if contains := slices.ContainsFunc(struc.Extends, func(t *Type) bool {
+					return t.Name == y
+				}); contains {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	out := new(bytes.Buffer)
 	fmt.Fprintf(out, "\tcase %q:\n", method)
 	var p string
@@ -99,19 +132,41 @@ func genCase(model *Model, method string, param, result *Type, dir string) {
 			nm = "ParamConfiguration" // gopls compatibility
 		}
 		fmt.Fprintf(out, "\t\tvar params %s\n", nm)
-		fmt.Fprintf(out, "\t\tif err := UnmarshalJSON(r.Params(), &params); err != nil {\n")
-		fmt.Fprintf(out, "\t\t\treturn true, sendParseError(ctx, reply, err)\n\t\t}\n")
+		out.WriteString("\t\tif err := UnmarshalJSON(raw, &params); err != nil {\n")
+		out.WriteString("\t\t\treturn nil, true, fmt.Errorf(\"%%w: %%s\", jsonrpc2.ErrParse, err)\n\t\t}\n")
 		p = ", &params"
+
+		// Ensure consistency between Range and Position. If the client provides
+		// only a Position, synthesize a zero-width Range at that location.
+		//
+		// Crucially, we do not clear the Position field. Since this request may
+		// be forwarded, the downstream receiver (gopls) will re-validate that
+		// the Position lies within the Range.
+		//
+		// TODO(hxjiang): define util function
+		// func (*protocol.Position) EmptyRange() protocol.Range.
+		if extends(nm, "TextDocumentPositionParams") {
+			out.WriteString(`		if params.Range == (Range{}) {
+			params.Range = Range{
+				Start: params.Position,
+				End:   params.Position,
+			}
+		} else if !params.Range.Contains(params.Position) {
+			return nil, true, fmt.Errorf("position %%v is outside the provided range %%v.", params.Position, params.Range)
+		}
+`)
+		}
+
 	}
 	if notNil(result) {
 		fmt.Fprintf(out, "\t\tresp, err := %%s.%s(ctx%s)\n", fname, p)
 		out.WriteString("\t\tif err != nil {\n")
-		out.WriteString("\t\t\treturn true, reply(ctx, nil, err)\n")
+		out.WriteString("\t\t\treturn nil, true, err\n")
 		out.WriteString("\t\t}\n")
-		out.WriteString("\t\treturn true, reply(ctx, resp, nil)\n")
+		out.WriteString("\t\treturn resp, true, nil\n")
 	} else {
 		fmt.Fprintf(out, "\t\terr := %%s.%s(ctx%s)\n", fname, p)
-		out.WriteString("\t\treturn true, reply(ctx, nil, err)\n")
+		out.WriteString("\t\treturn nil, true, err\n")
 	}
 	out.WriteString("\n")
 	msg := out.String()
@@ -128,7 +183,7 @@ func genCase(model *Model, method string, param, result *Type, dir string) {
 	}
 }
 
-func genFunc(model *Model, method string, param, result *Type, dir string, isnotify bool) {
+func genFunc(_ *Model, method string, param, result *Type, dir string, isnotify bool) {
 	out := new(bytes.Buffer)
 	var p, r string
 	var goResult string
@@ -219,8 +274,8 @@ func genStructs(model *Model) {
 		fmt.Fprintf(out, "//\n")
 		out.WriteString(lspLink(model, camelCase(s.Name)))
 		fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(s.Line))
-		// for gpls compatibilitye, embed most extensions, but expand the rest some day
-		props := append([]NameType{}, s.Properties...)
+		// for gopls compatibility, embed most extensions, but expand the rest some day
+		props := slices.Clone(s.Properties)
 		if s.Name == "SymbolInformation" { // but expand this one
 			for _, ex := range s.Extends {
 				fmt.Fprintf(out, "\t// extends %s\n", ex.Name)
@@ -236,13 +291,22 @@ func genStructs(model *Model) {
 		for _, ex := range s.Mixins {
 			fmt.Fprintf(out, "\t%s\n", goName(ex.Name))
 		}
+		// TODO(hxjiang): clean this up after microsoft/language-server-protocol#377
+		// is fixed and released.
+		if nm == "TextDocumentPositionParams" {
+			out.WriteString("\t// Range is an optional field representing the user's text selection in the document.\n")
+			out.WriteString("\t// If provided, the Position must be contained within this range.\n")
+			out.WriteString("\t//\n")
+			out.WriteString("\t// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#377.\n")
+			out.WriteString("\tRange Range `json:\"range\"`")
+		}
 		out.WriteString("}\n")
 		types[nm] = out.String()
 	}
 
 	// base types
 	// (For URI and DocumentURI, see ../uri.go.)
-	types["LSPAny"] = "type LSPAny = interface{}\n"
+	types["LSPAny"] = "type LSPAny = any\n"
 	// A special case, the only previously existing Or type
 	types["DocumentDiagnosticReport"] = "type DocumentDiagnosticReport = Or_DocumentDiagnosticReport // (alias) \n"
 
@@ -272,10 +336,26 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 			tp = newNm
 		}
 		// it's a pointer if it is optional, or for gopls compatibility
-		opt, star := propStar(name, p, tp)
-		json := fmt.Sprintf(" `json:\"%s%s\"`", p.Name, opt)
+		omit, star := propStar(name, p, tp)
+		json := fmt.Sprintf(" `json:\"%s\"`", p.Name)
+		if omit {
+			json = fmt.Sprintf(" `json:\"%s,omitempty\"`", p.Name)
+		}
 		generateDoc(out, p.Documentation)
-		fmt.Fprintf(out, "\t%s %s%s %s\n", goName(p.Name), star, tp, json)
+		if docs := appendTypePropDocComments[name]; docs != nil {
+			if doc, ok := docs[p.Name]; ok {
+				out.WriteString(doc)
+			}
+		}
+		if star {
+			fmt.Fprintf(out, "\t%s *%s %s\n", goName(p.Name), tp, json)
+		} else {
+			fmt.Fprintf(out, "\t%s %s %s\n", goName(p.Name), tp, json)
+		}
+	}
+
+	if block, ok := appendTypeProp[name]; ok {
+		out.WriteString(block)
 	}
 }
 
@@ -318,7 +398,7 @@ func genGenTypes() {
 			sort.Strings(names)
 			fmt.Fprintf(out, "// created for Or %v\n", names)
 			fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(nt.line+1))
-			fmt.Fprintf(out, "\tValue interface{} `json:\"value\"`\n")
+			fmt.Fprintf(out, "\tValue any `json:\"value\"`\n")
 		case "and":
 			fmt.Fprintf(out, "// created for And\n")
 			fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(nt.line+1))

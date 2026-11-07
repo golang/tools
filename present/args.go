@@ -96,7 +96,7 @@ func addrToByteRange(addr string, start int, data []byte) (lo, hi int, err error
 				j = i
 			}
 			pattern := addr[1:i]
-			lo, hi, err = addrRegexp(data, lo, hi, dir, pattern)
+			lo, hi, err = addrRegexp(data, hi, dir, pattern)
 			prevc = c
 			addr = addr[j:]
 			continue
@@ -202,7 +202,7 @@ func addrNumber(data []byte, lo, hi int, dir byte, n int, charOffset bool) (int,
 // addrRegexp searches for pattern in the given direction starting at lo, hi.
 // The direction dir is '+' (search forward from hi) or '-' (search backward from lo).
 // Backward searches are unimplemented.
-func addrRegexp(data []byte, lo, hi int, dir byte, pattern string) (int, int, error) {
+func addrRegexp(data []byte, hi int, dir byte, pattern string) (int, int, error) {
 	// We want ^ and $ to work as in sam/acme, so use ?m.
 	re, err := regexp.Compile("(?m:" + pattern + ")")
 	if err != nil {

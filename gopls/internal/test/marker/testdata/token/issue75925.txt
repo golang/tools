@@ -1,0 +1,12 @@
+This is a regression test for #75925 (doc links followed by a colon).
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- main.go --
+package p
+
+// [Demo]: demo //@token("Demo", "function", "signature")
+func Demo() {}

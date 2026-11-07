@@ -43,6 +43,8 @@ var g *B = &B{} // ensure *B.foo is created.
 // type flow that gets merged together during stringification.
 
 // WANT:
+// Return(doWork[0]) -> Local(t2)
+// Return(close[0]) -> Local(t2)
 // Local(t0) -> Local(ai), Local(ai), Local(bi), Local(bi)
-// Constant(testdata.I) -> Local(t2)
+// Constant(testdata.I) -> Return(close[0]), Return(doWork[0])
 // Local(x) -> Local(t0)

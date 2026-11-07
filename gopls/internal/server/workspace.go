@@ -12,6 +12,8 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/golang/completion"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
@@ -59,7 +61,7 @@ func (s *server) addView(ctx context.Context, name string, dir protocol.Document
 }
 
 func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChangeConfiguration")
+	ctx, done := event.Start(ctx, "server.DidChangeConfiguration")
 	defer done()
 
 	var wg sync.WaitGroup
@@ -79,6 +81,12 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 		return err
 	}
 	s.SetOptions(options)
+
+	// Delete and create file watcher based on the updated setting and watch
+	// for the desired directory.
+	if err := s.updateServerSideWatcher(ctx, s.session.FileWatchingGlobPatterns(ctx)); err != nil {
+		return fmt.Errorf("failed to update server-side file watcher: %w", err)
+	}
 
 	// Collect options for all workspace folders.
 	// If none have changed, this is a no op.
@@ -119,7 +127,7 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 		}
 		newFolders = append(newFolders, newFolder)
 	}
-	s.session.UpdateFolders(ctx, newFolders)
+	s.session.UpdateFolders(ctx, newFolders) // ignore error
 
 	// The view set may have been updated above.
 	viewsToDiagnose := make(map[*cache.View][]protocol.DocumentURI)
@@ -128,14 +136,43 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	}
 
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		s.diagnoseChangedViews(modCtx, modID, viewsToDiagnose, FromDidChangeConfiguration)
-		wg.Done()
-	}()
+	})
 
 	// An options change may have affected the detected Go version.
 	s.checkViewGoVersions()
 
+	updateGlobalOptions(options)
+
 	return nil
+}
+
+func (s *server) DidCreateFiles(ctx context.Context, params *protocol.CreateFilesParams) error {
+	ctx, done := event.Start(ctx, "server.DidCreateFiles")
+	defer done()
+
+	var allChanges []protocol.DocumentChange
+	for _, createdFile := range params.Files {
+		fh, snapshot, release, err := s.session.FileOf(ctx, createdFile.URI)
+		if err != nil {
+			event.Error(ctx, "fail to call fileOf", err)
+			continue
+		}
+		defer release()
+
+		switch snapshot.FileKind(fh) {
+		case file.Go:
+			change, err := completion.NewFile(ctx, snapshot, fh)
+			if err != nil {
+				// any error, including "it's not a new file"
+				continue
+			}
+			if change != nil {
+				allChanges = append(allChanges, *change)
+			}
+		}
+	}
+
+	return applyChanges(ctx, s.client, allChanges)
 }

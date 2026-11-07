@@ -14,15 +14,17 @@ import (
 	"go/token"
 	"go/types"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil"
 )
 
 const Doc = `find structs that would use less memory if their fields were sorted
 
-This analyzer find structs that can be rearranged to use less memory, and provides
+This analyzer finds structs that can be rearranged to use less memory, and provides
 a suggested edit with the most compact order.
 
 Note that there are two different diagnostics reported. One checks struct size,
@@ -53,7 +55,7 @@ so the analyzer is not included in typical suites such as vet or
 gopls. Use this standalone command to run it on your code:
 
    $ go install golang.org/x/tools/go/analysis/passes/fieldalignment/cmd/fieldalignment@latest
-   $ go fieldalignment [packages]
+   $ fieldalignment [packages]
 
 `
 
@@ -65,43 +67,76 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{
-		(*ast.StructType)(nil),
+	for curStruct := range inspect.Root().Preorder((*ast.StructType)(nil)) {
+		s := curStruct.Node().(*ast.StructType)
+		// For every named struct defined as "type Name struct { ... }",
+		// the *ast.StructType node has a parent *ast.TypeSpec,
+		// which contains the struct's name in its Name field.
+		name := "struct" // (anonymous)
+		if spec, ok := curStruct.Parent().Node().(*ast.TypeSpec); ok {
+			name = spec.Name.Name
+		}
+		fieldalignment(pass, s, name)
 	}
-	inspect.Preorder(nodeFilter, func(node ast.Node) {
-		var s *ast.StructType
-		var ok bool
-		if s, ok = node.(*ast.StructType); !ok {
-			return
-		}
-		if tv, ok := pass.TypesInfo.Types[s]; ok {
-			fieldalignment(pass, s, tv.Type.(*types.Struct))
-		}
-	})
+
 	return nil, nil
 }
 
-var unsafePointerTyp = types.Unsafe.Scope().Lookup("Pointer").(*types.TypeName).Type()
+func fieldalignment(pass *analysis.Pass, node *ast.StructType, name string) {
+	var (
+		sizes = &gcSizes{
+			wordSize: pass.TypesSizes.Sizeof(types.Typ[types.UnsafePointer]),
+			maxAlign: pass.TypesSizes.Alignof(types.Typ[types.UnsafePointer]),
+		}
 
-func fieldalignment(pass *analysis.Pass, node *ast.StructType, typ *types.Struct) {
-	wordSize := pass.TypesSizes.Sizeof(unsafePointerTyp)
-	maxAlign := pass.TypesSizes.Alignof(unsafePointerTyp)
+		typ              = pass.TypesInfo.TypeOf(node).(*types.Struct)
+		optimal, indexes = optimalOrder(typ, sizes)
 
-	s := gcSizes{wordSize, maxAlign}
-	optimal, indexes := optimalOrder(typ, &s)
-	optsz, optptrs := s.Sizeof(optimal), s.ptrdata(optimal)
+		actualSize = sizes.sizeof(typ)
+		actualPtrs = sizes.ptrdata(typ)
 
-	var message string
-	if sz := s.Sizeof(typ); sz != optsz {
-		message = fmt.Sprintf("struct of size %d could be %d", sz, optsz)
-	} else if ptrs := s.ptrdata(typ); ptrs != optptrs {
-		message = fmt.Sprintf("struct with %d pointer bytes could be %d", ptrs, optptrs)
+		optimalSize = sizes.sizeof(optimal)
+		optimalPtrs = sizes.ptrdata(optimal)
+	)
+
+	var message strings.Builder
+	if actualSize != optimalSize {
+		// Struct could be smaller.
+		// TODO(adonovan): IMHO the criterion should be "significantly smaller".
+		fmt.Fprintf(&message, "%s has size %d", name, actualSize)
+		actualClass := classSize(actualSize)
+		if actualClass == -1 {
+			actualClass = actualSize
+			fmt.Fprint(&message, " (uses global allocator)")
+		} else if actualClass != actualSize {
+			fmt.Fprintf(&message, " (allocator size class %d)", actualClass)
+		}
+
+		fmt.Fprintf(&message, " but the optimal size is %d", optimalSize)
+		optimalClass := classSize(optimalSize)
+		if optimalClass == -1 {
+			optimalClass = optimalSize
+		} else if optimalClass != optimalSize {
+			fmt.Fprintf(&message, " (allocator size class %d)", optimalClass)
+		}
+
+		if wastage := actualClass - optimalClass; wastage > 0 {
+			fmt.Fprintf(&message, " leading to a waste of %d bytes (%d%%)", wastage, wastage*100/actualClass)
+		}
+	} else if actualPtrs != optimalPtrs {
+		// Struct could place pointers more efficiently for GC marking.
+		fmt.Fprintf(&message, "%s has %d leading bytes of pointer data but optimal value is %d", name, actualPtrs, optimalPtrs)
 	} else {
 		// Already optimal order.
 		return
 	}
+
+	// Analyzers borrow syntax tree; they do not own them and must modify them.
+	// This Clone operation is a quick fix to the data race introduced
+	// in CL 278872 by the clearing of the Comment and Doc fields below.
+	node = astutil.CloneNode(node)
 
 	// Flatten the ast node since it could have multiple field names per list item while
 	// *types.Struct only have one item per field.
@@ -145,7 +180,7 @@ func fieldalignment(pass *analysis.Pass, node *ast.StructType, typ *types.Struct
 	pass.Report(analysis.Diagnostic{
 		Pos:     node.Pos(),
 		End:     node.Pos() + token.Pos(len("struct")),
-		Message: message,
+		Message: message.String(),
 		SuggestedFixes: []analysis.SuggestedFix{{
 			Message: "Rearrange fields",
 			TextEdits: []analysis.TextEdit{{
@@ -168,13 +203,13 @@ func optimalOrder(str *types.Struct, sizes *gcSizes) (*types.Struct, []int) {
 	}
 
 	elems := make([]elem, nf)
-	for i := 0; i < nf; i++ {
+	for i := range nf {
 		field := str.Field(i)
 		ft := field.Type()
 		elems[i] = elem{
 			i,
-			sizes.Alignof(ft),
-			sizes.Sizeof(ft),
+			sizes.alignof(ft),
+			sizes.sizeof(ft),
 			sizes.ptrdata(ft),
 		}
 	}
@@ -234,40 +269,42 @@ func optimalOrder(str *types.Struct, sizes *gcSizes) (*types.Struct, []int) {
 	return types.NewStruct(fields, nil), indexes
 }
 
-// Code below based on go/types.StdSizes.
+// gcSizes implements cmd/compile layout rules, providing ptrdata (GC
+// scanning limits) and trailing zero-size field padding not available
+// in [types.Sizes].
 
 type gcSizes struct {
-	WordSize int64
-	MaxAlign int64
+	wordSize int64
+	maxAlign int64
 }
 
-func (s *gcSizes) Alignof(T types.Type) int64 {
+func (s *gcSizes) alignof(T types.Type) int64 {
 	// For arrays and structs, alignment is defined in terms
 	// of alignment of the elements and fields, respectively.
 	switch t := T.Underlying().(type) {
 	case *types.Array:
 		// spec: "For a variable x of array type: unsafe.Alignof(x)
 		// is the same as unsafe.Alignof(x[0]), but at least 1."
-		return s.Alignof(t.Elem())
+		return s.alignof(t.Elem())
 	case *types.Struct:
 		// spec: "For a variable x of struct type: unsafe.Alignof(x)
 		// is the largest of the values unsafe.Alignof(x.f) for each
 		// field f of x, but at least 1."
 		max := int64(1)
 		for i, nf := 0, t.NumFields(); i < nf; i++ {
-			if a := s.Alignof(t.Field(i).Type()); a > max {
+			if a := s.alignof(t.Field(i).Type()); a > max {
 				max = a
 			}
 		}
 		return max
 	}
-	a := s.Sizeof(T) // may be 0
+	a := s.sizeof(T) // may be 0
 	// spec: "For a variable x of any type: unsafe.Alignof(x) is at least 1."
 	if a < 1 {
 		return 1
 	}
-	if a > s.MaxAlign {
-		return s.MaxAlign
+	if a > s.maxAlign {
+		return s.maxAlign
 	}
 	return a
 }
@@ -288,7 +325,7 @@ var basicSizes = [...]byte{
 	types.Complex128: 16,
 }
 
-func (s *gcSizes) Sizeof(T types.Type) int64 {
+func (s *gcSizes) sizeof(T types.Type) int64 {
 	switch t := T.Underlying().(type) {
 	case *types.Basic:
 		k := t.Kind()
@@ -298,12 +335,12 @@ func (s *gcSizes) Sizeof(T types.Type) int64 {
 			}
 		}
 		if k == types.String {
-			return s.WordSize * 2
+			return s.wordSize * 2
 		}
 	case *types.Array:
-		return t.Len() * s.Sizeof(t.Elem())
+		return t.Len() * s.sizeof(t.Elem())
 	case *types.Slice:
-		return s.WordSize * 3
+		return s.wordSize * 3
 	case *types.Struct:
 		nf := t.NumFields()
 		if nf == 0 {
@@ -312,9 +349,9 @@ func (s *gcSizes) Sizeof(T types.Type) int64 {
 
 		var o int64
 		max := int64(1)
-		for i := 0; i < nf; i++ {
+		for i := range nf {
 			ft := t.Field(i).Type()
-			a, sz := s.Alignof(ft), s.Sizeof(ft)
+			a, sz := s.alignof(ft), s.sizeof(ft)
 			if a > max {
 				max = a
 			}
@@ -325,9 +362,9 @@ func (s *gcSizes) Sizeof(T types.Type) int64 {
 		}
 		return align(o, max)
 	case *types.Interface:
-		return s.WordSize * 2
+		return s.wordSize * 2
 	}
-	return s.WordSize // catch-all
+	return s.wordSize // catch-all
 }
 
 // align returns the smallest y >= x such that y % a == 0.
@@ -341,13 +378,13 @@ func (s *gcSizes) ptrdata(T types.Type) int64 {
 	case *types.Basic:
 		switch t.Kind() {
 		case types.String, types.UnsafePointer:
-			return s.WordSize
+			return s.wordSize
 		}
 		return 0
 	case *types.Chan, *types.Map, *types.Pointer, *types.Signature, *types.Slice:
-		return s.WordSize
+		return s.wordSize
 	case *types.Interface:
-		return 2 * s.WordSize
+		return 2 * s.wordSize
 	case *types.Array:
 		n := t.Len()
 		if n == 0 {
@@ -357,7 +394,7 @@ func (s *gcSizes) ptrdata(T types.Type) int64 {
 		if a == 0 {
 			return 0
 		}
-		z := s.Sizeof(t.Elem())
+		z := s.sizeof(t.Elem())
 		return (n-1)*z + a
 	case *types.Struct:
 		nf := t.NumFields()
@@ -366,9 +403,9 @@ func (s *gcSizes) ptrdata(T types.Type) int64 {
 		}
 
 		var o, p int64
-		for i := 0; i < nf; i++ {
+		for i := range nf {
 			ft := t.Field(i).Type()
-			a, sz := s.Alignof(ft), s.Sizeof(ft)
+			a, sz := s.alignof(ft), s.sizeof(ft)
 			fp := s.ptrdata(ft)
 			o = align(o, a)
 			if fp != 0 {
@@ -380,4 +417,17 @@ func (s *gcSizes) ptrdata(T types.Type) int64 {
 	}
 
 	panic("impossible")
+}
+
+// Code below based on tools/gopls/internal/golang/hover.go
+
+// classSize reports the size class for a struct of the specified size, or -1 if unknown.
+// See GOROOT/src/runtime/msize.go for details.
+func classSize(size int64) int64 {
+	if size > 1<<15 {
+		return -1 // avoid allocation
+	}
+	// We assume that bytes.Clone doesn't trim,
+	// and reports the underlying size class
+	return int64(cap(bytes.Clone(make([]byte, size))))
 }

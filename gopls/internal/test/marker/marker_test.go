@@ -17,32 +17,36 @@ import (
 	"go/types"
 	"io/fs"
 	"log"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
-
-	"golang.org/x/tools/go/expect"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsprpc"
+	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
+
 	"golang.org/x/tools/gopls/internal/test/compare"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/diff/myers"
+	"golang.org/x/tools/internal/expect"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
 	"golang.org/x/tools/internal/testenv"
@@ -52,10 +56,14 @@ import (
 var update = flag.Bool("update", false, "if set, update test data during marker tests")
 
 func TestMain(m *testing.M) {
+	// golang/go#54461: enable additional debugging around hanging Go commands.
+	gocommand.DebugHangingGoCommands = true
+
 	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
-	os.Setenv("GOPACKAGESDRIVER", "off")
+	os.Setenv("GOPACKAGESDRIVER", "off") // ignore error
+	integration.FilterToolchainPathAndGOROOT()
 	os.Exit(m.Run())
 }
 
@@ -95,6 +103,9 @@ func Test(t *testing.T) {
 		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
 			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
 		}
+		if strings.HasSuffix(builder, "freebsd-amd64-race") {
+			t.Skip("golang/go#71731: the marker tests are too slow to run on the amd64-race builder")
+		}
 	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -108,14 +119,10 @@ func Test(t *testing.T) {
 	// Opt: use a shared cache.
 	cache := cache.New(nil)
 
-	// Opt: seed the cache and file cache by type-checking and analyzing common
-	// standard library packages.
-	seedCache(t, cache)
-
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+
 			if test.skipReason != "" {
 				t.Skip(test.skipReason)
 			}
@@ -136,39 +143,78 @@ func Test(t *testing.T) {
 				testenv.NeedsGo1Point(t, go1point)
 			}
 			if test.maxGoVersion != "" {
+				// A max Go version may be useful when (e.g.) a recent go/types
+				// fix makes it impossible to reproduce a certain older crash.
 				var go1point int
 				if _, err := fmt.Sscanf(test.maxGoVersion, "go1.%d", &go1point); err != nil {
 					t.Fatalf("parsing -max_go version: %v", err)
 				}
 				testenv.SkipAfterGo1Point(t, go1point)
 			}
+			if test.minGoCommandVersion != "" {
+				var go1point int
+				if _, err := fmt.Sscanf(test.minGoCommandVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -min_go_command version: %v", err)
+				}
+				testenv.NeedsGoCommand1Point(t, go1point)
+			}
+			if test.maxGoCommandVersion != "" {
+				var go1point int
+				if _, err := fmt.Sscanf(test.maxGoCommandVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -max_go_command version: %v", err)
+				}
+				testenv.SkipAfterGoCommand1Point(t, go1point)
+			}
 			if test.cgo {
+				if os.Getenv("CGO_ENABLED") == "0" {
+					// NeedsTool causes the test to fail if cgo is available but disabled
+					// on the current platform through the environment. I'm not sure why it
+					// behaves this way, but if CGO_ENABLED=0 is set, we want to skip.
+					t.Skip("skipping due to CGO_ENABLED=0")
+				}
 				testenv.NeedsTool(t, "cgo")
 			}
+
 			config := fake.EditorConfig{
 				Settings:         test.settings,
 				CapabilitiesJSON: test.capabilities,
 				Env:              test.env,
 			}
+
 			if _, ok := config.Settings["diagnosticsDelay"]; !ok {
 				if config.Settings == nil {
 					config.Settings = make(map[string]any)
 				}
 				config.Settings["diagnosticsDelay"] = "10ms"
 			}
+
 			// inv: config.Settings != nil
 
 			run := &markerTestRun{
 				test:       test,
-				env:        newEnv(t, cache, test.files, test.proxyFiles, test.writeGoSum, config),
+				env:        newEnv(t, cache, test.files, test.proxyFiles, test.writeGoSum, config, test.mcp),
 				settings:   config.Settings,
 				values:     make(map[expect.Identifier]any),
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
-			// TODO(rfindley): make it easier to clean up the integration test environment.
-			defer run.env.Editor.Shutdown(context.Background()) // ignore error
-			defer run.env.Sandbox.Close()                       // ignore error
+			defer run.env.Close()
+
+			// Support built-in pseudo-locations here.
+			// fmtLoc coerces "got" Locations to these forms
+			// so they can be compared without depending
+			// on line numbers in external files.
+			//
+			// (We could actually define "builtin:int" etc
+			// with the correct file/line/col for each
+			// builtin symbol, but that doesn't seem to be
+			// where the bugs are.)
+			run.values["BUILTIN"] = protocol.Location{
+				URI: "file:///pseudo/builtin/builtin.go",
+			}
+			run.values["UNSAFE"] = protocol.Location{
+				URI: "file:///pseudo/unsafe/unsafe.go",
+			}
 
 			// Open all files so that we operate consistently with LSP clients, and
 			// (pragmatically) so that we have a Mapper available via the fake
@@ -179,13 +225,30 @@ func Test(t *testing.T) {
 				run.env.OpenFile(file)
 			}
 
-			// Wait for the didOpen notifications to be processed, then collect
-			// diagnostics.
-			var diags map[string]*protocol.PublishDiagnosticsParams
-			run.env.AfterChange(integration.ReadAllDiagnostics(&diags))
-			for path, params := range diags {
+			allDiags := make(map[string][]protocol.Diagnostic)
+			if run.env.Editor.ServerCapabilities().DiagnosticProvider != nil {
+				for name := range test.files {
+					// golang/go#53275: support pull diagnostics for go.mod and go.work
+					// files.
+					if strings.HasSuffix(name, ".go") {
+						allDiags[name] = run.env.Diagnostics(name)
+					}
+				}
+			} else {
+				// Wait for the didOpen notifications to be processed, then collect
+				// diagnostics.
+
+				run.env.AfterChange()
+				var diags map[string]*protocol.PublishDiagnosticsParams
+				run.env.AfterChange(integration.ReadAllDiagnostics(&diags))
+				for path, params := range diags {
+					allDiags[path] = params.Diagnostics
+				}
+			}
+
+			for path, diags := range allDiags {
 				uri := run.env.Sandbox.Workdir.URI(path)
-				for _, diag := range params.Diagnostics {
+				for _, diag := range diags {
 					loc := protocol.Location{
 						URI: uri,
 						Range: protocol.Range{
@@ -222,7 +285,13 @@ func Test(t *testing.T) {
 			if !test.ignoreExtraDiags {
 				for loc, diags := range run.diags {
 					for _, diag := range diags {
-						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(loc), diag.Message)
+						// Note that loc is collapsed (start==end).
+						// For formatting, show the exact span.
+						exactLoc := protocol.Location{
+							URI:   loc.URI,
+							Range: diag.Range,
+						}
+						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(exactLoc), diag.MessageString())
 					}
 				}
 			}
@@ -248,7 +317,7 @@ func Test(t *testing.T) {
 				t.Errorf("formatTest: %v", err)
 			} else if *update {
 				filename := filepath.Join(dir, test.name)
-				if err := os.WriteFile(filename, formatted, 0644); err != nil {
+				if err := os.WriteFile(filename, formatted, 0o644); err != nil {
 					t.Error(err)
 				}
 			} else if !t.Failed() {
@@ -258,7 +327,13 @@ func Test(t *testing.T) {
 				// report duplicate mismatches of golden data.
 				// Otherwise, verify that formatted content matches.
 				if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
-					t.Errorf("formatted test does not match on-disk content:\n%s", diff)
+					// at this point, the txtar file created by the test and the expected txtar file on the
+					// disk differ. The differences are irrelevant if they are only the contents
+					// of files from a unified diff. These files are dependent on which diff algorithm was used,
+					// so instead checkDiffs has already checked that they correctly express the difference between
+					// the test input and the test output. (If the test code uses the diff that created them, then
+					// they would not differ, but that diff algorithms has been replaced.)
+					checkDifferences(t, test.content, formatted)
 				}
 			}
 		})
@@ -269,56 +344,27 @@ func Test(t *testing.T) {
 	}
 }
 
-// seedCache populates the file cache by type checking and analyzing standard
-// library packages that are reachable from tests.
-//
-// Most tests are themselves small codebases, and yet may reference large
-// amounts of standard library code. Since tests are heavily parallelized, they
-// naively end up type checking and analyzing many of the same standard library
-// packages. By seeding the cache, we ensure cache hits for these standard
-// library packages, significantly reducing the amount of work done by each
-// test.
-//
-// The following command was used to determine the set of packages to import
-// below:
-//
-//	rm -rf ~/.cache/gopls && \
-//	 go test -count=1 ./internal/test/marker -cpuprofile=prof -v
-//
-// Look through the individual test timings to see which tests are slow, then
-// look through the imports of slow tests to see which standard library
-// packages are imported. Choose high level packages such as go/types that
-// import others such as fmt or go/ast. After doing so, re-run the command and
-// verify that the total samples in the collected profile decreased.
-func seedCache(t *testing.T, cache *cache.Cache) {
-	start := time.Now()
-
-	// The the doc string for details on how this seed was produced.
-	seed := `package p
-import (
-	_ "net/http"
-	_ "sort"
-	_ "go/types"
-	_ "testing"
-)
-`
-
-	// Create a test environment for the seed file.
-	env := newEnv(t, cache, map[string][]byte{"p.go": []byte(seed)}, nil, nil, fake.EditorConfig{})
-	// See other TODO: this cleanup logic is too messy.
-	defer env.Editor.Shutdown(context.Background()) // ignore error
-	defer env.Sandbox.Close()                       // ignore error
-	env.Awaiter.Await(context.Background(), integration.InitialWorkspaceLoad)
-
-	// Opening the file is necessary to trigger analysis.
-	env.OpenFile("p.go")
-
-	// As a checksum, verify that the file has no errors after analysis.
-	// This isn't strictly necessary, but helps avoid incorrect seeding due to
-	// typos.
-	env.AfterChange(integration.NoDiagnostics())
-
-	t.Logf("warming the cache took %s", time.Since(start))
+// checkDifferences reports whether the txtars in result and disk
+// differ, other than in the contents of golden files containing unified diffs
+func checkDifferences(t *testing.T, result, disk []byte) {
+	got := txtar.Parse(result) // the computed slice of file retains the ordering in result
+	want := txtar.Parse(disk)
+	for i, tf := range got.Files {
+		if i >= len(want.Files) {
+			t.Errorf("test failed to create file %s", tf.Name)
+			continue
+		}
+		// if they are both golden files (name starts with @) and both unified diffs
+		// (both start with @@, then the difference is insignificant)
+		ff := want.Files[i]
+		if strings.HasPrefix(tf.Name, "@") && strings.HasPrefix(ff.Name, "@") && tf.Name == ff.Name &&
+			bytes.HasPrefix(tf.Data, []byte("@@")) && bytes.HasPrefix(ff.Data, []byte("@@")) {
+			continue
+		}
+		if !bytes.Equal(tf.Data, ff.Data) {
+			t.Errorf("%s differs, got:%q want:%q", tf.Name, tf.Data, ff.Data)
+		}
+	}
 }
 
 // A marker holds state for the execution of a single @marker
@@ -332,7 +378,7 @@ type marker struct {
 func (m marker) ctx() context.Context { return m.run.env.Ctx }
 
 // T returns the testing.TB for this mark.
-func (m marker) T() testing.TB { return m.run.env.T }
+func (m marker) T() testing.TB { return m.run.env.TB }
 
 // server returns the LSP server for the marker test run.
 func (m marker) editor() *fake.Editor { return m.run.env.Editor }
@@ -342,7 +388,12 @@ func (m marker) server() protocol.Server { return m.run.env.Editor.Server }
 
 // uri returns the URI of the file containing the marker.
 func (mark marker) uri() protocol.DocumentURI {
-	return mark.run.env.Sandbox.Workdir.URI(mark.run.test.fset.File(mark.note.Pos).Name())
+	fileName := mark.run.test.fset.File(mark.note.Pos).Name()
+	uri := mark.run.env.Sandbox.Workdir.URI(fileName)
+	if strings.HasSuffix(fileName, "/") { // directory
+		uri += "/" // Workdir.URI drops the trailing slash
+	}
+	return uri
 }
 
 // document returns a protocol.TextDocumentIdentifier for the current file.
@@ -357,14 +408,15 @@ func (mark marker) path() string {
 
 // mapper returns a *protocol.Mapper for the current file.
 func (mark marker) mapper() *protocol.Mapper {
-	mapper, err := mark.editor().Mapper(mark.path())
+	mapper, err := mark.run.mapper(mark.path())
 	if err != nil {
 		mark.T().Fatalf("failed to get mapper for current mark: %v", err)
 	}
 	return mapper
 }
 
-// errorf reports an error with a prefix indicating the position of the marker note.
+// errorf reports a formatted error with a prefix indicating the position of
+// the marker note.
 //
 // It formats the error message using mark.sprintf.
 func (mark marker) errorf(format string, args ...any) {
@@ -420,7 +472,7 @@ func valueMarkerFunc(fn any) func(marker) {
 		args := append([]any{mark}, mark.note.Args[1:]...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.errorf("converting args: %v", err)
+			mark.errorf("%v", err)
 			return
 		}
 		results := reflect.ValueOf(fn).Call(argValues)
@@ -432,10 +484,11 @@ func valueMarkerFunc(fn any) func(marker) {
 // called during the processing of action markers (e.g. @action("abc", 123))
 // with marker arguments converted to function parameters. The provided
 // function's first parameter must be of type 'marker', and it must not return
-// any values.
+// any values. Any named arguments that may be used by the marker func must be
+// listed in allowedNames.
 //
 // The provided fn should not mutate the test environment.
-func actionMarkerFunc(fn any) func(marker) {
+func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 	ftype := reflect.TypeOf(fn)
 	if ftype.NumIn() == 0 || ftype.In(0) != markerType {
 		panic(fmt.Sprintf("action marker function %#v must accept marker as its first argument", ftype))
@@ -444,11 +497,25 @@ func actionMarkerFunc(fn any) func(marker) {
 		panic(fmt.Sprintf("action marker function %#v cannot have results", ftype))
 	}
 
+	var allowed map[string]bool
+	if len(allowedNames) > 0 {
+		allowed = make(map[string]bool)
+		for _, name := range allowedNames {
+			allowed[name] = true
+		}
+	}
+
 	return func(mark marker) {
+		for name := range mark.note.NamedArgs {
+			if !allowed[name] {
+				mark.errorf("unexpected named argument %q", name)
+			}
+		}
+
 		args := append([]any{mark}, mark.note.Args...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.errorf("converting args: %v", err)
+			mark.errorf("%v", err)
 			return
 		}
 		reflect.ValueOf(fn).Call(argValues)
@@ -498,6 +565,34 @@ func convertArgs(mark marker, ftype reflect.Type, args []any) ([]reflect.Value, 
 	return argValues, nil
 }
 
+// namedArg returns the named argument for name, or the default value.
+func (mark marker) namedArg[T any](name string, dflt T) T {
+	if v, ok := mark.note.NamedArgs[name]; ok {
+		if e, ok := v.(T); ok {
+			return e
+		} else {
+			v, err := convert(mark, v, reflect.TypeOf(dflt))
+			if err != nil {
+				mark.errorf("invalid value for %q: could not convert %v (%T) to %T", name, v, v, dflt)
+				return dflt
+			}
+			return v.(T)
+		}
+	}
+	return dflt
+}
+
+func (mark marker) namedArgFunc[T any](name string, f func(marker, any) (T, error), dflt T) T {
+	if v, ok := mark.note.NamedArgs[name]; ok {
+		if v2, err := f(mark, v); err == nil {
+			return v2
+		} else {
+			mark.errorf("invalid value for %q: %v: %v", name, v, err)
+		}
+	}
+	return dflt
+}
+
 // is reports whether arg is a T.
 func is[T any](arg any) bool {
 	_, ok := arg.(T)
@@ -506,45 +601,52 @@ func is[T any](arg any) bool {
 
 // Supported value marker functions. See [valueMarkerFunc] for more details.
 var valueMarkerFuncs = map[string]func(marker){
-	"loc":  valueMarkerFunc(locMarker),
-	"item": valueMarkerFunc(completionItemMarker),
+	"loc":    valueMarkerFunc(locMarker),
+	"item":   valueMarkerFunc(completionItemMarker),
+	"hiloc":  valueMarkerFunc(highlightLocationMarker),
+	"defloc": valueMarkerFunc(defLocMarker),
+	"target": valueMarkerFunc(targetMarker),
 }
 
 // Supported action marker functions. See [actionMarkerFunc] for more details.
+//
+// See doc.go for marker documentation.
 var actionMarkerFuncs = map[string]func(marker){
 	"acceptcompletion": actionMarkerFunc(acceptCompletionMarker),
-	"codeaction":       actionMarkerFunc(codeActionMarker),
-	"codeactionedit":   actionMarkerFunc(codeActionEditMarker),
-	"codeactionerr":    actionMarkerFunc(codeActionErrMarker),
+	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "diag", "action", "result", "edit", "err", "answers", "title"),
 	"codelenses":       actionMarkerFunc(codeLensesMarker),
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),
-	"diag":             actionMarkerFunc(diagMarker),
+	"diag":             actionMarkerFunc(diagMarker, "exact"),
 	"documentlink":     actionMarkerFunc(documentLinkMarker),
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
+	"highlightall":     actionMarkerFunc(highlightAllMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"hovererr":         actionMarkerFunc(hoverErrMarker),
-	"implementation":   actionMarkerFunc(implementationMarker),
+	"implementation":   actionMarkerFunc(implementationMarker, "err"),
 	"incomingcalls":    actionMarkerFunc(incomingCallsMarker),
 	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
 	"outgoingcalls":    actionMarkerFunc(outgoingCallsMarker),
-	"preparerename":    actionMarkerFunc(prepareRenameMarker),
+	"preparerename":    actionMarkerFunc(prepareRenameMarker, "span"),
 	"rank":             actionMarkerFunc(rankMarker),
-	"rankl":            actionMarkerFunc(ranklMarker),
 	"refs":             actionMarkerFunc(refsMarker),
 	"rename":           actionMarkerFunc(renameMarker),
 	"renameerr":        actionMarkerFunc(renameErrMarker),
+	"resolvetarget":    actionMarkerFunc(resolveTargetMarker, "err"),
 	"selectionrange":   actionMarkerFunc(selectionRangeMarker),
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
-	"suggestedfix":     actionMarkerFunc(suggestedfixMarker),
-	"suggestedfixerr":  actionMarkerFunc(suggestedfixErrMarker),
+	"subtypes":         actionMarkerFunc(subtypesMarker),
+	"supertypes":       actionMarkerFunc(supertypesMarker),
+	"quickfix":         actionMarkerFunc(quickfixMarker),
+	"quickfixerr":      actionMarkerFunc(quickfixErrMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
 	"token":            actionMarkerFunc(tokenMarker),
-	"typedef":          actionMarkerFunc(typedefMarker),
+	"typedef":          actionMarkerFunc(typedefMarker, "err"),
 	"workspacesymbol":  actionMarkerFunc(workspaceSymbolMarker),
+	"mcptool":          actionMarkerFunc(mcpToolMarker, "location", "output"),
 }
 
 // markerTest holds all the test data extracted from a test txtar archive.
@@ -561,6 +663,7 @@ type markerTest struct {
 	env          map[string]string             // editor environment
 	proxyFiles   map[string][]byte             // proxy content
 	files        map[string][]byte             // data files from the archive (excluding special files)
+	directories  map[string][]byte             // files to run markers at the directory URI. Should only contain actions.
 	notes        []*expect.Note                // extracted notes from data files
 	golden       map[expect.Identifier]*Golden // extracted golden content, by identifier name
 
@@ -568,8 +671,9 @@ type markerTest struct {
 	flags      []string // flags extracted from the special "flags" archive file.
 
 	// Parsed flags values. See the flag definitions below for documentation.
-	minGoVersion     string
-	maxGoVersion     string
+	minGoVersion, maxGoVersion               string // min/max version of Go runtime
+	minGoCommandVersion, maxGoCommandVersion string // min/max version of ambient go command
+
 	cgo              bool
 	writeGoSum       []string
 	skipGOOS         []string
@@ -578,6 +682,7 @@ type markerTest struct {
 	filterBuiltins   bool
 	filterKeywords   bool
 	errorsOK         bool
+	mcp              bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -586,6 +691,8 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
 	flags.StringVar(&t.maxGoVersion, "max_go", "", "if set, the maximum go1.X version required for this test")
+	flags.StringVar(&t.minGoCommandVersion, "min_go_command", "", "if set, the minimum go1.X go command version required for this test")
+	flags.StringVar(&t.maxGoCommandVersion, "max_go_command", "", "if set, the maximum go1.X go command version required for this test")
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
@@ -594,6 +701,7 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
 	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")
 	flags.BoolVar(&t.errorsOK, "errors_ok", false, "if set, Error level log messages are acceptable in this test")
+	flags.BoolVar(&t.mcp, "mcp", false, "if set, enable model context protocol client and server in this test")
 	return flags
 }
 
@@ -602,7 +710,7 @@ type stringListValue []string
 
 func (l *stringListValue) Set(s string) error {
 	if s != "" {
-		for _, d := range strings.Split(s, ",") {
+		for d := range strings.SplitSeq(s, ",") {
 			*l = append(*l, strings.TrimSpace(d))
 		}
 	}
@@ -613,7 +721,8 @@ func (l stringListValue) String() string {
 	return strings.Join([]string(l), ",")
 }
 
-func (t *markerTest) getGolden(id expect.Identifier) *Golden {
+func (mark *marker) getGolden(id expect.Identifier) *Golden {
+	t := mark.run.test
 	golden, ok := t.golden[id]
 	// If there was no golden content for this identifier, we must create one
 	// to handle the case where -update is set: we need a place to store
@@ -627,6 +736,9 @@ func (t *markerTest) getGolden(id expect.Identifier) *Golden {
 		// markerTest during execution. Let's merge the two.
 		t.golden[id] = golden
 	}
+	if golden.firstReference == "" {
+		golden.firstReference = mark.path()
+	}
 	return golden
 }
 
@@ -635,9 +747,10 @@ func (t *markerTest) getGolden(id expect.Identifier) *Golden {
 // When -update is set, golden captures the updated golden contents for later
 // writing.
 type Golden struct {
-	id      expect.Identifier
-	data    map[string][]byte // key "" => @id itself
-	updated map[string][]byte
+	id             expect.Identifier
+	firstReference string            // file name first referencing this golden content
+	data           map[string][]byte // key "" => @id itself
+	updated        map[string][]byte
 }
 
 // Get returns golden content for the given name, which corresponds to the
@@ -678,16 +791,31 @@ func (g *Golden) Get(t testing.TB, name string, updated []byte) ([]byte, bool) {
 //
 // See the documentation for RunMarkerTests for more details on the test data
 // archive.
-func loadMarkerTests(dir string) ([]*markerTest, error) {
+// The optional only parameter contains fragments of the test names to be loaded.
+// If it is missing, all the tests are loaded. (Useful for faster debugging.)
+func loadMarkerTests(dir string, only ...string) ([]*markerTest, error) {
 	var tests []*markerTest
+	var use *regexp.Regexp
+	if len(only) > 0 {
+		var err error
+		use, err = regexp.Compile(strings.Join(only, "|"))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		use = regexp.MustCompile(".")
+	}
 	err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
 		if strings.HasSuffix(path, ".txt") {
+			if !use.MatchString(path) {
+				return nil
+			}
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
 
-			name := strings.TrimPrefix(path, dir+string(filepath.Separator))
+			name := filepath.ToSlash(strings.TrimPrefix(path, dir+string(filepath.Separator)))
 			test, err := loadMarkerTest(name, content)
 			if err != nil {
 				return fmt.Errorf("%s: %v", path, err)
@@ -709,14 +837,20 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		return nil, fmt.Errorf("ill-formed '-- filename --' header in comment")
 	}
 	test := &markerTest{
-		name:    name,
-		fset:    token.NewFileSet(),
-		content: content,
-		archive: archive,
-		files:   make(map[string][]byte),
-		golden:  make(map[expect.Identifier]*Golden),
+		name:        name,
+		fset:        token.NewFileSet(),
+		content:     content,
+		archive:     archive,
+		files:       make(map[string][]byte),
+		directories: make(map[string][]byte),
+		golden:      make(map[expect.Identifier]*Golden),
 	}
+	seen := make(map[string]bool)
 	for _, file := range archive.Files {
+		if seen[file.Name] {
+			return nil, fmt.Errorf("duplicate archive section %q", file.Name)
+		}
+		seen[file.Name] = true
 		switch {
 		case file.Name == "skip":
 			reason := strings.ReplaceAll(string(file.Data), "\n", " ")
@@ -777,7 +911,7 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 				return nil, fmt.Errorf("%s:%d: unwanted space before marker (// @)", file.Name, line)
 			}
 
-			// The 'go list' command doesn't work correct with modules named
+			// The 'go list' command doesn't work correctly with modules named
 			// testdata", so don't allow it as a module name (golang/go#65406).
 			// (Otherwise files within it will end up in an ad hoc
 			// package, "command-line-arguments/$TMPDIR/...".)
@@ -787,7 +921,18 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 			}
 
 			test.notes = append(test.notes, notes...)
-			test.files[file.Name] = file.Data
+			if strings.HasSuffix(file.Name, "/") {
+				for _, note := range notes {
+					if _, isValueMarker := valueMarkerFuncs[note.Name]; isValueMarker {
+						return nil, fmt.Errorf(
+							"directory file '%s' contains value marker @%s, only action markers allowed",
+							file.Name, note.Name)
+					}
+				}
+				test.directories[file.Name] = file.Data
+			} else {
+				test.files[file.Name] = file.Data
+			}
 		}
 
 		// Print a warning if we see what looks like "-- filename --"
@@ -798,10 +943,13 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		}
 	}
 
-	// Parse flags after loading files, as they may have been set by the "flags"
-	// file.
-	if err := test.flagSet().Parse(test.flags); err != nil {
+	// Parse flags after loading files, as they may have been set by the "flags" file.
+	set := test.flagSet()
+	if err := set.Parse(test.flags); err != nil {
 		return nil, fmt.Errorf("parsing flags: %v", err)
+	}
+	if set.NArg() > 0 {
+		return nil, fmt.Errorf("surplus arguments after flags: %q", set.Args())
 	}
 
 	return test, nil
@@ -814,10 +962,12 @@ func formatTest(test *markerTest) ([]byte, error) {
 	}
 
 	updatedGolden := make(map[string][]byte)
+	firstReferences := make(map[string]string)
 	for id, g := range test.golden {
 		for name, data := range g.updated {
 			filename := "@" + path.Join(string(id), name) // name may be ""
 			updatedGolden[filename] = data
+			firstReferences[filename] = g.firstReference
 		}
 	}
 
@@ -831,6 +981,8 @@ func formatTest(test *markerTest) ([]byte, error) {
 		default:
 			if _, ok := test.files[file.Name]; ok { // ordinary file
 				arch.Files = append(arch.Files, file)
+			} else if _, ok := test.directories[file.Name]; ok { // directory
+				arch.Files = append(arch.Files, file)
 			} else if strings.HasPrefix(file.Name, "proxy/") { // proxy file
 				arch.Files = append(arch.Files, file)
 			} else if data, ok := updatedGolden[file.Name]; ok { // golden file
@@ -840,7 +992,7 @@ func formatTest(test *markerTest) ([]byte, error) {
 		}
 	}
 
-	// ...followed by any new golden files.
+	// ...but insert new golden files after their first reference.
 	var newGoldenFiles []txtar.File
 	for filename, data := range updatedGolden {
 		// TODO(rfindley): it looks like this implicitly removes trailing newlines
@@ -852,7 +1004,25 @@ func formatTest(test *markerTest) ([]byte, error) {
 	sort.Slice(newGoldenFiles, func(i, j int) bool {
 		return newGoldenFiles[i].Name < newGoldenFiles[j].Name
 	})
-	arch.Files = append(arch.Files, newGoldenFiles...)
+	for _, g := range newGoldenFiles {
+		insertAt := len(arch.Files)
+		if firstRef := firstReferences[g.Name]; firstRef != "" {
+			for i, f := range arch.Files {
+				if f.Name == firstRef {
+					// Insert alphabetically among golden files following the test file.
+					for i++; i < len(arch.Files); i++ {
+						f := arch.Files[i]
+						if !strings.HasPrefix(f.Name, "@") || f.Name >= g.Name {
+							insertAt = i
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+		arch.Files = slices.Insert(arch.Files, insertAt, g)
+	}
 
 	return txtar.Format(arch), nil
 }
@@ -861,7 +1031,7 @@ func formatTest(test *markerTest) ([]byte, error) {
 //
 // TODO(rfindley): simplify and refactor the construction of testing
 // environments across integration tests, marker tests, and benchmarks.
-func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig) *integration.Env {
+func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig, enableMCP bool) *integration.Env {
 	sandbox, err := fake.NewSandbox(&fake.SandboxConfig{
 		RootDir:    t.TempDir(),
 		Files:      files,
@@ -872,7 +1042,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	}
 
 	for _, dir := range writeGoSum {
-		if err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "..."}, []string{"GOWORK=off"}, true); err != nil {
+		if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, []string{"GOWORK=off"}, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -880,26 +1050,49 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	// Put a debug instance in the context to prevent logging to stderr.
 	// See associated TODO in runner.go: we should revisit this pattern.
 	ctx := context.Background()
-	ctx = debug.WithInstance(ctx, "off")
+	ctx = debug.WithInstance(ctx, "")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
+
 	ss := lsprpc.NewStreamServer(cache, false, nil)
+
+	var mcpServer *httptest.Server
+	if enableMCP {
+		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(ss, false, nil))
+	}
+
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
 	if err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
-	if err := awaiter.Await(ctx, integration.InitialWorkspaceLoad); err != nil {
+
+	if err := awaiter.Await(ctx, integration.OnceMet(
+		integration.InitialWorkspaceLoad,
+		integration.NoShownMessage(""),
+	)); err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
+
+	var mcpSession *mcp.ClientSession
+	if enableMCP {
+		client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1.0.0"}, nil)
+		mcpSession, err = client.Connect(ctx, &mcp.SSEClientTransport{Endpoint: mcpServer.URL}, nil)
+		if err != nil {
+			t.Fatalf("fail to connect to mcp server: %v", err)
+		}
+	}
+
 	return &integration.Env{
-		T:       t,
-		Ctx:     ctx,
-		Editor:  editor,
-		Sandbox: sandbox,
-		Awaiter: awaiter,
+		TB:         t,
+		Ctx:        ctx,
+		Editor:     editor,
+		Sandbox:    sandbox,
+		Awaiter:    awaiter,
+		MCPSession: mcpSession,
+		MCPServer:  mcpServer,
 	}
 }
 
@@ -910,7 +1103,7 @@ type markerTestRun struct {
 	settings map[string]any
 
 	// Collected information.
-	// Each @diag/@suggestedfix marker eliminates an entry from diags.
+	// Each @diag/@quickfix marker eliminates an entry from diags.
 	values map[expect.Identifier]any
 	diags  map[protocol.Location][]protocol.Diagnostic // diagnostics by position; location end == start
 
@@ -942,23 +1135,42 @@ func (c *marker) sprintf(format string, args ...any) string {
 	return fmt.Sprintf(format, args2...)
 }
 
+// mapper returns a [protocol.Mapper] for the given file. This will usually be
+// the editor's Mapper for the file, except for marker test specific overrides:
+//   - Directory files, which aren't tracked by the editor, return a mapper
+//     created on the fly.
+func (run *markerTestRun) mapper(fileName string) (*protocol.Mapper, error) {
+	m, err := run.env.Editor.Mapper(fileName)
+	if err != nil {
+		// For fake "directory" files, map on the fly to give a location for a marker.
+		if content, ok := run.test.directories[fileName]; ok {
+			return protocol.NewMapper(run.env.Sandbox.Workdir.URI(fileName), content), nil
+		}
+		// The "/" at the end of the directory path might have been dropped at this point.
+		if content, ok := run.test.directories[fileName+"/"]; ok {
+			return protocol.NewMapper(run.env.Sandbox.Workdir.URI(fileName), content), nil
+		}
+	}
+	return m, err
+}
+
 // fmtPos formats the given pos in the context of the test, using
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtPos(pos token.Pos) string {
 	file := run.test.fset.File(pos)
 	if file == nil {
-		run.env.T.Errorf("position %d not in test fileset", pos)
+		run.env.TB.Errorf("position %d not in test fileset", pos)
 		return "<invalid location>"
 	}
-	m, err := run.env.Editor.Mapper(file.Name())
+	m, err := run.mapper(file.Name())
 	if err != nil {
-		run.env.T.Errorf("%s", err)
+		run.env.TB.Errorf("%s", err)
 		return "<invalid location>"
 	}
 	loc, err := m.PosLocation(file, pos, pos)
 	if err != nil {
-		run.env.T.Errorf("Mapper(%s).PosLocation failed: %v", file.Name(), err)
+		run.env.TB.Errorf("Mapper(%s).PosLocation failed: %v", file.Name(), err)
 	}
 	return run.fmtLoc(loc)
 }
@@ -967,22 +1179,20 @@ func (run *markerTestRun) fmtPos(pos token.Pos) string {
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
-	formatted := run.fmtLocDetails(loc, true)
-	if formatted == "" {
-		run.env.T.Errorf("unable to find %s in test archive", loc)
+	if loc == (protocol.Location{}) {
+		run.env.TB.Errorf("unable to find %s in test archive", loc)
 		return "<invalid location>"
 	}
-	return formatted
-}
 
-// See fmtLoc. If includeTxtPos is not set, the position in the full archive
-// file is omitted.
-//
-// If the location cannot be found within the archive, fmtLocDetails returns "".
-func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos bool) string {
-	if loc == (protocol.Location{}) {
-		return ""
+	// Format builtin locations as "file:///pseudo/builtin/builtin.go:0:0",
+	// which is the predefined BUILTIN marker; ditto UNSAFE.
+	if strings.HasSuffix(string(loc.URI), "src/unsafe/unsafe.go") ||
+		strings.HasSuffix(string(loc.URI), "src/builtin/builtin.go") {
+		name := filepath.Base(filepath.Dir(loc.URI.Path())) // "unsafe" or "builtin"
+		loc.URI = protocol.DocumentURI("file:///pseudo/" + name + "/" + name + ".go")
+		loc.Range = protocol.Range{}
 	}
+
 	lines := bytes.Count(run.test.archive.Comment, []byte("\n"))
 	var name string
 	for _, f := range run.test.archive.Files {
@@ -995,60 +1205,111 @@ func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos boo
 		lines += bytes.Count(f.Data, []byte("\n"))
 	}
 	if name == "" {
-		return ""
+		// Fall back to formatting the "lsp" location.
+		// These will be in UTF-16, but we probably don't need to clarify that,
+		// since it will be implied by the file:// URI format.
+		return summarizeLoc(string(loc.URI),
+			int(loc.Range.Start.Line), int(loc.Range.Start.Character),
+			int(loc.Range.End.Line), int(loc.Range.End.Character))
 	}
-	m, err := run.env.Editor.Mapper(name)
+	name, startLine, startCol, endLine, endCol := run.mapLocation(loc)
+	innerSpan := summarizeLoc(name, startLine, startCol, endLine, endCol)
+	outerSpan := summarizeLoc(run.test.name, lines+startLine, startCol, lines+endLine, endCol)
+	return fmt.Sprintf("%s (%s)", innerSpan, outerSpan)
+}
+
+// mapLocation returns the relative path and utf8 span of the corresponding
+// location, which must be a valid location in an archive file.
+func (run *markerTestRun) mapLocation(loc protocol.Location) (name string, startLine, startCol, endLine, endCol int) {
+	// Note: Editor.Mapper fails if loc.URI is not open. Special cases:
+	//   - Archive files are always opened, so this is probably OK.
+	//   - Directory files are not open, but are special cased in the mapper.
+	//
+	// In the future, we may want to have the editor read contents from disk if
+	// the URI is not open.
+	name = run.env.Sandbox.Workdir.URIToPath(loc.URI)
+	m, err := run.mapper(name)
 	if err != nil {
-		run.env.T.Errorf("internal error: %v", err)
-		return "<invalid location>"
+		run.env.TB.Errorf("internal error: %v", err)
+		return
 	}
 	start, end, err := m.RangeOffsets(loc.Range)
 	if err != nil {
-		run.env.T.Errorf("error formatting location %s: %v", loc, err)
+		run.env.TB.Errorf("error formatting location %s: %v", loc, err)
+		return
+	}
+	startLine, startCol = m.OffsetLineCol8(start)
+	endLine, endCol = m.OffsetLineCol8(end)
+	return name, startLine, startCol, endLine, endCol
+}
+
+// fmtLocForGolden is like fmtLoc, but chooses more succinct and stable
+// formatting, such as would be used for formatting locations in Golden
+// content.
+func (run *markerTestRun) fmtLocForGolden(loc protocol.Location) string {
+	if loc == (protocol.Location{}) {
 		return "<invalid location>"
 	}
-	var (
-		startLine, startCol8 = m.OffsetLineCol8(start)
-		endLine, endCol8     = m.OffsetLineCol8(end)
-	)
-	innerSpan := fmt.Sprintf("%d:%d", startLine, startCol8)       // relative to the embedded file
-	outerSpan := fmt.Sprintf("%d:%d", lines+startLine, startCol8) // relative to the archive file
-	if start != end {
-		if endLine == startLine {
-			innerSpan += fmt.Sprintf("-%d", endCol8)
-			outerSpan += fmt.Sprintf("-%d", endCol8)
-		} else {
-			innerSpan += fmt.Sprintf("-%d:%d", endLine, endCol8)
-			outerSpan += fmt.Sprintf("-%d:%d", lines+endLine, endCol8)
-		}
+	name := run.env.Sandbox.Workdir.URIToPath(loc.URI)
+	// Note: we check IsAbs on filepaths rather than the slash-ified name for
+	// accurate handling of windows drive letters.
+	if filepath.IsAbs(filepath.FromSlash(name)) {
+		// Don't format any position information in this case, since it will be
+		// volatile.
+		return "<external>"
 	}
+	return summarizeLoc(run.mapLocation(loc))
+}
 
-	if includeTxtPos {
-		return fmt.Sprintf("%s:%s (%s:%s)", name, innerSpan, run.test.name, outerSpan)
-	} else {
-		return fmt.Sprintf("%s:%s", name, innerSpan)
+// summarizeLoc formats a summary of the given location, in the form
+//
+//	<name>:<startLine>:<startCol>[-[<endLine>:]endCol]
+func summarizeLoc(name string, startLine, startCol, endLine, endCol int) string {
+	span := fmt.Sprintf("%s:%d:%d", name, startLine, startCol)
+	if startLine != endLine || startCol != endCol {
+		span += "-"
+		if endLine != startLine {
+			span += fmt.Sprintf("%d:", endLine)
+		}
+		span += fmt.Sprintf("%d", endCol)
 	}
+	return span
 }
 
 // ---- converters ----
 
-// converter is the signature of argument converters.
-// A converter should return an error rather than calling marker.errorf().
-//
-// type converter func(marker, any) (any, error)
-
-// Types with special conversions.
+// Types with special handling.
 var (
-	goldenType        = reflect.TypeOf(&Golden{})
-	locationType      = reflect.TypeOf(protocol.Location{})
-	markerType        = reflect.TypeOf(marker{})
-	stringMatcherType = reflect.TypeOf(stringMatcher{})
+	goldenType        = reflect.TypeFor[*Golden]()
+	markerType        = reflect.TypeFor[marker]()
+	stringMatcherType = reflect.TypeFor[stringMatcher]()
 )
+
+// Custom conversions.
+//
+// These functions are called after valueMarkerFuncs have run to convert
+// arguments into the desired parameter types.
+//
+// Converters should return an error rather than calling marker.errorf().
+var customConverters = map[reflect.Type]func(marker, any) (any, error){
+	reflect.TypeFor[protocol.Location](): converter(convertLocation),
+	reflect.TypeFor[completionLabel]():   converter(convertCompletionLabel),
+}
+
+// converter transforms a typed argument conversion function to an untyped
+// conversion function.
+func converter[T any](f func(marker, any) (T, error)) func(marker, any) (any, error) {
+	return func(m marker, arg any) (any, error) {
+		return f(m, arg)
+	}
+}
 
 func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	// Handle stringMatcher and golden parameters before resolving identifiers,
 	// because golden content lives in a separate namespace from other
 	// identifiers.
+	// TODO(rfindley): simplify by flattening the namespace. This interacts
+	// poorly with named argument resolution.
 	switch paramType {
 	case stringMatcherType:
 		return convertStringMatcher(mark, arg)
@@ -1057,18 +1318,22 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid input type %T: golden key must be an identifier", arg)
 		}
-		return mark.run.test.getGolden(id), nil
+		return mark.getGolden(id), nil
 	}
 	if id, ok := arg.(expect.Identifier); ok {
-		if arg, ok := mark.run.values[id]; ok {
-			if !reflect.TypeOf(arg).AssignableTo(paramType) {
-				return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
-			}
-			return arg, nil
+		if arg2, ok := mark.run.values[id]; ok {
+			arg = arg2
 		}
 	}
-	if paramType == locationType {
-		return convertLocation(mark, arg)
+	if converter, ok := customConverters[paramType]; ok {
+		arg2, err := converter(mark, arg)
+		if err != nil {
+			return nil, err
+		}
+		arg = arg2
+	}
+	if arg == nil {
+		return nil, fmt.Errorf("cannot convert nil to %s", paramType)
 	}
 	if reflect.TypeOf(arg).AssignableTo(paramType) {
 		return arg, nil // no conversion required
@@ -1076,71 +1341,111 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
 }
 
+// convertNamedArgLocation is a workaround for converting locations referenced
+// by a named argument. See the TODO in [convert]: this wouldn't be necessary
+// if we flattened the namespace such that golden content lived in the same
+// namespace as values.
+func convertNamedArgLocation(mark marker, arg any) (protocol.Location, error) {
+	if id, ok := arg.(expect.Identifier); ok {
+		if v, ok := mark.run.values[id]; ok {
+			if loc, ok := v.(protocol.Location); ok {
+				return loc, nil
+			}
+			return protocol.Location{}, fmt.Errorf("invalid location value %v", v)
+		}
+	}
+	return convertLocation(mark, arg)
+}
+
 // convertLocation converts a string or regexp argument into the protocol
 // location corresponding to the first position of the string (or first match
 // of the regexp) in the line preceding the note.
+// A nil argument is converted to the zero location, denoting "no location".
 func convertLocation(mark marker, arg any) (protocol.Location, error) {
-	switch arg := arg.(type) {
-	case string:
-		startOff, preceding, m, err := linePreceding(mark.run, mark.note.Pos)
-		if err != nil {
-			return protocol.Location{}, err
-		}
-		idx := bytes.Index(preceding, []byte(arg))
-		if idx < 0 {
-			return protocol.Location{}, fmt.Errorf("substring %q not found in %q", arg, preceding)
-		}
-		off := startOff + idx
-		return m.OffsetLocation(off, off+len(arg))
-	case *regexp.Regexp:
-		return findRegexpInLine(mark.run, mark.note.Pos, arg)
-	default:
-		return protocol.Location{}, fmt.Errorf("cannot convert argument type %T to location (must be a string to match the preceding line)", arg)
-	}
-}
+	// matchContent is used to match the given argument against the file content
+	// starting at the marker line.
+	var matchContent func([]byte) (int, int, error)
 
-// findRegexpInLine searches the partial line preceding pos for a match for the
-// regular expression re, returning a location spanning the first match. If re
-// contains exactly one subgroup, the position of this subgroup match is
-// returned rather than the position of the full match.
-func findRegexpInLine(run *markerTestRun, pos token.Pos, re *regexp.Regexp) (protocol.Location, error) {
-	startOff, preceding, m, err := linePreceding(run, pos)
+	switch arg := arg.(type) {
+	case nil:
+		return protocol.Location{}, nil // "no location", e.g. an empty hover result
+	case protocol.Location:
+		return arg, nil // nothing to do
+	case string:
+		matchContent = func(content []byte) (int, int, error) {
+			idx := bytes.Index(content, []byte(arg))
+			if idx < 0 {
+				return 0, 0, fmt.Errorf("substring %q not found", arg)
+			}
+			return idx, idx + len(arg), nil
+		}
+	case *regexp.Regexp:
+		matchContent = func(content []byte) (int, int, error) {
+			matches := arg.FindSubmatchIndex(content)
+			if len(matches) == 0 {
+				return 0, 0, fmt.Errorf("no match for regexp %q", arg)
+			}
+			switch len(matches) {
+			case 2:
+				// no subgroups: return the range of the regexp expression
+				return matches[0], matches[1], nil
+			case 4:
+				// one subgroup: return its range
+				return matches[2], matches[3], nil
+			default:
+				return 0, 0, fmt.Errorf("invalid location regexp %q: expect either 0 or 1 subgroups, got %d", arg, len(matches)/2-1)
+			}
+		}
+	default:
+		return protocol.Location{}, fmt.Errorf("cannot convert argument type %T to location (must be a string or regexp to match the preceding line)", arg)
+	}
+
+	// Now use matchFunc to match a range starting on the marker line.
+
+	file := mark.run.test.fset.File(mark.note.Pos)
+	posn := safetoken.Position(file, mark.note.Pos)
+	lineStart := file.LineStart(posn.Line)
+	lineStartOff, lineEndOff, err := safetoken.Offsets(file, lineStart, mark.note.Pos)
 	if err != nil {
 		return protocol.Location{}, err
 	}
-
-	matches := re.FindSubmatchIndex(preceding)
-	if len(matches) == 0 {
-		return protocol.Location{}, fmt.Errorf("no match for regexp %q found in %q", re, string(preceding))
+	m := mark.mapper()
+	start, end, err := matchContent(m.Content[lineStartOff:])
+	if err != nil {
+		return protocol.Location{}, err
 	}
-	var start, end int
-	switch len(matches) {
-	case 2:
-		// no subgroups: return the range of the regexp expression
-		start, end = matches[0], matches[1]
-	case 4:
-		// one subgroup: return its range
-		start, end = matches[2], matches[3]
-	default:
-		return protocol.Location{}, fmt.Errorf("invalid location regexp %q: expect either 0 or 1 subgroups, got %d", re, len(matches)/2-1)
+	startOff, endOff := lineStartOff+start, lineStartOff+end
+	if startOff > lineEndOff {
+		// The start of the match must be between the start of the line and the
+		// marker position (inclusive).
+		return protocol.Location{}, fmt.Errorf("no matching range found starting on the current line")
 	}
-
-	return m.OffsetLocation(start+startOff, end+startOff)
+	return m.OffsetLocation(startOff, endOff)
 }
 
-func linePreceding(run *markerTestRun, pos token.Pos) (int, []byte, *protocol.Mapper, error) {
-	file := run.test.fset.File(pos)
-	posn := safetoken.Position(file, pos)
-	lineStart := file.LineStart(posn.Line)
-	startOff, endOff, err := safetoken.Offsets(file, lineStart, pos)
-	if err != nil {
-		return 0, nil, nil, err
+// completionLabel is a special parameter type that may be converted from a
+// string literal, or extracted from a completion item.
+//
+// See [convertCompletionLabel].
+type completionLabel string
+
+// convertCompletionLabel coerces an argument to a [completionLabel] parameter
+// type.
+//
+// If the arg is a string, it is trivially converted. If the arg is a
+// completionItem, its label is extracted.
+//
+// This allows us to stage a migration of the "snippet" marker to a simpler
+// model where the completion label can just be listed explicitly.
+func convertCompletionLabel(mark marker, arg any) (completionLabel, error) {
+	switch arg := arg.(type) {
+	case string:
+		return completionLabel(arg), nil
+	case completionItem:
+		return completionLabel(arg.Label), nil
+	default:
+		return "", fmt.Errorf("cannot convert argument type %T to completion label (must be a string or completion item)", arg)
 	}
-	m, err := run.env.Editor.Mapper(file.Name())
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	return startOff, m.Content[startOff:endOff], m, nil
 }
 
 // convertStringMatcher converts a string, regexp, or identifier
@@ -1155,7 +1460,7 @@ func convertStringMatcher(mark marker, arg any) (stringMatcher, error) {
 	case *regexp.Regexp:
 		return stringMatcher{pattern: arg}, nil
 	case expect.Identifier:
-		golden := mark.run.test.getGolden(arg)
+		golden := mark.getGolden(arg)
 		return stringMatcher{golden: golden}, nil
 	default:
 		return stringMatcher{}, fmt.Errorf("cannot convert %T to wantError (want: string, regexp, or identifier)", arg)
@@ -1175,38 +1480,42 @@ type stringMatcher struct {
 	substr  string
 }
 
-func (sc stringMatcher) String() string {
-	if sc.golden != nil {
-		return fmt.Sprintf("content from @%s entry", sc.golden.id)
-	} else if sc.pattern != nil {
-		return fmt.Sprintf("content matching %#q", sc.pattern)
+// empty reports whether the receiver is an empty stringMatcher.
+func (sm stringMatcher) empty() bool {
+	return sm.golden == nil && sm.pattern == nil && sm.substr == ""
+}
+
+func (sm stringMatcher) String() string {
+	if sm.golden != nil {
+		return fmt.Sprintf("content from @%s entry", sm.golden.id)
+	} else if sm.pattern != nil {
+		return fmt.Sprintf("content matching %#q", sm.pattern)
 	} else {
-		return fmt.Sprintf("content with substring %q", sc.substr)
+		return fmt.Sprintf("content with substring %q", sm.substr)
 	}
 }
 
 // checkErr asserts that the given error matches the stringMatcher's expectations.
-func (sc stringMatcher) checkErr(mark marker, err error) {
+func (sm stringMatcher) checkErr(mark marker, err error) {
 	if err == nil {
-		mark.errorf("@%s succeeded unexpectedly, want %v", mark.note.Name, sc)
+		mark.errorf("@%s succeeded unexpectedly, want %v", mark.note.Name, sm)
 		return
 	}
-	sc.check(mark, err.Error())
+	sm.check(mark, err.Error())
 }
 
 // check asserts that the given content matches the stringMatcher's expectations.
-func (sc stringMatcher) check(mark marker, got string) {
-	if sc.golden != nil {
-		compareGolden(mark, []byte(got), sc.golden)
-	} else if sc.pattern != nil {
+func (sm stringMatcher) check(mark marker, got string) {
+	if sm.golden != nil {
+		compareGolden(mark, []byte(got), sm.golden)
+	} else if sm.pattern != nil {
 		// Content must match the regular expression pattern.
-		if !sc.pattern.MatchString(got) {
-			mark.errorf("got %q, does not match pattern %#q", got, sc.pattern)
+		if !sm.pattern.MatchString(got) {
+			mark.errorf("got %q, does not match pattern %#q", got, sm.pattern)
 		}
-
-	} else if !strings.Contains(got, sc.substr) {
+	} else if !strings.Contains(got, sm.substr) {
 		// Content must contain the expected substring.
-		mark.errorf("got %q, want substring %q", got, sc.substr)
+		mark.errorf("got %q, want substring %q", got, sm.substr)
 	}
 }
 
@@ -1217,9 +1526,8 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 		if want, ok := golden.Get(mark.T(), filename, got); !ok {
 			mark.errorf("%s: unexpected change to file %s; got:\n%s",
 				mark.note.Name, filename, got)
-
 		} else if string(got) != string(want) {
-			mark.errorf("%s: wrong file content for %s: got:\n%s\nwant:\n%s\ndiff:\n%s",
+			mark.errorf("%s: wrong file content for %s:\n-- got --\n%s\n-- want --\n%s\n-- diff --\n%s",
 				mark.note.Name, filename, got, want,
 				compare.Bytes(want, got))
 		}
@@ -1235,47 +1543,47 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 	}
 }
 
-// checkDiffs computes unified diffs for each changed file, and compares with
-// the diff content stored in the given golden directory.
+// checkDiffs checks that the diff content stored in the given golden
+// directory converts the original contents into the changed contents.
+// (It does _not_ check that the diff has a specific notation, as
+// there are many valid ways to notate the same patch and we do not
+// want tests to break whenever our diff algorithm evolves.)
 func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
-	diffs := make(map[string]string)
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
-		// TODO(golang/go#64023): switch back to diff.Strings.
-		// The attached issue is only one obstacle to switching.
-		// Another is that different diff algorithms produce
-		// different results, so if we commit diffs in test
-		// expectations, then we need to either (1) state
-		// which diff implementation they use and never change
-		// it, or (2) don't compare diffs, but instead apply
-		// the "want" diff and check that it produces the
-		// "got" output. Option 2 is more robust, as it allows
-		// the test expectation to use any valid diff.
-		edits := myers.ComputeEdits(before, string(after))
+		edits := diff.Lines(before, string(after))
 		d, err := diff.ToUnified("before", "after", before, edits, 0)
 		if err != nil {
 			// Can't happen: edits are consistent.
 			log.Fatalf("internal error in diff.ToUnified: %v", err)
 		}
 		// Trim the unified header from diffs, as it is unnecessary and repetitive.
+		// (an artifact of ToUnified, but not stored in the marker files)
 		difflines := strings.Split(d, "\n")
+		var got string
 		if len(difflines) >= 2 && strings.HasPrefix(difflines[1], "+++") {
-			diffs[name] = strings.Join(difflines[2:], "\n")
+			got = strings.Join(difflines[2:], "\n")
 		} else {
-			diffs[name] = d
+			got = d // "" in packagedecl.txt:147
 		}
-	}
-	// Check changed files match expectations.
-	for filename, got := range diffs {
-		if want, ok := golden.Get(mark.T(), filename, []byte(got)); !ok {
+		// the call to Get is so that the -update flag will update the test.
+		// normally it just returns 'got'.
+		tdiffs, ok := golden.Get(mark.T(), name, []byte(got))
+		if !ok {
 			mark.errorf("%s: unexpected change to file %s; got diff:\n%s",
-				mark.note.Name, filename, got)
-
-		} else if got != string(want) {
-			mark.errorf("%s: wrong diff for %s:\n\ngot:\n%s\n\nwant:\n%s\n",
-				mark.note.Name, filename, got, want)
+				mark.note.Name, name, got)
+			return
+		}
+		want, err := diff.ApplyUnified(string(tdiffs), before)
+		if err != nil {
+			mark.errorf("in @%s golden section %s: %v; actual diff:\n%s",
+				mark.note.Name, name, err, d)
+		}
+		if string(after) != want {
+			mark.errorf("%s: got:\n%s\nwant:\n%s", mark.note.Name, after, want)
 		}
 	}
+
 	// Report unmet expectations.
 	for filename := range golden.data {
 		if _, ok := changed[filename]; !ok {
@@ -1315,11 +1623,11 @@ func completionItemMarker(mark marker, label string, other ...string) completion
 	return item
 }
 
-func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
+func rankMarker(mark marker, src protocol.Location, items ...completionLabel) {
 	// Separate positive and negative items (expectations).
-	var pos, neg []completionItem
+	var pos, neg []completionLabel
 	for _, item := range items {
-		if strings.HasPrefix(item.Label, "!") {
+		if strings.HasPrefix(string(item), "!") {
 			neg = append(neg, item)
 		} else {
 			pos = append(pos, item)
@@ -1331,13 +1639,13 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 	var got []string
 	for _, g := range list.Items {
 		for _, w := range pos {
-			if g.Label == w.Label {
+			if g.Label == string(w) {
 				got = append(got, g.Label)
 				break
 			}
 		}
 		for _, w := range neg {
-			if g.Label == w.Label[len("!"):] {
+			if g.Label == string(w[len("!"):]) {
 				mark.errorf("got unwanted completion: %s", g.Label)
 				break
 			}
@@ -1345,40 +1653,14 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 	}
 	var want []string
 	for _, w := range pos {
-		want = append(want, w.Label)
+		want = append(want, string(w))
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
 	}
 }
 
-func ranklMarker(mark marker, src protocol.Location, labels ...string) {
-	// Separate positive and negative labels (expectations).
-	var pos, neg []string
-	for _, label := range labels {
-		if strings.HasPrefix(label, "!") {
-			neg = append(neg, label[len("!"):])
-		} else {
-			pos = append(pos, label)
-		}
-	}
-
-	// Collect results that are present in items, preserving their order.
-	list := mark.run.env.Completion(src)
-	var got []string
-	for _, g := range list.Items {
-		if slices.Contains(pos, g.Label) {
-			got = append(got, g.Label)
-		} else if slices.Contains(neg, g.Label) {
-			mark.errorf("got unwanted completion: %s", g.Label)
-		}
-	}
-	if diff := cmp.Diff(pos, got); diff != "" {
-		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
-	}
-}
-
-func snippetMarker(mark marker, src protocol.Location, item completionItem, want string) {
+func snippetMarker(mark marker, src protocol.Location, label completionLabel, want string) {
 	list := mark.run.env.Completion(src)
 	var (
 		found bool
@@ -1388,7 +1670,7 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 	items := filterBuiltinsAndKeywords(mark, list.Items)
 	for _, i := range items {
 		all = append(all, i.Label)
-		if i.Label == item.Label {
+		if i.Label == string(label) {
 			found = true
 			if i.TextEdit != nil {
 				if edit, err := protocol.SelectCompletionTextEdit(i, false); err == nil {
@@ -1399,11 +1681,11 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 		}
 	}
 	if !found {
-		mark.errorf("no completion item found matching %s (got: %v)", item.Label, all)
+		mark.errorf("no completion item found matching %s (got: %v)", label, all)
 		return
 	}
 	if got != want {
-		mark.errorf("snippets do not match: got %q, want %q", got, want)
+		mark.errorf("snippets do not match: got:\n%q\nwant:\n%q", got, want)
 	}
 }
 
@@ -1447,7 +1729,7 @@ func completeMarker(mark marker, src protocol.Location, want ...completionItem) 
 		want = nil // got is nil if empty
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		mark.errorf("Completion(...) returned unexpect results (-want +got):\n%s", diff)
+		mark.errorf("Completion(...) returned unexpected results (-want +got):\n%s", diff)
 	}
 }
 
@@ -1495,7 +1777,6 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 	filename := mark.path()
 	mapper := mark.mapper()
 	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{edit}, selected.AdditionalTextEdits...))
-
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
@@ -1506,23 +1787,37 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 }
 
 // defMarker implements the @def marker, running textDocument/definition at
-// the given src location and asserting that there is exactly one resulting
-// location, matching dst.
-//
-// TODO(rfindley): support a variadic destination set.
-func defMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.GoToDefinition(src)
-	if got != dst {
-		mark.errorf("definition location does not match:\n\tgot: %s\n\twant %s",
-			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
+// the given location and asserting that there the results match want.
+func defMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
+	env := mark.run.env
+	got, err := env.Editor.Definitions(env.Ctx, loc)
+	if err != nil {
+		mark.errorf("definition request failed: %v", err)
+		return
+	}
+
+	if err := compareLocations(mark, got, want); err != nil {
+		mark.errorf("def failed: %v", err)
 	}
 }
 
-func typedefMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.TypeDefinition(src)
-	if got != dst {
-		mark.errorf("type definition location does not match:\n\tgot: %s\n\twant %s",
-			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
+// typedefMarker implements the @typedef marker.
+func typedefMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
+
+	env := mark.run.env
+	got, err := env.Editor.TypeDefinitions(env.Ctx, loc)
+	if err != nil && wantErr.empty() {
+		mark.errorf("typeDefinition at %s failed: %v", loc, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
+		return
+	}
+
+	if err := compareLocations(mark, got, want); err != nil {
+		mark.errorf("typedef failed: %v", err)
 	}
 }
 
@@ -1547,16 +1842,11 @@ func foldingRangeMarker(mark marker, g *Golden) {
 		})
 	}
 	for i, rng := range ranges {
-		insert(rng.StartLine, rng.StartCharacter, fmt.Sprintf("<%d kind=%q>", i, rng.Kind))
-		insert(rng.EndLine, rng.EndCharacter, fmt.Sprintf("</%d>", i))
+		// We assume the server populates these optional fields.
+		insert(*rng.StartLine, *rng.StartCharacter, fmt.Sprintf("<%d kind=%q>", i, rng.Kind))
+		insert(*rng.EndLine, *rng.EndCharacter, fmt.Sprintf("</%d>", i))
 	}
-	filename := mark.path()
-	mapper, err := env.Editor.Mapper(filename)
-	if err != nil {
-		mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
-		return
-	}
-	got, _, err := protocol.ApplyEdits(mapper, edits)
+	got, _, err := protocol.ApplyEdits(mark.mapper(), edits)
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
@@ -1576,14 +1866,7 @@ func formatMarker(mark marker, golden *Golden) {
 	if err != nil {
 		got = []byte(err.Error() + "\n") // all golden content is newline terminated
 	} else {
-		env := mark.run.env
-		filename := mark.path()
-		mapper, err := env.Editor.Mapper(filename)
-		if err != nil {
-			mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
-		}
-
-		got, _, err = protocol.ApplyEdits(mapper, edits)
+		got, _, err = protocol.ApplyEdits(mark.mapper(), edits)
 		if err != nil {
 			mark.errorf("ApplyProtocolEdits failed: %v", err)
 			return
@@ -1593,28 +1876,61 @@ func formatMarker(mark marker, golden *Golden) {
 	compareGolden(mark, got, golden)
 }
 
-func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {
-	highlights := mark.run.env.DocumentHighlight(src)
-	var got []protocol.Range
-	for _, h := range highlights {
-		got = append(got, h.Range)
+func highlightLocationMarker(mark marker, loc protocol.Location, kindName expect.Identifier) protocol.DocumentHighlight {
+	var kind protocol.DocumentHighlightKind
+	switch kindName {
+	case "read":
+		kind = protocol.Read
+	case "write":
+		kind = protocol.Write
+	case "text":
+		kind = protocol.Text
+	default:
+		mark.errorf("invalid highlight kind: %q", kindName)
 	}
 
-	var want []protocol.Range
-	for _, d := range dsts {
-		want = append(want, d.Range)
+	return protocol.DocumentHighlight{
+		Range: loc.Range,
+		Kind:  kind,
 	}
+}
 
-	sortRanges := func(s []protocol.Range) {
-		sort.Slice(s, func(i, j int) bool {
-			return protocol.CompareRange(s[i], s[j]) < 0
-		})
+func sortDocumentHighlights(s []protocol.DocumentHighlight) {
+	sort.Slice(s, func(i, j int) bool {
+		return protocol.CompareRange(s[i].Range, s[j].Range) < 0
+	})
+}
+
+// highlightAllMarker makes textDocument/highlight
+// requests at locations of equivalence classes. Given input
+// highlightall(X1, X2, ..., Xn), the marker checks
+// highlight(X1) = highlight(X2) = ... = highlight(Xn) = {X1, X2, ..., Xn}.
+// It is not the general rule for all highlighting, and use @highlight
+// for asymmetric cases.
+//
+// TODO(b/288111111): this is a bit of a hack. We should probably
+// have a more general way of testing that a function is idempotent.
+func highlightAllMarker(mark marker, all ...protocol.DocumentHighlight) {
+	sortDocumentHighlights(all)
+	for _, src := range all {
+		loc := mark.uri().Location(src.Range)
+		got := mark.run.env.DocumentHighlight(loc)
+		sortDocumentHighlights(got)
+
+		if d := cmp.Diff(all, got); d != "" {
+			mark.errorf("DocumentHighlight(%v) mismatch (-want +got):\n%s", loc, d)
+		}
 	}
+}
 
-	sortRanges(got)
-	sortRanges(want)
+func highlightMarker(mark marker, src protocol.DocumentHighlight, dsts ...protocol.DocumentHighlight) {
+	loc := mark.uri().Location(src.Range)
+	got := mark.run.env.DocumentHighlight(loc)
 
-	if diff := cmp.Diff(want, got); diff != "" {
+	sortDocumentHighlights(got)
+	sortDocumentHighlights(dsts)
+
+	if diff := cmp.Diff(dsts, got, cmpopts.EquateEmpty()); diff != "" {
 		mark.errorf("DocumentHighlight(%v) mismatch (-want +got):\n%s", src, diff)
 	}
 }
@@ -1627,6 +1943,15 @@ func hoverMarker(mark marker, src, dst protocol.Location, sc stringMatcher) {
 	gotMD := ""
 	if content != nil {
 		gotMD = content.Value
+
+		// Normalize the absolute path for cross-platform consistency before
+		// replacement. This ensures Windows paths (e.g., "C:/...") become
+		// "/C:/..." to match Unix-like paths.
+		abs := mark.run.env.Sandbox.Workdir.RootURI().Path()
+		if protocol.IsWindowsDrivePath(abs) {
+			abs = "/" + abs
+		}
+		gotMD = strings.ReplaceAll(gotMD, filepath.ToSlash(abs), "$WORKDIR")
 	}
 	sc.check(mark, gotMD)
 }
@@ -1636,14 +1961,29 @@ func hoverErrMarker(mark marker, src protocol.Location, em stringMatcher) {
 	em.checkErr(mark, err)
 }
 
-// locMarker implements the @loc marker. It is executed before other
-// markers, so that locations are available.
+// locMarker implements the @loc marker.
 func locMarker(mark marker, loc protocol.Location) protocol.Location { return loc }
+
+// defLocMarker implements the @defloc marker, which binds a location to the
+// (first) result of a jump-to-definition request.
+func defLocMarker(mark marker, loc protocol.Location) protocol.Location {
+	return mark.run.env.FirstDefinition(loc)
+}
+
+// targetMarker implements the @target marker.
+func targetMarker(mark marker, pkg string, name string, loc protocol.Location) command.TargetMatch {
+	return command.TargetMatch{
+		Package:  pkg,
+		Name:     name,
+		Location: loc,
+	}
+}
 
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
 func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
-	if _, ok := removeDiagnostic(mark, loc, re); !ok {
+	exact := mark.namedArg("exact", false)
+	if _, ok := removeDiagnostic(mark, loc, exact, re); !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 	}
 }
@@ -1654,12 +1994,13 @@ func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
 // from the unmatched set.
 //
 // If not found, it returns (protocol.Diagnostic{}, false).
-func removeDiagnostic(mark marker, loc protocol.Location, re *regexp.Regexp) (protocol.Diagnostic, bool) {
-	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
-	diags := mark.run.diags[loc]
+func removeDiagnostic(mark marker, loc protocol.Location, matchEnd bool, re *regexp.Regexp) (protocol.Diagnostic, bool) {
+	key := loc
+	key.Range.End = key.Range.Start // diagnostics ignore end position.
+	diags := mark.run.diags[key]
 	for i, diag := range diags {
-		if re.MatchString(diag.Message) {
-			mark.run.diags[loc] = append(diags[:i], diags[i+1:]...)
+		if re.MatchString(diag.MessageString()) && (!matchEnd || diag.Range.End == loc.Range.End) {
+			mark.run.diags[key] = slices.Delete(diags, i, i+1)
 			return diag, true
 		}
 	}
@@ -1739,24 +2080,34 @@ func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {
 
 func signatureMarker(mark marker, src protocol.Location, label string, active int64) {
 	got := mark.run.env.SignatureHelp(src)
+	var gotLabels []string // for better error messages
+	if got != nil {
+		for _, s := range got.Signatures {
+			gotLabels = append(gotLabels, s.Label)
+		}
+	}
 	if label == "" {
 		// A null result is expected.
 		// (There's no point having a @signatureerr marker
 		// because the server handler suppresses all errors.)
-		if got != nil && len(got.Signatures) > 0 {
-			mark.errorf("signatureHelp = %v, want 0 signatures", got)
+		if got != nil && len(gotLabels) > 0 {
+			mark.errorf("signatureHelp = %v, want 0 signatures", gotLabels)
 		}
 		return
 	}
 	if got == nil || len(got.Signatures) != 1 {
-		mark.errorf("signatureHelp = %v, want exactly 1 signature", got)
+		mark.errorf("signatureHelp = %v, want exactly 1 signature", gotLabels)
 		return
 	}
-	if got := got.Signatures[0].Label; got != label {
+	if got := gotLabels[0]; got != label {
 		mark.errorf("signatureHelp: got label %q, want %q", got, label)
 	}
-	if got := int64(got.ActiveParameter); got != active {
-		mark.errorf("signatureHelp: got active parameter %d, want %d", got, active)
+	gotActiveParameter := int64(-1) // => missing
+	if got.ActiveParameter != nil {
+		gotActiveParameter = int64(*got.ActiveParameter)
+	}
+	if gotActiveParameter != active {
+		mark.errorf("signatureHelp: got active parameter %d, want %d", gotActiveParameter, active)
 	}
 }
 
@@ -1770,9 +2121,8 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	// @rename markers.
 
 	wsedit, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
-		NewName:      newName,
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+		NewName:                    newName,
 	})
 	if err != nil {
 		return nil, err
@@ -1788,7 +2138,7 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 // See also:
 //   - Editor.applyWorkspaceEdit ../integration/fake/editor.go for the
 //     implementation of this operation used in normal testing.
-//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//   - client.applyWorkspaceEdit in ../../../cmd/cmd.go for the
 //     CLI variant.
 func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[string][]byte, error) {
 	uriToPath := env.Sandbox.Workdir.URIToPath
@@ -1835,17 +2185,43 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 
 		case change.RenameFile != nil:
 			old := change.RenameFile.OldURI
-			m, err := read(old)
-			if err != nil {
-				return nil, err // missing
-			}
-			write(old, nil)
-
 			new := change.RenameFile.NewURI
-			if _, err := read(old); err == nil {
-				return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+			info, err := os.Stat(old.Path())
+			if err != nil {
+				return nil, err
 			}
-			write(new, m.Content)
+			if info.IsDir() {
+				// Walk through all the files in the old directory and copy
+				// their content to the new directory.
+				// TODO(mkalil): This currently only handles renaming the file's
+				// innermost directory. Need to handle renames of outer directories
+				// directories when implementing package move refactoring.
+				for _, file := range env.ListFiles(old.Path()) {
+					oldFile := protocol.URIFromPath(path.Join(old.Path(), path.Base(file)))
+					m, err := read(oldFile)
+					if err != nil {
+						return nil, err // missing
+					}
+					write(oldFile, nil)
+
+					newFile := protocol.URIFromPath(path.Join(new.Path(), path.Base(file)))
+					if _, err := read(oldFile); err == nil {
+						return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+					}
+					write(newFile, m.Content)
+				}
+			} else {
+				m, err := read(old)
+				if err != nil {
+					return nil, err // missing
+				}
+				write(old, nil)
+
+				if _, err := read(old); err == nil {
+					return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+				}
+				write(new, m.Content)
+			}
 
 		case change.CreateFile != nil:
 			uri := change.CreateFile.URI
@@ -1857,7 +2233,22 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 		case change.DeleteFile != nil:
 			uri := change.DeleteFile.URI
 			if _, err := read(uri); err != nil {
-				return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+				// The specified URI could be a file or a directory.
+				files := env.ListFiles(uriToPath(uri))
+				if files == nil {
+					return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+				}
+				if len(files) > 0 {
+					// Directory is not empty. If "Recursive" is true, we delete
+					// every file in the folder. Otherwise, we continue without
+					// deleting the directory.
+					if change.DeleteFile.Options != nil && change.DeleteFile.Options.Recursive {
+						for _, f := range files {
+							write(protocol.URIFromPath(f), nil)
+						}
+					}
+					continue
+				}
 			}
 			write(uri, nil)
 
@@ -1877,39 +2268,6 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 	}
 
 	return result, nil
-}
-
-func codeActionMarker(mark marker, start, end protocol.Location, actionKind string, g *Golden, titles ...string) {
-	// Request the range from start.Start to end.End.
-	loc := start
-	loc.Range.End = end.Range.End
-
-	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, titles)
-	if err != nil {
-		mark.errorf("codeAction failed: %v", err)
-		return
-	}
-
-	// Check the file state.
-	checkChangedFiles(mark, changed, g)
-}
-
-func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string, g *Golden, titles ...string) {
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, titles)
-	if err != nil {
-		mark.errorf("codeAction failed: %v", err)
-		return
-	}
-
-	checkDiffs(mark, changed, g)
-}
-
-func codeActionErrMarker(mark marker, start, end protocol.Location, actionKind string, wantErr stringMatcher) {
-	loc := start
-	loc.Range.End = end.Range.End
-	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, nil)
-	wantErr.checkErr(mark, err)
 }
 
 // codeLensesMarker runs the @codelenses() marker, collecting @codelens marks
@@ -1959,8 +2317,8 @@ func documentLinkMarker(mark marker, g *Golden) {
 			mark.errorf("%s: nil link target", l.Range)
 			continue
 		}
-		loc := protocol.Location{URI: mark.uri(), Range: l.Range}
-		fmt.Fprintln(&b, mark.run.fmtLocDetails(loc, false), *l.Target)
+		loc := mark.uri().Location(l.Range)
+		fmt.Fprintln(&b, mark.run.fmtLocForGolden(loc), *l.Target)
 	}
 
 	compareGolden(mark, b.Bytes(), g)
@@ -1978,23 +2336,23 @@ func (mark marker) consumeExtraNotes(name string, f func(marker)) {
 	}
 }
 
-// suggestedfixMarker implements the @suggestedfix(location, regexp,
+// quickfixMarker implements the @quickfix(location, regexp,
 // kind, golden) marker. It acts like @diag(location, regexp), to set
-// the expectation of a diagnostic, but then it applies the first code
-// action of the specified kind suggested by the matched diagnostic.
-func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
+// the expectation of a diagnostic, but then it applies the "quickfix"
+// code action (which must be unique) suggested by the matched diagnostic.
+func quickfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
-	diag, ok := removeDiagnostic(mark, loc, re)
+	diag, ok := removeDiagnostic(mark, loc, false, re)
 	if !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 		return
 	}
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
+	changed, err := codeAction(mark, loc.URI, diag.Range, "quickfix", &diag)
 	if err != nil {
-		mark.errorf("suggestedfix failed: %v. (Use @suggestedfixerr for expected errors.)", err)
+		mark.errorf("quickfix failed: %v. (Use @quickfixerr for expected errors.)", err)
 		return
 	}
 
@@ -2002,153 +2360,18 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	checkDiffs(mark, changed, golden)
 }
 
-func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
+func quickfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
-	diag, ok := removeDiagnostic(mark, loc, re)
+	diag, ok := removeDiagnostic(mark, loc, false, re)
 	if !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 		return
 	}
 
 	// Apply the fix it suggests.
-	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
+	_, err := codeAction(mark, loc.URI, diag.Range, "quickfix", &diag)
 	wantErr.checkErr(mark, err)
-}
-
-// codeAction executes a textDocument/codeAction request for the specified
-// location and kind. If diag is non-nil, it is used as the code action
-// context.
-//
-// The resulting map contains resulting file contents after the code action is
-// applied. Currently, this function does not support code actions that return
-// edits directly; it only supports code action commands.
-func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) (map[string][]byte, error) {
-	changes, err := codeActionChanges(env, uri, rng, actionKind, diag, titles)
-	if err != nil {
-		return nil, err
-	}
-	return changedFiles(env, changes)
-}
-
-// codeActionChanges executes a textDocument/codeAction request for the
-// specified location and kind, and captures the resulting document changes.
-// If diag is non-nil, it is used as the code action context.
-// If titles is non-empty, the code action title must be present among the provided titles.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChange, error) {
-	// Request all code actions that apply to the diagnostic.
-	// (The protocol supports filtering using Context.Only={actionKind}
-	// but we can give a better error if we don't filter.)
-	params := &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-		Range:        rng,
-		Context: protocol.CodeActionContext{
-			Only: nil, // => all kinds
-		},
-	}
-	if diag != nil {
-		params.Context.Diagnostics = []protocol.Diagnostic{*diag}
-	}
-
-	actions, err := env.Editor.Server.CodeAction(env.Ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find the sole candidates CodeAction of the specified kind (e.g. refactor.rewrite).
-	var candidates []protocol.CodeAction
-	for _, act := range actions {
-		if act.Kind == protocol.CodeActionKind(actionKind) {
-			if len(titles) > 0 {
-				for _, f := range titles {
-					if act.Title == f {
-						candidates = append(candidates, act)
-						break
-					}
-				}
-			} else {
-				candidates = append(candidates, act)
-			}
-		}
-	}
-	if len(candidates) != 1 {
-		for _, act := range actions {
-			env.T.Logf("found CodeAction Kind=%s Title=%q", act.Kind, act.Title)
-		}
-		return nil, fmt.Errorf("found %d CodeActions of kind %s matching filters %v for this diagnostic, want 1", len(candidates), actionKind, titles)
-	}
-	action := candidates[0]
-
-	// Apply the codeAction.
-	//
-	// Spec:
-	//  "If a code action provides an edit and a command, first the edit is
-	//  executed and then the command."
-	// An action may specify an edit and/or a command, to be
-	// applied in that order. But since applyDocumentChanges(env,
-	// action.Edit.DocumentChanges) doesn't compose, for now we
-	// assert that actions return one or the other.
-
-	// Resolve code action edits first if the client has resolve support
-	// and the code action has no edits.
-	if action.Edit == nil {
-		editSupport, err := env.Editor.EditResolveSupport()
-		if err != nil {
-			return nil, err
-		}
-		if editSupport {
-			resolved, err := env.Editor.Server.ResolveCodeAction(env.Ctx, &action)
-			if err != nil {
-				return nil, err
-			}
-			action.Edit = resolved.Edit
-		}
-	}
-
-	if action.Edit != nil {
-		if len(action.Edit.Changes) > 0 {
-			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
-		}
-		if action.Edit.DocumentChanges != nil {
-			if action.Command != nil {
-				env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
-			}
-			return action.Edit.DocumentChanges, nil
-		}
-	}
-
-	if action.Command != nil {
-		// This is a typical CodeAction command:
-		//
-		//   Title:     "Implement error"
-		//   Command:   gopls.apply_fix
-		//   Arguments: [{"Fix":"stub_methods","URI":".../a.go","Range":...}}]
-		//
-		// The client makes an ExecuteCommand RPC to the server,
-		// which dispatches it to the ApplyFix handler.
-		// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
-		// The server then makes an ApplyEdit RPC to the client,
-		// whose WorkspaceEditFunc hook temporarily gathers the edits
-		// instead of applying them.
-
-		var changes []protocol.DocumentChange
-		cli := env.Editor.Client()
-		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
-			changes = append(changes, wsedit.DocumentChanges...)
-			return nil
-		})
-		defer restore()
-
-		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
-			Command:   action.Command.Command,
-			Arguments: action.Command.Arguments,
-		}); err != nil {
-			return nil, err
-		}
-		return changes, nil // populated as a side effect of ExecuteCommand
-	}
-
-	return nil, nil
 }
 
 // refsMarker implements the @refs marker.
@@ -2184,11 +2407,17 @@ func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 
 // implementationMarker implements the @implementation marker.
 func implementationMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
+
 	got, err := mark.server().Implementation(mark.ctx(), &protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	})
-	if err != nil {
+	if err != nil && wantErr.empty() {
 		mark.errorf("implementation at %s failed: %v", src, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
 		return
 	}
 	if err := compareLocations(mark, got, want); err != nil {
@@ -2196,10 +2425,79 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	}
 }
 
-func itemLocation(item protocol.CallHierarchyItem) protocol.Location {
-	return protocol.Location{
-		URI:   item.URI,
-		Range: item.Range,
+func mcpToolMarker(mark marker, tool string, rawArgs string) {
+	if !mark.run.test.mcp {
+		mark.errorf("mcp not enabled: add -mcp")
+		return
+	}
+	args := make(map[string]any)
+	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
+		mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
+		return
+	}
+
+	// substitutePaths replaces instances of $WORKDIR in string or []string values with
+	// the actual working directory.
+	var substitutePaths func(any) any
+	substitutePaths = func(v any) any {
+		switch v := v.(type) {
+		case string:
+			return strings.ReplaceAll(v, "$WORKDIR", mark.run.env.Sandbox.Workdir.RootURI().Path())
+
+		case []any:
+			for i, e := range v {
+				if _, ok := e.(string); ok {
+					v[i] = substitutePaths(e).(string)
+				}
+			}
+		}
+		return v
+	}
+	// Hack: replace '$WORKDIR' in string arguments with the actual sandbox
+	// working directory.
+	for k, v := range args {
+		args[k] = substitutePaths(v)
+	}
+
+	if loc := mark.namedArg("location", protocol.Location{}); loc != (protocol.Location{}) {
+		args["location"] = loc
+	}
+
+	res, err := mark.run.env.MCPSession.CallTool(mark.ctx(), &mcp.CallToolParams{
+		Name:      tool,
+		Arguments: args,
+	})
+	if err != nil {
+		mark.errorf("failed to call mcp tool: %v", err)
+		return
+	}
+
+	var buf bytes.Buffer
+	for i, c := range res.Content {
+		text, ok := c.(*mcp.TextContent)
+		if !ok {
+			mark.errorf("unsupported return content[%v] type: %T", i, c)
+			continue
+		}
+		buf.WriteString(text.Text)
+	}
+	if !bytes.HasSuffix(buf.Bytes(), []byte{'\n'}) {
+		buf.WriteString("\n") // all golden content is newline terminated
+	}
+
+	got := buf.String()
+	// For portability, replace all (potential) filepath separators with "/".
+	got = strings.ReplaceAll(got, string(filepath.Separator), "/")
+	// To ensure consistent unified diff output, the working directory path
+	// is replaced with "$WORKDIR". This addresses cases where MCP tools
+	// include absolute file paths in generated diffs.
+	got = strings.ReplaceAll(got, filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()), "$WORKDIR")
+
+	output := mark.namedArg("output", expect.Identifier(""))
+	golden := mark.getGolden(output)
+	want, _ := golden.Get(mark.T(), "", []byte(got))
+	if diff := compare.Text(string(want), got); diff != "" {
+		mark.errorf("unexpected mcp tools call %s return: diff:\n%s", tool, diff)
 	}
 }
 
@@ -2211,7 +2509,7 @@ func incomingCallsMarker(mark marker, src protocol.Location, want ...protocol.Lo
 		}
 		var locs []protocol.Location
 		for _, call := range calls {
-			locs = append(locs, itemLocation(call.From))
+			locs = append(locs, call.From.URI.Location(call.From.Range))
 		}
 		return locs, nil
 	}
@@ -2226,7 +2524,7 @@ func outgoingCallsMarker(mark marker, src protocol.Location, want ...protocol.Lo
 		}
 		var locs []protocol.Location
 		for _, call := range calls {
-			locs = append(locs, itemLocation(call.To))
+			locs = append(locs, call.To.URI.Location(call.To.Range))
 		}
 		return locs, nil
 	}
@@ -2247,7 +2545,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		mark.errorf("PrepareCallHierarchy returned %d items, want exactly 1", nitems)
 		return
 	}
-	if loc := itemLocation(items[0]); loc != src {
+	item := items[0]
+	if loc := item.URI.Location(item.Range); loc != src {
 		mark.errorf("PrepareCallHierarchy found call %v, want %v", loc, src)
 		return
 	}
@@ -2256,19 +2555,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		mark.errorf("call hierarchy failed: %v", err)
 		return
 	}
-	if calls == nil {
-		calls = []protocol.Location{}
-	}
-	// TODO(rfindley): why aren't call hierarchy results stable?
-	sortLocs := func(locs []protocol.Location) {
-		sort.Slice(locs, func(i, j int) bool {
-			return protocol.CompareLocation(locs[i], locs[j]) < 0
-		})
-	}
-	sortLocs(want)
-	sortLocs(calls)
-	if d := cmp.Diff(want, calls); d != "" {
-		mark.errorf("call hierarchy: unexpected results (-want +got):\n%s", d)
+	if err := compareLocations(mark, calls, want); err != nil {
+		mark.errorf("%s failed: %v", mark.note.Name, err)
 	}
 }
 
@@ -2301,7 +2589,7 @@ func inlayhintsMarker(mark marker, g *Golden) {
 	compareGolden(mark, got, g)
 }
 
-func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder string) {
+func prepareRenameMarker(mark marker, src protocol.Location, placeholder string) {
 	params := &protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	}
@@ -2315,9 +2603,61 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 		}
 		return
 	}
-	want := &protocol.PrepareRenameResult{Range: spn.Range, Placeholder: placeholder}
+
+	want := &protocol.PrepareRenameResult{
+		Placeholder: placeholder,
+	}
+	if span := mark.namedArg("span", protocol.Location{}); span != (protocol.Location{}) {
+		want.Range = span.Range
+	} else {
+		got.Range = protocol.Range{} // ignore Range
+	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("mismatching PrepareRename result:\n%s", diff)
+	}
+}
+
+func subtypesMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	typeHierarchy(mark, src, want, func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error) {
+		return mark.server().Subtypes(mark.ctx(), &protocol.TypeHierarchySubtypesParams{Item: item})
+	})
+}
+
+func supertypesMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	typeHierarchy(mark, src, want, func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error) {
+		return mark.server().Supertypes(mark.ctx(), &protocol.TypeHierarchySupertypesParams{Item: item})
+	})
+}
+
+type typeHierarchyFunc = func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error)
+
+func typeHierarchy(mark marker, src protocol.Location, want []protocol.Location, get typeHierarchyFunc) {
+	items, err := mark.server().PrepareTypeHierarchy(mark.ctx(), &protocol.TypeHierarchyPrepareParams{
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
+	})
+	if err != nil {
+		mark.errorf("PrepareTypeHierarchy failed: %v", err)
+		return
+	}
+	if nitems := len(items); nitems != 1 {
+		mark.errorf("PrepareTypeHierarchy returned %d items, want exactly 1", nitems)
+		return
+	}
+	if loc := (protocol.Location{URI: items[0].URI, Range: items[0].Range}); loc != src {
+		mark.errorf("PrepareTypeHierarchy found type %v, want %v", loc, src)
+		return
+	}
+	items, err = get(items[0])
+	if err != nil {
+		mark.errorf("type hierarchy failed: %v", err)
+		return
+	}
+	got := []protocol.Location{} // non-nil; cmp.Diff cares
+	for _, item := range items {
+		got = append(got, item.URI.Location(item.Range))
+	}
+	if d := cmp.Diff(want, got); d != "" {
+		mark.errorf("type hierarchy: unexpected results (-want +got):\n%s", d)
 	}
 }
 
@@ -2422,9 +2762,7 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 	for _, s := range gotSymbols {
 		// Omit the txtar position of the symbol location; otherwise edits to the
 		// txtar archive lead to unexpected failures.
-		loc := mark.run.fmtLocDetails(s.Location, false)
-		// TODO(rfindley): can we do better here, by detecting if the location is
-		// relative to GOROOT?
+		loc := mark.run.fmtLocForGolden(s.Location)
 		if loc == "" {
 			loc = "<unknown>"
 		}
@@ -2432,6 +2770,49 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 	}
 
 	compareGolden(mark, got.Bytes(), golden)
+}
+
+func resolveTargetMarker(mark marker, target, pkgScope string, want ...command.TargetMatch) {
+
+	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
+	cmd := command.NewResolveTargetCommand("ResolveTarget", command.ResolveTargetParams{
+		TextDocument: mark.document(),
+		Target:       target,
+		PkgScope:     pkgScope,
+	})
+	res, err := mark.server().ExecuteCommand(mark.ctx(), &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	})
+	if err != nil && wantErr.empty() {
+		mark.errorf("ResolveTarget(%q) failed: %v", target, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
+		return
+	}
+	var got []command.TargetMatch
+	if res != nil {
+		// decode the result
+		b, err := json.Marshal(res)
+		if err != nil {
+			mark.errorf("failed to marshal result: %v", err)
+			return
+		}
+		var gotResult command.ResolveTargetResult
+		if err := json.Unmarshal(b, &gotResult); err != nil {
+			mark.errorf("failed to unmarshal result: %v", err)
+			return
+		}
+		got = gotResult.Matches
+	}
+	if len(want) == 0 {
+		want = nil // got is nil if empty
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		mark.errorf("unexpected ResolveTarget results (-want +got):\n%s", diff)
+	}
 }
 
 // compareGolden compares the content of got with that of g.Get(""), reporting
@@ -2460,5 +2841,32 @@ func compareGolden(mark marker, got []byte, g *Golden) {
 	want = normalize(want)
 	if diff := compare.Bytes(want, got); diff != "" {
 		mark.errorf("%s does not match @%s:\n%s", mark.note.Name, g.id, diff)
+	}
+}
+
+// Below are tests on the marker test framework itself
+
+func TestLoadMarkerTest_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name: "dir_with_value_marker",
+			content: `
+-- a/ --
+//@loc(foo, "bar")
+`,
+			wantErr: "directory file 'a/' contains value marker @loc",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := loadMarkerTest(tt.name, []byte(tt.content))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("loadMarkerTest() error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
 	}
 }

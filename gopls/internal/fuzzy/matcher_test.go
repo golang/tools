@@ -293,8 +293,7 @@ func BenchmarkMatcher(b *testing.B) {
 
 	matcher := fuzzy.NewMatcher(pattern)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, c := range candidates {
 			matcher.Score(c)
 		}

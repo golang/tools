@@ -1,0 +1,376 @@
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package stubmethods provides the analysis logic for the quick fix
+// to "Declare missing methods of TYPE" errors. (The fix logic lives
+// in golang.stubMethodsFixer.)
+package stubmethods
+
+import (
+	"bytes"
+	"fmt"
+	"go/ast"
+	"go/token"
+	"go/types"
+	"strings"
+
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
+
+	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
+)
+
+// IfaceStubInfo represents a concrete type
+// that wants to stub out an interface type
+type IfaceStubInfo struct {
+	Fset      *token.FileSet
+	Interface types.Type                 // interface type to implement (may be unnamed, named, or even instantiated)
+	Concrete  typesinternal.NamedOrAlias // concrete type on which to declare methods
+	Pointer   bool
+}
+
+// GetIfaceStubInfo determines whether the "missing method error"
+// can be used to deduced what the concrete and interface types are.
+//
+// TODO(adonovan): this function (and its following 5 helpers) tries
+// to deduce a pair of (concrete, interface) types that are related by
+// an assignment, either explicitly or through a return statement or
+// function call. This is essentially what the refactor/satisfy does,
+// more generally. Refactor to share logic, after auditing 'satisfy'
+// for safety on ill-typed code.
+func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, pos, end token.Pos) *IfaceStubInfo {
+	cur, ok := pgf.Cursor().FindByPos(pos, end)
+	if !ok {
+		return nil
+	}
+	for cur := range cur.Enclosing() {
+		// TODO: do cur = unparenEnclosing(cur) first, once CL 701035 lands.
+		switch cur.ParentEdgeKind() {
+		case edge.ValueSpec_Values:
+			return fromValueSpec(fset, info, cur)
+		case edge.ReturnStmt_Results:
+			// An error here may not indicate a real error the user should know about, but it may.
+			// Therefore, it would be best to log it out for debugging/reporting purposes instead of ignoring
+			// it. However, event.Log takes a context which is not passed via the analysis package.
+			// TODO(marwan-at-work): properly log this error.
+			si, _ := fromReturnStmt(fset, info, cur)
+			return si
+		case edge.AssignStmt_Rhs:
+			return fromAssignStmt(fset, info, cur)
+		case edge.CallExpr_Args:
+			// Note that some call expressions don't carry the interface type
+			// because they don't point to a function or method declaration elsewhere.
+			// For eaxmple, "var Interface = (*Concrete)(nil)". In that case, continue
+			// this loop to encounter other possibilities such as *ast.ValueSpec or others.
+			si := fromCallExpr(fset, info, cur)
+			if si != nil {
+				return si
+			}
+		}
+	}
+	return nil
+}
+
+// Emit writes to out the missing methods of si.Concrete required for it to implement si.Interface
+func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	conc := si.Concrete.Obj()
+	// Record all direct methods of the current object
+	concreteFuncs := make(map[string]struct{})
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for method := range named.Methods() {
+			concreteFuncs[method.Name()] = struct{}{}
+		}
+	}
+
+	// Find subset of interface methods that the concrete type lacks.
+	var missing []*types.Func
+	for imethod := range si.Interface.Underlying().(*types.Interface).Methods() {
+		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
+		if cmethod == nil {
+			missing = append(missing, imethod)
+			continue
+		}
+
+		if _, ok := cmethod.(*types.Var); ok {
+			// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
+			return fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
+				conc.Name(), imethod.Name())
+		}
+
+		if _, exist := concreteFuncs[imethod.Name()]; exist {
+			if !types.Identical(cmethod.Type(), imethod.Type()) {
+				return fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
+					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+			}
+			continue
+		}
+
+		if len(index) > 0 {
+			// len(index) > 0 implies that the current method is already
+			// implemented on some embedded object.
+			// Do not generate a method if it would result in shadowing, but
+			// continue generating other parts of the stub.
+			// For example, if some struct A partially implements an interface I
+			// and another struct B embeds A, we should not implement methods on
+			// B that are already implemented on A, as these would be shadowed
+			// methods.
+			continue
+		}
+
+		missing = append(missing, imethod)
+	}
+	if len(missing) == 0 {
+		return fmt.Errorf("no missing methods found")
+	}
+
+	// Format doc link to interface type for "implements" doc comment.
+	ifaceLink := "an anonymous interface"
+	// (I don't know why we unalias here, other than issue65024.txt wants it.)
+	if named, ok := types.Unalias(si.Interface).(*types.Named); ok {
+		ifaceLink = named.Obj().Name()
+		if ipkg := named.Obj().Pkg(); ipkg != nil && ipkg != conc.Pkg() {
+			ifaceLink = ipkg.Name() + "." + ifaceLink
+		}
+		ifaceLink = "[" + ifaceLink + "]"
+	}
+
+	// Pointer receiver?
+	var star string
+	if si.Pointer {
+		star = "*"
+	}
+
+	// If there are any that have named receiver, choose the first one.
+	// Otherwise, use lowercase for the first letter of the object.
+	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for method := range named.Methods() {
+			if recv := method.Signature().Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
+		}
+	}
+
+	// Check for receiver name conflicts
+	checkRecvName := func(tuple *types.Tuple) bool {
+		for v := range tuple.Variables() {
+			if rn == v.Name() {
+				return true
+			}
+		}
+		return false
+	}
+
+	for index := range missing {
+		mrn := rn + " "
+		sig := missing[index].Signature()
+		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+			mrn = ""
+		}
+
+		fmt.Fprintf(out, `// %s implements %s.
+func (%s%s%s%s) %s%s {
+	panic("unimplemented")
+}
+`,
+			missing[index].Name(),
+			ifaceLink,
+			mrn,
+			star,
+			si.Concrete.Obj().Name(),
+			typesutil.FormatTypeParams(si.Concrete.TypeParams()),
+			missing[index].Name(),
+			strings.TrimPrefix(types.TypeString(missing[index].Type(), qual), "func"))
+	}
+	return nil
+}
+
+// fromCallExpr tries to find an *ast.CallExpr's function declaration and
+// analyzes a function call's signature against the passed in call argument to deduce
+// the concrete and interface types.
+func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cursor) *IfaceStubInfo {
+
+	call := curCallArg.Parent().Node().(*ast.CallExpr)
+	arg := curCallArg.Node().(ast.Expr)
+
+	concType, pointer := concreteType(arg, info)
+	if concType == nil || concType.Obj().Pkg() == nil {
+		return nil
+	}
+	sig, ok := types.Unalias(info.TypeOf(call.Fun)).(*types.Signature)
+	if !ok {
+		return nil
+	}
+
+	argIdx := curCallArg.ParentEdgeIndex()
+	var paramType types.Type
+	if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
+		v := sig.Params().At(sig.Params().Len() - 1)
+		if s, _ := v.Type().(*types.Slice); s != nil {
+			paramType = s.Elem()
+		}
+	} else if argIdx < sig.Params().Len() {
+		paramType = sig.Params().At(argIdx).Type()
+	}
+	if !validInterface(paramType) {
+		return nil
+	}
+	return &IfaceStubInfo{
+		Fset:      fset,
+		Concrete:  concType,
+		Pointer:   pointer,
+		Interface: paramType,
+	}
+}
+
+// fromReturnStmt analyzes a "return" statement to extract
+// a concrete type that is trying to be returned as an interface type.
+//
+// For example, func() io.Writer { return myType{} }
+// would return StubIfaceInfo with the interface being io.Writer and the concrete type being myType{}.
+func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.Cursor) (*IfaceStubInfo, error) {
+	concType, pointer := concreteType(curResult.Node().(ast.Expr), info)
+	if concType == nil || concType.Obj().Pkg() == nil {
+		return nil, nil // result is not a named or *named or alias thereof
+	}
+	// Inv: the return is not a spread return,
+	// such as "return f()" where f() has tuple type.
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
+	}
+
+	sig := typesutil.EnclosingSignature(curResult, info)
+	if sig == nil {
+		// Since curResult must be within a function, this
+		// indicates that the function's type information is
+		// missing, for example because there are two
+		// functions with the same name.
+		return nil, fmt.Errorf("function enclosing return statement has incomplete type information")
+	}
+	rets := sig.Results()
+	// The return operands and function results must match.
+	// (Spread returns were rejected earlier.)
+	ret := curResult.Parent().Node().(*ast.ReturnStmt)
+	if rets.Len() != len(ret.Results) {
+		return nil, fmt.Errorf("%d-operand return statement in %d-result function",
+			len(ret.Results),
+			rets.Len())
+	}
+	iface := rets.At(curResult.ParentEdgeIndex()).Type()
+	if !validInterface(iface) {
+		return nil, nil
+	}
+	return &IfaceStubInfo{
+		Fset:      fset,
+		Concrete:  concType,
+		Pointer:   pointer,
+		Interface: iface,
+	}, nil
+}
+
+// fromValueSpec returns *StubIfaceInfo from a variable declaration such as
+// var x io.Writer = &T{}
+func fromValueSpec(fset *token.FileSet, info *types.Info, curValue inspector.Cursor) *IfaceStubInfo {
+
+	rhs := curValue.Node().(ast.Expr)
+	spec := curValue.Parent().Node().(*ast.ValueSpec)
+
+	// Possible implicit/explicit conversion to interface type?
+	ifaceNode := spec.Type // var _ myInterface = ...
+	if call, ok := rhs.(*ast.CallExpr); ok && ifaceNode == nil && len(call.Args) == 1 {
+		// var _ = myInterface(v)
+		ifaceNode = call.Fun
+		rhs = call.Args[0]
+	}
+	concType, pointer := concreteType(rhs, info)
+	if concType == nil || concType.Obj().Pkg() == nil {
+		return nil
+	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
+
+	iface := info.TypeOf(ifaceNode)
+	if !validInterface(iface) {
+		return nil
+	}
+	return &IfaceStubInfo{
+		Fset:      fset,
+		Concrete:  concType,
+		Interface: iface,
+		Pointer:   pointer,
+	}
+}
+
+// fromAssignStmt returns *StubIfaceInfo from a variable assignment such as
+// var x io.Writer
+// x = &T{}
+func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Cursor) *IfaceStubInfo {
+	// The interface conversion error in an assignment is against the RHS:
+	//
+	//      var x io.Writer
+	//      x = &T{} // error: missing method
+	//          ^^^^
+
+	assign := curRhs.Parent().Node().(*ast.AssignStmt)
+	idx := curRhs.ParentEdgeIndex()
+	// ill-type code may have fewer LHS than RHS so guard it.
+	if idx >= len(assign.Lhs) {
+		return nil
+	}
+	lhs, rhs := assign.Lhs[idx], curRhs.Node().(ast.Expr)
+
+	iface := info.TypeOf(lhs)
+	if !validInterface(iface) {
+		return nil
+	}
+	concType, pointer := concreteType(rhs, info)
+	if concType == nil || concType.Obj().Pkg() == nil {
+		return nil
+	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
+	return &IfaceStubInfo{
+		Fset:      fset,
+		Concrete:  concType,
+		Interface: iface,
+		Pointer:   pointer,
+	}
+}
+
+// concreteType tries to extract the *types.Named that defines
+// the concrete type given the ast.Expr where the "missing method"
+// or "conversion" errors happened. If the concrete type is something
+// that cannot have methods defined on it (such as basic types), this
+// method will return a nil *types.Named. The second return parameter
+// is a boolean that indicates whether the concreteType was defined as a
+// pointer or value.
+func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
+	t := info.TypeOf(e)
+	ptr, isPtr := types.Unalias(t).(*types.Pointer)
+	if isPtr {
+		t = ptr.Elem()
+	}
+	named, ok := types.Unalias(t).(*types.Named)
+	if !ok {
+		return nil, false
+	}
+	return named, isPtr
+}
+
+// validInterface reports whether iface is a non-nil interface
+// type with no free type parameters.
+func validInterface(iface types.Type) bool {
+	return iface != nil &&
+		types.IsInterface(iface) &&
+		!new(typeparams.Free).Has(iface)
+}

@@ -12,7 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,7 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -81,9 +81,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	for id := range exports {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 
 	t0 = time.Now()
 	g, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
@@ -225,12 +223,12 @@ func importFromExportData(pkgPath, exportFile string) (*types.Package, error) {
 	}
 	r, err := gcexportdata.NewReader(file)
 	if err != nil {
-		file.Close()
+		file.Close() // ignore error
 		return nil, err
 	}
 	fset := token.NewFileSet()
 	tpkg, err := gcexportdata.Read(r, fset, make(map[string]*types.Package), pkgPath)
-	file.Close()
+	file.Close() // ignore error
 	if err != nil {
 		return nil, err
 	}
@@ -259,9 +257,8 @@ func BenchmarkBuildPackageGraph(b *testing.B) {
 	for id := range exports {
 		ids = append(ids, id)
 	}
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
 		if err != nil {
 			b.Fatal(err)
@@ -342,7 +339,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 			packages.NeedModule |
 			packages.NeedEmbedFiles |
 			packages.LoadMode(packagesinternal.DepsErrors) |
-			packages.LoadMode(packagesinternal.ForTest),
+			packages.NeedForTest,
 		Tests: true,
 	}
 	if needExport {
@@ -364,7 +361,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 			ID:         id,
 			PkgPath:    PackagePath(pkg.PkgPath),
 			Name:       packageName(pkg.Name),
-			ForTest:    PackagePath(packagesinternal.GetForTest(pkg)),
+			ForTest:    PackagePath(pkg.ForTest),
 			TypesSizes: pkg.TypesSizes,
 			LoadDir:    cfg.Dir,
 			Module:     pkg.Module,

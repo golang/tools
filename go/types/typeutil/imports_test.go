@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
@@ -69,12 +70,12 @@ func TestDependencies(t *testing.T) {
 		for _, r := range test.roots {
 			pkgs = append(pkgs, packages[string(r)])
 		}
-		var got string
+		var got strings.Builder
 		for _, p := range typeutil.Dependencies(pkgs...) {
-			got += p.Path()
+			got.WriteString(p.Path())
 		}
-		if got != test.want {
-			t.Errorf("Dependencies(%q) = %q, want %q", test.roots, got, test.want)
+		if got.String() != test.want {
+			t.Errorf("Dependencies(%q) = %q, want %q", test.roots, got.String(), test.want)
 		}
 	}
 }

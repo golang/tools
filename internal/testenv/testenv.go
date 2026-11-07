@@ -7,21 +7,25 @@
 package testenv
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"go/build"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/tools/internal/goroot"
+	"golang.org/x/tools/internal/gocommand"
 )
 
 // packageMainIsDevel reports whether the module containing package main
@@ -128,10 +132,14 @@ func HasTool(tool string) error {
 		}
 
 	case "diff":
-		// Check that diff is the GNU version, needed for the -u argument and
+		// Check that diff is the GNU or Apple version, needed for the -u argument and
 		// to report missing newlines at the end of files.
 		out, err := exec.Command(tool, "-version").Output()
 		if err != nil {
+			out, _ = exec.Command(tool, "--version").Output()
+			if bytes.Contains(out, []byte("Apple diff")) {
+				return nil
+			}
 			return err
 		}
 		if !bytes.Contains(out, []byte("GNU diffutils")) {
@@ -145,7 +153,7 @@ func HasTool(tool string) error {
 func cgoEnabled(bypassEnvironment bool) (bool, error) {
 	cmd := exec.Command("go", "env", "CGO_ENABLED")
 	if bypassEnvironment {
-		cmd.Env = append(append([]string(nil), os.Environ()...), "CGO_ENABLED=")
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=")
 	}
 	out, err := cmd.Output()
 	if err != nil {
@@ -247,8 +255,8 @@ func NeedsGoPackagesEnv(t testing.TB, env []string) {
 	t.Helper()
 
 	for _, v := range env {
-		if strings.HasPrefix(v, "GOPACKAGESDRIVER=") {
-			tool := strings.TrimPrefix(v, "GOPACKAGESDRIVER=")
+		if after, ok := strings.CutPrefix(v, "GOPACKAGESDRIVER="); ok {
+			tool := after
 			if tool == "off" {
 				NeedsTool(t, "go")
 			} else {
@@ -271,6 +279,16 @@ func NeedsGoBuild(t testing.TB) {
 	// This logic was derived from internal/testing.HasGoBuild and
 	// may need to be updated as that function evolves.
 
+	NeedsTool(t, "go")
+}
+
+// NeedsDefaultImporter skips t if the test uses the default importer,
+// returned by [go/importer.Default].
+func NeedsDefaultImporter(t testing.TB) {
+	t.Helper()
+	// The default importer may call `go list`
+	// (in src/internal/exportdata/exportdata.go:lookupGorootExport),
+	// so check for the go tool.
 	NeedsTool(t, "go")
 }
 
@@ -313,14 +331,44 @@ func ExitIfSmallMachine() {
 
 // Go1Point returns the x in Go 1.x.
 func Go1Point() int {
-	for i := len(build.Default.ReleaseTags) - 1; i >= 0; i-- {
+	for _, tag := range slices.Backward(build.Default.ReleaseTags) {
 		var version int
-		if _, err := fmt.Sscanf(build.Default.ReleaseTags[i], "go1.%d", &version); err != nil {
+		if _, err := fmt.Sscanf(tag, "go1.%d", &version); err != nil {
 			continue
 		}
 		return version
 	}
 	panic("bad release tags")
+}
+
+// NeedsGoCommand1Point skips t if the ambient go command version in the PATH
+// of the current process is older than 1.x.
+//
+// NeedsGoCommand1Point memoizes the result of running the go command, so
+// should be called after all mutations of PATH.
+func NeedsGoCommand1Point(t testing.TB, x int) {
+	NeedsTool(t, "go")
+	go1point, err := goCommand1Point()
+	if err != nil {
+		panic(fmt.Sprintf("unable to determine go version: %v", err))
+	}
+	if go1point < x {
+		t.Helper()
+		t.Skipf("go command is version 1.%d, older than required 1.%d", go1point, x)
+	}
+}
+
+var (
+	goCommand1PointOnce sync.Once
+	goCommand1Point_    int
+	goCommand1PointErr  error
+)
+
+func goCommand1Point() (int, error) {
+	goCommand1PointOnce.Do(func() {
+		goCommand1Point_, goCommand1PointErr = gocommand.GoVersion(context.Background(), gocommand.Invocation{}, new(gocommand.Runner))
+	})
+	return goCommand1Point_, goCommand1PointErr
 }
 
 // NeedsGo1Point skips t if the Go version used to run the test is older than
@@ -329,6 +377,23 @@ func NeedsGo1Point(t testing.TB, x int) {
 	if Go1Point() < x {
 		t.Helper()
 		t.Skipf("running Go version %q is version 1.%d, older than required 1.%d", runtime.Version(), Go1Point(), x)
+	}
+}
+
+// SkipAfterGoCommand1Point skips t if the ambient go command version in the PATH of
+// the current process is newer than 1.x.
+//
+// SkipAfterGoCommand1Point memoizes the result of running the go command, so
+// should be called after any mutation of PATH.
+func SkipAfterGoCommand1Point(t testing.TB, x int) {
+	NeedsTool(t, "go")
+	go1point, err := goCommand1Point()
+	if err != nil {
+		panic(fmt.Sprintf("unable to determine go version: %v", err))
+	}
+	if go1point > x {
+		t.Helper()
+		t.Skipf("go command is version 1.%d, newer than maximum 1.%d", go1point, x)
 	}
 }
 
@@ -360,23 +425,6 @@ func Deadline(t testing.TB) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return td.Deadline()
-}
-
-// WriteImportcfg writes an importcfg file used by the compiler or linker to
-// dstPath containing entries for the packages in std and cmd in addition
-// to the package to package file mappings in additionalPackageFiles.
-func WriteImportcfg(t testing.TB, dstPath string, additionalPackageFiles map[string]string) {
-	importcfg, err := goroot.Importcfg()
-	for k, v := range additionalPackageFiles {
-		importcfg += fmt.Sprintf("\npackagefile %s=%s", k, v)
-	}
-	if err != nil {
-		t.Fatalf("preparing the importcfg failed: %s", err)
-	}
-	os.WriteFile(dstPath, []byte(importcfg), 0655)
-	if err != nil {
-		t.Fatalf("writing the importcfg failed: %s", err)
-	}
 }
 
 var (
@@ -469,7 +517,7 @@ func NeedsGoExperiment(t testing.TB, flag string) {
 
 	goexp := os.Getenv("GOEXPERIMENT")
 	set := false
-	for _, f := range strings.Split(goexp, ",") {
+	for f := range strings.SplitSeq(goexp, ",") {
 		if f == "" {
 			continue
 		}
@@ -489,4 +537,60 @@ func NeedsGoExperiment(t testing.TB, flag string) {
 	if !set {
 		t.Skipf("skipping test: flag %q is not set in GOEXPERIMENT=%q", flag, goexp)
 	}
+}
+
+// NeedsGOROOTDir skips the test if GOROOT/dir does not exist, and GOROOT is a
+// released version of Go (=has a VERSION file). Some GOROOT directories are
+// removed by cmd/distpack.
+//
+// See also golang/go#70081.
+func NeedsGOROOTDir(t *testing.T, dir string) {
+	gorootTest := filepath.Join(GOROOT(t), dir)
+	if _, err := os.Stat(gorootTest); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(GOROOT(t), "VERSION")); err == nil {
+			t.Skipf("skipping: GOROOT/%s not present", dir)
+		}
+	}
+}
+
+// RedirectStderr causes os.Stderr (and the global logger) to be
+// temporarily replaced so that writes to it are sent to t.Log.
+// It is restored at test cleanup.
+func RedirectStderr(t testing.TB) {
+	t.Setenv("RedirectStderr", "") // side effect: assert t.Parallel wasn't called
+
+	// TODO(adonovan): if https://go.dev/issue/59928 is accepted,
+	// simply set w = t.Output() and dispense with the pipe.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		for sc := bufio.NewScanner(r); sc.Scan(); {
+			t.Log(sc.Text())
+		}
+		r.Close()
+		close(done)
+	}()
+
+	// Also do the same for the global logger.
+	savedWriter, savedPrefix, savedFlags := log.Writer(), log.Prefix(), log.Flags()
+	log.SetPrefix("log: ")
+	log.SetOutput(w)
+	log.SetFlags(0)
+
+	oldStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() {
+		w.Close() // ignore error
+		os.Stderr = oldStderr
+
+		log.SetOutput(savedWriter)
+		log.SetPrefix(savedPrefix)
+		log.SetFlags(savedFlags)
+
+		// Don't let test finish before final t.Log.
+		<-done
+	})
 }

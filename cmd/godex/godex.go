@@ -84,7 +84,7 @@ func main() {
 	}
 }
 
-func logf(format string, args ...interface{}) {
+func logf(format string, args ...any) {
 	if *verbose {
 		fmt.Fprintf(os.Stderr, format, args...)
 	}

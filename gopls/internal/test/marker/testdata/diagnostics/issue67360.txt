@@ -7,9 +7,6 @@ error to lack a column. A bug in the error parser filled in 0, not 1,
 for the missing information, and this is an invalid value in the
 1-based UTF-8 domain, leading to a panic.
 
--- flags --
--min_go=go1.21
-
 -- foo.go --
 //line foo.go:1
 package main                    //@ diag(re"package", re"internal package.*not allowed")

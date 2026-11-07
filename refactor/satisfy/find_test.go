@@ -15,7 +15,7 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -167,6 +167,9 @@ func _[P ~struct{F I}]() {
 	_ = P{W{}}
 	_ = P{F: X{}}
 }
+
+// golang/go#77625: don't panic on a method expression of an anonymous interface.
+var _ = interface{ m() }.m
 `
 	got := constraints(t, src)
 	want := []string{
@@ -205,6 +208,177 @@ func _[P ~struct{F I}]() {
 	}
 }
 
+func TestNewExpr(t *testing.T) {
+	testenv.NeedsGo1Point(t, 26)
+	const src = `package p
+
+type I interface{ f() }
+type C int
+func (C) f() {}
+
+var _ I = new(C(123))
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- *p.C",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
+// TestIssue79734 is a regression test for a crash caused by
+// inappropriate use of the obsolete CoreType operator on operands
+// that (legally) have no core type; see go.dev/issue/79734.
+func TestIssue79734(t *testing.T) {
+	const src = `package p
+
+type I interface { f() }
+type Key struct{}
+func (Key) f() {}
+type Val1 struct{}
+type Val2 struct{}
+
+func _[Map interface{ map[I]Val1 | map[I]Val2 }](m Map) {
+	delete(m, Key{})
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.Key",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
+// TestIssue82686 is a regression test for a crash caused by
+// built-in calls whose arguments are supplied by a single
+// multi-valued call, such as delete(f()); see go.dev/issue/82686.
+//
+// It exercises every built-in (including those of package unsafe)
+// that accepts two or more arguments and thus may be called this way.
+func TestIssue82686(t *testing.T) {
+	const src = `package p
+
+import "unsafe"
+
+type I interface { f() }
+
+type impl struct{}
+func (impl) f() {}
+
+type Key struct{impl}
+type Elem1 struct{impl}
+type Elem2 struct{impl}
+type Val struct{impl}
+
+func mapKey() (map[I]int, Key) { panic(0) }
+func sliceElems() ([]I, Elem1, Elem2) { panic(0) }
+func slices() ([]I, []I) { panic(0) }
+func floats() (float64, float64) { panic(0) }
+func ints() (int, int, int) { panic(0) }
+func values() (Key, Val) { panic(0) }
+func ptrInt() (unsafe.Pointer, int) { panic(0) }
+func bytePtrInt() (*byte, int) { panic(0) }
+
+func _() {
+	delete(mapKey()) // I <- Key
+	_ = append(sliceElems()) // I <- Elem1, I <- Elem2
+	_ = copy(slices())
+	_ = complex(floats())
+	_ = min(ints())
+	_ = max(ints())
+	print(values())
+	println(values())
+	_ = unsafe.Add(ptrInt())
+	_ = unsafe.Slice(bytePtrInt())
+	_ = unsafe.String(bytePtrInt())
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.Elem1",
+		"p.I <- p.Elem2",
+		"p.I <- p.Key",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
+// TestSpreadCalls exercises calls to variadic functions, both
+// "spread" calls f(x, y...) whose final argument provides the entire
+// variadic slice, and calls f(g()) whose arguments are provided by a
+// single multi-valued call.
+func TestSpreadCalls(t *testing.T) {
+	const src = `package p
+
+type I interface { f() }
+
+type impl struct{}
+func (impl) f() {}
+
+type A struct{impl}
+type B struct{impl}
+type C struct{impl}
+type D struct{impl}
+type E struct{impl}
+type F struct{impl}
+type G struct{impl}
+type H struct{impl}
+
+// Is is a slice of I that itself implements I.
+// Passing is... (as opposed to is) to a ...I parameter
+// does not assign Is to I.
+type Is []I
+func (Is) f() {}
+
+func variadic(...I) {}
+func variadic2(I, ...I) {}
+func generic[T any](T, ...I) {}
+
+type R struct{}
+func (R) method(...I) {}
+
+func abc() (A, B, C) { panic(0) }
+func def() (D, E, F) { panic(0) }
+
+func _(is Is, bs []byte) {
+	// spread calls
+	variadic(is...)
+	variadic2(G{}, is...) // I <- G
+	R{}.method(is...)
+	generic(0, is...)
+	func(...I) {}(is...)
+	_ = append(is, is...)
+	_ = append(bs, "foo"...)
+	_ = append(bs, bs...)
+
+	// ordinary variadic calls
+	variadic(H{}) // I <- H
+
+	// multi-valued calls
+	variadic(abc()) // I <- A, I <- B, I <- C
+	variadic2(def()) // I <- D, I <- E, I <- F
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.A",
+		"p.I <- p.B",
+		"p.I <- p.C",
+		"p.I <- p.D",
+		"p.I <- p.E",
+		"p.I <- p.F",
+		"p.I <- p.G",
+		"p.I <- p.H",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
 func constraints(t *testing.T, src string) []string {
 	// parse
 	fset := token.NewFileSet()
@@ -216,15 +390,15 @@ func constraints(t *testing.T, src string) []string {
 
 	// type-check
 	info := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Instances:  make(map[*ast.Ident]types.Instance),
-		Scopes:     make(map[ast.Node]*types.Scope),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 	conf := types.Config{
 		Importer: importer.Default(),
 	}
@@ -241,4 +415,48 @@ func constraints(t *testing.T, src string) []string {
 	}
 	sort.Strings(constraints)
 	return constraints
+}
+
+// avoid panic on ill-typed input
+func TestIllTyped73109(t *testing.T) {
+	const src = `package p
+var x, y = f()
+var _ = func(a undefined) {}
+var g int
+func g() {}
+`
+	// parse
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []*ast.File{f}
+
+	// type-check (expecting errors)
+	info := &types.Info{
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
+	}
+	conf := types.Config{
+		Importer: importer.Default(),
+		Error:    func(err error) {}, // ignore errors
+	}
+	conf.Check("p", fset, files, info)
+
+	// Convert panic into failure
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Finder.Find panicked on ill-typed input: %v", r)
+		}
+	}()
+	// used to panic
+	var finder satisfy.Finder
+	finder.Find(info, files)
 }

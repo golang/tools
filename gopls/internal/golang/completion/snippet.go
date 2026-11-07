@@ -13,7 +13,7 @@ import (
 
 // structFieldSnippet calculates the snippet for struct literal field names.
 func (c *completer) structFieldSnippet(cand candidate, detail string, snip *snippet.Builder) {
-	if !c.wantStructFieldCompletions() {
+	if !wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		return
 	}
 

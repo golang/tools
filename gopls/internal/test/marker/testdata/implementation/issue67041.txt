@@ -1,5 +1,5 @@
-This test verifies that implementations uses the correct object when querying
-local implementations . As described in golang/go#67041), a bug led to it
+This test verifies that Implementations uses the correct object when querying
+local implementations. As described in golang/go#67041, a bug led to it
 comparing types from different realms.
 
 -- go.mod --

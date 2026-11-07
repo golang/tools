@@ -1,0 +1,18 @@
+This test checks that the quick fix for "undeclared: f" that declares
+the missing function fails gracefully when an argument is a composite
+literal with no type, whose type cannot be inferred (go1.28).
+See go.dev/issue/82039.
+
+-- flags --
+-min_go=go1.28
+-ignore_extra_diags
+
+-- go.mod --
+module mod.com
+
+go 1.28
+
+-- a.go --
+package a
+
+func _() { f({1, 2}) } //@quickfixerr(re"f.{", re"unde(fined|clared name): f", re"unable to determine type for argument {1, 2}")

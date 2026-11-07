@@ -31,15 +31,15 @@ func BenchmarkDefinition(b *testing.B) {
 
 			loc := env.RegexpSearch(test.file, test.regexp)
 			env.Await(env.DoneWithOpen())
-			env.GoToDefinition(loc) // pre-warm the query, and open the target file
+			env.FirstDefinition(loc) // pre-warm the query, and open the target file
 			b.ResetTimer()
 
 			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "definition")); stopAndRecord != nil {
 				defer stopAndRecord()
 			}
 
-			for i := 0; i < b.N; i++ {
-				env.GoToDefinition(loc) // pre-warm the query
+			for b.Loop() {
+				env.FirstDefinition(loc) // pre-warm the query
 			}
 		})
 	}

@@ -1,0 +1,41 @@
+package stringscutprefix
+
+import (
+	. "strings"
+)
+
+// test supported cases of pattern 1 - CutPrefix
+func _() {
+	if after, ok := CutPrefix(s, pre); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
+		a := after
+		_ = a
+	}
+}
+
+// test supported cases of pattern 1 - CutSuffix
+func _() {
+	if before, ok := CutSuffix(s, suf); ok { // want "HasSuffix \\+ TrimSuffix can be simplified to CutSuffix"
+		a := before
+		_ = a
+	}
+}
+
+// test supported cases of pattern2 - CutPrefix
+func _() {
+	if after, ok := CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
+		println(after)
+	}
+	if after, ok := CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
+		println(after)
+	}
+}
+
+// test supported cases of pattern2 - CutSuffix
+func _() {
+	if before, ok := CutSuffix(s, suf); ok { // want "TrimSuffix can be simplified to CutSuffix"
+		println(before)
+	}
+	if before, ok := CutSuffix(s, suf); ok { // want "TrimSuffix can be simplified to CutSuffix"
+		println(before)
+	}
+}

@@ -20,8 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 )
 
 // This file contains an implementation of an LRU parse cache, that offsets the
@@ -195,7 +194,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...f
 		}
 
 		uri := fh.URI()
-		promise := memoize.NewPromise("parseCache.parse", func(ctx context.Context, _ interface{}) interface{} {
+		promise := memoize.NewPromise("parseCache.parse", func(ctx context.Context, _ any) any {
 			// Allocate 2*len(content)+parsePadding to allow for re-parsing once
 			// inside of parseGoSrc without exceeding the allocated space.
 			base, nextBase := c.allocateSpace(2*len(content) + parsePadding)
@@ -368,7 +367,7 @@ func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode p
 		}
 		tokenFiles = append(tokenFiles, pgf.Tok)
 	}
-	tokeninternal.AddExistingFiles(fset, tokenFiles)
+	fset.AddExistingFiles(tokenFiles...)
 
 	const debugIssue59080 = true
 	if debugIssue59080 {
@@ -391,7 +390,7 @@ func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode p
 
 // -- priority queue boilerplate --
 
-// queue is a min-atime prority queue of cache entries.
+// queue is a min-atime priority queue of cache entries.
 type queue []*parseCacheEntry
 
 func (q queue) Len() int { return len(q) }
@@ -404,13 +403,13 @@ func (q queue) Swap(i, j int) {
 	q[j].lruIndex = j
 }
 
-func (q *queue) Push(x interface{}) {
+func (q *queue) Push(x any) {
 	e := x.(*parseCacheEntry)
 	e.lruIndex = len(*q)
 	*q = append(*q, e)
 }
 
-func (q *queue) Pop() interface{} {
+func (q *queue) Pop() any {
 	last := len(*q) - 1
 	e := (*q)[last]
 	(*q)[last] = nil // aid GC

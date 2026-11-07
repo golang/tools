@@ -10,10 +10,12 @@ import (
 	"bytes"
 	"fmt"
 	"go/types"
+	"log"
 	"text/template"
 
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const src = `// Copyright 2024 The Go Authors. All rights reserved.
@@ -52,7 +54,24 @@ var Commands = []Command {
 {{- end}}
 }
 
-func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
+// interactiveCommands is the set of commands that may ask the user for
+// additional input before they can proceed.
+var interactiveCommands = map[Command]bool {
+{{- range .Commands}}
+{{- if .Interactive}}
+	{{.MethodName}}: true,
+{{- end}}
+{{- end}}
+}
+
+// Interactive reports whether the command may ask the user for additional
+// input, through [protocol.InteractiveParams], before it can proceed.
+//
+// Such a command is resolved interactively, through "command/resolve", before
+// the client executes it; see [protocol.InteractiveParams].
+func (c Command) Interactive() bool { return interactiveCommands[c] }
+
+func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch Command(params.Command) {
 	{{- range .Commands}}
 	case {{.MethodName}}:
@@ -64,28 +83,35 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		{{end -}}
-		return {{if not .Result}}nil, {{end}}s.{{.MethodName}}(ctx{{range $i, $v := .Args}}, a{{$i}}{{end}})
+		return {{if not .Result}}nil, {{end}}s.{{.MethodName}}(ctx{{range $i, $v := .Args}}, a{{$i}}{{end}}{{if .Interactive}}, &params.InteractiveParams{{end}})
 	{{- end}}
 	}
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
 }
 {{- range .Commands}}
 
-func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) (protocol.Command, error) {
-	{{- if .Args -}}
+{{if fallible .Args}}
+func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) (*protocol.Command, error) {
 	args, err := MarshalArgs({{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}}{{end}})
 	if err != nil {
-		return protocol.Command{}, err
+		return nil, err
 	}
-	{{end -}}
-	return protocol.Command{
+	return &protocol.Command{
 		Title: title,
 		Command: {{.MethodName}}.String(),
-	{{- if .Args}}
 		Arguments: args,
-	{{end}}
 	}, nil
 }
+{{else}}
+func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) *protocol.Command {
+	return &protocol.Command{
+		Title: title,
+		Command: {{.MethodName}}.String(),
+		Arguments: MustMarshalArgs({{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}}{{end}}),
+	}
+}
+{{end}}
+
 {{end}}
 `
 
@@ -102,7 +128,7 @@ func Generate() ([]byte, error) {
 		return nil, fmt.Errorf("loading command data: %v", err)
 	}
 	const thispkg = "golang.org/x/tools/gopls/internal/protocol/command"
-	qf := func(p *types.Package) string {
+	qual := func(p *types.Package) string {
 		if p.Path() == thispkg {
 			return ""
 		}
@@ -110,7 +136,34 @@ func Generate() ([]byte, error) {
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"typeString": func(t types.Type) string {
-			return types.TypeString(t, qf)
+			return types.TypeString(t, qual)
+		},
+		"fallible": func(args []*commandmeta.Field) bool {
+			var fallible func(types.Type) bool
+			fallible = func(t types.Type) bool {
+				switch t := t.Underlying().(type) {
+				case *types.Basic:
+					return false
+				case *types.Slice:
+					return fallible(t.Elem())
+				case *types.Struct:
+					for field := range t.Fields() {
+						if fallible(field.Type()) {
+							return true
+						}
+					}
+					return false
+				}
+				// Assume all other types are fallible for now:
+				log.Println("Command.Args has fallible type", t)
+				return true
+			}
+			for _, arg := range args {
+				if fallible(arg.Type) {
+					return true
+				}
+			}
+			return false
 		},
 	}).Parse(src)
 	if err != nil {
@@ -157,11 +210,8 @@ func Generate() ([]byte, error) {
 }
 
 func pkgPath(t types.Type) string {
-	type hasTypeName interface { // *Named or *Alias (or *TypeParam)
-		Obj() *types.TypeName
-	}
-	if t, ok := t.(hasTypeName); ok {
-		if pkg := t.Obj().Pkg(); pkg != nil {
+	if tname := typesinternal.TypeNameFor(t); tname != nil {
+		if pkg := tname.Pkg(); pkg != nil {
 			return pkg.Path()
 		}
 	}

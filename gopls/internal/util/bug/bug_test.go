@@ -25,7 +25,7 @@ func TestListBugs(t *testing.T) {
 
 	wantBugs(t, "bad")
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		Report(fmt.Sprintf("index:%d", i))
 	}
 

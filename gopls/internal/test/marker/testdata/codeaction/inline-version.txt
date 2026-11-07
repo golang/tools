@@ -1,0 +1,25 @@
+Test of caller/callee Go version compatibility check (#75726).
+
+-- go.work --
+use .
+use ./b
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+var _ = b.Add(1, 2) //@ codeaction("Add", "refactor.inline.call", end=")", err=`cannot inline call to b.Add (declared using go1.20) into a file using go1.18`)
+
+-- b/go.mod --
+module example.com/b
+go 1.20
+
+-- b/b.go --
+package b
+
+func Add(x, y int) int { return x + y }

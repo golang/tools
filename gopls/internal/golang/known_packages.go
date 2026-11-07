@@ -30,7 +30,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	// This algorithm is expressed in terms of Metadata, not Packages,
 	// so it doesn't cause or wait for type checking.
 
-	current, err := NarrowestMetadataForFile(ctx, snapshot, fh.URI())
+	current, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI())
 	if err != nil {
 		return nil, err // e.g. context cancelled
 	}

@@ -241,7 +241,7 @@ func stringifyProfileArray(profiles []*Profile) string {
 func BenchmarkParseLine(b *testing.B) {
 	const line = "k8s.io/kubernetes/cmd/kube-controller-manager/app/options/ttlafterfinishedcontroller.go:31.73,32.14 1 1"
 	b.SetBytes(int64(len(line)))
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		parseLine(line)
 	}
 }

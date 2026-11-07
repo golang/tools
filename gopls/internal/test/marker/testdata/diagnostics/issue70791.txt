@@ -1,0 +1,29 @@
+In addition to the Diagnostic, the SA4023 analyzer reports a
+RelatedInformation at the position of b.B, in an another package.
+Since this is in a dependency package, we cannot resolve to
+protocol.Location coordinates. This used to trigger an assertion, but
+now we resolve the location approximately.
+
+This is a regression test for #70791.
+
+-- settings.json --
+{"analyses": {"SA4023": true}}
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+var _ = b.B() == nil //@ diag("b.B", re"comparison is never true")
+
+-- b/b.go --
+package b
+
+func B() any { return (*int)(nil) }
+
+
+

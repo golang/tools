@@ -13,5 +13,5 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, simplifyslice.Analyzer, "a", "typeparams")
+	analysistest.RunWithSuggestedFixes(t, testdata, simplifyslice.Analyzer, "a", "generatedcode", "typeparams")
 }

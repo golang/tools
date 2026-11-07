@@ -1,4 +1,6 @@
-# Gopls: Inlay hints
+---
+title: "Gopls: Inlay hints"
+---
 
 Inlay hints are helpful annotations that the editor can optionally
 display in-line in the source code, such as the names of parameters in
@@ -11,7 +13,7 @@ from `gopls`.
 
 `"assignVariableTypes"` controls inlay hints for variable types in assign statements:
 ```go
-	i/* int*/, j/* int*/ := 0, len(r)-1
+	i« int», j« int» := 0, len(r)-1
 ```
 
 
@@ -21,7 +23,9 @@ from `gopls`.
 
 `"compositeLiteralFields"` inlay hints for composite literal field names:
 ```go
-	{/*in: */"Hello, world", /*want: */"dlrow ,olleH"}
+	Point2D{«X: »1, «Y: »2}
+
+	Outer{«Embedded.»Field: 0}
 ```
 
 
@@ -34,7 +38,7 @@ from `gopls`.
 	for _, c := range []struct {
 		in, want string
 	}{
-		/*struct{ in string; want string }*/{"Hello, world", "dlrow ,olleH"},
+		«struct{ in string; want string }»{"Hello, world", "dlrow ,olleH"},
 	}
 ```
 
@@ -46,10 +50,10 @@ from `gopls`.
 `"constantValues"` controls inlay hints for constant values:
 ```go
 	const (
-		KindNone   Kind = iota/* = 0*/
-		KindPrint/*  = 1*/
-		KindPrintf/* = 2*/
-		KindErrorf/* = 3*/
+		KindNone   Kind = iota« = 0»
+		KindPrint«  = 1»
+		KindPrintf« = 2»
+		KindErrorf« = 3»
 	)
 ```
 
@@ -60,17 +64,44 @@ from `gopls`.
 
 `"functionTypeParameters"` inlay hints for implicit type parameters on generic functions:
 ```go
-	myFoo/*[int, string]*/(1, "hello")
+	myFoo«[int, string]»(1, "hello")
 ```
 
 
 **Disabled by default. Enable it by setting `"hints": {"functionTypeParameters": true}`.**
 
+## **ignoredError**
+
+`"ignoredError"` inlay hints for implicitly discarded errors:
+```go
+	f.Close()« // ignore error»
+```
+This check inserts an `// ignore error` hint following any
+statement that is a function call whose error result is
+implicitly ignored.
+
+To suppress the hint, write an actual comment containing
+one of the following strings:
+```
+ignore error
+discard error
+can't fail
+cannot fail
+```
+following the call statement, or explicitly assign the
+result to a blank variable.
+
+A handful of common functions such as `fmt.Println` are
+excluded from the check.
+
+
+**Disabled by default. Enable it by setting `"hints": {"ignoredError": true}`.**
+
 ## **parameterNames**
 
 `"parameterNames"` controls inlay hints for parameter names:
 ```go
-	parseInt(/* str: */ "123", /* radix: */ 8)
+	parseInt(« str: » "123", « radix: » 8)
 ```
 
 
@@ -80,7 +111,7 @@ from `gopls`.
 
 `"rangeVariableTypes"` controls inlay hints for variable types in range statements:
 ```go
-	for k/* int*/, v/* string*/ := range []string{} {
+	for k« int», v« string» := range []string{} {
 		fmt.Println(k, v)
 	}
 ```

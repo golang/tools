@@ -94,21 +94,20 @@ func (d *autoDialer) dialNet(ctx context.Context) (net.Conn, error) {
 		}
 	}
 
-	const retries = 5
 	// It can take some time for the newly started server to bind to our address,
-	// so we retry for a bit.
-	for retry := 0; retry < retries; retry++ {
-		startDial := time.Now()
+	// so we retry with exponential backoff.
+	const retries = 8
+	for retry := range retries {
+		time.Sleep(50 * time.Millisecond << retry) // 50ms, 100ms, ..., 6.4s (total ~12.8s)
 		netConn, err = net.DialTimeout(d.network, d.addr, dialTimeout)
 		if err == nil {
 			return netConn, nil
 		}
 		event.Log(ctx, fmt.Sprintf("failed attempt #%d to connect to remote: %v\n", retry+2, err))
-		// In case our failure was a fast-failure, ensure we wait at least
-		// f.dialTimeout before trying again.
-		if retry != retries-1 {
-			time.Sleep(dialTimeout - time.Since(startDial))
-		}
 	}
-	return nil, fmt.Errorf("dialing remote: %w", err)
+	if d.isAuto && d.argFunc != nil {
+		// We started a daemon, but it never accepted our connection.
+		return nil, fmt.Errorf("failed to start gopls daemon on %s;%s: %w", d.network, d.addr, err)
+	}
+	return nil, fmt.Errorf("failed to dial remote: %w", err)
 }

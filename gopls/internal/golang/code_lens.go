@@ -23,10 +23,9 @@ import (
 // CodeLensSources returns the supported sources of code lenses for Go files.
 func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
 	return map[settings.CodeLensSource]cache.CodeLensSourceFunc{
-		settings.CodeLensGenerate:      goGenerateCodeLens,    // commands: Generate
-		settings.CodeLensTest:          runTestCodeLens,       // commands: Test
-		settings.CodeLensRegenerateCgo: regenerateCgoLens,     // commands: RegenerateCgo
-		settings.CodeLensGCDetails:     toggleDetailsCodeLens, // commands: GCDetails
+		settings.CodeLensGenerate:      goGenerateCodeLens, // commands: Generate
+		settings.CodeLensTest:          runTestCodeLens,    // commands: Test
+		settings.CodeLensRegenerateCgo: regenerateCgoLens,  // commands: RegenerateCgo
 	}
 }
 
@@ -48,21 +47,21 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	}
 	puri := fh.URI()
 	for _, fn := range testFuncs {
-		cmd, err := command.NewTestCommand("run test", puri, []string{fn.name}, nil)
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewRunTestsCommand("run test", command.RunTestsArgs{
+			URI:   puri,
+			Tests: []string{fn.name},
+		})
 		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
-		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: &cmd})
+		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 
 	for _, fn := range benchFuncs {
-		cmd, err := command.NewTestCommand("run benchmark", puri, nil, []string{fn.name})
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewRunTestsCommand("run benchmark", command.RunTestsArgs{
+			URI:        puri,
+			Benchmarks: []string{fn.name},
+		})
 		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
-		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: &cmd})
+		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 
 	if len(benchFuncs) > 0 {
@@ -79,11 +78,11 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		for _, fn := range benchFuncs {
 			benches = append(benches, fn.name)
 		}
-		cmd, err := command.NewTestCommand("run file benchmarks", puri, nil, benches)
-		if err != nil {
-			return nil, err
-		}
-		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: &cmd})
+		cmd := command.NewRunTestsCommand("run file benchmarks", command.RunTestsArgs{
+			URI:        puri,
+			Benchmarks: benches,
+		})
+		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 	return codeLens, nil
 }
@@ -129,14 +128,14 @@ func matchTestFunc(fn *ast.FuncDecl, info *types.Info, nameRe *regexp.Regexp, pa
 	if !ok {
 		return false
 	}
-	sig := obj.Type().(*types.Signature)
+	sig := obj.Signature()
 	// Test functions should have only one parameter.
 	if sig.Params().Len() != 1 {
 		return false
 	}
 
 	// Check the type of the only parameter
-	// (We don't Unalias or use typesinternal.ReceiverNamed
+	// (We don't Unalias or use typesinternal.RecvBase
 	// in the two checks below because "go test" can't see
 	// through aliases when enumerating Test* functions;
 	// it's syntactic.)
@@ -171,17 +170,11 @@ func goGenerateCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 				return nil, err
 			}
 			dir := fh.URI().Dir()
-			nonRecursiveCmd, err := command.NewGenerateCommand("run go generate", command.GenerateArgs{Dir: dir, Recursive: false})
-			if err != nil {
-				return nil, err
-			}
-			recursiveCmd, err := command.NewGenerateCommand("run go generate ./...", command.GenerateArgs{Dir: dir, Recursive: true})
-			if err != nil {
-				return nil, err
-			}
+			nonRecursiveCmd := command.NewGenerateCommand("run go generate", command.GenerateArgs{Dir: dir, Recursive: false})
+			recursiveCmd := command.NewGenerateCommand("run go generate ./...", command.GenerateArgs{Dir: dir, Recursive: true})
 			return []protocol.CodeLens{
-				{Range: rng, Command: &recursiveCmd},
-				{Range: rng, Command: &nonRecursiveCmd},
+				{Range: rng, Command: recursiveCmd},
+				{Range: rng, Command: nonRecursiveCmd},
 			}, nil
 
 		}
@@ -208,30 +201,6 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 		return nil, err
 	}
 	puri := fh.URI()
-	cmd, err := command.NewRegenerateCgoCommand("regenerate cgo definitions", command.URIArg{URI: puri})
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
-}
-
-func toggleDetailsCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
-	if err != nil {
-		return nil, err
-	}
-	if !pgf.File.Package.IsValid() {
-		// Without a package name we have nowhere to put the codelens, so give up.
-		return nil, nil
-	}
-	rng, err := pgf.PosRange(pgf.File.Package, pgf.File.Package)
-	if err != nil {
-		return nil, err
-	}
-	puri := fh.URI()
-	cmd, err := command.NewGCDetailsCommand("Toggle gc annotation details", puri)
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
+	cmd := command.NewRegenerateCgoCommand("regenerate cgo definitions", command.URIArg{URI: puri})
+	return []protocol.CodeLens{{Range: rng, Command: cmd}}, nil
 }

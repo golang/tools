@@ -6,6 +6,7 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -97,10 +98,10 @@ const eor = "\r\n\r\n\r\n"
 func (s *loggingStream) logCommon(msg jsonrpc2.Message, isRead bool) {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
-	direction, pastTense := "Received", "Received"
+	direction := "Received"
 	get, set := maps.client, maps.setServer
 	if isRead {
-		direction, pastTense = "Sending", "Sent"
+		direction = "Sending"
 		get, set = maps.server, maps.setClient
 	}
 	if msg == nil || s.log == nil {
@@ -122,15 +123,21 @@ func (s *loggingStream) logCommon(msg jsonrpc2.Message, isRead bool) {
 		fmt.Fprintf(&buf, "Params: %s%s", msg.Params(), eor)
 	case *jsonrpc2.Response:
 		id := fmt.Sprint(msg.ID())
-		if err := msg.Err(); err != nil {
-			fmt.Fprintf(s.log, "[Error - %s] %s #%s %s%s", pastTense, tmfmt, id, err, eor)
-			return
-		}
 		cc := get(id)
 		elapsed := tm.Sub(cc.start)
-		fmt.Fprintf(&buf, "%s response '%s - (%s)' in %dms.\n",
-			direction, cc.method, id, elapsed/time.Millisecond)
-		fmt.Fprintf(&buf, "Result: %s%s", msg.Result(), eor)
+		if err := msg.Err(); err != nil {
+			fmt.Fprintf(&buf, "%s response '%s - (%s)' in %dms. Request failed: ",
+				direction, cc.method, id, elapsed/time.Millisecond)
+			if wireErr, ok := errors.AsType[*jsonrpc2.WireError](err); ok {
+				fmt.Fprintf(&buf, "%s (%d).%s", wireErr.Message, wireErr.Code, eor)
+			} else {
+				fmt.Fprintf(&buf, "%s.%s", err, eor)
+			}
+		} else {
+			fmt.Fprintf(&buf, "%s response '%s - (%s)' in %dms.\n",
+				direction, cc.method, id, elapsed/time.Millisecond)
+			fmt.Fprintf(&buf, "Result: %s%s", msg.Result(), eor)
+		}
 	}
 	s.log.Write([]byte(buf.String()))
 }

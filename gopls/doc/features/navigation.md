@@ -1,6 +1,10 @@
-# Gopls: Navigation features
+---
+title: "Gopls: Navigation features"
+---
 
 This page documents gopls features for navigating your source code.
+
+<!-- TODO: screenshots -->
 
 ## Definition
 
@@ -20,6 +24,12 @@ A definition query also works in these unexpected places:
   (like [`hover`](passive.md#hover)) the location of the linked symbol.
 - On a file name in a **[`go:embed` directive](https://pkg.go.dev/embed)**,
   it returns the location of the embedded file.
+- On the declaration of a non-Go function (a `func` with no body),
+  it returns the location of the assembly implementation, if any,
+- On a **return statement**, it returns the location of the function's result variables.
+- On a **goto**, **break**, or **continue** statement, it returns the
+  location of the label, the closing brace of the relevant block statement, or the
+  start of the relevant loop, respectively.
 
 <!-- On a built-in symbol such as `append` or `unsafe.Pointer`, `definition` reports
 the location of the declaration in the builtin or unsafe pseudo-packages,
@@ -35,7 +45,7 @@ Client support:
 ## References
 
 The LSP [`textDocument/references`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references)
-request returns the locations of all identifiers that refers to the symbol under the cursor.
+request returns the locations of all identifiers that refer to the symbol under the cursor.
 
 The references algorithm handles various parts of syntax as follows:
 
@@ -54,16 +64,19 @@ The references algorithm handles various parts of syntax as follows:
 - An **embedded field** `T` in a struct type such as `struct{T}` is
   unique in Go in that it is both a reference (to a type) and a
   definition (of a field).
-  The `references` operation reports only the references to it [as a field](golang/go#63521).
+  The `references` operation reports only the references to it [as a field](https://go.dev/issue/63521).
   To find references to the type, jump to the type declararation first.
+- The references to a module in a **require** directive in a **go.mod** file are
+  the **import** statements in packages of the main module (defined by the go.mod file) that
+  import packages of the required module.
 
 Be aware that a references query returns information only about the
 build configuration used to analyze the selected file, so if you ask
 for the references to a symbol defined in `foo_windows.go`, the result
 will never include the file `bar_linux.go`, even if that file refers
-to a symbol of the same name; see golang/go#65755.
+to a symbol of the same name; see https://go.dev/issue/65755.
 
-Clients can request that the the declaration be included among the
+Clients can request that the declaration be included among the
 references; most do.
 
 Client support:
@@ -77,17 +90,42 @@ Client support:
 
 The LSP
 [`textDocument/implementation`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_implementation)
-request queries the "implements" relation between interfaces and concrete types:
+request queries the relation between abstract and concrete types and
+their methods.
+
+Interfaces and concrete types are matched using method sets:
 
 - When invoked on a reference to an **interface type**, it returns the
   location of the declaration of each type that implements
   the interface.
 - When invoked on a **concrete type**,
-  it returns the locations of the matching interface types. 
+  it returns the locations of the matching interface types.
 - When invoked on an **interface method**, it returns the corresponding
   methods of the types that satisfy the interface.
 - When invoked on a **concrete method**,
   it returns the locations of the matching interface methods.
+
+For example:
+- `implementation(io.Reader)` includes subinterfaces such as `io.ReadCloser`,
+  and concrete implementations such as `*os.File`. It also includes
+  other declarations equivalent to `io.Reader`.
+- `implementation(os.File)` includes only interfaces, such as
+  `io.Reader` and `io.ReadCloser`.
+
+The LSP's Implementation feature has a built-in bias towards subtypes,
+possibly because in languages such as Java and C++ the relationship
+between a type and its supertypes is explicit in the syntax, so the
+corresponding "Go to interfaces" operation can be achieved as sequence
+of two or more "Go to definition" steps: the first to visit the type
+declaration, and the rest to sequentially visit ancestors.
+(See https://github.com/microsoft/language-server-protocol/issues/2037.)
+
+In Go, where there is no syntactic relationship between two types, a
+search is required when navigating in either direction between
+subtypes and supertypes. The heuristic above works well in many cases,
+but it is not possible to ask for the superinterfaces of
+`io.ReadCloser`. For more explicit navigation between subtypes and
+supertypes, use the [Type Hierarchy](#Type Hierarchy) feature.
 
 Only non-trivial interfaces are considered; no implementations are
 reported for type `any`.
@@ -103,7 +141,31 @@ types with methods due to embedding) may be missing from the results.
      but that is not consistent with the "scalable" gopls design.
 -->
 
-Generic types are currently not fully supported; see golang/go#59224.
+Functions, `func` types, and dynamic function calls are matched using signatures:
+
+- When invoked on the `func` token of a **function definition**,
+  it returns the locations of the matching signature types
+  and dynamic call expressions.
+- When invoked on the `func` token of a **signature type**,
+  it returns the locations of the matching concrete function definitions.
+- When invoked on the `(` token (or called identifier) of a **dynamic function call**,
+  it returns the locations of the matching concrete function
+  definitions.
+
+If either the target type or the candidate type are generic, the
+results will include the candidate type if there is any instantiation
+of the two types that would allow one to implement the other.
+(Note: the matcher doesn't current implement full unification, so type
+parameters are treated like wildcards that may match arbitrary
+types, without regard to consistency of substitutions across the
+method set or even within a single method.
+This may lead to occasional spurious matches.)
+
+Since a type may be both a function type and a named type with methods
+(for example, `http.HandlerFunc`), it may participate in both kinds of
+implementation queries (by method-sets and function signatures).
+Queries using method-sets should be invoked on the type or method name,
+and queries using signatures should be invoked on a `func` or `(` token.
 
 Client support:
 - **VS Code**: Use [Go to Implementations](https://code.visualstudio.com/docs/editor/editingevolved#_go-to-implementation) (`⌘F12`).
@@ -131,7 +193,7 @@ Similarly, if the symbol's type is a function with one "interesting"
 (named, non-`error`) result type, the function's result type is used.
 
 Gopls currently requires that a `typeDefinition` query be applied to a
-symbol, not to an arbitrary expression; see golang/go#67890 for
+symbol, not to an arbitrary expression; see https://go.dev/issue/67890 for
 potential extensions of this functionality.
 <!-- e.g. selecting a struct field, package name, or other piece of syntax. -->
 
@@ -169,7 +231,7 @@ LSP query searches an index of all the symbols in the workspace.
 
 The default symbol matching algorithm (`fastFuzzy`), inspired by the
 popular fuzzy matcher [FZF](https://github.com/junegunn/fzf), attempts
-a variety of inexact matches to correct for misspellings in your
+a variety of inexact matches to correct for misspellings or abbreviations in your
 query. For example, it considers `DocSym` a match for `DocumentSymbol`.
 
 <!--
@@ -184,8 +246,6 @@ It also supports the following special characters within queries:
 However, VS Code does its own fuzzy matching afterward, so these
 aren't effective in that client; see golang/vscode-go#647.
 -->
-
-TODO: screenshot
 
 Settings:
 - The [`symbolMatcher`](../settings.md#symbolMatcher) setting controls the algorithm used for symbol matching.
@@ -241,11 +301,40 @@ of `fmt.Stringer` through the guts of `fmt.Sprint:`
 
 <img title="Outgoing calls of f" src="../assets/outgoingcalls.png" width="640">
 
-Caveats:
-- In some cases dynamic function calls are (erroneously) included in
-  the output; see golang/go#68153.
-
 Client support:
 - **VS Code**: `Show Call Hierarchy` menu item (`⌥⇧H`) opens [Call hierarchy view](https://code.visualstudio.com/docs/cpp/cpp-ide#_call-hierarchy) (note: docs refer to C++ but the idea is the same for Go).
 - **Emacs + eglot**: Not standard; install with `(package-vc-install "https://github.com/dolmens/eglot-hierarchy")`. Use `M-x eglot-hierarchy-call-hierarchy` to show the direct incoming calls to the selected function; use a prefix argument (`C-u`) to show the direct outgoing calls. There is no way to expand the tree.
 - **CLI**: `gopls call_hierarchy file.go:#offset` shows outgoing and incoming calls.
+
+
+## Type Hierarchy
+
+The LSP TypeHierarchy mechanism consists of three queries that
+together enable clients to present a hierarchical view of a portion of
+the subtyping relation over named types.
+
+- [`textDocument/prepareTypeHierarchy`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_prepareTypeHierarchy) returns an [item](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyItem) describing the named type at the current position;
+- [`typeHierarchyItem/subtypes`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchy_subtypes) returns the set of subtypes of the selected (interface) type; and
+- [`typeHierarchy/supertypes`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchy_supertypes) returns the set of supertypes (interface types) of the selected type.
+
+Invoke the command while selecting the name of a type.
+
+As with an Implementation query, a type hierarchy query reports
+function-local types only within the same package as the query type.
+Also the result does not include alias types, only defined types.
+
+<img title="Type Hierarchy: supertypes of net.Conn" src="../assets/supertypes.png" width="400">
+
+<img title="Type Hierarchy: subtypes of io.Writer" src="../assets/subtypes.png" width="400">
+
+Caveats:
+
+- The type hierarchy supports only named types and their assignability
+  relation. By contrast, the Implementations request also reports the
+  relation between unnamed `func` types and function declarations,
+  function literals, and dynamic calls of values of those types.
+
+Client support:
+- **VS Code**: `Show Type Hierarchy` menu item opens [Type hierarchy view](https://code.visualstudio.com/docs/java/java-editing#_type-hierarchy) (note: docs refer to Java but the idea is the same for Go).
+- **Emacs + eglot**: Support added in March 2025. Use `M-x eglot-show-call-hierarchy`.
+- **CLI**: not yet supported.

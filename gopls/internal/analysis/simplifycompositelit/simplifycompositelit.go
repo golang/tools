@@ -8,18 +8,17 @@
 package simplifycompositelit
 
 import (
-	"bytes"
 	_ "embed"
 	"fmt"
 	"go/ast"
-	"go/printer"
 	"go/token"
-	"reflect"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 //go:embed doc.go
@@ -27,167 +26,129 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "simplifycompositelit",
-	Doc:      analysisinternal.MustExtractDoc(doc, "simplifycompositelit"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "simplifycompositelit"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{(*ast.CompositeLit)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		expr := n.(*ast.CompositeLit)
+func run(pass *analysis.Pass) (any, error) {
+	// Gather information whether file is generated or not
+	generated := make(map[*token.File]bool)
+	for _, file := range pass.Files {
+		if ast.IsGenerated(file) {
+			generated[pass.Fset.File(file.FileStart)] = true
+		}
+	}
 
-		outer := expr
-		var keyType, eltType ast.Expr
-		switch typ := outer.Type.(type) {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
+	// Find each CompositeLit with an explicit type.
+	// Then attempt to simplify each element that is
+	// itself a CompositeLit with an explicit type.
+	//
+	// TODO(adonovan): note that go1.28 will permit types to be
+	// omitted much more generally, so instead of starting with
+	// the "outer" CompositeLit, we'll need to look for "inner"
+	// literals appearing in a context that determines their type
+	// (assuming we want to take a maximal approach to
+	// simplification). We should also support named and alias
+	// types more thoroughly.
+
+	for curLit := range inspect.Root().Preorder((*ast.CompositeLit)(nil)) {
+		lit := curLit.Node().(*ast.CompositeLit)
+
+		// Skip generated code.
+		if _, ok := generated[pass.Fset.File(lit.Pos())]; ok {
+			continue
+		}
+
+		var (
+			kind             string
+			keyType, eltType ast.Expr
+		)
+		switch typ := lit.Type.(type) {
 		case *ast.ArrayType:
 			eltType = typ.Elt
+			if typ.Len != nil {
+				kind = "array"
+			} else {
+				kind = "slice"
+			}
 		case *ast.MapType:
 			keyType = typ.Key
 			eltType = typ.Value
+			kind = "map"
+		default:
+			// e.g. struct, named, or nil (no explicit type)
+			continue
 		}
 
-		if eltType == nil {
-			return
-		}
-		var ktyp reflect.Value
-		if keyType != nil {
-			ktyp = reflect.ValueOf(keyType)
-		}
-		typ := reflect.ValueOf(eltType)
-		for _, x := range outer.Elts {
-			// look at value of indexed/named elements
-			if t, ok := x.(*ast.KeyValueExpr); ok {
-				if keyType != nil {
-					simplifyLiteral(pass, ktyp, keyType, t.Key)
+		for _, elt := range lit.Elts {
+			if kve, ok := elt.(*ast.KeyValueExpr); ok {
+				if keyType != nil { // map
+					simplifyLiteral(pass, keyType, kve.Key, kind)
 				}
-				x = t.Value
+				elt = kve.Value
 			}
-			simplifyLiteral(pass, typ, eltType, x)
+			simplifyLiteral(pass, eltType, elt, kind)
 		}
-	})
+	}
 	return nil, nil
 }
 
-func simplifyLiteral(pass *analysis.Pass, typ reflect.Value, astType, x ast.Expr) {
-	// if the element is a composite literal and its literal type
-	// matches the outer literal's element type exactly, the inner
-	// literal type may be omitted
-	if inner, ok := x.(*ast.CompositeLit); ok && match(typ, reflect.ValueOf(inner.Type)) {
-		var b bytes.Buffer
-		printer.Fprint(&b, pass.Fset, inner.Type)
-		createDiagnostic(pass, inner.Type.Pos(), inner.Type.End(), b.String())
+// simplifyLiteral reports a diagnostic if expr's is a T{...} or
+// &T{...} literal whose type is identical to want and therefore
+// redundant.
+func simplifyLiteral(pass *analysis.Pass, want, expr ast.Expr, kind string) {
+	info := pass.TypesInfo
+
+	report := func(ampPos token.Pos, innerType ast.Expr) {
+		var (
+			start = innerType.Pos()
+			end   = innerType.End()
+			amp   string
+			edits []analysis.TextEdit
+		)
+		if ampPos.IsValid() {
+			amp = "&"
+			edits = append(edits, analysis.TextEdit{
+				Pos: ampPos,
+				End: ampPos + token.Pos(len("&")),
+			})
+			start = ampPos
+		}
+		edits = append(edits, analysis.TextEdit{Pos: innerType.Pos(), End: end})
+		pass.Report(analysis.Diagnostic{
+			Pos:     start,
+			End:     end,
+			Message: fmt.Sprintf("redundant type in %s literal", kind),
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message:   fmt.Sprintf("Remove '%s%s'", amp, astutil.Format(pass.Fset, innerType)),
+				TextEdits: edits,
+			}},
+		})
 	}
+
+	// If the element is a composite literal whose explicit type
+	// is identical to the outer literal's element type,
+	// the inner literal's type may be omitted
+	if inner, ok := expr.(*ast.CompositeLit); ok &&
+		inner.Type != nil &&
+		types.Identical(info.TypeOf(want), info.TypeOf(inner.Type)) {
+		report(token.NoPos, inner.Type)
+	}
+
 	// if the outer literal's element type is a pointer type *T
 	// and the element is & of a composite literal of type T,
 	// the inner &T may be omitted.
-	if ptr, ok := astType.(*ast.StarExpr); ok {
-		if addr, ok := x.(*ast.UnaryExpr); ok && addr.Op == token.AND {
-			if inner, ok := addr.X.(*ast.CompositeLit); ok {
-				if match(reflect.ValueOf(ptr.X), reflect.ValueOf(inner.Type)) {
-					var b bytes.Buffer
-					printer.Fprint(&b, pass.Fset, inner.Type)
-					// Account for the & by subtracting 1 from typ.Pos().
-					createDiagnostic(pass, inner.Type.Pos()-1, inner.Type.End(), "&"+b.String())
-				}
+	if star, ok := want.(*ast.StarExpr); ok {
+		if addr, ok := expr.(*ast.UnaryExpr); ok && addr.Op == token.AND {
+			if inner, ok := addr.X.(*ast.CompositeLit); ok &&
+				inner.Type != nil &&
+				types.Identical(info.TypeOf(star.X), info.TypeOf(inner.Type)) {
+				report(addr.OpPos, inner.Type)
 			}
 		}
 	}
 }
-
-func createDiagnostic(pass *analysis.Pass, start, end token.Pos, typ string) {
-	pass.Report(analysis.Diagnostic{
-		Pos:     start,
-		End:     end,
-		Message: "redundant type from array, slice, or map composite literal",
-		SuggestedFixes: []analysis.SuggestedFix{{
-			Message: fmt.Sprintf("Remove '%s'", typ),
-			TextEdits: []analysis.TextEdit{{
-				Pos:     start,
-				End:     end,
-				NewText: []byte{},
-			}},
-		}},
-	})
-}
-
-// match reports whether pattern matches val,
-// recording wildcard submatches in m.
-// If m == nil, match checks whether pattern == val.
-// from https://github.com/golang/go/blob/26154f31ad6c801d8bad5ef58df1e9263c6beec7/src/cmd/gofmt/rewrite.go#L160
-func match(pattern, val reflect.Value) bool {
-	// Otherwise, pattern and val must match recursively.
-	if !pattern.IsValid() || !val.IsValid() {
-		return !pattern.IsValid() && !val.IsValid()
-	}
-	if pattern.Type() != val.Type() {
-		return false
-	}
-
-	// Special cases.
-	switch pattern.Type() {
-	case identType:
-		// For identifiers, only the names need to match
-		// (and none of the other *ast.Object information).
-		// This is a common case, handle it all here instead
-		// of recursing down any further via reflection.
-		p := pattern.Interface().(*ast.Ident)
-		v := val.Interface().(*ast.Ident)
-		return p == nil && v == nil || p != nil && v != nil && p.Name == v.Name
-	case objectPtrType, positionType:
-		// object pointers and token positions always match
-		return true
-	case callExprType:
-		// For calls, the Ellipsis fields (token.Position) must
-		// match since that is how f(x) and f(x...) are different.
-		// Check them here but fall through for the remaining fields.
-		p := pattern.Interface().(*ast.CallExpr)
-		v := val.Interface().(*ast.CallExpr)
-		if p.Ellipsis.IsValid() != v.Ellipsis.IsValid() {
-			return false
-		}
-	}
-
-	p := reflect.Indirect(pattern)
-	v := reflect.Indirect(val)
-	if !p.IsValid() || !v.IsValid() {
-		return !p.IsValid() && !v.IsValid()
-	}
-
-	switch p.Kind() {
-	case reflect.Slice:
-		if p.Len() != v.Len() {
-			return false
-		}
-		for i := 0; i < p.Len(); i++ {
-			if !match(p.Index(i), v.Index(i)) {
-				return false
-			}
-		}
-		return true
-
-	case reflect.Struct:
-		for i := 0; i < p.NumField(); i++ {
-			if !match(p.Field(i), v.Field(i)) {
-				return false
-			}
-		}
-		return true
-
-	case reflect.Interface:
-		return match(p.Elem(), v.Elem())
-	}
-
-	// Handle token integers, etc.
-	return p.Interface() == v.Interface()
-}
-
-// Values/types for special cases.
-var (
-	identType     = reflect.TypeOf((*ast.Ident)(nil))
-	objectPtrType = reflect.TypeOf((*ast.Object)(nil))
-	positionType  = reflect.TypeOf(token.NoPos)
-	callExprType  = reflect.TypeOf((*ast.CallExpr)(nil))
-)

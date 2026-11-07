@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -70,7 +69,7 @@ type postfixTmplArgs struct {
 	// Type is the type of "foo.bar" in "foo.bar.print!".
 	Type types.Type
 
-	// FuncResult are results of the enclosed function
+	// FuncResults are results of the enclosed function
 	FuncResults []*types.Var
 
 	sel            *ast.SelectorExpr
@@ -78,7 +77,8 @@ type postfixTmplArgs struct {
 	snip           snippet.Builder
 	importIfNeeded func(pkgPath string, scope *types.Scope) (name string, edits []protocol.TextEdit, err error)
 	edits          []protocol.TextEdit
-	qf             types.Qualifier
+	paths          []string // import paths the edits add
+	qual           types.Qualifier
 	varNames       map[string]bool
 	placeholders   bool
 	currentTabStop int
@@ -335,7 +335,29 @@ if {{$errName | $a.SpecifiedPlaceholder 1}} != nil {
 	{{end}}
 }
 {{end}}`,
-}}
+},
+	{
+		label:   "tostring",
+		details: "[]byte to string",
+		body: `{{if (eq (.TypeName .Type) "[]byte") -}}
+	string({{.X}})
+	{{- end}}`,
+	},
+	{
+		label:   "tostring",
+		details: "int to string",
+		body: `{{if (eq (.TypeName .Type) "int") -}}
+		{{.Import "strconv"}}.Itoa({{.X}})
+		{{- end}}`,
+	},
+	{
+		label:   "tobytes",
+		details: "string to []byte",
+		body: `{{if (eq (.TypeName .Type) "string") -}}
+	[]byte({{.X}})
+	{{- end}}`,
+	},
+}
 
 // Cursor indicates where the client's cursor should end up after the
 // snippet is done.
@@ -377,6 +399,9 @@ func (a *postfixTmplArgs) Import(path string) (string, error) {
 		return "", fmt.Errorf("couldn't import %q: %w", path, err)
 	}
 	a.edits = append(a.edits, edits...)
+	if len(edits) > 0 {
+		a.paths = append(a.paths, path)
+	}
 
 	return name, nil
 }
@@ -410,13 +435,9 @@ func (a *postfixTmplArgs) KeyType() types.Type {
 // Tuple returns the tuple result vars if the type of X is tuple.
 func (a *postfixTmplArgs) Tuple() []*types.Var {
 	tuple, _ := a.Type.(*types.Tuple)
-	if tuple == nil {
-		return nil
-	}
-
-	typs := make([]*types.Var, 0, tuple.Len())
-	for i := 0; i < tuple.Len(); i++ {
-		typs = append(typs, tuple.At(i))
+	typs := make([]*types.Var, tuple.Len())
+	for i := range typs {
+		typs[i] = tuple.At(i)
 	}
 	return typs
 }
@@ -424,9 +445,6 @@ func (a *postfixTmplArgs) Tuple() []*types.Var {
 // TupleLast returns the last tuple result vars if the type of X is tuple.
 func (a *postfixTmplArgs) TupleLast() *types.Var {
 	tuple, _ := a.Type.(*types.Tuple)
-	if tuple == nil {
-		return nil
-	}
 	if tuple.Len() == 0 {
 		return nil
 	}
@@ -438,12 +456,13 @@ func (a *postfixTmplArgs) TypeName(t types.Type) (string, error) {
 	if t == nil || t == types.Typ[types.Invalid] {
 		return "", fmt.Errorf("invalid type: %v", t)
 	}
-	return types.TypeString(t, a.qf), nil
+	return types.TypeString(t, a.qual), nil
 }
 
 // Zero return the zero value representation of type t
 func (a *postfixTmplArgs) Zero(t types.Type) string {
-	return formatZeroValue(t, a.qf)
+	zero, _ := typesinternal.ZeroString(t, a.qual)
+	return zero
 }
 
 func (a *postfixTmplArgs) IsIdent() bool {
@@ -465,7 +484,7 @@ func (a *postfixTmplArgs) VarName(t types.Type, nonNamedDefault string) string {
 	// go/types predicates are undefined on types.Typ[types.Invalid].
 	if !types.Identical(t, types.Typ[types.Invalid]) && types.Implements(t, errorIntf) {
 		name = "err"
-	} else if !is[*types.Named](aliases.Unalias(typesinternal.Unpointer(t))) {
+	} else if !is[*types.Named](types.Unalias(typesinternal.Unpointer(t))) {
 		name = nonNamedDefault
 	}
 
@@ -505,7 +524,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 	}
 
 	selType := c.pkg.TypesInfo().TypeOf(sel.X)
-	if selType == nil {
+	if selType == nil || selType == types.Typ[types.Invalid] {
 		return
 	}
 
@@ -542,7 +561,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		results := c.enclosingFunc.sig.Results()
 		if results != nil {
 			funcResults = make([]*types.Var, results.Len())
-			for i := 0; i < results.Len(); i++ {
+			for i := range results.Len() {
 				funcResults[i] = results.At(i)
 			}
 		}
@@ -588,7 +607,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			Type:           selType,
 			FuncResults:    funcResults,
 			sel:            sel,
-			qf:             c.qf,
+			qual:           c.qual,
 			importIfNeeded: c.importIfNeeded,
 			scope:          scope,
 			varNames:       make(map[string]bool),
@@ -619,6 +638,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			Kind:                protocol.SnippetCompletion,
 			snippet:             &tmplArgs.snip,
 			AdditionalTextEdits: append(edits, tmplArgs.edits...),
+			LabelDetails:        labelDetails(protocol.SnippetCompletion, "", strings.Join(tmplArgs.paths, ", ")),
 		})
 	}
 }
@@ -653,7 +673,7 @@ func (c *completer) importIfNeeded(pkgPath string, scope *types.Scope) (string, 
 	defaultName := imports.ImportPathToAssumedName(pkgPath)
 
 	// Check if file already imports pkgPath.
-	for _, s := range c.file.Imports {
+	for _, s := range c.pgf.File.Imports {
 		// TODO(adonovan): what if pkgPath has a vendor/ suffix?
 		// This may be the cause of go.dev/issue/56291.
 		if string(metadata.UnquoteImportPath(s)) == pkgPath {

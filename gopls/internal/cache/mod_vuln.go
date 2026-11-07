@@ -18,11 +18,11 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 	isem "golang.org/x/tools/gopls/internal/vulncheck/semver"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/vuln/scan"
 )
 
@@ -40,7 +40,7 @@ func (s *Snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*v
 
 	// Cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg any) any {
 			result, err := modVulnImpl(ctx, arg.(*Snapshot))
 			return modVuln{result, err}
 		})
@@ -126,7 +126,6 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 	var group errgroup.Group
 	group.SetLimit(10) // limit govulncheck api runs
 	for _, mps := range packagesByModule {
-		mps := mps
 		group.Go(func() error {
 			effectiveModule := stdlibModule
 			if m := mps[0].Module; m != nil {

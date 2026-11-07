@@ -6,7 +6,6 @@ package modfile
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -180,7 +179,7 @@ require example.com v1.2.3
 		)
 		var goGetDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "could not import") {
+			if strings.Contains(diag.MessageString(), "could not import") {
 				goGetDiag = diag
 			}
 		}
@@ -227,7 +226,7 @@ require random.org v1.2.3
 		)
 		var randomDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "random.org") {
+			if strings.Contains(diag.MessageString(), "random.org") {
 				randomDiag = diag
 			}
 		}
@@ -235,6 +234,50 @@ require random.org v1.2.3
 		if got := env.ReadWorkspaceFile("a/go.mod"); got != want {
 			t.Fatalf("unexpected go.mod content:\n%s", compare.Text(want, got))
 		}
+	})
+}
+
+func TestMultipleExactMissingDependencies(t *testing.T) {
+	const files = `
+-- a/go.mod --
+module mod.com
+
+go 1.12
+
+replace example.com/a => ../deps/a
+
+replace example.com/b => ../deps/b
+-- a/main.go --
+package main
+
+import "example.com/a"
+import "example.com/b"
+
+var _, _ = a.Name, b.Name
+-- deps/a/go.mod --
+module example.com/a
+
+go 1.12
+-- deps/a/a.go --
+package a
+
+const Name = "A"
+-- deps/b/go.mod --
+module example.com/b
+
+go 1.12
+-- deps/b/b.go --
+package b
+
+const Name = "B"
+`
+
+	WithOptions(WorkspaceFolders("a")).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/main.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/main.go", `"example.com/a"`), WithMessage("is not in your go.mod file")),
+			Diagnostics(env.AtRegexp("a/main.go", `"example.com/b"`), WithMessage("is not in your go.mod file")),
+		)
 	})
 }
 
@@ -280,7 +323,7 @@ require random.org v1.2.3
 		)
 		var randomDiag protocol.Diagnostic
 		for _, diag := range d.Diagnostics {
-			if strings.Contains(diag.Message, "random.org") {
+			if strings.Contains(diag.MessageString(), "random.org") {
 				randomDiag = diag
 			}
 		}
@@ -598,12 +641,12 @@ func main() {
 				Diagnostics(env.AtRegexp("a/main.go", "x = ")),
 			)
 			env.RegexpReplace("a/go.mod", "v1.2.3", "v1.2.2")
-			env.Editor.SaveBuffer(env.Ctx, "a/go.mod") // go.mod changes must be on disk
+			env.SaveBuffer("a/go.mod") // go.mod changes must be on disk
 			env.AfterChange(
 				Diagnostics(env.AtRegexp("a/go.mod", "example.com v1.2.2")),
 			)
 			env.RegexpReplace("a/go.mod", "v1.2.2", "v1.2.3")
-			env.Editor.SaveBuffer(env.Ctx, "a/go.mod") // go.mod changes must be on disk
+			env.SaveBuffer("a/go.mod") // go.mod changes must be on disk
 			env.AfterChange(
 				Diagnostics(env.AtRegexp("a/main.go", "x = ")),
 			)
@@ -808,7 +851,6 @@ go 1.12
 require (
 	example.com v1.2.3
 )
--- go.sum --
 -- main.go --
 package main
 
@@ -870,13 +912,13 @@ func hello() {}
 		env.RegexpReplace("go.mod", "module", "modul")
 		// Confirm that we still have metadata with only on-disk edits.
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", "hello"))
-		if filepath.Base(string(loc.URI)) != "hello.go" {
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", "hello"))
+		if loc.URI.Base() != "hello.go" {
 			t.Fatalf("expected definition in hello.go, got %s", loc.URI)
 		}
 		// Confirm that we no longer have metadata when the file is saved.
 		env.SaveBufferWithoutActions("go.mod")
-		_, err := env.Editor.Definition(env.Ctx, env.RegexpSearch("main.go", "hello"))
+		_, err := env.Editor.Definitions(env.Ctx, env.RegexpSearch("main.go", "hello"))
 		if err == nil {
 			t.Fatalf("expected error, got none")
 		}
@@ -918,11 +960,6 @@ module mod.com
 go 1.12
 
 require hasdep.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
-hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
-hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
 -- main.go --
 package main
 
@@ -957,19 +994,13 @@ go 1.12
 
 require hasdep.com v1.2.3
 require random.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
-hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
-hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
-random.com v1.2.3 h1:PzYTykzqqH6+qU0dIgh9iPFbfb4Mm8zNBjWWreRKtx0=
-random.com v1.2.3/go.mod h1:8EGj+8a4Hw1clAp8vbaeHAsKE4sbm536FP7nKyXO+qQ=
 -- main.go --
 package main
 
 func main() {}
 `
 		WithOptions(
+			WriteGoSum("."),
 			ProxyFiles(proxy),
 		).Run(t, mod, func(t *testing.T, env *Env) {
 			d := &protocol.PublishDiagnosticsParams{}
@@ -1010,7 +1041,6 @@ go 1.12
 require (
 	example.com v1.2.3
 )
--- go.sum --
 -- main.go --
 package main
 
@@ -1078,7 +1108,6 @@ func Goodbye() {
 module mod.com
 
 go 1.12
--- go.sum --
 -- main.go --
 package main
 

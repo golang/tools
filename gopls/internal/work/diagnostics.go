@@ -81,7 +81,7 @@ func diagnoseOne(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) 
 }
 
 func modFileURI(pw *cache.ParsedWorkFile, use *modfile.Use) protocol.DocumentURI {
-	workdir := filepath.Dir(pw.URI.Path())
+	workdir := pw.URI.DirPath()
 
 	modroot := filepath.FromSlash(use.Path)
 	if !filepath.IsAbs(modroot) {

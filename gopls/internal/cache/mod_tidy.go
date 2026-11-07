@@ -21,10 +21,9 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/memoize"
 )
 
 // This error is sought by mod diagnostics.
@@ -46,7 +45,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 
 	uri := pm.URI
 	if pm.File == nil {
-		return nil, fmt.Errorf("cannot tidy unparseable go.mod file: %v", uri)
+		return nil, fmt.Errorf("cannot tidy unparsable go.mod file: %v", uri)
 	}
 
 	s.mu.Lock()
@@ -77,7 +76,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 			return nil, err
 		}
 
-		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg any) any {
 			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), pm)
 			return modTidyResult{tidied, err}
 		})
@@ -108,12 +107,8 @@ func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*Ti
 	}
 	defer cleanup()
 
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
-		Env:        []string{"GOWORK=off"},
-		WorkingDir: pm.URI.Dir().Path(),
-	})
+	args := []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")}
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(NoNetwork, pm.URI.DirPath(), "mod", args, "GOWORK=off")
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +254,7 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 		for imp := range imps {
 			if req, ok := missing[imp]; ok {
 				missingImports[imp] = req
-				break
+				continue
 			}
 			// If the import is a package of the dependency, then add the
 			// package to the map, this will eliminate the need to do this
@@ -267,7 +262,7 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 			// Example:
 			//
 			// import (
-			//   "golang.org/x/tools/go/expect"
+			//   "golang.org/x/tools/internal/expect"
 			//   "golang.org/x/tools/go/packages"
 			// )
 			// They both are related to the same module: "golang.org/x/tools".
@@ -333,14 +328,11 @@ func unusedDiagnostic(m *protocol.Mapper, req *modfile.Require, onlyDiagnostic b
 		return nil, err
 	}
 	title := fmt.Sprintf("Remove dependency: %s", req.Mod.Path)
-	cmd, err := command.NewRemoveDependencyCommand(title, command.RemoveDependencyArgs{
+	cmd := command.NewRemoveDependencyCommand(title, command.RemoveDependencyArgs{
 		URI:            m.URI,
 		OnlyDiagnostic: onlyDiagnostic,
 		ModulePath:     req.Mod.Path,
 	})
-	if err != nil {
-		return nil, err
-	}
 	return &Diagnostic{
 		URI:            m.URI,
 		Range:          rng,
@@ -406,14 +398,11 @@ func missingModuleDiagnostic(pm *ParsedModule, req *modfile.Require) (*Diagnosti
 		}
 	}
 	title := fmt.Sprintf("Add %s to your go.mod file", req.Mod.Path)
-	cmd, err := command.NewAddDependencyCommand(title, command.DependencyArgs{
+	cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 		URI:        pm.Mapper.URI,
 		AddRequire: !req.Indirect,
-		GoCmdArgs:  []string{req.Mod.Path + "@" + req.Mod.Version},
+		GoCmdArgs:  []string{"--", req.Mod.Path + "@" + req.Mod.Version},
 	})
-	if err != nil {
-		return nil, err
-	}
 	return &Diagnostic{
 		URI:            pm.Mapper.URI,
 		Range:          rng,

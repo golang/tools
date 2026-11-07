@@ -2,6 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:generate go run resolver_gen.go
+
+// The parsego package defines the [File] type, a wrapper around a go/ast.File
+// that is useful for answering LSP queries. Notably, it bundles the
+// *token.File and *protocol.Mapper necessary for token.Pos locations to and
+// from UTF-16 LSP positions.
+//
+// Run `go generate` to update resolver.go from GOROOT.
 package parsego
 
 import (
@@ -13,11 +21,12 @@ import (
 	"go/scanner"
 	"go/token"
 	"reflect"
+	"slices"
 
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -38,7 +47,7 @@ const (
 // Parse parses a buffer of Go source, repairing the tree if necessary.
 //
 // The provided ctx is used only for logging.
-func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *File, fixes []fixType) {
+func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *File, fixes []FixType) {
 	if purgeFuncBodies {
 		src = astutil.PurgeFuncBodies(src)
 	}
@@ -51,15 +60,13 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 		// We passed a byte slice, so the only possible error is a parse error.
 		parseErr = err.(scanner.ErrorList)
 	}
+	// Inv: file != nil.
 
-	tok := fset.File(file.Pos())
-	if tok == nil {
-		// file.Pos is the location of the package declaration (issue #53202). If there was
-		// none, we can't find the token.File that ParseFile created, and we
-		// have no choice but to recreate it.
-		tok = fset.AddFile(uri.Path(), -1, len(src))
-		tok.SetLinesForContent(src)
+	tokenFile := func(file *ast.File) *token.File {
+		return fset.File(file.FileStart)
 	}
+
+	tok := tokenFile(file)
 
 	fixedSrc := false
 	fixedAST := false
@@ -72,8 +79,8 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			fixes = append(fixes, astFixes...)
 		}
 
-		for i := 0; i < 10; i++ {
-			// Fix certain syntax errors that render the file unparseable.
+		for i := range 10 {
+			// Fix certain syntax errors that render the file unparsable.
 			newSrc, srcFix := fixSrc(file, tok, src)
 			if newSrc == nil {
 				break
@@ -88,15 +95,13 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			}
 
 			newFile, newErr := parser.ParseFile(fset, uri.Path(), newSrc, mode)
-			if newFile == nil {
-				break // no progress
-			}
+			assert(newFile != nil, "ParseFile returned nil") // I/O error can't happen
 
 			// Maintain the original parseError so we don't try formatting the
 			// doctored file.
 			file = newFile
 			src = newSrc
-			tok = fset.File(file.Pos())
+			tok = tokenFile(file)
 
 			// Only now that we accept the fix do we record the src fix from above.
 			fixes = append(fixes, srcFix)
@@ -114,6 +119,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			}
 		}
 	}
+	assert(file != nil, "nil *ast.File")
 
 	return &File{
 		URI:      uri,
@@ -133,13 +139,18 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 //
 // If fixAST returns true, the resulting AST is considered "fixed", meaning
 // positions have been mangled, and type checker errors may not make sense.
-func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
+func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	var err error
-	walkASTWithParent(n, func(n, parent ast.Node) bool {
+	ast.PreorderStack(n, nil, func(n ast.Node, stack []ast.Node) bool {
+		var parent ast.Node
+		if len(stack) > 0 {
+			parent = stack[len(stack)-1]
+		}
+
 		switch n := n.(type) {
 		case *ast.BadStmt:
 			if fixDeferOrGoStmt(n, parent, tok, src) {
-				fixes = append(fixes, fixedDeferOrGo)
+				fixes = append(fixes, FixedDeferOrGo)
 				// Recursively fix in our fixed node.
 				moreFixes := fixAST(parent, tok, src)
 				fixes = append(fixes, moreFixes...)
@@ -149,7 +160,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			return false
 		case *ast.BadExpr:
 			if fixArrayType(n, parent, tok, src) {
-				fixes = append(fixes, fixedArrayType)
+				fixes = append(fixes, FixedArrayType)
 				// Recursively fix in our fixed node.
 				moreFixes := fixAST(parent, tok, src)
 				fixes = append(fixes, moreFixes...)
@@ -163,7 +174,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			//   for i := foo
 			//
 			if fixInitStmt(n, parent, tok, src) {
-				fixes = append(fixes, fixedInit)
+				fixes = append(fixes, FixedInit)
 			}
 			return false
 		case *ast.SelectorExpr:
@@ -172,7 +183,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			//   foo.var<> // want to complete to "foo.variance"
 			//
 			if fixPhantomSelector(n, tok, src) {
-				fixes = append(fixes, fixedPhantomSelector)
+				fixes = append(fixes, FixedPhantomSelector)
 			}
 			return true
 
@@ -182,7 +193,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 				// Adjust closing curly brace of empty switch/select
 				// statements so we can complete inside them.
 				if fixEmptySwitch(n, tok, src) {
-					fixes = append(fixes, fixedEmptySwitch)
+					fixes = append(fixes, FixedEmptySwitch)
 				}
 			}
 
@@ -194,66 +205,42 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 	return fixes
 }
 
-// walkASTWithParent walks the AST rooted at n. The semantics are
-// similar to ast.Inspect except it does not call f(nil).
-func walkASTWithParent(n ast.Node, f func(n ast.Node, parent ast.Node) bool) {
-	var ancestors []ast.Node
-	ast.Inspect(n, func(n ast.Node) (recurse bool) {
-		defer func() {
-			if recurse {
-				ancestors = append(ancestors, n)
-			}
-		}()
-
-		if n == nil {
-			ancestors = ancestors[:len(ancestors)-1]
-			return false
-		}
-
-		var parent ast.Node
-		if len(ancestors) > 0 {
-			parent = ancestors[len(ancestors)-1]
-		}
-
-		return f(n, parent)
-	})
-}
-
-// TODO(rfindley): revert this intrumentation once we're certain the crash in
+// TODO(rfindley): revert this instrumentation once we're certain the crash in
 // #59097 is fixed.
-type fixType int
+type FixType int
 
 const (
-	noFix fixType = iota
-	fixedCurlies
-	fixedDanglingSelector
-	fixedDeferOrGo
-	fixedArrayType
-	fixedInit
-	fixedPhantomSelector
-	fixedEmptySwitch
+	noFix FixType = iota
+	FixedCurlies
+	FixedDanglingSelector
+	FixedDeferOrGo
+	FixedArrayType
+	FixedInit
+	FixedPhantomSelector
+	FixedEmptySwitch
 )
 
 // fixSrc attempts to modify the file's source code to fix certain
 // syntax errors that leave the rest of the file unparsed.
 //
 // fixSrc returns a non-nil result if and only if a fix was applied.
-func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix fixType) {
-	walkASTWithParent(f, func(n, parent ast.Node) bool {
+func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix FixType) {
+	ast.PreorderStack(f, nil, func(n ast.Node, stack []ast.Node) bool {
 		if newSrc != nil {
 			return false
 		}
 
 		switch n := n.(type) {
 		case *ast.BlockStmt:
+			parent := stack[len(stack)-1]
 			newSrc = fixMissingCurlies(f, n, parent, tf, src)
 			if newSrc != nil {
-				fix = fixedCurlies
+				fix = FixedCurlies
 			}
 		case *ast.SelectorExpr:
 			newSrc = fixDanglingSelector(n, tf, src)
 			if newSrc != nil {
-				fix = fixedDanglingSelector
+				fix = FixedDanglingSelector
 			}
 		}
 
@@ -408,8 +395,10 @@ func fixEmptySwitch(body *ast.BlockStmt, tok *token.File, src []byte) bool {
 	return true
 }
 
-// fixDanglingSelector inserts real "_" selector expressions in place
-// of phantom "_" selectors. For example:
+// fixDanglingSelector inserts a real "_" selector expression in place
+// of a phantom parser-inserted "_" selector so that the parser will
+// not consume the following non-identifier token.
+// For example:
 //
 //	func _() {
 //		x.<>
@@ -439,17 +428,13 @@ func fixDanglingSelector(s *ast.SelectorExpr, tf *token.File, src []byte) []byte
 		return nil
 	}
 
-	var buf bytes.Buffer
-	buf.Grow(len(src) + 1)
-	buf.Write(src[:insertOffset])
-	buf.WriteByte('_')
-	buf.Write(src[insertOffset:])
-	return buf.Bytes()
+	return slices.Concat(src[:insertOffset], []byte("_"), src[insertOffset:])
 }
 
-// fixPhantomSelector tries to fix selector expressions with phantom
-// "_" selectors. In particular, we check if the selector is a
-// keyword, and if so we swap in an *ast.Ident with the keyword text. For example:
+// fixPhantomSelector tries to fix selector expressions whose Sel is a
+// phantom (parser-invented) "_". If the text after the '.' is a
+// keyword, it updates Sel to a fake ast.Ident of that name. For
+// example:
 //
 // foo.var
 //
@@ -484,21 +469,18 @@ func fixPhantomSelector(sel *ast.SelectorExpr, tf *token.File, src []byte) bool 
 	})
 }
 
-// isPhantomUnderscore reports whether the given ident is a phantom
-// underscore. The parser sometimes inserts phantom underscores when
-// it encounters otherwise unparseable situations.
+// isPhantomUnderscore reports whether the given ident from a
+// SelectorExpr.Sel was invented by the parser and is not present in
+// source text. The parser creates a blank "_" identifier when the
+// syntax (e.g. a selector) demands one but none is present. The fixer
+// also inserts them.
 func isPhantomUnderscore(id *ast.Ident, tok *token.File, src []byte) bool {
-	if id == nil || id.Name != "_" {
-		return false
+	switch id.Name {
+	case "_": // go1.24 parser
+		offset, err := safetoken.Offset(tok, id.Pos())
+		return err == nil && offset < len(src) && src[offset] != '_'
 	}
-
-	// Phantom underscore means the underscore is not actually in the
-	// program text.
-	offset, err := safetoken.Offset(tok, id.Pos())
-	if err != nil {
-		return false
-	}
-	return len(src) <= offset || src[offset] != '_'
+	return false // real
 }
 
 // fixInitStmt fixes cases where the parser misinterprets an
@@ -514,15 +496,18 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 	}
 
 	// Try to extract a statement from the BadExpr.
-	start, end, err := safetoken.Offsets(tok, bad.Pos(), bad.End()-1)
+	start, end, err := safetoken.Offsets(tok, bad.Pos(), bad.End())
 	if err != nil {
 		return false
 	}
-	stmtBytes := src[start : end+1]
+	assert(end <= len(src), "offset overflow") // golang/go#72026
+	stmtBytes := src[start:end]
 	stmt, err := parseStmt(tok, bad.Pos(), stmtBytes)
 	if err != nil {
 		return false
 	}
+
+	fileBase := token.Pos(tok.Base())
 
 	// If the parent statement doesn't already have an "init" statement,
 	// move the extracted statement into the "init" field and insert a
@@ -535,7 +520,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		p.Init = stmt
 		p.Cond = &ast.Ident{
 			Name:    "_",
-			NamePos: stmt.End(),
+			NamePos: min(stmt.End(), max(fileBase, tok.End()-1)),
 		}
 		return true
 	case *ast.ForStmt:
@@ -545,7 +530,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 		p.Init = stmt
 		p.Cond = &ast.Ident{
 			Name:    "_",
-			NamePos: stmt.End(),
+			NamePos: min(stmt.End(), max(fileBase, tok.End()-1)),
 		}
 		return true
 	case *ast.SwitchStmt:
@@ -592,27 +577,17 @@ func readKeyword(pos token.Pos, tok *token.File, src []byte) string {
 func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte) bool {
 	// Our expected input is a bad expression that looks like "[]someExpr".
 
-	from := bad.Pos()
-	to := bad.End()
-
-	if !from.IsValid() || !to.IsValid() {
-		return false
-	}
-
-	exprBytes := make([]byte, 0, int(to-from)+3)
-	// Avoid doing tok.Offset(to) since that panics if badExpr ends at EOF.
-	// It also panics if the position is not in the range of the file, and
-	// badExprs may not necessarily have good positions, so check first.
-	fromOffset, toOffset, err := safetoken.Offsets(tok, from, to-1)
+	from, to := bad.Pos(), bad.End()
+	fromOffset, toOffset, err := safetoken.Offsets(tok, from, to)
 	if err != nil {
 		return false
 	}
-	exprBytes = append(exprBytes, src[fromOffset:toOffset+1]...)
-	exprBytes = bytes.TrimSpace(exprBytes)
+
+	exprBytes := bytes.TrimSpace(slices.Clone(src[fromOffset:toOffset]))
 
 	// If our expression ends in "]" (e.g. "[]"), add a phantom selector
 	// so we can complete directly after the "[]".
-	if len(exprBytes) > 0 && exprBytes[len(exprBytes)-1] == ']' {
+	if bytes.HasSuffix(exprBytes, []byte("]")) {
 		exprBytes = append(exprBytes, '_')
 	}
 
@@ -816,15 +791,11 @@ FindTo:
 // positions are valid.
 func parseStmt(tok *token.File, pos token.Pos, src []byte) (ast.Stmt, error) {
 	// Wrap our expression to make it a valid Go file we can pass to ParseFile.
-	fileSrc := bytes.Join([][]byte{
-		[]byte("package fake;func _(){"),
-		src,
-		[]byte("}"),
-	}, nil)
+	fileSrc := slices.Concat([]byte("package fake;func _(){"), src, []byte("}"))
 
 	// Use ParseFile instead of ParseExpr because ParseFile has
 	// best-effort behavior, whereas ParseExpr fails hard on any error.
-	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, 0)
+	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, parser.SkipObjectResolution)
 	if fakeFile == nil {
 		return nil, fmt.Errorf("error reading fake file source: %v", err)
 	}
@@ -841,9 +812,16 @@ func parseStmt(tok *token.File, pos token.Pos, src []byte) (ast.Stmt, error) {
 
 	stmt := fakeDecl.Body.List[0]
 
+	// Clamp pos so the entire snippet fits within the valid position range of tok.
+	// This ensures that no node or token in stmt exceeds tok.End().
+	// See go.dev/issue/{73438,66790,66683,67704}.
+	fileBase := token.Pos(tok.Base())
+	maxPos := max(fileBase, tok.End()-token.Pos(len(src)))
+	pos = min(max(pos, fileBase), maxPos)
+
 	// parser.ParseFile returns undefined positions.
 	// Adjust them for the current file.
-	offsetPositions(tok, stmt, pos-1-(stmt.Pos()-1))
+	offsetPositions(tok, stmt, pos-stmt.Pos())
 
 	return stmt, nil
 }
@@ -864,12 +842,13 @@ func parseExpr(tok *token.File, pos token.Pos, src []byte) (ast.Expr, error) {
 	return exprStmt.X, nil
 }
 
-var tokenPosType = reflect.TypeOf(token.NoPos)
+var tokenPosType = reflect.TypeFor[token.Pos]()
 
-// offsetPositions applies an offset to the positions in an ast.Node.
+// offsetPositions applies an offset to the positions in an ast.Node,
+// clamping positions to the valid range [fileBase, fileEnd] of tok.
 func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
-	fileBase := int64(tok.Base())
-	fileEnd := fileBase + int64(tok.Size())
+	fileBase := token.Pos(tok.Base())
+	fileEnd := tok.End()
 	ast.Inspect(n, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -889,23 +868,17 @@ func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
 					continue
 				}
 
+				pos := token.Pos(f.Int())
+
 				// Don't offset invalid positions: they should stay invalid.
-				if !token.Pos(f.Int()).IsValid() {
+				if !pos.IsValid() {
 					continue
 				}
 
 				// Clamp value to valid range; see #64335.
-				//
-				// TODO(golang/go#64335): this is a hack, because our fixes should not
-				// produce positions that overflow (but they do: golang/go#64488).
-				pos := f.Int() + int64(offset)
-				if pos < fileBase {
-					pos = fileBase
-				}
-				if pos > fileEnd {
-					pos = fileEnd
-				}
-				f.SetInt(pos)
+				pos = min(max(pos+offset, fileBase), fileEnd)
+
+				f.SetInt(int64(pos))
 			}
 		}
 
@@ -943,12 +916,10 @@ func replaceNode(parent, oldChild, newChild ast.Node) bool {
 	}
 
 	// Loop over parent's struct fields.
-	for i := 0; i < parentVal.NumField(); i++ {
-		f := parentVal.Field(i)
-
+	for _, f := range parentVal.Fields() {
 		switch f.Kind() {
 		// Check interface and pointer fields.
-		case reflect.Interface, reflect.Ptr:
+		case reflect.Interface, reflect.Pointer:
 			if tryReplace(f) {
 				return true
 			}

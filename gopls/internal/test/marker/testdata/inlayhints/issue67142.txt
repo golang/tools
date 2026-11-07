@@ -2,7 +2,6 @@ Regression test for golang/go#67142.
 
 -- flags --
 -ignore_extra_diags
--min_go=go1.21
 
 -- settings.json --
 {
@@ -26,11 +25,11 @@ go 1.21.9
 //@inlayhints(out)
 package p
 
-var _ = rand.Float64() 
+var _ = rand.Float64()
 
 -- @out --
 //@inlayhints(out)
 package p
 
-var _ = rand.Float64() 
+var _< invalid type> = rand.Float64()
 

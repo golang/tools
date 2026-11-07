@@ -1,6 +1,16 @@
 This test exercises the refactoring to remove unused parameters.
 See removeparam_resolve.txt for same test with resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": false,
+			"resolveSupport": {}
+		}
+	}
+}
+
 -- go.mod --
 module unused.mod
 
@@ -9,14 +19,14 @@ go 1.18
 -- a/a.go --
 package a
 
-func A(x, unused int) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x, unused int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
 	return x
 }
 
 -- @a/a/a.go --
 package a
 
-func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
 	return x
 }
 
@@ -60,6 +70,8 @@ func _() {
 	a.A(f(), 1)
 }
 
+var _ = g
+
 -- @a/a/a2.go --
 package a
 
@@ -96,10 +108,12 @@ func g() int {
 func _() {
 	a.A(f())
 }
+
+var _ = g
 -- field/field.go --
 package field
 
-func Field(x int, field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
+func Field(x int, field int) { //@codeaction("int", "refactor.rewrite.removeUnusedParam", result=field)
 }
 
 func _() {
@@ -108,7 +122,7 @@ func _() {
 -- @field/field/field.go --
 package field
 
-func Field(field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
+func Field(field int) { //@codeaction("int", "refactor.rewrite.removeUnusedParam", result=field)
 }
 
 func _() {
@@ -117,7 +131,7 @@ func _() {
 -- ellipsis/ellipsis.go --
 package ellipsis
 
-func Ellipsis(...any) { //@codeaction("any", "any", "refactor.rewrite", ellipsis)
+func Ellipsis(...any) { //@codeaction("any", "refactor.rewrite.removeUnusedParam", result=ellipsis)
 }
 
 func _() {
@@ -138,7 +152,7 @@ func i() []any
 -- @ellipsis/ellipsis/ellipsis.go --
 package ellipsis
 
-func Ellipsis() { //@codeaction("any", "any", "refactor.rewrite", ellipsis)
+func Ellipsis() { //@codeaction("any", "refactor.rewrite.removeUnusedParam", result=ellipsis)
 }
 
 func _() {
@@ -146,12 +160,10 @@ func _() {
 	Ellipsis()
 	Ellipsis()
 	Ellipsis()
-	var _ []any = []any{1, f(), g()}
 	Ellipsis()
 	func(_ ...any) {
 		Ellipsis()
 	}(h())
-	var _ []any = i()
 	Ellipsis()
 }
 
@@ -162,7 +174,7 @@ func i() []any
 -- ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
+func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "refactor.rewrite.removeUnusedParam", result=ellipsis2)
 }
 
 func _() {
@@ -176,11 +188,11 @@ func h() (int, int)
 -- @ellipsis2/ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
+func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "refactor.rewrite.removeUnusedParam", result=ellipsis2)
 }
 
 func _() {
-	Ellipsis2(2, []int{3}...)
+	Ellipsis2(2, 3)
 	func(_, blank0 int, rest ...int) {
 		Ellipsis2(blank0, rest...)
 	}(h())
@@ -191,7 +203,7 @@ func h() (int, int)
 -- overlapping/overlapping.go --
 package overlapping
 
-func Overlapping(i int) int { //@codeactionerr(re"(i) int", re"(i) int", "refactor.rewrite", re"overlapping")
+func Overlapping(i int) int { //@codeaction(re"(i) int", "refactor.rewrite.removeUnusedParam", err=re"overlapping")
 	return 0
 }
 
@@ -203,7 +215,7 @@ func _() {
 -- effects/effects.go --
 package effects
 
-func effects(x, y int) int { //@ diag("y", re"unused"), codeaction("y", "y", "refactor.rewrite", effects)
+func effects(x, y int) int { //@ diag("y", re"unused"), codeaction("y", "refactor.rewrite.removeUnusedParam", result=effects)
 	return x
 }
 
@@ -217,7 +229,7 @@ func _() {
 -- @effects/effects/effects.go --
 package effects
 
-func effects(x int) int { //@ diag("y", re"unused"), codeaction("y", "y", "refactor.rewrite", effects)
+func effects(x int) int { //@ diag("y", re"unused"), codeaction("y", "refactor.rewrite.removeUnusedParam", result=effects)
 	return x
 }
 
@@ -225,23 +237,19 @@ func f() int
 func g() int
 
 func _() {
-	var x, _ int = f(), g()
-	effects(x)
-	{
-		var x, _ int = f(), g()
-		effects(x)
-	}
+	effects(f())
+	effects(f())
 }
 -- recursive/recursive.go --
 package recursive
 
-func Recursive(x int) int { //@codeaction("x", "x", "refactor.rewrite", recursive)
+func Recursive(x int) int { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=recursive)
 	return Recursive(1)
 }
 
 -- @recursive/recursive/recursive.go --
 package recursive
 
-func Recursive() int { //@codeaction("x", "x", "refactor.rewrite", recursive)
+func Recursive() int { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=recursive)
 	return Recursive()
 }

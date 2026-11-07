@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !(unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris)
-// +build !unix,!aix,!darwin,!dragonfly,!freebsd,!linux,!netbsd,!openbsd,!solaris
 
 package testenv
 

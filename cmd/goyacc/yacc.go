@@ -52,6 +52,7 @@ import (
 	"go/format"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -106,7 +107,7 @@ const (
 )
 
 // output parser flags
-const yyFlag = -1000
+const yyFlag = math.MinInt16
 
 // parse tokens
 const (
@@ -131,7 +132,7 @@ const ENDFILE = 0
 const EMPTY = 1
 const WHOKNOWS = 0
 const OK = 1
-const NOMORE = -1000
+const NOMORE = math.MinInt16
 
 // macros for getting associativity and precedence levels
 func ASSOC(i int) int { return i & 3 }
@@ -606,7 +607,7 @@ outer:
 				}
 				j = chfind(2, tokname)
 				if j >= NTBASE {
-					lerrorf(ruleline, "nonterminal "+nontrst[j-NTBASE].name+" illegal after %%prec")
+					lerrorf(ruleline, "nonterminal %s illegal after %%prec", nontrst[j-NTBASE].name)
 				}
 				levprd[nprod] = toklev[j]
 				t = gettok()
@@ -1477,7 +1478,7 @@ func symnam(i int) string {
 
 // set elements 0 through n-1 to c
 func aryfil(v []int, n, c int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v[i] = c
 	}
 }
@@ -1565,7 +1566,7 @@ more:
 		}
 		if pempty[i] != OK {
 			fatfl = 0
-			errorf("nonterminal " + nontrst[i].name + " never derives any token string")
+			errorf("nonterminal %s never derives any token string", nontrst[i].name)
 		}
 	}
 
@@ -1839,7 +1840,7 @@ func closure(i int) {
 
 		nexts:
 			// initially fill the sets
-			for s := 0; s < n; s++ {
+			for s := range n {
 				prd := curres[s]
 
 				//
@@ -2010,7 +2011,9 @@ func writem(pp Pitem) string {
 	var i int
 
 	p := pp.prod
-	q := chcopy(nontrst[prdptr[pp.prodno][0]-NTBASE].name) + ": "
+	var q strings.Builder
+	q.WriteString(chcopy(nontrst[prdptr[pp.prodno][0]-NTBASE].name))
+	q.WriteString(": ")
 	npi := pp.off
 
 	pi := aryeq(p, prdptr[pp.prodno])
@@ -2020,23 +2023,23 @@ func writem(pp Pitem) string {
 		if pi == npi {
 			c = '.'
 		}
-		q += string(c)
+		q.WriteByte(byte(c))
 
 		i = p[pi]
 		pi++
 		if i <= 0 {
 			break
 		}
-		q += chcopy(symnam(i))
+		q.WriteString(chcopy(symnam(i)))
 	}
 
 	// an item calling for a reduction
 	i = p[npi]
 	if i < 0 {
-		q += fmt.Sprintf("    (%v)", -i)
+		fmt.Fprintf(&q, "    (%v)", -i)
 	}
 
-	return q
+	return q.String()
 }
 
 // pack state i from temp1 into amem
@@ -2323,7 +2326,7 @@ func wrstate(i int) {
 	var pp, qq int
 
 	if len(errors) > 0 {
-		actions := append([]int(nil), temp1...)
+		actions := slices.Clone(temp1)
 		defaultAction := ERRCODE
 		if lastred != 0 {
 			defaultAction = -lastred
@@ -2608,7 +2611,7 @@ func callopt() {
 	if adb > 2 {
 		for p = 0; p <= maxa; p += 10 {
 			fmt.Fprintf(ftable, "%v  ", p)
-			for i = 0; i < 10; i++ {
+			for i = range 10 {
 				fmt.Fprintf(ftable, "%v  ", amem[p+i])
 			}
 			ftable.WriteRune('\n')
@@ -2652,7 +2655,7 @@ func gin(i int) {
 
 	// now, find amem place for it
 nextgp:
-	for p := 0; p < ACTSIZE; p++ {
+	for p := range ACTSIZE {
 		if amem[p] != 0 {
 			continue
 		}
@@ -2781,7 +2784,7 @@ func others() {
 	}
 	arout("R2", temp1, nprod)
 
-	aryfil(temp1, nstate, -1000)
+	aryfil(temp1, nstate, math.MinInt16)
 	for i = 0; i <= ntokens; i++ {
 		for j := tstates[i]; j != 0; j = mstates[j] {
 			temp1[j] = i
@@ -3048,16 +3051,18 @@ func osummary() {
 
 // copies and protects "'s in q
 func chcopy(q string) string {
-	s := ""
+	var s strings.Builder
 	i := 0
 	j := 0
 	for i = 0; i < len(q); i++ {
 		if q[i] == '"' {
-			s += q[j:i] + "\\"
+			s.WriteString(q[j:i])
+			s.WriteByte('\\')
 			j = i
 		}
 	}
-	return s + q[j:i]
+	s.WriteString(q[j:i])
+	return s.String()
 }
 
 func usage() {
@@ -3116,7 +3121,7 @@ func aryeq(a []int, b []int) int {
 	if len(b) != n {
 		return 0
 	}
-	for ll := 0; ll < n; ll++ {
+	for ll := range n {
 		if a[ll] != b[ll] {
 			return 0
 		}
@@ -3176,7 +3181,7 @@ func create(s string) *bufio.Writer {
 }
 
 // write out error comment
-func lerrorf(lineno int, s string, v ...interface{}) {
+func lerrorf(lineno int, s string, v ...any) {
 	nerrors++
 	fmt.Fprintf(stderr, s, v...)
 	fmt.Fprintf(stderr, ": %v:%v\n", infile, lineno)
@@ -3186,7 +3191,7 @@ func lerrorf(lineno int, s string, v ...interface{}) {
 	}
 }
 
-func errorf(s string, v ...interface{}) {
+func errorf(s string, v ...any) {
 	lerrorf(lineno, s, v...)
 }
 
@@ -3252,7 +3257,7 @@ func $$NewParser() $$Parser {
 	return &$$ParserImpl{}
 }
 
-const $$Flag = -1000
+const $$Flag = -32768
 
 func $$Tokname(c int) string {
 	if c >= 1 && c-1 < len($$Toknames) {

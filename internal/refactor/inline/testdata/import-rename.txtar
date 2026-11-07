@@ -31,9 +31,7 @@ func A() {
 -- result --
 package main
 
-import (
-	"example.com/other/a"
-)
+import "example.com/other/a"
 
 func main() {
 	a.A() //@ inline(re"A", result)

@@ -4,6 +4,9 @@
 
 // Package commandmeta provides metadata about LSP commands, by
 // statically analyzing the command.Interface type.
+//
+// It is used to generate JSONRPC dispatch and marshaling.
+// TODO(adonovan): combine with gopls/internal/protocol/command/gen.
 package commandmeta
 
 import (
@@ -12,23 +15,25 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typesinternal"
 	// (does not depend on gopls itself)
 )
 
 // A Command describes a workspace/executeCommand extension command.
 type Command struct {
-	MethodName string // e.g. "RunTests"
-	Name       string // e.g. "gopls.run_tests"
-	Title      string
-	Doc        string
-	Args       []*Field
-	Result     *Field
+	MethodName  string // e.g. "RunTests"
+	Name        string // e.g. "gopls.run_tests"
+	Title       string
+	Doc         string
+	Args        []*Field
+	Interactive bool
+	Result      *Field
 }
 
 type Field struct {
@@ -66,14 +71,18 @@ func Load() ([]*Command, error) {
 	// Load command metadata corresponding to each interface method.
 	var commands []*Command
 	loader := fieldLoader{make(map[types.Object]*Field)}
-	for i := 0; i < obj.NumMethods(); i++ {
-		m := obj.Method(i)
+	for m := range obj.Methods() {
 		c, err := loader.loadMethod(pkg, m)
 		if err != nil {
 			return nil, fmt.Errorf("loading %s: %v", m.Name(), err)
 		}
 		commands = append(commands, c)
 	}
+
+	// Sort commands for deterministic results.
+	slices.SortFunc(commands, func(a, b *Command) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return commands, nil
 }
 
@@ -122,10 +131,21 @@ func (l *fieldLoader) loadMethod(pkg *packages.Package, m *types.Func) (*Command
 		if i == 0 {
 			// Lazy check that the first argument is a context. We could relax this,
 			// but then the generated code gets more complicated.
-			if named, ok := aliases.Unalias(fld.Type).(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
+			if named, ok := types.Unalias(fld.Type).(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
 				return nil, fmt.Errorf("first method parameter must be context.Context")
 			}
 			// Skip the context argument, as it is implied.
+			continue
+		}
+
+		// SPECIAL CASE: InteractiveParams contains FormAnswers []any, making it
+		// inherently fallible. However, we explicitly exempt it from this check
+		// because it is not parsed via UnmarshalArgs from the JSON Arguments array.
+		// Instead, the generator passes it directly from the top-level
+		// InteractiveParams, and the command handlers are responsible for
+		// manually type-asserting the user-provided answers at runtime.
+		if i == sig.Params().Len()-1 && typesinternal.IsPointerToNamed(fld.Type, "golang.org/x/tools/gopls/internal/protocol", "InteractiveParams") {
+			c.Interactive = true
 			continue
 		}
 		c.Args = append(c.Args, fld)
@@ -143,6 +163,12 @@ func (l *fieldLoader) loadField(pkg *packages.Package, obj *types.Var, doc, tag 
 		Type:    obj.Type(),
 		JSONTag: reflect.StructTag(tag).Get("json"),
 	}
+
+	// This must be done here to handle nested types, such as:
+	//
+	//    type Test struct { Subtests []Test }
+	l.loaded[obj] = fld
+
 	under := fld.Type.Underlying()
 	// Quick-and-dirty handling for various underlying types.
 	switch p := under.(type) {
@@ -211,15 +237,12 @@ func lspName(methodName string) string {
 //
 // For example:
 //
-//	"RunTests" -> []string{"Run", "Tests"}
-//	"GCDetails" -> []string{"GC", "Details"}
+//	"RunTests"      -> []string{"Run", "Tests"}
+//	"ClientOpenURL" -> []string{"Client", "Open", "URL"}
 func splitCamel(s string) []string {
 	var words []string
 	for len(s) > 0 {
-		last := strings.LastIndexFunc(s, unicode.IsUpper)
-		if last < 0 {
-			last = 0
-		}
+		last := max(strings.LastIndexFunc(s, unicode.IsUpper), 0)
 		if last == len(s)-1 {
 			// Group initialisms as a single word.
 			last = 1 + strings.LastIndexFunc(s[:last], func(r rune) bool { return !unicode.IsUpper(r) })
@@ -240,7 +263,7 @@ func findField(pkg *packages.Package, pos token.Pos) (*ast.Field, error) {
 	fset := pkg.Fset
 	var file *ast.File
 	for _, f := range pkg.Syntax {
-		if fset.File(f.Pos()).Name() == fset.File(pos).Name() {
+		if fset.File(f.FileStart).Name() == fset.File(pos).Name() {
 			file = f
 			break
 		}

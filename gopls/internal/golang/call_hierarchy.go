@@ -9,22 +9,22 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
-	"path/filepath"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/moremaps"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
-func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.CallHierarchyItem, error) {
+func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.CallHierarchyItem, error) {
 	ctx, done := event.Start(ctx, "golang.PrepareCallHierarchy")
 	defer done()
 
@@ -32,44 +32,36 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	if err != nil {
 		return nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
+	start, end, err := pgf.RangePos(rng)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := callHierarchyFuncAtRange(pkg.TypesInfo(), pgf, astutil.RangeOf(start, end))
+	if err != nil {
+		return nil, err
+	}
+	declLoc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	_, obj, _ := referencedObject(pkg, pgf, pos)
-	if obj == nil {
-		return nil, nil
-	}
-
-	if _, ok := obj.Type().Underlying().(*types.Signature); !ok {
-		return nil, nil
-	}
-
-	declLoc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
-	if err != nil {
-		return nil, err
-	}
-	rng := declLoc.Range
-
-	callHierarchyItem := protocol.CallHierarchyItem{
+	return []protocol.CallHierarchyItem{{
 		Name:           obj.Name(),
 		Kind:           protocol.Function,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(declLoc.URI.Path())),
+		Detail:         callHierarchyItemDetail(obj, declLoc),
 		URI:            declLoc.URI,
-		Range:          rng,
-		SelectionRange: rng,
-	}
-	return []protocol.CallHierarchyItem{callHierarchyItem}, nil
+		Range:          declLoc.Range,
+		SelectionRange: declLoc.Range,
+	}}, nil
 }
 
 // IncomingCalls returns an array of CallHierarchyIncomingCall for a file and the position within the file.
-func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pos protocol.Position) ([]protocol.CallHierarchyIncomingCall, error) {
+func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.CallHierarchyIncomingCall, error) {
 	ctx, done := event.Start(ctx, "golang.IncomingCalls")
 	defer done()
 
-	refs, err := references(ctx, snapshot, fh, pos, false)
+	refs, err := references(ctx, snapshot, fh, rng, false)
 	if err != nil {
 		if errors.Is(err, ErrNoIdentFound) || errors.Is(err, errNoObjectFound) {
 			return nil, nil
@@ -85,10 +77,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 			event.Error(ctx, fmt.Sprintf("error getting enclosing node for %q", ref.pkgPath), err)
 			continue
 		}
-		loc := protocol.Location{
-			URI:   callItem.URI,
-			Range: callItem.Range,
-		}
+		loc := callItem.URI.Location(callItem.Range)
 		call, ok := incomingCalls[loc]
 		if !ok {
 			call = &protocol.CallHierarchyIncomingCall{From: callItem}
@@ -99,7 +88,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	// Flatten the map of pointers into a slice of values.
 	incomingCallItems := make([]protocol.CallHierarchyIncomingCall, 0, len(incomingCalls))
-	for _, callItem := range incomingCalls {
+	for _, callItem := range moremaps.SortedFunc(incomingCalls, protocol.CompareLocation) {
 		incomingCallItems = append(incomingCallItems, *callItem)
 	}
 	return incomingCallItems, nil
@@ -142,7 +131,7 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 	//
 	// If the selection is in a global var initializer,
 	// default to the file's package declaration.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 	var (
 		name = pgf.File.Name.Name
 		kind = protocol.Package
@@ -182,7 +171,7 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 		Name:           name,
 		Kind:           kind,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", pkgPath, filepath.Base(fh.URI().Path())),
+		Detail:         fmt.Sprintf("%s • %s", pkgPath, fh.URI().Base()),
 		URI:            loc.URI,
 		Range:          rng,
 		SelectionRange: rng,
@@ -202,105 +191,76 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, err
 	}
-
-	_, obj, _ := referencedObject(pkg, pgf, pos)
-	if obj == nil {
-		return nil, nil
+	obj, err := callHierarchyFuncAtRange(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
+	if err != nil {
+		return nil, err
 	}
-
-	if _, ok := obj.Type().Underlying().(*types.Signature); !ok {
-		return nil, nil
-	}
-
 	if isBuiltin(obj) {
-		return nil, nil // built-ins have no position
+		return nil, nil // built-in functions have no outgoing calls
 	}
 
-	declFile := pkg.FileSet().File(obj.Pos())
-	if declFile == nil {
-		return nil, bug.Errorf("file not found for %d", obj.Pos())
-	}
-
-	uri := protocol.URIFromPath(declFile.Name())
-	offset, err := safetoken.Offset(declFile, obj.Pos())
+	declPkg, declPGF, declPos, err := NarrowestDeclaringPackage(ctx, snapshot, pkg, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, uri)
-	if err != nil {
-		return nil, err
-	}
-
-	declPos, err := safetoken.Pos(declPGF.Tok, offset)
-	if err != nil {
-		return nil, err
-	}
-
-	declNode, _, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos)
+	// TODO(adonovan): shouldn't this be simply the enclosing FuncDecl?
+	// Or outermost Enclosing(FuncDecl | GenDecl)?
+	declNode, _, _, _ := findDeclInfo(declPGF, declPos)
 	if declNode == nil {
 		// TODO(rfindley): why don't we return an error here, or even bug.Errorf?
 		return nil, nil
-		// return nil, bug.Errorf("failed to find declaration for object %s.%s", obj.Pkg().Path(), obj.Name())
+		// return nil, bug.Errorf("failed to find declaration for %v", obj)
 	}
 
-	type callRange struct {
-		start, end token.Pos
-	}
-	callRanges := []callRange{}
-	ast.Inspect(declNode, func(n ast.Node) bool {
+	// Find calls to known functions/methods,
+	// including interface methods, and built-ins.
+	var callRanges []astutil.Range
+	for n := range ast.Preorder(declNode) {
 		if call, ok := n.(*ast.CallExpr); ok {
-			var start, end token.Pos
-			switch n := call.Fun.(type) {
-			case *ast.SelectorExpr:
-				start, end = n.Sel.NamePos, call.Lparen
-			case *ast.Ident:
-				start, end = n.NamePos, call.Lparen
-			case *ast.FuncLit:
-				// while we don't add the function literal as an 'outgoing' call
-				// we still want to traverse into it
-				return true
-			default:
-				// ignore any other kind of call expressions
-				// for ex: direct function literal calls since that's not an 'outgoing' call
-				return false
+			callee := typeutil.Callee(pkg.TypesInfo(), call)
+			switch callee.(type) {
+			case *types.Func, *types.Builtin:
+				// Skip trivial builtins (e.g. len)
+				// but allow unsafe.Slice, etc.
+				if callee.Pkg() == nil {
+					continue
+				}
+				id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
+				callRanges = append(callRanges, astutil.RangeOf(id.Pos(), id.End()))
 			}
-			callRanges = append(callRanges, callRange{start: start, end: end})
 		}
-		return true
-	})
+	}
 
-	outgoingCalls := map[token.Pos]*protocol.CallHierarchyOutgoingCall{}
+	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
-		_, obj, _ := referencedObject(declPkg, declPGF, callRange.start)
-		if obj == nil {
-			continue
-		}
-		if isBuiltin(obj) {
-			continue // built-ins have no position
+		obj, err := callHierarchyFuncAtRange(declPkg.TypesInfo(), declPGF, callRange)
+		if err != nil {
+			continue // ignore
 		}
 
-		outgoingCall, ok := outgoingCalls[obj.Pos()]
+		loc, err := ObjectLocation(ctx, declPkg.FileSet(), snapshot, obj)
+		if err != nil {
+			return nil, err
+		}
+
+		outgoingCall, ok := outgoingCalls[loc]
 		if !ok {
-			loc, err := mapPosition(ctx, declPkg.FileSet(), snapshot, obj.Pos(), obj.Pos()+token.Pos(len(obj.Name())))
-			if err != nil {
-				return nil, err
-			}
 			outgoingCall = &protocol.CallHierarchyOutgoingCall{
 				To: protocol.CallHierarchyItem{
 					Name:           obj.Name(),
 					Kind:           protocol.Function,
 					Tags:           []protocol.SymbolTag{},
-					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(loc.URI.Path())),
+					Detail:         callHierarchyItemDetail(obj, loc),
 					URI:            loc.URI,
 					Range:          loc.Range,
 					SelectionRange: loc.Range,
 				},
 			}
-			outgoingCalls[obj.Pos()] = outgoingCall
+			outgoingCalls[loc] = outgoingCall
 		}
 
-		rng, err := declPGF.PosRange(callRange.start, callRange.end)
+		rng, err := declPGF.PosRange(callRange.Pos(), callRange.End())
 		if err != nil {
 			return nil, err
 		}
@@ -308,8 +268,37 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	}
 
 	outgoingCallItems := make([]protocol.CallHierarchyOutgoingCall, 0, len(outgoingCalls))
-	for _, callItem := range outgoingCalls {
+	for _, callItem := range moremaps.SortedFunc(outgoingCalls, protocol.CompareLocation) {
 		outgoingCallItems = append(outgoingCallItems, *callItem)
 	}
 	return outgoingCallItems, nil
+}
+
+func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
+	detail := loc.URI.Base()
+	if obj.Pkg() != nil {
+		detail = fmt.Sprintf("%s • %s", obj.Pkg().Path(), detail)
+	}
+	return detail
+}
+
+// callHierarchyFuncAtRange returns the function symbol (Func or Builtin) referred
+// to by the identifier at the specified range.
+func callHierarchyFuncAtRange(info *types.Info, pgf *parsego.File, rng astutil.Range) (types.Object, error) {
+	cur, ok := pgf.Cursor().FindByPos(rng.Pos(), rng.End())
+	if !ok {
+		return nil, fmt.Errorf("no enclosing syntax") // can't happen
+	}
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("identifier not found")
+	}
+	switch obj := info.ObjectOf(id).(type) {
+	case *types.Func, *types.Builtin:
+		return obj, nil
+	case nil:
+		return nil, fmt.Errorf("no symbol here")
+	default:
+		return nil, fmt.Errorf("%s is not a function", obj.Name())
+	}
 }

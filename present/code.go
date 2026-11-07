@@ -238,8 +238,8 @@ func codeLines(src []byte, start, end int) (lines []codeLine) {
 	return
 }
 
-func parseArgs(name string, line int, args []string) (res []interface{}, err error) {
-	res = make([]interface{}, len(args))
+func parseArgs(name string, line int, args []string) (res []any, err error) {
+	res = make([]any, len(args))
 	for i, v := range args {
 		if len(v) == 0 {
 			return nil, fmt.Errorf("%s:%d bad code argument %q", name, line, v)

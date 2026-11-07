@@ -8,7 +8,7 @@ import (
 	"go/ast"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 const (
@@ -74,7 +74,7 @@ func (c *completer) addKeywordCompletions() {
 	if len(c.path) > 2 {
 		// Offer "range" if we are in ast.ForStmt.Init. This is what the
 		// AST looks like before "range" is typed, e.g. "for i := r<>".
-		if loop, ok := c.path[2].(*ast.ForStmt); ok && loop.Init != nil && astutil.NodeContains(loop.Init, c.pos) {
+		if loop, ok := c.path[2].(*ast.ForStmt); ok && loop.Init != nil && astutil.NodeContainsPos(loop.Init, c.pos) {
 			c.addKeywordItems(seen, stdScore, RANGE)
 		}
 	}
@@ -121,16 +121,67 @@ func (c *completer) addKeywordCompletions() {
 				c.addKeywordItems(seen, stdScore, BREAK)
 			}
 		case *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.SwitchStmt:
-			c.addKeywordItems(seen, stdScore, CASE, DEFAULT)
+			// if there is no default case yet, it's highly likely to add a default in switch.
+			// we don't offer 'default' anymore if user has used it already in current switch.
+			if !hasDefaultClause(node) {
+				c.addKeywordItems(seen, highScore, CASE, DEFAULT)
+			}
 		case *ast.ForStmt, *ast.RangeStmt:
 			c.addKeywordItems(seen, stdScore, BREAK, CONTINUE)
 		// This is a bit weak, functions allow for many keywords
 		case *ast.FuncDecl:
 			if node.Body != nil && c.pos > node.Body.Lbrace {
-				c.addKeywordItems(seen, stdScore, DEFER, RETURN, FOR, GO, SWITCH, SELECT, IF, ELSE, VAR, CONST, GOTO, TYPE)
+				// requireReturnObj checks whether user must provide some objects after return.
+				requireReturnObj := func(sig *ast.FuncType) bool {
+					results := sig.Results
+					if results == nil || results.List == nil {
+						return false // nothing to return
+					}
+					// If any result is named, allow a bare return.
+					for _, r := range results.List {
+						for _, name := range r.Names {
+							if name.Name != "_" {
+								return false
+							}
+						}
+					}
+					return true
+				}
+				ret := RETURN
+				if requireReturnObj(node.Type) {
+					// as user must return something, we offer a space after return.
+					// function literal inside a function will be affected by outer function,
+					// but 'go fmt' will help to remove the ending space.
+					// the benefit is greater than introducing an unnecessary space.
+					ret += " "
+				}
+
+				c.addKeywordItems(seen, stdScore, DEFER, ret, FOR, GO, SWITCH, SELECT, IF, ELSE, VAR, CONST, GOTO, TYPE)
 			}
 		}
 	}
+}
+
+// hasDefaultClause reports whether the given node contains a direct default case.
+// It does not traverse child nodes to look for nested default clauses,
+// and returns false if the node is not a switch statement.
+func hasDefaultClause(node ast.Node) bool {
+	var cases []ast.Stmt
+	switch node := node.(type) {
+	case *ast.TypeSwitchStmt:
+		cases = node.Body.List
+	case *ast.SelectStmt:
+		cases = node.Body.List
+	case *ast.SwitchStmt:
+		cases = node.Body.List
+	}
+	for _, c := range cases {
+		if clause, ok := c.(*ast.CaseClause); ok &&
+			clause.List == nil { // default case
+			return true
+		}
+	}
+	return false
 }
 
 // addKeywordItems dedupes and adds completion items for the specified

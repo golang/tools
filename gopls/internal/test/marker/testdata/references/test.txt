@@ -1,6 +1,9 @@
 Test of references between the extra files of a test variant
 and the regular package.
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module example.com
 go 1.12

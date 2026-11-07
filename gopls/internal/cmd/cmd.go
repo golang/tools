@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,38 +22,37 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
-	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/bug"
+	versionpkg "golang.org/x/tools/gopls/internal/version"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
-	"golang.org/x/tools/internal/tool"
+	"golang.org/x/tools/internal/moreslices"
 )
 
-// Application is the main application as passed to tool.Main
-// It handles the main command line parsing and dispatch to the sub commands.
-type Application struct {
+// application represents the root gopls command and coordinates subcommand dispatch.
+type application struct {
 	// Core application flags
 
 	// Embed the basic profiling flags supported by the tool package
-	tool.Profile
+	ProfileFlags
 
 	// We include the server configuration directly for now, so the flags work
 	// even without the verb.
 	// TODO: Remove this when we stop allowing the serve verb by default.
-	Serve Serve
+	serve serve
 
 	// the options configuring function to invoke when building a server
 	options func(*settings.Options)
 
-	// Support for remote LSP server.
-	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment."`
+	// Remote LSP client connection flags.
+	RemoteFlags
 
 	// Verbose enables verbose logging.
 	Verbose bool `flag:"v,verbose" help:"verbose output"`
@@ -62,8 +60,8 @@ type Application struct {
 	// VeryVerbose enables a higher level of verbosity in logging output.
 	VeryVerbose bool `flag:"vv,veryverbose" help:"very verbose output"`
 
-	// Control ocagent export of telemetry
-	OCAgent string `flag:"ocagent" help:"the address of the ocagent (e.g. http://localhost:55678), or off"`
+	// OTel specifies the OpenTelemetry collector endpoint (e.g. http://localhost:4318).
+	OTel string `flag:"otel" help:"export telemetry to specified OpenTelemetry collector address (e.g. http://localhost:4318)"`
 
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
@@ -75,7 +73,7 @@ type Application struct {
 	editFlags *EditFlags
 }
 
-// EditFlags defines flags common to {fix,format,imports,rename}
+// EditFlags defines flags common to {code{action,lens},format,imports,rename}
 // that control how edits are applied to the client's files.
 //
 // The type is exported for flag reflection.
@@ -90,37 +88,70 @@ type EditFlags struct {
 	List     bool `flag:"l,list" help:"display names of edited files"`
 }
 
-func (app *Application) verbose() bool {
+// RemoteFlags defines the set of flags for the forward mode.
+//
+// These flags apply to every subcommand that connects to a server: 'serve'
+// forwards the LSP to the remote, and the other subcommands issue their LSP
+// requests to it. The 'gopls remote' subcommands are the exception: they
+// inspect a running daemon, and never start one.
+type RemoteFlags struct {
+	Remote string `flag:"remote" help:"forward all commands to a remote lsp specified by this flag. With no special prefix, this is assumed to be a TCP address. If prefixed by 'unix;', the subsequent address is assumed to be a unix domain socket. If 'auto', or prefixed by 'auto;', the remote address is automatically resolved based on the executing environment, and the daemon is started if it is not already running."`
+
+	// The following flags are used with -remote=auto mode.
+	// They configure the daemon at the time it is started, and have no
+	// effect if it is already running.
+	RemoteDebug         string        `flag:"remote.debug" help:"when used with -remote=auto, the -debug value used to start the daemon"`
+	RemoteListenTimeout time.Duration `flag:"remote.listen.timeout" help:"when used with -remote=auto, the -listen.timeout value used to start the daemon"`
+
+	RemoteLogfile string `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
+}
+
+func (r *RemoteFlags) remoteArgs(network, address string) []string {
+	args := []string{
+		"serve",
+		"-listen", fmt.Sprintf(`%s;%s`, network, address),
+	}
+	if r.RemoteDebug != "" {
+		args = append(args, "-debug", r.RemoteDebug)
+	}
+	timeout := r.RemoteListenTimeout
+	if timeout == 0 {
+		timeout = 1 * time.Minute
+	}
+	args = append(args, "-listen.timeout", timeout.String())
+	if r.RemoteLogfile != "" {
+		args = append(args, "-logfile", r.RemoteLogfile)
+	}
+	return args
+}
+
+func (app *application) verbose() bool {
 	return app.Verbose || app.VeryVerbose
 }
 
-// New returns a new Application ready to run.
-func New() *Application {
-	app := &Application{
-		OCAgent: "off", //TODO: Remove this line to default the exporter to on
-
-		Serve: Serve{
-			RemoteListenTimeout: 1 * time.Minute,
-		},
+// newApplication returns a new application ready to run.
+func newApplication() *application {
+	app := &application{
+		RemoteListenTimeout: 1 * time.Minute,
 	}
-	app.Serve.app = app
+	app.serve.app = app
 	return app
 }
 
-// Name implements tool.Application returning the binary name.
-func (app *Application) Name() string { return "gopls" }
+// Name implements command returning the binary name.
+func (app *application) Name() string { return "gopls" }
 
-// Usage implements tool.Application returning empty extra argument usage.
-func (app *Application) Usage() string { return "" }
+// Usage implements command returning empty extra argument usage.
+func (app *application) Usage() string { return "" }
 
-// ShortHelp implements tool.Application returning the main binary help.
-func (app *Application) ShortHelp() string {
+// ShortHelp implements command returning the main binary help.
+func (app *application) ShortHelp() string {
 	return ""
 }
 
-// DetailedHelp implements tool.Application returning the main binary help.
+// DetailedHelp implements command returning the main binary help.
 // This includes the short help for all the sub commands.
-func (app *Application) DetailedHelp(f *flag.FlagSet) {
+func (app *application) DetailedHelp(f *flag.FlagSet) {
 	w := tabwriter.NewWriter(f.Output(), 0, 0, 2, ' ', 0)
 	defer w.Flush()
 
@@ -128,8 +159,14 @@ func (app *Application) DetailedHelp(f *flag.FlagSet) {
 gopls is a Go language server.
 
 It is typically used with an editor to provide language features. When no
-command is specified, gopls will default to the 'serve' command. The language
-features can also be accessed via the gopls command-line interface.
+command is specified, gopls will default to the 'serve' command. To see flags
+for the 'serve' command, run 'gopls help serve'.
+
+The language features can also be accessed via the gopls command-line interface.
+
+For documentation of all its features, see:
+
+   https://go.dev/gopls/features
 
 Usage:
   gopls help [<subject>]
@@ -152,6 +189,7 @@ Command:
 	}
 	fmt.Fprint(w, "\nflags:\n")
 	printFlagDefaults(f)
+	fmt.Fprint(w, "\nFor flags specific to running the language server (such as -listen, -logfile, or -debug), run 'gopls help serve'.\n")
 }
 
 // this is a slightly modified version of flag.PrintDefaults to give us control
@@ -215,7 +253,7 @@ func isZeroValue(f *flag.Flag, value string) bool {
 	// This works unless the Value type is itself an interface type.
 	typ := reflect.TypeOf(f.Value)
 	var z reflect.Value
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		z = reflect.New(typ.Elem())
 	} else {
 		z = reflect.Zero(typ)
@@ -223,132 +261,183 @@ func isZeroValue(f *flag.Flag, value string) bool {
 	return value == z.Interface().(flag.Value).String()
 }
 
-// Run takes the args after top level flag processing, and invokes the correct
-// sub command as specified by the first argument.
-// If no arguments are passed it will invoke the server sub command, as a
-// temporary measure for compatibility.
-func (app *Application) Run(ctx context.Context, args ...string) error {
-	// In the category of "things we can do while waiting for the Go command":
-	// Pre-initialize the filecache, which takes ~50ms to hash the gopls
-	// executable, and immediately runs a gc.
-	filecache.Start()
-
-	ctx = debug.WithInstance(ctx, app.OCAgent)
-	if len(args) == 0 {
-		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-		return tool.Run(ctx, s, &app.Serve, args)
-	}
-	command, args := args[0], args[1:]
-	for _, c := range app.Commands() {
-		if c.Name() == command {
-			s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
-			return tool.Run(ctx, s, c, args)
-		}
-	}
-	return tool.CommandLineErrorf("Unknown command %v", command)
+// Run implements command, but should never be invoked directly.
+// Main coordinates normalization and subcommand dispatching.
+func (app *application) Run(ctx context.Context, args ...string) error {
+	panic("unreachable: application.Run should never be called directly")
 }
 
 // Commands returns the set of commands supported by the gopls tool on the
 // command line.
 // The command is specified by the first non flag argument.
-func (app *Application) Commands() []tool.Application {
-	var commands []tool.Application
+func (app *application) Commands() []command {
+	var commands []command
 	commands = append(commands, app.mainCommands()...)
 	commands = append(commands, app.featureCommands()...)
 	commands = append(commands, app.internalCommands()...)
 	return commands
 }
 
-func (app *Application) mainCommands() []tool.Application {
-	return []tool.Application{
-		&app.Serve,
+func (app *application) mainCommands() []command {
+	return []command{
+		&app.serve,
 		&version{app: app},
-		&bug{app: app},
 		&help{app: app},
 		&apiJSON{app: app},
 		&licenses{app: app},
 	}
 }
 
-func (app *Application) internalCommands() []tool.Application {
-	return []tool.Application{
+func (app *application) internalCommands() []command {
+	return []command{
 		&vulncheck{app: app},
 	}
 }
 
-func (app *Application) featureCommands() []tool.Application {
-	return []tool.Application{
+func (app *application) featureCommands() []command {
+	return []command{
 		&callHierarchy{app: app},
-		&check{app: app},
+		&check{app: app, Severity: "warning"},
+		&codeaction{app: app},
 		&codelens{app: app},
 		&definition{app: app},
 		&execute{app: app},
 		&foldingRanges{app: app},
 		&format{app: app},
+		&headlessMCP{app: app},
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
-		newRemote(app, ""),
-		newRemote(app, "inspect"),
+		&inspect{app: app},
+		newRemote(app),
 		&links{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
-		&semtok{app: app},
+		&semanticToken{app: app},
 		&signature{app: app},
 		&stats{app: app},
-		&suggestedFix{app: app},
 		&symbols{app: app},
 
 		&workspaceSymbol{app: app},
 	}
 }
 
-var (
-	internalMu          sync.Mutex
-	internalConnections = make(map[string]*connection)
-)
-
-// connect creates and initializes a new in-process gopls session.
-func (app *Application) connect(ctx context.Context) (*connection, error) {
-	client := newClient(app)
-	var svr protocol.Server
+// connect creates and initializes a new in-process gopls LSP session.
+func (app *application) connect(ctx context.Context) (*cli, *cache.Session, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding workdir: %v", err)
+	}
+	options := settings.DefaultOptions(app.options)
+	if app.PrepareOptions != nil {
+		app.PrepareOptions(options)
+	}
+	if app.VeryVerbose {
+		options.VerboseOutput = true
+	}
+	params := initParams(root, options)
+	if app.Remote != "" {
+		// When connecting to a remote daemon, inject the client's local Go
+		// environment into the initialize request. The daemon's workspace
+		// environment defaults to the process environment in which the daemon
+		// was started; sending the client's local environment ensures that
+		// commands run with the client's GOARCH, GOOS, GOFLAGS, etc.
+		if err := lsprpc.AddGoEnv(ctx, params); err != nil {
+			return nil, nil, fmt.Errorf("reading Go environment: %w", err)
+		}
+		initOpts, ok := params.InitializationOptions.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected type for InitializationOptions: %T", params.InitializationOptions)
+		}
+		if envVal, ok := initOpts["env"]; ok {
+			envMap, ok := envVal.(map[string]any)
+			if !ok {
+				return nil, nil, fmt.Errorf(`unexpected type for InitializationOptions["env"]: %T`, envVal)
+			}
+			if options.Env == nil {
+				options.Env = make(map[string]string, len(envMap))
+			}
+			for k, v := range envMap {
+				options.Env[k] = fmt.Sprint(v)
+			}
+		}
+	}
+	client := newClient(app, options)
+	var (
+		svr  protocol.Server
+		sess *cache.Session
+	)
 	if app.Remote == "" {
 		// local
-		options := settings.DefaultOptions(app.options)
-		svr = server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
+		sess = cache.NewSession(ctx, cache.New(nil))
+		svr = server.New(sess, client, options)
 		ctx = protocol.WithClient(ctx, client)
-
 	} else {
 		// remote
-		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
+		//
+		// Passing remoteArgs allows an automatic address ("auto" or
+		// "auto;<id>") to start the daemon if it is not already running,
+		// configured by the -remote.* flags.
+		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote, app.remoteArgs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		stream := jsonrpc2.NewHeaderStream(netConn)
 		jsonConn := jsonrpc2.NewConn(stream)
 		svr = protocol.ServerDispatcher(jsonConn)
 		ctx = protocol.WithClient(ctx, client)
+
+		// Handle incoming messages in the order the server sent them, unlike
+		// protocol.Handlers, which handles each one in its own goroutine.
+		//
+		// The commands rely on this order: the server sends, for example, the
+		// textDocument/publishDiagnostics notifications of a file before the
+		// response to the gopls.diagnose_files command that produced them, and
+		// 'gopls check' reads the diagnostics as soon as that response arrives.
+		// (In the local case, the server calls the client directly, so the same
+		// order holds.)
+		//
+		// TODO(hakim): implement pull-based diagnostics instead.
+		//
+		// This is safe only because the client has no direct access to the server.
 		jsonConn.Go(ctx,
-			protocol.Handlers(
+			jsonrpc2.MustReplyHandler(
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
-	conn := newConnection(svr, client)
-	return conn, conn.initialize(ctx, app.options)
+	cli, err := client.initialize(ctx, svr, params)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cli, sess, nil
 }
 
-func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("finding workdir: %v", err)
+func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitialize {
+	if opts == nil {
+		opts = settings.DefaultOptions()
 	}
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(wd)
+	params.RootURI = protocol.URIFromPath(rootDir)
 	params.Capabilities.Workspace.Configuration = true
 
-	// Make sure to respect configured options when sending initialize request.
-	opts := settings.DefaultOptions(options)
-	// If you add an additional option here, you must update the map key in connect.
+	// Identify ourselves to the server. Editors put their own name here, and
+	// gopls uses it for telemetry; see recordClientInfo.
+	//
+	// The version matters only when the client and the server are distinct
+	// binaries, which happens when -remote names an explicit address: the
+	// address for -remote=auto is specific to the executable, so a daemon
+	// reached that way always has the same version as its client.
+	//
+	// This name identifies the client; it must not be used to select server
+	// behavior. See the comment in (*Snapshot).watchSubdirs for why keying
+	// behavior on a client name is a mistake.
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    "gopls-cli",
+		Version: versionpkg.Version(),
+	}
+
+	// If you add an additional option here,
+	// you must update the map key of settings.DefaultOptions called in (*Application).connect.
 	params.Capabilities.TextDocument.Hover = &protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
 	}
@@ -356,63 +445,66 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.SemanticTokens = protocol.SemanticTokensClientCapabilities{}
 	params.Capabilities.TextDocument.SemanticTokens.Formats = []protocol.TokenFormat{"relative"}
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = &protocol.Or_ClientSemanticTokensRequestOptions_range{Value: true}
-	//params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
+	// params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
-	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
-	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
+	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = moreslices.ConvertStrings[string](semtok.Types)
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = moreslices.ConvertStrings[string](semtok.Modifiers)
+	params.Capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
+		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
+			CodeActionKind: protocol.ClientCodeActionKindOptions{
+				ValueSet: []protocol.CodeActionKind{protocol.Empty}, // => all
+			},
+		},
+	}
 	params.Capabilities.Window.WorkDoneProgress = true
-
-	params.InitializationOptions = map[string]interface{}{
-		"symbolMatcher": string(opts.SymbolMatcher),
+	params.Capabilities.Workspace.FileOperations = &protocol.FileOperationClientCapabilities{
+		DidCreate: true,
 	}
-	if _, err := c.Server.Initialize(ctx, params); err != nil {
-		return err
-	}
-	if err := c.Server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
-		return err
-	}
-	return nil
+	params.InitializationOptions = goplsOptions(opts)
+	return params
 }
 
-type connection struct {
-	protocol.Server
-	client *cmdClient
+// initialize performs LSP's two-call client/server handshake.
+func (client *client) initialize(ctx context.Context, server protocol.Server, params *protocol.ParamInitialize) (*cli, error) {
+	result, err := server.Initialize(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if err := server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
+		return nil, err
+	}
+	client.initializeResult = result
+	return &cli{client, server}, nil
 }
 
-// registerProgressHandler registers a handler for progress notifications.
-// The caller must call unregister when the handler is no longer needed.
-func (cli *cmdClient) registerProgressHandler(handler func(*protocol.ProgressParams)) (token protocol.ProgressToken, unregister func()) {
-	token = fmt.Sprintf("tok%d", rand.Uint64())
+// client implements [protocol.Client] and defines the LSP client
+// operations of the gopls command.
+//
+// It holds the client-side state of a single client/server
+// connection; it conceptually corresponds to a single call to
+// connect(2).
+type client struct {
+	app     *application
+	options *settings.Options
 
-	// register
-	cli.progressHandlersMu.Lock()
-	if cli.progressHandlers == nil {
-		cli.progressHandlers = make(map[protocol.ProgressToken]func(*protocol.ProgressParams))
-	}
-	cli.progressHandlers[token] = handler
-	cli.progressHandlersMu.Unlock()
+	initializeResult *protocol.InitializeResult // includes server capabilities
 
-	unregister = func() {
-		cli.progressHandlersMu.Lock()
-		delete(cli.progressHandlers, token)
-		cli.progressHandlersMu.Unlock()
-	}
-	return token, unregister
-}
-
-// cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.
-type cmdClient struct {
-	app *Application
-
-	progressHandlersMu sync.Mutex
-	progressHandlers   map[protocol.ProgressToken]func(*protocol.ProgressParams)
-	iwlToken           protocol.ProgressToken
-	iwlDone            chan struct{}
+	progressMu sync.Mutex
+	iwlToken   protocol.ProgressToken
+	iwlDone    chan struct{}
 
 	filesMu sync.Mutex // guards files map
 	files   map[protocol.DocumentURI]*cmdFile
 }
 
+// cli handles the small amount of coordination the client and
+// server share.
+type cli struct {
+	*client
+	server protocol.Server
+}
+
+// cmdFile represents an open file in the gopls command LSP client.
 type cmdFile struct {
 	uri           protocol.DocumentURI
 	mapper        *protocol.Mapper
@@ -421,37 +513,35 @@ type cmdFile struct {
 	diagnostics   []protocol.Diagnostic
 }
 
-func newClient(app *Application) *cmdClient {
-	return &cmdClient{
+func newClient(app *application, options *settings.Options) *client {
+	return &client{
 		app:     app,
+		options: options,
 		files:   make(map[protocol.DocumentURI]*cmdFile),
 		iwlDone: make(chan struct{}),
 	}
 }
 
-func newConnection(server protocol.Server, client *cmdClient) *connection {
-	return &connection{
-		Server: server,
-		client: client,
-	}
+func (cli *client) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
+	return nil
 }
 
-func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
+func (cli *client) CodeLensRefresh(context.Context) error { return nil }
 
-func (c *cmdClient) FoldingRangeRefresh(context.Context) error { return nil }
+func (cli *client) FoldingRangeRefresh(context.Context) error { return nil }
 
-func (c *cmdClient) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
+func (cli *client) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 
-func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error {
+func (cli *client) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", p.Type, p.Message)
 	return nil
 }
 
-func (c *cmdClient) ShowMessageRequest(ctx context.Context, p *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
+func (cli *client) ShowMessageRequest(ctx context.Context, p *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
 	return nil, nil
 }
 
-func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams) error {
+func (cli *client) LogMessage(ctx context.Context, p *protocol.LogMessageParams) error {
 	// This logic causes server logging to be double-prefixed with a timestamp.
 	//     2023/11/08 10:50:21 Error:2023/11/08 10:50:21 <actual message>
 	// TODO(adonovan): print just p.Message, plus a newline if needed?
@@ -461,59 +551,199 @@ func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams
 	case protocol.Warning:
 		log.Print("Warning:", p.Message)
 	case protocol.Info:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print("Info:", p.Message)
 		}
 	case protocol.Log:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print("Log:", p.Message)
 		}
+	case protocol.Debug:
+		if cli.app.verbose() {
+			log.Print("Debug:", p.Message)
+		}
 	default:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print(p.Message)
 		}
 	}
 	return nil
 }
 
-func (c *cmdClient) Event(ctx context.Context, t *interface{}) error { return nil }
+func (cli *client) Event(ctx context.Context, t *any) error { return nil }
 
-func (c *cmdClient) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
+func (cli *client) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
 	return nil
 }
 
-func (c *cmdClient) UnregisterCapability(ctx context.Context, p *protocol.UnregistrationParams) error {
+func (cli *client) UnregisterCapability(ctx context.Context, p *protocol.UnregistrationParams) error {
 	return nil
 }
 
-func (c *cmdClient) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceFolder, error) {
+func (cli *client) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceFolder, error) {
 	return nil, nil
 }
 
-func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (cli *client) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section != "gopls" {
 			continue
 		}
-		m := map[string]interface{}{
-			"analyses": map[string]any{
-				"fillreturns":    true,
-				"nonewvars":      true,
-				"noresultvalues": true,
-				"undeclaredname": true,
-			},
-		}
-		if c.app.VeryVerbose {
-			m["verboseOutput"] = true
-		}
-		results[i] = m
+		results[i] = goplsOptions(cli.options)
 	}
 	return results, nil
 }
 
-func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
-	if err := c.applyWorkspaceEdit(&p.Edit); err != nil {
+// goplsOptions returns the configuration map for section "gopls" based on
+// the client's options.
+//
+// TODO: investigate auto-generating this or adding json struct tags.
+func goplsOptions(opts *settings.Options) map[string]any {
+	// Preserve the historical CLI defaults for type-error analyzers.
+	// (undeclaredname was replaced with a direct code action in v0.17.0
+	// and is no longer a valid analyzer setting.)
+	analyses := map[string]any{
+		"fillreturns":    true,
+		"nonewvars":      true,
+		"noresultvalues": true,
+	}
+	m := map[string]any{
+		"analyses": analyses,
+	}
+	if opts == nil {
+		return m
+	}
+	if opts.VerboseOutput {
+		m["verboseOutput"] = true
+	}
+	if opts.VerboseWorkDoneProgress {
+		m["verboseWorkDoneProgress"] = true
+	}
+	if opts.SymbolMatcher != "" {
+		m["symbolMatcher"] = string(opts.SymbolMatcher)
+	}
+	if opts.SymbolStyle != "" {
+		m["symbolStyle"] = string(opts.SymbolStyle)
+	}
+	if opts.SymbolScope != "" {
+		m["symbolScope"] = string(opts.SymbolScope)
+	}
+	if opts.SemanticTokens {
+		m["semanticTokens"] = true
+	}
+	// User-configured analyses are merged into the non-nil default analyses
+	// map initialized above, rather than replacing it (individual entries may
+	// still override a default).
+	for k, v := range opts.Analyses {
+		analyses[k] = v
+	}
+	if len(opts.Codelenses) > 0 {
+		lenses := make(map[string]any, len(opts.Codelenses))
+		for k, v := range opts.Codelenses {
+			lenses[string(k)] = v
+		}
+		m["codelenses"] = lenses
+	}
+	if len(opts.BuildFlags) > 0 {
+		m["buildFlags"] = anySlice(opts.BuildFlags)
+	}
+	if len(opts.DirectoryFilters) > 0 {
+		m["directoryFilters"] = anySlice(opts.DirectoryFilters)
+	}
+	if opts.HoverKind != "" {
+		m["hoverKind"] = string(opts.HoverKind)
+	}
+	if opts.LinkTarget != "" {
+		m["linkTarget"] = opts.LinkTarget
+	}
+	switch opts.LinksInHover {
+	case settings.LinksInHover_None:
+		m["linksInHover"] = false
+	case settings.LinksInHover_LinkTarget:
+		m["linksInHover"] = true
+	case settings.LinksInHover_Gopls:
+		m["linksInHover"] = "gopls"
+	}
+	if opts.Local != "" {
+		m["local"] = opts.Local
+	}
+	if opts.Gofumpt {
+		m["gofumpt"] = true
+	}
+	if opts.StaticcheckProvided {
+		m["staticcheck"] = opts.Staticcheck
+	}
+	if len(opts.Hints) > 0 {
+		hints := make(map[string]any, len(opts.Hints))
+		for k, v := range opts.Hints {
+			hints[string(k)] = v
+		}
+		m["hints"] = hints
+	}
+	if len(opts.Annotations) > 0 {
+		annotations := make(map[string]any, len(opts.Annotations))
+		for k, v := range opts.Annotations {
+			annotations[string(k)] = v
+		}
+		m["annotations"] = annotations
+	}
+	if opts.Vulncheck != "" {
+		m["vulncheck"] = string(opts.Vulncheck)
+	}
+	if opts.DiagnosticsDelay > 0 {
+		m["diagnosticsDelay"] = opts.DiagnosticsDelay.String()
+	}
+	if opts.DiagnosticsTrigger != "" {
+		m["diagnosticsTrigger"] = string(opts.DiagnosticsTrigger)
+	}
+	if opts.FileWatcher != "" {
+		m["fileWatcher"] = string(opts.FileWatcher)
+	}
+	if len(opts.StandaloneTags) > 0 {
+		m["standaloneTags"] = anySlice(opts.StandaloneTags)
+	}
+	if len(opts.TemplateExtensions) > 0 {
+		m["templateExtensions"] = anySlice(opts.TemplateExtensions)
+	}
+	if opts.Matcher != "" {
+		m["matcher"] = string(opts.Matcher)
+	}
+	if opts.ImportShortcut != "" {
+		m["importShortcut"] = string(opts.ImportShortcut)
+	}
+	if opts.UsePlaceholders {
+		m["usePlaceholders"] = true
+	}
+	if !opts.CompleteUnimported {
+		m["completeUnimported"] = false
+	}
+	if !opts.DeepCompletion {
+		m["deepCompletion"] = false
+	}
+	if !opts.CompleteFunctionCalls {
+		m["completeFunctionCalls"] = false
+	}
+	if len(opts.Env) > 0 {
+		env := make(map[string]any, len(opts.Env))
+		for k, v := range opts.Env {
+			env[k] = v
+		}
+		m["env"] = env
+	}
+	return m
+}
+
+func anySlice[T any](s []T) []any {
+	res := make([]any, len(s))
+	for i, v := range s {
+		res[i] = v
+	}
+	return res
+}
+
+func (cli *client) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
+	if err := cli.applyWorkspaceEdit(&p.Edit); err != nil {
 		return &protocol.ApplyWorkspaceEditResult{FailureReason: err.Error()}, nil
 	}
 	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
@@ -526,7 +756,7 @@ func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEdi
 // See also:
 //   - changedFiles in ../test/marker/marker_test.go for the golden-file capturing variant
 //   - applyWorkspaceEdit in ../test/integration/fake/editor.go for the Editor variant
-func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
+func (cli *client) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 
 	create := func(uri protocol.DocumentURI, content []byte) error {
 		edits := []diff.Edit{{Start: 0, End: 0, New: string(content)}}
@@ -541,7 +771,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 	for _, c := range wsedit.DocumentChanges {
 		switch {
 		case c.TextDocumentEdit != nil:
-			f := cli.openFile(c.TextDocumentEdit.TextDocument.URI)
+			f := cli.getFile(c.TextDocumentEdit.TextDocument.URI)
 			if f.err != nil {
 				return f.err
 			}
@@ -558,7 +788,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 
 		case c.RenameFile != nil:
 			// Analyze as creation + deletion. (NB: loses file mode.)
-			f := cli.openFile(c.RenameFile.OldURI)
+			f := cli.getFile(c.RenameFile.OldURI)
 			if f.err != nil {
 				return f.err
 			}
@@ -570,7 +800,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 			}
 
 		case c.DeleteFile != nil:
-			f := cli.openFile(c.DeleteFile.URI)
+			f := cli.getFile(c.DeleteFile.URI)
 			if f.err != nil {
 				return f.err
 			}
@@ -648,25 +878,28 @@ func updateFile(filename string, old, new []byte, edits []diff.Edit, flags *Edit
 	return nil
 }
 
-func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
+func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
 	// Don't worry about diagnostics without versions.
+	//
+	// (Note: the representation of PublishDiagnosticsParams
+	// cannot distinguish a missing Version from v0, but the
+	// server never sends back an explicit zero.)
 	if p.Version == 0 {
 		return nil
 	}
 
-	c.filesMu.Lock()
-	file := c.getFile(p.URI)
-	c.filesMu.Unlock()
+	file := cli.getFile(p.URI)
 
 	file.diagnosticsMu.Lock()
 	defer file.diagnosticsMu.Unlock()
+
 	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
 
 	// Perform a crude in-place deduplication.
 	// TODO(golang/go#60122): replace the gopls.diagnose_files
 	// command with support for textDocument/diagnostic,
 	// so that we don't need to do this de-duplication.
-	type key [6]interface{}
+	type key [6]any
 	seen := make(map[key]bool)
 	out := file.diagnostics[:0]
 	for _, d := range file.diagnostics {
@@ -674,7 +907,7 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 		if desc := d.CodeDescription; desc != nil {
 			codeHref = desc.Href
 		}
-		k := key{d.Range, d.Severity, d.Code, codeHref, d.Source, d.Message}
+		k := key{d.Range, d.Severity, d.Code, codeHref, d.Source, d.MessageString()}
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, d)
@@ -685,52 +918,44 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	return nil
 }
 
-func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams) error {
-	token, ok := params.Token.(string)
-	if !ok {
+func (cli *client) Progress(_ context.Context, params *protocol.ProgressParams) error {
+	if _, ok := params.Token.(string); !ok {
 		return fmt.Errorf("unexpected progress token: %[1]T %[1]v", params.Token)
 	}
 
-	c.progressHandlersMu.Lock()
-	handler := c.progressHandlers[token]
-	c.progressHandlersMu.Unlock()
-	if handler == nil {
-		handler = c.defaultProgressHandler
-	}
-	handler(params)
-	return nil
-}
-
-// defaultProgressHandler is the default handler of progress messages,
-// used during the initialize request.
-func (c *cmdClient) defaultProgressHandler(params *protocol.ProgressParams) {
 	switch v := params.Value.(type) {
 	case *protocol.WorkDoneProgressBegin:
 		if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
-			c.progressHandlersMu.Lock()
-			c.iwlToken = params.Token
-			c.progressHandlersMu.Unlock()
+			cli.progressMu.Lock()
+			cli.iwlToken = params.Token
+			cli.progressMu.Unlock()
+		}
+
+	case *protocol.WorkDoneProgressReport:
+		if cli.app.Verbose {
+			fmt.Fprintln(os.Stderr, v.Message)
 		}
 
 	case *protocol.WorkDoneProgressEnd:
-		c.progressHandlersMu.Lock()
-		iwlToken := c.iwlToken
-		c.progressHandlersMu.Unlock()
+		cli.progressMu.Lock()
+		iwlToken := cli.iwlToken
+		cli.progressMu.Unlock()
 
 		if params.Token == iwlToken {
-			close(c.iwlDone)
+			close(cli.iwlDone)
 		}
 	}
+	return nil
 }
 
-func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+func (cli *client) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
 	var success bool
 	if params.External {
 		// Open URI in external browser.
 		success = browser.Open(params.URI)
 	} else {
 		// Open file in editor, optionally taking focus and selecting a range.
-		// (cmdClient has no editor. Should it fork+exec $EDITOR?)
+		// (client has no editor. Should it fork+exec $EDITOR?)
 		log.Printf("Server requested that client editor open %q (takeFocus=%t, selection=%+v)",
 			params.URI, params.TakeFocus, params.Selection)
 		success = true
@@ -738,33 +963,37 @@ func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocum
 	return &protocol.ShowDocumentResult{Success: success}, nil
 }
 
-func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
+func (cli *client) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
 	return nil
 }
 
-func (c *cmdClient) DiagnosticRefresh(context.Context) error {
+func (cli *client) DiagnosticRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) InlayHintRefresh(context.Context) error {
+func (cli *client) InlayHintRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) SemanticTokensRefresh(context.Context) error {
+func (cli *client) SemanticTokensRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) InlineValueRefresh(context.Context) error {
+func (cli *client) InlineValueRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) getFile(uri protocol.DocumentURI) *cmdFile {
-	file, found := c.files[uri]
+// getFile returns the specified file, adding it to the client state if needed.
+func (cli *client) getFile(uri protocol.DocumentURI) *cmdFile {
+	cli.filesMu.Lock()
+	defer cli.filesMu.Unlock()
+
+	file, found := cli.files[uri]
 	if !found || file.err != nil {
 		file = &cmdFile{
 			uri: uri,
 		}
-		c.files[uri] = file
+		cli.files[uri] = file
 	}
 	if file.mapper == nil {
 		content, err := os.ReadFile(uri.Path())
@@ -777,30 +1006,40 @@ func (c *cmdClient) getFile(uri protocol.DocumentURI) *cmdFile {
 	return file
 }
 
-func (c *cmdClient) openFile(uri protocol.DocumentURI) *cmdFile {
-	c.filesMu.Lock()
-	defer c.filesMu.Unlock()
-	return c.getFile(uri)
-}
-
-// TODO(adonovan): provide convenience helpers to:
-// - map a (URI, protocol.Range) to a MappedRange;
-// - parse a command-line argument to a MappedRange.
-func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
-	file := c.client.openFile(uri)
+// openFile returns the specified file, adding it to the client state
+// if needed, and notifying the server that it was opened. This method
+// in on `cli` instead of `client`, as it needs to call the server on
+// newly opened files.
+func (cli *cli) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
+	file := cli.getFile(uri)
 	if file.err != nil {
 		return nil, file.err
+	}
+
+	// Choose language ID from file extension.
+	var langID protocol.LanguageKind // "" eventually maps to file.UnknownKind
+	switch filepath.Ext(uri.Path()) {
+	case ".go":
+		langID = "go"
+	case ".mod":
+		langID = "go.mod"
+	case ".sum":
+		langID = "go.sum"
+	case ".work":
+		langID = "go.work"
+	case ".s":
+		langID = "go.s"
 	}
 
 	p := &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,
-			LanguageID: "go",
+			LanguageID: langID,
 			Version:    1,
 			Text:       string(file.mapper.Content),
 		},
 	}
-	if err := c.Server.DidOpen(ctx, p); err != nil {
+	if err := cli.server.DidOpen(ctx, p); err != nil {
 		// TODO(adonovan): is this assignment concurrency safe?
 		file.err = fmt.Errorf("%v: %v", uri, err)
 		return nil, file.err
@@ -808,35 +1047,26 @@ func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*c
 	return file, nil
 }
 
-func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	// use range to avoid limits on full
-	resp, err := c.Server.SemanticTokensRange(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
-func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.DocumentURI) error {
-	cmd, err := command.NewDiagnoseFilesCommand("Diagnose files", command.DiagnoseFilesArgs{
+func diagnoseFiles(ctx context.Context, server protocol.Server, files []protocol.DocumentURI) error {
+	cmd := protocolcommand.NewDiagnoseFilesCommand("Diagnose files", protocolcommand.DiagnoseFilesArgs{
 		Files: files,
 	})
-	if err != nil {
-		return err
-	}
-	_, err = c.executeCommand(ctx, &cmd)
+	_, err := executeCommand(ctx, server, cmd)
 	return err
 }
 
-func (c *connection) terminate(ctx context.Context) {
-	//TODO: do we need to handle errors on these calls?
-	c.Shutdown(ctx)
-	//TODO: right now calling exit terminates the process, we should rethink that
-	//server.Exit(ctx)
+func (cli *cli) terminate(ctx context.Context) {
+	if err := cli.server.Shutdown(ctx); err != nil {
+		log.Printf("server shutdown failed: %v", err)
+	}
+
+	// Don't call Exit as it terminates the server process,
+	// which is the same as this client process.
+	// c.server.Exit(ctx)
 }
 
 // Implement io.Closer.
-func (c *cmdClient) Close() error {
+func (cli *client) Close() error {
 	return nil
 }
 
@@ -895,7 +1125,7 @@ func (f *cmdFile) spanLocation(s span) (protocol.Location, error) {
 	if err != nil {
 		return protocol.Location{}, err
 	}
-	return f.mapper.RangeLocation(rng), nil
+	return f.mapper.URI.Location(rng), nil
 }
 
 // spanRange converts a (UTF-8) span to a protocol (UTF-16) range.
@@ -907,8 +1137,8 @@ func (f *cmdFile) spanRange(s span) (protocol.Range, error) {
 	// case-sensitive directories. The authoritative answer
 	// requires querying the file system, and we don't want
 	// to do that.
-	if !strings.EqualFold(filepath.Base(string(f.mapper.URI)), filepath.Base(string(s.URI()))) {
-		return protocol.Range{}, bugpkg.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
+	if !strings.EqualFold(f.mapper.URI.Base(), s.URI().Base()) {
+		return protocol.Range{}, bug.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
 	}
 	start, err := pointPosition(f.mapper, s.Start())
 	if err != nil {

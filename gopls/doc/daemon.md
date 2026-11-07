@@ -1,4 +1,6 @@
-# Gopls: Running as a daemon
+---
+title: "Gopls: Running as a daemon"
+---
 
 **Note: this feature is new. If you encounter bugs, please [file an
 issue](troubleshooting.md#file-an-issue).**
@@ -42,7 +44,7 @@ forward the LSP. For example, here is a reasonable gopls invocation, that sets
 some additional flags for easier [debugging](#debugging):
 
 ```bash
-gopls -remote=auto -logfile=auto -debug=:0 -remote.debug=:0 -rpc.trace
+gopls -remote=auto -logfile=auto -debug=localhost:0 -remote.debug=localhost:0 -rpc.trace
 ```
 
 Note that the shared gopls process will automatically shut down after one
@@ -58,31 +60,55 @@ started by your editor.
 For example, to host the daemon on the TCP port `37374`, do:
 
 ```bash
-gopls -listen=:37374 -logfile=auto -debug=:0
+gopls -listen=:37374 -logfile=auto -debug=localhost:0
 ```
 
 And then from the editor, run
 
 ```bash
-gopls -remote=:37374 -logfile=auto -debug=:0 -rpc.trace
+gopls -remote=:37374 -logfile=auto -debug=localhost:0 -rpc.trace
 ```
 
 If you are on a POSIX system, you can also use unix domain sockets by prefixing
 the flag values with `unix;`. For example:
 
 ```bash
-gopls -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0
+gopls -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=localhost:0
 ```
 
 And connect via:
 
 ```bash
-gopls -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0 -rpc.trace
+gopls -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=localhost:0 -rpc.trace
 ```
 
 (Note that these flag values MUST be enclosed in quotes, because ';' is a
 special shell character. For this reason, this syntax is subject to change in
 the future.)
+
+## Using gopls subcommands with a daemon
+
+The `-remote` flag applies to other subcommands:
+
+```bash
+gopls -remote=auto definition ./gopls/main.go:35:8
+```
+
+In short-lived CLI use, if no daemon runs, `-remote=auto` starts one.
+The daemon stops after the idle timeout (default 1m). Use `-remote.listen.timeout` to extend this:
+
+```bash
+gopls -remote=auto -remote.listen.timeout=1h check ./...
+```
+
+There are two exceptions:
+
+- `gopls remote sessions` and `gopls remote debug` only inspect a daemon.
+  They never start one, and report an error if no daemon is listening.
+- `gopls mcp` and `gopls stats` do not support `-remote`.
+
+Remember that a command that uses the daemon shares the cache, the memory, and
+the fate of all other clients of that daemon, which may include your editor.
 
 ## Debugging
 
@@ -92,19 +118,19 @@ are some tips:
 
 ### Finding logfiles and debug addresses
 
-When running in daemon mode, you can use the `gopls inspect sessions` command
+When running in daemon mode, you can use the `gopls remote sessions` command
 to find the logfile and debug port for your gopls daemon instance (as well as
 for all its connected clients). By default, this inspects the default daemon
 (i.e. `-remote=auto`). To inspect a different daemon, use the `-remote` flag
-explicitly: `gopls -remote=localhost:12345 inspect sessions`.
+explicitly: `gopls -remote=localhost:12345 remote sessions`.
 
 This works whether or not you have enabled `-remote.debug`.
 
 ### Traversing debug pages
 
-When `-debug=:0` is passed to gopls, it runs a webserver that serves stateful
+When `-debug=localhost:0` is passed to gopls, it runs a webserver that serves stateful
 debug pages (see [troubleshooting.md](troubleshooting.md)). You can find the
-actual port hosting these pages by either using the `gopls inspect sessions`
+actual port hosting these pages by either using the `gopls remote sessions`
 command, or by checking the start of the logfile -- it will be one of the first
 log messages. For example, if using `-logfile=auto`, find the debug address by
 checking `head /tmp/gopls-<pid>.log`.

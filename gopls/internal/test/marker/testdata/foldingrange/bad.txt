@@ -11,8 +11,8 @@ import ( "fmt"
 import ( 
 	_ "os" )
 	
-// badBar is a function.
-func badBar() string { x := true
+// BadBar is a function.
+func BadBar() string { x := true
 	if x { 
 		// This is the only foldable thing in this file when lineFoldingOnly
 		fmt.Println("true")
@@ -30,12 +30,12 @@ import (<0 kind="imports"> "fmt"
 import (<1 kind="imports"> 
 	_ "os" </1>)
 	
-// badBar is a function.
-func badBar(<2 kind=""></2>) string {<3 kind=""> x := true
-	if x {<4 kind=""> 
+// BadBar is a function.
+func BadBar() string {<2 kind=""> x := true
+	if x {<3 kind=""> 
 		// This is the only foldable thing in this file when lineFoldingOnly
-		fmt.Println(<5 kind="">"true"</5>)
-	</4>} else {<6 kind="">
-		fmt.Println(<7 kind="">"false"</7>) </6>}
+		fmt.Println(<4 kind="">"true"</4>)
+	</3>} else {<5 kind="">
+		fmt.Println(<6 kind="">"false"</6>) </5>}
 	return ""
-</3>}
+</2>}

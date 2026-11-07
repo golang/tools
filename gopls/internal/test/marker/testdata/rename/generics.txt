@@ -10,7 +10,7 @@ Fixed bugs:
   capitalized and the package was imported by another package.
 
 -- flags --
--min_go=go1.20
+-ignore_extra_diags
 
 -- go.mod --
 module example.com
@@ -27,10 +27,15 @@ func _[P ~[]int]() {
 	_ = P{}
 }
 
+var _ = I.m
+
 -- @mToM/a.go --
 @@ -5 +5 @@
 -func (I) m() {} //@rename("m", "M", mToM)
 +func (I) M() {} //@rename("m", "M", mToM)
+@@ -11 +11 @@
+-var _ = I.m
++var _ = I.M
 -- g.go --
 package a
 

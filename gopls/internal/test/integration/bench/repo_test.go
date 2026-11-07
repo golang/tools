@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,8 +110,13 @@ var repos = map[string]*repo{
 
 // getRepo gets the requested repo, and skips the test if -short is set and
 // repo is not configured as a short repo.
+//
+// The name may include an optional ".foo" suffix after the repo
+// identifier. This allows several tests to use the same repo but have
+// distinct test names and associated file names.
 func getRepo(tb testing.TB, name string) *repo {
 	tb.Helper()
+	name, _, _ = strings.Cut(name, ".") // remove ".foo" suffix
 	repo := repos[name]
 	if repo == nil {
 		tb.Fatalf("repo %s does not exist", name)
@@ -147,7 +153,7 @@ type repo struct {
 // reusableDir return a reusable directory for benchmarking, or "".
 //
 // If the user specifies a directory, the test will create and populate it
-// on the first run an re-use it on subsequent runs. Otherwise it will
+// on the first run and re-use it on subsequent runs. Otherwise it will
 // create, populate, and delete a temporary directory.
 func (r *repo) reusableDir() string {
 	if r.inDir == nil {
@@ -211,7 +217,7 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 	})
 
 	return &Env{
-		T:       tb,
+		TB:      tb,
 		Ctx:     context.Background(),
 		Editor:  r.editor,
 		Sandbox: r.sandbox,
@@ -220,11 +226,10 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 }
 
 // newEnv returns a new Env connected to a new gopls process communicating
-// over stdin/stdout. It is safe for concurrent use.
-//
-// It is the caller's responsibility to call Close on the resulting Env when it
-// is no longer needed.
-func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation string, cpuProfile bool) *Env {
+// over stdin/stdout, along with a function to close the environment, which
+// must be called when it is no longer needed.
+// It is safe for concurrent use.
+func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation string, cpuProfile bool) (env *Env, close func()) {
 	dir := r.getDir()
 
 	args := profileArgs(qualifiedName(r.name, forOperation), cpuProfile)
@@ -237,13 +242,14 @@ func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation stri
 		log.Fatalf("connecting editor: %v", err)
 	}
 
-	return &Env{
-		T:       tb,
+	env = &Env{
+		TB:      tb,
 		Ctx:     context.Background(),
 		Editor:  editor,
 		Sandbox: sandbox,
 		Awaiter: awaiter,
 	}
+	return env, env.Close
 }
 
 // Close cleans up shared state referenced by the repo.

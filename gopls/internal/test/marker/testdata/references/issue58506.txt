@@ -15,7 +15,7 @@ to B.F.
 
 -- go.mod --
 module example.com
-go 1.12
+go 1.18
 
 -- a/a.go --
 package a
@@ -53,4 +53,4 @@ package d
 
 import "example.com/b"
 
-var _ interface{} = b.B.F //@loc(refd, "F")
+var _ any = b.B.F //@loc(refd, "F")

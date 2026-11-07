@@ -1,4 +1,6 @@
-# `gopls` design documentation
+---
+title: "Gopls: Design"
+---
 
 ## _A note from the future_
 
@@ -377,7 +379,7 @@ Rename   | Rename an identifier
 Requires | AST and type information for the **reverse** transitive closure
 LSP      | [`textDocument/rename`]
 |        | [`textDocument/prepareRename`]
-Previous | [gorename]
+Previous | golang.org/x/tools/cmd/gorename
 |        | This uses the same information that find references does, with all the same problems and limitations. It is slightly worse because the changes it suggests make it intolerant of incorrect results. It is also dangerous using it to change the public API of a package.
 
 ---
@@ -389,7 +391,7 @@ Previous        | N/A
 |               | This is a brand new feature powered by the new go/analysis engine, and it should allow a huge amount of automated refactoring.
 
 [LSP specification]: https://microsoft.github.io/language-server-protocol/specifications/specification-3-14/
-[talk]: TODO
+[talk]: https://www.youtube.com/watch?v=EFJfdWzBHwE
 [slides]: https://github.com/gophercon/2019-talks/blob/master/RebeccaStambler-GoPleaseStopBreakingMyEditor/slides.pdf "Go, please stop breaking my editor!"
 [JSON rpc 2]: https://www.jsonrpc.org/specification
 
@@ -402,7 +404,6 @@ Previous        | N/A
 [gofmt]: https://golang.org/cmd/gofmt
 [gogetdoc]: https://github.com/zmb3/gogetdoc
 [goimports]: https://pkg.go.dev/golang.org/x/tools/cmd/goimports
-[gorename]: https://pkg.go.dev/golang.org/x/tools/cmd/gorename
 [goreturns]: https://github.com/sqs/goreturns
 [gotags]: https://github.com/jstemmer/gotags
 [guru]: https://pkg.go.dev/golang.org/x/tools/cmd/guru

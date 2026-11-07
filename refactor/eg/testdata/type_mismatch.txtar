@@ -1,0 +1,13 @@
+
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+const shouldFail = "different signatures"
+
+func before() int   { return 0 }
+func after() string { return "" }

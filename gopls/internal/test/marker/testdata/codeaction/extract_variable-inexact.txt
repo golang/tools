@@ -1,0 +1,36 @@
+This test checks that extract variable/constant permits:
+- extraneous whitespace in the selection
+- function literals
+- pointer dereference expressions
+- parenthesized expressions
+
+-- a.go --
+package a
+
+func _(ptr *int) {
+	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
+	var _ = func() {} //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)
+	var _ = *ptr      //@codeaction("*ptr", "refactor.extract.variable", edit=ptr)
+	var _ = (ptr)     //@codeaction("(ptr)", "refactor.extract.variable", edit=paren)
+}
+
+-- @spaces/a.go --
+@@ -4 +4,2 @@
+-	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
++	const newConst = 1 + 2
++	var _ = newConst + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
+-- @funclit/a.go --
+@@ -5 +5,2 @@
+-	var _ = func() {} //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)
++	newVar := func() {}
++	var _ = newVar //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)
+-- @ptr/a.go --
+@@ -6 +6,2 @@
+-	var _ = *ptr      //@codeaction("*ptr", "refactor.extract.variable", edit=ptr)
++	newVar := *ptr
++	var _ = newVar      //@codeaction("*ptr", "refactor.extract.variable", edit=ptr)
+-- @paren/a.go --
+@@ -7 +7,2 @@
+-	var _ = (ptr)     //@codeaction("(ptr)", "refactor.extract.variable", edit=paren)
++	newVar := (ptr)
++	var _ = newVar     //@codeaction("(ptr)", "refactor.extract.variable", edit=paren)

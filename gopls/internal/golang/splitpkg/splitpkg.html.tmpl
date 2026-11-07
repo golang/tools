@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/assets/common.css">
+  <link rel="stylesheet" href="/assets/splitpkg.css">
+  <script src="/assets/common.js"></script>
+  <script src="/assets/splitpkg.js"></script>
+</head>
+<body>
+<h1>{{.Title}}</h1>
+
+<p class='help'>
+ⓘ Use this tool to decompose a package into a set of components
+whose dependencies are acyclic.
+
+First, name a set of <a href='#components'>components</a>.
+
+Second, assign each <a href='#assign'>declaration</a> to an
+appropriate component: check their checkboxes, choose a component, and
+click Apply. Use the checkbox for a file to select all declarations in
+that file.
+
+Third, examine the set of <a href='#deps'>dependencies</a> between
+components. Each inter-component dependency lists the symbol
+references that cross the boundary. Click on one to navigate your
+editor there.
+
+If two or more components form a dependency cycle (⚠),
+you will need to either change your code,
+or change the component assignments.
+
+Iterate this process.
+Reload the page to refresh after each code change.
+</p>
+<p class='help'>
+Once you are happy with the result, you can split the package,
+renaming declarations as needed to export them.
+In a future release, the code transformation will be automated.
+</p>
+
+<h2>Components</h2>
+<div id="components"><!--programmatic--></div>
+
+<p>
+<input size="20" id="new-component" type='text'/>
+<button id="add-component">Add component</button>
+[<a href='#deps'>▼ see dependencies</a>]
+</p>
+
+<hr>
+
+<h2>Declarations</h2>
+
+<div id="assign">
+  <label for="assign-select">Assign selected declarations to component:</label>
+  <select id="assign-select"><!--programmatic--></select>
+  <button id="assign-apply">Apply</button>
+</div>
+
+<div id="files"><!--programmatic--></div>
+
+<hr>
+
+<h2>Component dependencies</h2>
+
+<div id="deps"><!--programmatic--></div>
+`

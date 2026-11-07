@@ -1,0 +1,47 @@
+This test verifies two types of errors when generating interface method stubs:
+1. adding method __ would conflict with (or shadow) existing field
+2. method __ already exists but has the wrong type
+
+-- go.mod --
+module mod.com
+
+go 1.22
+
+-- wrong/type.go --
+package wrongtype
+
+type I interface {
+	Foo()
+	Bar()
+}
+
+type B struct {
+	*A
+}
+
+type A struct {}
+
+func (a *A) Foo() {}
+func (b *B) Foo(bool) {} // method Foo exists on B but has the wrong type
+
+var _ I = (*B)(nil) //@quickfixerr(re"..B..nil.", re"missing method", "already exists but has the wrong type")
+
+-- field/conflict.go --
+package fieldconflict
+
+type I interface {
+	Foo()
+	Bar()
+}
+
+type B struct {
+	*A
+}
+
+type A struct {
+    Bar int // implementing a method "Bar" would conflict with existing field "Bar"
+}
+
+func (a *A) Foo() {}
+var _ I = (*B)(nil) //@quickfixerr(re"..B..nil.", re"is a field, not a method", "would conflict with (or shadow) existing field")
+
