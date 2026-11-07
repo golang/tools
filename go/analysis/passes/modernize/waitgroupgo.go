@@ -14,11 +14,14 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -50,7 +53,8 @@ var WaitGroupGoAnalyzer = &analysis.Analyzer{
 // The wg.Done must occur within the first statement of the block in a
 // defer format or last statement of the block, and the offered fix
 // only removes the first/last wg.Done call. It doesn't fix existing
-// wrong usage of sync.WaitGroup.
+// wrong usage of sync.WaitGroup, and it isn't offered at all if the
+// body uses wg other than in that wg.Done call.
 //
 // The use of WaitGroup.Go in pattern 1 implicitly introduces a
 // 'defer', which may change the behavior in the case of panic from
@@ -71,6 +75,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
+nextCall:
 	for curAddCall := range index.Calls(syncWaitGroupAdd) {
 		// Extract receiver from wg.Add call.
 		addCall := curAddCall.Node().(*ast.CallExpr)
@@ -101,6 +106,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		if lit.Type.Results != nil && len(lit.Type.Results.List) > 0 {
 			continue // function literal has return values; wg.Go requires func()
 		}
+		curLit := curNext.ChildAt(edge.GoStmt_Call, -1).ChildAt(edge.CallExpr_Fun, -1)
 		list := lit.Body.List
 		if len(list) == 0 {
 			continue
@@ -113,7 +119,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 			astutil.EqualSyntax(ast.Unparen(deferStmt.Call.Fun).(*ast.SelectorExpr).X, addCallRecv) {
 			doneStmt = deferStmt // "defer wg.Done()"
 
-		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok && cannotRecover(lit.Body, info) {
+		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok && cannotRecover(lit.Body, info) && !containsReturn(curLit) {
 			if doneCall, ok := lastStmt.X.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, doneCall) == syncWaitGroupDone &&
 				astutil.EqualSyntax(ast.Unparen(doneCall.Fun).(*ast.SelectorExpr).X, addCallRecv) {
@@ -126,6 +132,17 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		curDoneStmt, ok := curNext.FindNode(doneStmt)
 		if !ok {
 			panic("can't find Cursor for 'done' statement")
+		}
+
+		// To be safe, the FuncLit must not use the WaitGroup other
+		// than in the Done call of the pattern. Other uses, such as
+		// an extra Done or passing it to other code, are often
+		// mistakes, and we don't try to prove that the rewrite
+		// preserves their behavior.
+		for curUse := range index.Uses(info.Uses[typesinternal.UsedIdent(info, addCallRecv)]) {
+			if curLit.Contains(curUse) && !curDoneStmt.Contains(curUse) {
+				continue nextCall // used elsewhere in the FuncLit
+			}
 		}
 
 		file := astutil.EnclosingFile(curAddCall)
@@ -198,6 +215,24 @@ func cannotRecover(body *ast.BlockStmt, info *types.Info) bool {
 		return true
 	})
 	return res
+}
+
+// containsReturn reports whether the body of the FuncLit at curLit
+// contains a return statement, which would skip a trailing wg.Done() call.
+func containsReturn(curLit inspector.Cursor) bool {
+	found := false
+	curBody := curLit.ChildAt(edge.FuncLit_Body, -1)
+	curBody.Inspect([]ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}, func(cur inspector.Cursor) bool {
+		switch cur.Node().(type) {
+		case *ast.ReturnStmt:
+			found = true
+		case *ast.FuncLit:
+			// A return in a nested function does not return from this body.
+			return false
+		}
+		return !found
+	})
+	return found
 }
 
 func containsRecover(body *ast.BlockStmt, info *types.Info) bool {
