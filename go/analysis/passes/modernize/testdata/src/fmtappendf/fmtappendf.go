@@ -70,3 +70,11 @@ func multiline() []byte {
 func getString() string {
 	return ""
 }
+
+func nonStringConst() {
+	// The first operand of Sprint need not be a string. Like non-constant
+	// operands, non-string constants are rewritten without checking whether
+	// they may format as the empty string.
+	_ = []byte(fmt.Sprint(1))    // want "Replace .*Sprint.* with fmt.Append"
+	_ = []byte(fmt.Sprint(true)) // want "Replace .*Sprint.* with fmt.Append"
+}
