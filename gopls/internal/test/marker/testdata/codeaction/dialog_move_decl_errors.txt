@@ -36,6 +36,31 @@ type A struct {} //@codeaction(re"A", "refactor.move.moveDeclaration", title="Mo
 -- illegal/src/src.go --
 package src
 
+import (
+	"strconv"
+
+	"golang.org/lsptests/movedecl/illegal/dest"
+)
+
+// Dropping the dest qualifier would resolve DestFunc to the parameter.
+func ParamShadowsDest(DestFunc int) int { return dest.DestFunc() + DestFunc } //@codeaction(re"ParamShadowsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"DestFunc would be shadowed by a local declaration")
+
+// Dropping the dest qualifier would resolve DestFunc to the variable of the enclosing block.
+func LocalShadowsDest() int { //@codeaction(re"LocalShadowsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"DestFunc would be shadowed by a local declaration")
+	DestFunc := 1
+	if DestFunc > 0 {
+		return dest.DestFunc()
+	}
+	return DestFunc
+}
+
+// The moving function needs an import of strconv, but package dest declares strconv
+// in a different file from the destination file.
+func NeedsImport(i int) string { return strconv.Itoa(i) } //@codeaction(re"NeedsImport", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"strconv is already declared in package dest")
+
+// The same conflict applies when the destination file does not exist yet.
+func NeedsImportNewFile(i int) string { return strconv.Itoa(i) } //@codeaction(re"NeedsImportNewFile", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/newfile.go"}`, err=re"strconv is already declared in package dest")
+
 // Package-level name conflict: illegal/dest/dest.go already declares type ExistingConflict.
 type ExistingConflict struct{} //@codeaction(re"ExistingConflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"already declared in package dest")
 
@@ -153,6 +178,13 @@ type ExistingConflict struct{}
 func _() {
 	_ = bytes.Buffer{}
 }
+
+-- illegal/dest/names.go --
+package dest
+
+var strconv = 1
+
+func DestFunc() int { return strconv }
 
 -- illegal/dest/other.go --
 package dest

@@ -219,7 +219,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	var declsText strings.Builder
 	destPkgPath := string(dest.pkgPath)
 	for i, r := range movingRanges {
-		text, err := r.text(srcInfo, destPkgPath)
+		text, err := r.text(srcPkg.Types(), srcInfo, destPkgPath)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
@@ -850,7 +850,8 @@ func (r movingRange) Range() astutil.Range { return astutil.RangeOf(r.start, r.e
 // and any trailing comments, to insert in the destination file. If r is a spec,
 // its keyword is prepended to make it a declaration, e.g. "var" in "var x = 1".
 // References to destPkg within r lose their qualifier, e.g. "dest.F()" becomes "F()".
-func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) {
+// It returns an error if a local declaration would then shadow such a reference.
+func (r movingRange) text(pkg *types.Package, info *types.Info, destPkgPath string) (string, error) {
 	startOff, endOff, err := safetoken.Offsets(r.pgf.Tok, r.start, r.end)
 	if err != nil {
 		return "", err
@@ -863,6 +864,10 @@ func (r movingRange) text(info *types.Info, destPkgPath string) (string, error) 
 			sel := curSel.Node().(*ast.SelectorExpr)
 			if id, ok := sel.X.(*ast.Ident); ok {
 				if pkgName, ok := info.Uses[id].(*types.PkgName); ok && pkgName.Imported().Path() == destPkgPath {
+					if s, _ := pkg.Scope().Innermost(sel.Pos()).LookupParent(sel.Sel.Name, sel.Pos()); s != nil &&
+						s != types.Universe && s != pkg.Scope() && s.Parent() != pkg.Scope() {
+						return "", fmt.Errorf("cannot move: without its %s qualifier, %s would be shadowed by a local declaration", id.Name, sel.Sel.Name)
+					}
 					idOff, selOff, err := safetoken.Offsets(r.pgf.Tok, id.Pos(), sel.Sel.Pos())
 					if err != nil {
 						return "", err
@@ -1043,9 +1048,13 @@ func updateSrcDestImports(srcPkg *cache.Package, dest moveDest, destPGF *parsego
 				// Do not add a self-import of destPkg to the destination file.
 				// (findImportChanges may return a dest import if the dest package is referenced
 				// as part of some moving declaration.)
-				if pkgName := srcPkg.TypesInfo().PkgNameOf(spec); pkgName != nil &&
-					pkgName.Imported().Path() == string(dest.pkgPath) {
+				pkgName := srcPkg.TypesInfo().PkgNameOf(spec)
+				if pkgName != nil && pkgName.Imported().Path() == string(dest.pkgPath) {
 					continue
+				}
+				// An imported name must not also be declared in the package block.
+				if pkgName != nil && dest.pkg != nil && dest.pkg.Types().Scope().Lookup(pkgName.Name()) != nil {
+					return fmt.Errorf("cannot move: the moving code needs an import named %s, but %s is already declared in package %s", pkgName.Name(), pkgName.Name(), dest.pkgName)
 				}
 				adds = append(adds, spec)
 			}
