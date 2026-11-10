@@ -156,13 +156,20 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 			s.diagnoseSnapshot(ctx, snapshot, uris, snapshot.Options().DiagnosticsDelay)
 			s.modificationMu.Lock()
 
-			// Only remove v from s.viewsToDiagnose if the context is not cancelled.
-			// This ensures that the snapshot was not cloned before its state was
-			// fully evaluated, and therefore avoids missing a change that was
+			// Only remove v from s.viewsToDiagnose if neither the
+			// context nor the snapshot is cancelled. This ensures that
+			// the snapshot was not cloned before its state was fully
+			// evaluated, and therefore avoids missing a change that was
 			// irrelevant to an incomplete snapshot.
 			//
+			// It is not sufficient to check ctx alone: the session
+			// clones (and cancels) the snapshot in DidModifyFiles
+			// before the server cancels ctx in needsDiagnosis, and a
+			// diagnosis of the stale snapshot may complete in between
+			// (golang/go#82162).
+			//
 			// See the documentation for s.viewsToDiagnose for details.
-			if ctx.Err() == nil && s.viewsToDiagnose[v] <= modID {
+			if ctx.Err() == nil && snapshot.BackgroundContext().Err() == nil && s.viewsToDiagnose[v] <= modID {
 				delete(s.viewsToDiagnose, v)
 			}
 			s.modificationMu.Unlock()

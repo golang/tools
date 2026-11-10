@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -385,6 +386,11 @@ func (s *server) didModifyFiles(ctx context.Context, cause ModificationSource, m
 		}
 	}
 
+	// See SlowDidModifyFilesEnvvar.
+	if testing.Testing() && s.getenv(SlowDidModifyFilesEnvvar) != "" {
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
 
 	wg.Go(func() {
@@ -396,6 +402,17 @@ func (s *server) didModifyFiles(ctx context.Context, cause ModificationSource, m
 	// and if it differs from the current set, send updated registrations.
 	return s.updateWatchedDirectories(ctx)
 }
+
+// SlowDidModifyFilesEnvvar, if set (to any non-empty value) in the
+// session or process environment of a test, causes didModifyFiles to
+// pause after the session has applied a modification (cloning the
+// snapshot of each view) but before the server cancels any diagnosis
+// in progress and schedules diagnosis of the affected views.
+//
+// It exists so that tests can widen this window, in which a diagnosis
+// of a stale snapshot may complete (golang/go#82162).
+// It has no effect outside tests.
+const SlowDidModifyFilesEnvvar = "GOPLS_TEST_SLOW_DIDMODIFYFILES"
 
 func (s *server) handleModuleChanges(ctx context.Context, modifications []file.Modification, cause ModificationSource) {
 	// If any change in this batch is not a module metadata file, gopls will treat

@@ -864,6 +864,24 @@ func main() {
 // and trigger re-diagnosis even if invalidating the tidy result did not.
 func TestModTidyUnsavedReplacedGoMod(t *testing.T) {
 	t.Parallel()
+	testModTidyUnsavedReplacedGoMod(t)
+}
+
+// TestModTidyUnsavedReplacedGoMod_StaleDiagnosis is a regression test
+// for golang/go#82162, in which the diagnosis of a view's stale snapshot
+// completed in the window between the session cloning the snapshot and
+// the server cancelling the diagnosis, causing the server to forget
+// that the view needed to be diagnosed again.
+//
+// The SlowDidModifyFilesEnvvar test knob widens that window, making the
+// race (formerly a rare flake of TestModTidyUnsavedReplacedGoMod)
+// reliably reproducible.
+func TestModTidyUnsavedReplacedGoMod_StaleDiagnosis(t *testing.T) {
+	t.Parallel()
+	testModTidyUnsavedReplacedGoMod(t, EnvVars{server.SlowDidModifyFilesEnvvar: "1"})
+}
+
+func testModTidyUnsavedReplacedGoMod(t *testing.T, opts ...RunOption) {
 	const files = `
 -- go.mod --
 module mod.com
@@ -907,7 +925,7 @@ go 1.14
 -- b/b.go --
 package b
 `
-	Run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
 		// Module a requires b, so the main module's
 		// requirement on b is redundant.
 		env.OpenFile("go.mod")
