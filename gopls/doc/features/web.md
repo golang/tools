@@ -47,8 +47,6 @@ declarations in your source code. Clicking on one of these links
 causes gopls to send a `showDocument` request to your editor to open
 the relevant source file at the appropriate line. This works even when
 your source code has been modified but not saved.
-(VS Code users: please upvote microsoft/vscode#208093 if you would
-like your editor to raise its window when handling this event.)
 
 <a name='doc'></a>
 ## `source.doc`: Browse package documentation

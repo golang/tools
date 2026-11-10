@@ -153,7 +153,6 @@ var asmHeader = template.Must(template.New("header").Parse(`<!DOCTYPE html>
 </p>
 <p>
   Click on a source line marker <code>L1234</code> to navigate your editor there.
-  (VS Code users: please upvote <a href='https://github.com/microsoft/vscode/issues/208093'>#208093</a>)
 </p>
 <p id='compiling'>Compiling...</p>
 <pre>
