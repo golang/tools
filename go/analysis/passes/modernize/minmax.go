@@ -59,6 +59,7 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 func minmax(pass *analysis.Pass) (any, error) {
 	var (
 		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info    = pass.TypesInfo
 	)
 	// Check for user-defined min/max functions that can be removed
@@ -188,6 +189,14 @@ func minmax(pass *analysis.Pass) (any, error) {
 
 				if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_21) {
 					return // min/max is too new
+				}
+
+				// If lhs0 is newly defined (x := a), ensure x is still used
+				// outside ifStmt so replacing "x := a; if x < b { x = b }"
+				// with "x := max(a, b)" does not leave x unused.
+				if fassign.Tok == token.DEFINE &&
+					moreiters.Every(index.Uses(info.Defs[lhs0.(*ast.Ident)]), curIfStmt.Contains) {
+					return
 				}
 
 				// pattern 2
