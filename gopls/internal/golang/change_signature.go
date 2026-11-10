@@ -447,29 +447,24 @@ func findParam(pgf *parsego.File, rng protocol.Range) *paramInfo {
 	// This search may fail, even if one or both of id and field are non nil:
 	// field could be from a result or local declaration, and id could be part of
 	// the field type rather than names.
-	for _, f := range info.decl.Type.Params.List {
+	for n, f := range astutil.Fields(info.decl.Type.Params) {
 		if f == field {
-			info.paramIndex = pi // may be modified later
-			info.field = f
-			for _, n := range f.Names {
-				if n == id {
-					info.paramIndex = pi
-					info.name = n
-					break
-				}
-				pi++
+			if info.field == nil {
+				info.paramIndex = pi // may be modified later
+				info.field = f
 			}
-			if info.name == nil && len(info.field.Names) == 1 {
-				info.name = info.field.Names[0]
+			if n != nil && n == id {
+				info.paramIndex = pi
+				info.name = n
+				break
 			}
-			break
-		} else {
-			m := len(f.Names)
-			if m == 0 {
-				m = 1
-			}
-			pi += m
+		} else if info.field != nil {
+			break // past the field
 		}
+		pi++
+	}
+	if info.field != nil && info.name == nil && len(info.field.Names) == 1 {
+		info.name = info.field.Names[0]
 	}
 	return &info
 }

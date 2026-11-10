@@ -675,14 +675,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 		// Flatten the list of syntactic types.
 		var types []ast.Expr
-		for _, field := range calleeDecl.Type.Params.List {
-			if field.Names == nil {
-				types = append(types, field.Type)
-			} else {
-				for range field.Names {
-					types = append(types, field.Type)
-				}
-			}
+		for _, field := range astutil.Fields(calleeDecl.Type.Params) {
+			types = append(types, field.Type)
 		}
 
 		for i := 0; i < sig.Params().Len(); i++ {
@@ -1614,16 +1608,8 @@ func syncParamFieldTypes(calleeDecl *ast.FuncDecl, params []*parameter) {
 	if calleeDecl.Recv != nil && len(calleeDecl.Recv.List) > 0 {
 		setFieldType(calleeDecl.Recv.List[0].Type)
 	}
-	if calleeDecl.Type.Params != nil {
-		for _, field := range calleeDecl.Type.Params.List {
-			if field.Names == nil {
-				setFieldType(field.Type)
-			} else {
-				for range field.Names {
-					setFieldType(field.Type)
-				}
-			}
-		}
+	for _, field := range astutil.Fields(calleeDecl.Type.Params) {
+		setFieldType(field.Type)
 	}
 	assert(i == len(params), "mismatched parameter count")
 }

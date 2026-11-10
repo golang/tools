@@ -1651,38 +1651,29 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, at token.Po
 	if enclosing.Results != nil {
 		nameIdx := make(map[string]int) // last integral suffixes of generated names
 		qual := typesinternal.FileQualifier(file, pkg)
-		for _, field := range enclosing.Results.List {
+		for id, field := range astutil.Fields(enclosing.Results) {
 			typ := info.TypeOf(field.Type)
 			if typ == nil {
 				return nil, nil, fmt.Errorf(
 					"failed type conversion, AST expression: %T", field.Type)
 			}
-			names := []string{""}
-			if len(field.Names) > 0 {
-				names = nil
-				for _, n := range field.Names {
-					names = append(names, n.Name)
-				}
+			bestName := "result"
+			if id != nil && id.Name != "_" {
+				bestName = id.Name
+			} else if n, ok := varNameForType(typ); ok {
+				bestName = n
 			}
-			for _, name := range names {
-				bestName := "result"
-				if name != "" && name != "_" {
-					bestName = name
-				} else if n, ok := varNameForType(typ); ok {
-					bestName = n
-				}
-				retName, idx := freshNameOutsideRange(info, file, at, start, end, bestName, nameIdx[bestName])
-				nameIdx[bestName] = idx
-				z, isValid := typesinternal.ZeroExpr(typ, qual)
-				if !isValid {
-					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
-				}
-				retVars = append(retVars, &returnVariable{
-					name:    ast.NewIdent(retName),
-					decl:    &ast.Field{Type: typesinternal.TypeExpr(typ, qual)},
-					zeroVal: z,
-				})
+			retName, idx := freshNameOutsideRange(info, file, at, start, end, bestName, nameIdx[bestName])
+			nameIdx[bestName] = idx
+			z, isValid := typesinternal.ZeroExpr(typ, qual)
+			if !isValid {
+				return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
 			}
+			retVars = append(retVars, &returnVariable{
+				name:    ast.NewIdent(retName),
+				decl:    &ast.Field{Type: typesinternal.TypeExpr(typ, qual)},
+				zeroVal: z,
+			})
 		}
 	}
 	var ifReturn *ast.IfStmt
