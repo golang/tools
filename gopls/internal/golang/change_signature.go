@@ -176,7 +176,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	var newParamFields []flatField
-	for id, field := range astutil.FlatFields(info.decl.Type.Params) {
+	for id, field := range astutil.Fields(info.decl.Type.Params) {
 		typ := pkg.TypesInfo().TypeOf(field.Type)
 		if typ == nil {
 			return nil, fmt.Errorf("missing field type for field #%d", len(newParamFields))
@@ -257,7 +257,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		}
 		blanks := 0
 		paramIndex := 0 // global param index.
-		for id, field := range astutil.FlatFields(params) {
+		for id, field := range astutil.Fields(params) {
 			argIndex, ok := oldParams[paramIndex]
 			paramIndex++
 			if !ok {

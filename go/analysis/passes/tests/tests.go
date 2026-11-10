@@ -237,7 +237,7 @@ func validateFuzzArgs(pass *analysis.Pass, params *types.Tuple, expr ast.Expr) b
 		if !isAcceptedFuzzType(params.At(i).Type()) {
 			if isFuncLit {
 				j := 0
-				for _, field := range astutil.FlatFields(fLit.Type.Params) {
+				for _, field := range astutil.Fields(fLit.Type.Params) {
 					if j == i {
 						exprRange = field.Type
 						break

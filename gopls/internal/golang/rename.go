@@ -257,13 +257,13 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 
 	// First, collect existing names.
 	scope := make(set.Set[string])
-	for name := range astutil.FlatFields(ftype.Params) {
+	for name := range astutil.Fields(ftype.Params) {
 		if name != nil {
 			scope.Insert(name.Name)
 		}
 	}
 	blanks := 0
-	for name, field := range astutil.FlatFields(ftype.Params) {
+	for name, field := range astutil.Fields(ftype.Params) {
 		if name == nil {
 			name = ast.NewIdent("_")
 			field.Names = append(field.Names, name) // ok to append
@@ -306,11 +306,11 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		return nil, fmt.Errorf("changing results not yet supported (got %d results, want %d)", got, want)
 	}
 	var resultTypes []string
-	for _, field := range astutil.FlatFields(ftyp.Results) {
+	for _, field := range astutil.Fields(ftyp.Results) {
 		resultTypes = append(resultTypes, FormatNode(token.NewFileSet(), field.Type))
 	}
 	resultIndex := 0
-	for _, field := range astutil.FlatFields(newType.Results) {
+	for _, field := range astutil.Fields(newType.Results) {
 		if FormatNode(token.NewFileSet(), field.Type) != resultTypes[resultIndex] {
 			return nil, fmt.Errorf("changing results not yet supported")
 		}
@@ -322,7 +322,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		typ string
 	}
 	oldParams := make(map[string]paramInfo)
-	for name, field := range astutil.FlatFields(ftyp.Params) {
+	for name, field := range astutil.Fields(ftyp.Params) {
 		oldParams[name.Name] = paramInfo{
 			idx: len(oldParams),
 			typ: types.ExprString(field.Type),
@@ -330,7 +330,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 	}
 
 	var newParams []int
-	for name, field := range astutil.FlatFields(newType.Params) {
+	for name, field := range astutil.Fields(newType.Params) {
 		if name == nil {
 			return nil, fmt.Errorf("need named fields")
 		}
