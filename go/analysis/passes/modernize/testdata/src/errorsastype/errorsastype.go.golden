@@ -100,4 +100,33 @@ func _(err error) {
 			print(target)
 		}
 	}
+	{
+		type _Ctype_err interface {
+			error
+		}
+		var target _Ctype_err
+		if errors.As(err, &target) { // nope: cgo type
+			print(target)
+		}
+	}
+	{
+		type _Ctype_int int
+		var target interface {
+			error
+			m(_Ctype_int)
+		}
+		if errors.As(err, &target) { // nope: cgo type in unnamed interface method
+			print(target)
+		}
+	}
+	{
+		type _Ctype_int int
+		var target struct {
+			error
+			x _Ctype_int
+		}
+		if errors.As(err, &target) { // nope: cgo type in unnamed struct field
+			print(target)
+		}
+	}
 }

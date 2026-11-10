@@ -106,6 +106,10 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 			continue // TypeFor requires go1.22
 		}
 
+		if hasCgoType(t) {
+			continue
+		}
+
 		// Format the type as valid Go syntax.
 		// TODO(adonovan): FileQualifier needs to respect
 		// visibility at the current point, and either fail

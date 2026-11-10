@@ -210,3 +210,54 @@ func cond[T any](cond bool, t, f T) T {
 		return f
 	}
 }
+
+// hasCgoType reports whether formatting t with [types.TypeString] could emit a
+// Cgo-generated _Ctype_* or _Cfunc_* identifier.
+func hasCgoType(t types.Type) bool {
+	switch t := t.(type) {
+	case typesinternal.NamedOrAlias:
+		name := t.Obj().Name()
+		if strings.HasPrefix(name, "_Ctype_") || strings.HasPrefix(name, "_Cfunc_") {
+			return true
+		}
+		// Do not recurse into Underlying/Rhs: TypeString formats a named or
+		// alias type by its own name and type arguments.
+		return moreiters.Any(t.TypeArgs().Types(), hasCgoType)
+	case *types.Pointer:
+		return hasCgoType(t.Elem())
+	case *types.Slice:
+		return hasCgoType(t.Elem())
+	case *types.Array:
+		return hasCgoType(t.Elem())
+	case *types.Chan:
+		return hasCgoType(t.Elem())
+	case *types.Map:
+		return hasCgoType(t.Key()) || hasCgoType(t.Elem())
+	case *types.Struct:
+		return moreiters.Any(t.Fields(), func(f *types.Var) bool {
+			return hasCgoType(f.Type())
+		})
+	case *types.Interface:
+		return moreiters.Any(t.ExplicitMethods(), func(m *types.Func) bool {
+			return hasCgoType(m.Type())
+		}) || moreiters.Any(t.EmbeddedTypes(), hasCgoType)
+	case *types.Signature:
+		// Ignore Recv (method signatures are reached from Interface) and
+		// TypeParams (value types cannot be generic signatures).
+		return hasCgoType(t.Params()) || hasCgoType(t.Results())
+	case *types.Tuple:
+		return moreiters.Any(t.Variables(), func(v *types.Var) bool {
+			return hasCgoType(v.Type())
+		})
+	case *types.Union:
+		return moreiters.Any(t.Terms(), func(term *types.Term) bool {
+			return hasCgoType(term.Type())
+		})
+	case *types.Basic, *types.TypeParam:
+		// TypeString formats Basic and TypeParam by their own Go name,
+		// not their constraints.
+		return false
+	default:
+		panic(t)
+	}
+}
