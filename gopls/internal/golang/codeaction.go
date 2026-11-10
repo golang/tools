@@ -373,10 +373,14 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		// Offer a "Declare missing method T.f" code action.
 		// See [stubMissingCalledFunctionFixer] for command implementation.
 		case strings.Contains(msg, "has no field or method"):
-			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
+			si := stubmethods.GetMethodStubInfo(req.pkg.FileSet(), req.pkg.Types(), info, req.pgf, start, end)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
-				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
+				// Use the diagnostic's range when the request covers an entire
+				// call or multiple missing selectors.
+				req.addApplyFixAction(msg, fixMissingCalledFunction, protocol.Location{
+					URI: req.loc.URI, Range: typeErrorRange,
+				})
 			}
 
 		// "undeclared name: X" or "undefined: X" compiler error.

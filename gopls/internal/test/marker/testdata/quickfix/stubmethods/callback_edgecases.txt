@@ -1,0 +1,294 @@
+Callback method stubs preserve signatures, use the receiver file, and select
+the missing selector even for a request covering the entire enclosing call.
+
+-- go.mod --
+module example.com
+
+go 1.27
+-- unnamed/unnamed.go --
+package unnamed
+
+type S struct{}
+
+func use(s S) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", unnamed)
+}
+func accept(func(int, int, interface{ Read([]byte) (int, error) }, map[string]int, chan bool)) {}
+-- @unnamed/unnamed/unnamed.go --
+@@ -4 +4,4 @@
++
++func (s S) missing(i int, param2 int, param interface{ Read([]byte) (int, error) }, m map[string]int, ch chan bool) {
++	panic("unimplemented")
++}
+-- blank/blank.go --
+package blank
+
+type S struct{}
+
+func use(s *S) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", blank)
+}
+func accept(func(_ int, _ string)) {}
+-- @blank/blank/blank.go --
+@@ -4 +4,4 @@
++
++func (s *S) missing(i int, param2 string) {
++	panic("unimplemented")
++}
+-- aliases/aliases.go --
+package aliases
+
+type S struct{}
+
+type Number = int
+type Callback func(Number) Number
+type CallbackAlias = Callback
+type Register func(CallbackAlias)
+
+func use(s S, register Register) {
+	(register)((s.missing)) //@quickfix("missing", re"has no field or method", aliases)
+}
+-- @aliases/aliases/aliases.go --
+@@ -4 +4,4 @@
++
++func (s S) missing(number Number) Number {
++	panic("unimplemented")
++}
+-- panicname/panicname.go --
+package panicname
+
+type S struct{}
+
+func (panic *S) existing() {}
+func use(s *S) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", panicname)
+}
+func accept(func(panic int, recv string) (param1 int, err error)) {}
+-- @panicname/panicname/panicname.go --
+@@ -4 +4,4 @@
++
++func (recv *S) missing(param1 int, param2 string) (int, error) {
++	panic("unimplemented")
++}
+-- genericfunc/genericfunc.go --
+package genericfunc
+
+type S struct{}
+
+func use(s S) {
+	accept[int](s.missing) //@quickfix("missing", re"has no field or method", genericfunc)
+}
+func accept[T any](func(T) T) {}
+-- @genericfunc/genericfunc/genericfunc.go --
+@@ -4 +4,4 @@
++
++func (s S) missing(i int) int {
++	panic("unimplemented")
++}
+-- genericcallback/genericcallback.go --
+package genericcallback
+
+type S struct{}
+
+type Callback[T any] func(T) (T, error)
+
+func use(s S) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", genericcallback)
+}
+func accept(Callback[string]) {}
+-- @genericcallback/genericcallback/genericcallback.go --
+@@ -4 +4,4 @@
++
++func (s S) missing(param1 string) (string, error) {
++	panic("unimplemented")
++}
+-- repeated/repeated.go --
+package repeated
+
+type S struct{}
+
+func use(s S) {
+	accept(s.first, s.second) //@quickfix("first", re"has no field or method", first),quickfix("second", re"has no field or method", second)
+}
+func accept(func(int), func(string) error) {}
+-- @first/repeated/repeated.go --
+@@ -4 +4,4 @@
++
++func (s S) first(i int) {
++	panic("unimplemented")
++}
+-- @second/repeated/repeated.go --
+@@ -4 +4,4 @@
++
++func (s S) second(param1 string) error {
++	panic("unimplemented")
++}
+-- broad/broad.go --
+package broad
+
+import "net/http"
+
+type S struct{}
+
+func use(s *S, mux *http.ServeMux) {
+	mux.HandleFunc("/", s.missing) //@codeaction(re"missing[)]", "quickfix", diag=re"has no field or method", edit=broad)
+}
+-- @broad/broad/broad.go --
+@@ -6 +6,4 @@
++
++func (s *S) missing(writer http.ResponseWriter, request *http.Request) {
++	panic("unimplemented")
++}
+-- crossfile/receiver.go --
+package crossfile
+
+import h "net/http"
+
+type S struct{ Request *h.Request }
+-- crossfile/use.go --
+package crossfile
+
+import "net/http"
+
+func use(s *S, mux *http.ServeMux) {
+	mux.HandleFunc("/", s.missing) //@quickfix("missing", re"has no field or method", crossfile)
+}
+-- @crossfile/crossfile/receiver.go --
+@@ -6 +6,4 @@
++
++func (s *S) missing(writer h.ResponseWriter, request *h.Request) {
++	panic("unimplemented")
++}
+-- addimport/receiver.go --
+package addimport
+
+type S struct{}
+-- addimport/use.go --
+package addimport
+
+import "net/http"
+
+func use(s *S, mux *http.ServeMux) {
+	mux.HandleFunc("/", s.missing) //@quickfix("missing", re"has no field or method", addimport)
+}
+-- @addimport/addimport/receiver.go --
+@@ -3 +3,2 @@
++import "net/http"
++
+@@ -4 +6,4 @@
++
++func (s *S) missing(writer http.ResponseWriter, request *http.Request) {
++	panic("unimplemented")
++}
+-- localalias/localalias.go --
+package localalias
+
+type S struct{}
+
+type Alias = S
+
+func use(s *Alias) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", localalias)
+}
+func accept(func(int)) {}
+-- @localalias/localalias/localalias.go --
+@@ -4 +4,4 @@
++
++func (s *S) missing(i int) {
++	panic("unimplemented")
++}
+-- selection/selection.go --
+package selection
+
+type S struct{}
+
+func use(s S) {
+	accept(s.first, s.second) //@codeaction(re"first, s.second[)]", "quickfix", diag=re"has no field or method", err=re"found 2 CodeActions"),diag("second", re"has no field or method")
+}
+func accept(func(int), func(string) error) {}
+-- importconflict/receiver.go --
+package importconflict
+
+import http "strings"
+
+type S struct{ Builder http.Builder }
+
+var http1 int
+-- importconflict/use.go --
+package importconflict
+
+import "net/http"
+
+func use(s *S, mux *http.ServeMux) {
+	mux.HandleFunc("/", s.missing) //@quickfix("missing", re"has no field or method", importconflict)
+}
+-- @importconflict/importconflict/receiver.go --
+@@ -3 +3,4 @@
+-import http "strings"
++import (
++	http2 "net/http"
++	http "strings"
++)
+@@ -6 +9,4 @@
++
++func (s *S) missing(writer http2.ResponseWriter, request *http2.Request) {
++	panic("unimplemented")
++}
+-- sameimport/receiver.go --
+package sameimport
+
+type S struct{}
+-- sameimport/use.go --
+package sameimport
+
+import (
+	one "example.com/one"
+	two "example.com/two"
+)
+
+func use(s S) {
+	accept(s.missing) //@quickfix("missing", re"has no field or method", sameimport)
+}
+func accept(func(one.T, two.T)) {}
+-- @sameimport/sameimport/receiver.go --
+@@ -3 +3,5 @@
++import (
++	shared "example.com/one"
++	shared1 "example.com/two"
++)
++
+@@ -4 +9,4 @@
++
++func (s S) missing(t shared.T, param2 shared1.T) {
++	panic("unimplemented")
++}
+-- one/one.go --
+package shared
+
+type T int
+-- two/two.go --
+package shared
+
+type T int
+-- public/public.go --
+package public
+
+import "example.com/hidden"
+
+type S struct{}
+
+func use(s S) {
+	hidden.Accept(s.missing) //@quickfix("missing", re"has no field or method", public)
+}
+-- @public/public/public.go --
+@@ -6 +6,4 @@
++
++func (s S) missing(public hidden.Public) {
++	panic("unimplemented")
++}
+-- hidden/hidden.go --
+package hidden
+
+type Public struct{ private int }
+
+func Accept(f func(Public)) { f(Public{private: 1}) }
