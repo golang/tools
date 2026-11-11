@@ -71,8 +71,11 @@ func CallsUnexported2() {
 	unexported()
 }
 
-// Tests for when the move is not allowed because the dest file is in a different module,
-// or in testdata, a vendor directory, or a directory beginning with "." or "_".
+// Tests for when the move is not allowed because the dest file is the same file,
+// in a different module, or in testdata, a vendor directory, or a directory
+// beginning with "." or "_".
+
+func SameFile() {} //@codeaction(re"SameFile", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/src/src.go"}`, err=re"source and destination are the same file")
 
 func Outside() {} //@codeaction(re"Outside", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/../x/x.go"}`, err=re"is not in module")
 

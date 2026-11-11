@@ -88,6 +88,9 @@ type moveDest struct {
 
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
 func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {
+	if srcFH.URI() == destURI {
+		return nil, protocol.Location{}, fmt.Errorf("cannot move declaration: source and destination are the same file (%s)", destURI.Path())
+	}
 	srcPkg, srcPGF, err := NarrowestPackageForFile(ctx, snapshot, srcFH.URI())
 	if err != nil {
 		return nil, protocol.Location{}, err
