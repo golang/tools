@@ -47,7 +47,6 @@ var rules = [...]struct {
 		rationale: "gcexportdata is vendored into std for use by go/importer, so must have minimal dependencies",
 		from:      []string{"golang.org/x/tools/go/gcexportdata"},
 		allow: []string{
-			"golang.org/x/tools/go/types/objectpath",
 			"golang.org/x/tools/internal/gcimporter",
 			"golang.org/x/tools/internal/pkgbits",
 		},
