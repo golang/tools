@@ -192,6 +192,15 @@ Command:
 	fmt.Fprint(w, "\nFor flags specific to running the language server (such as -listen, -logfile, or -debug), run 'gopls help serve'.\n")
 }
 
+// helpFlagValue is an optional extension to flag.Value that customizes a flag's
+// type placeholder (for example, "-pos=span") and appends type syntax
+// documentation to the flag's help message.
+type helpFlagValue interface {
+	flag.Value
+	HelpType() string
+	HelpString() string
+}
+
 // this is a slightly modified version of flag.PrintDefaults to give us control
 func printFlagDefaults(s *flag.FlagSet) {
 	var flags [][]*flag.Flag
@@ -221,6 +230,24 @@ func printFlagDefaults(s *flag.FlagSet) {
 
 		f := entry[0]
 		name, usage := flag.UnquoteUsage(f)
+		if hfv, ok := f.Value.(helpFlagValue); ok {
+			if typ := hfv.HelpType(); typ != "" {
+				name = typ
+			}
+			if extra := hfv.HelpString(); extra != "" {
+				usage = strings.TrimSpace(usage)
+				if usage != "" {
+					// If the existing comment doesn't end on a punctuation,
+					// add a period for separation between sentences.
+					if strings.IndexByte(".!?:;", usage[len(usage)-1]) < 0 {
+						usage += "."
+					}
+					usage += " " + extra
+				} else {
+					usage = extra
+				}
+			}
+		}
 		if len(name) > 0 {
 			b.WriteString("=")
 			b.WriteString(name)

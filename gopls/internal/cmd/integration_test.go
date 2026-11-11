@@ -1146,6 +1146,21 @@ const (
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
+	{ // -pos with valid spans scopes the query to a.go
+		for _, pos := range []string{"a/a.go", "a/a.go:6:6-22"} {
+			res := gopls(t, tree, "inspect", "-pos="+pos, "someFunctionName")
+			res.checkExit(true)
+			res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))
+		}
+	}
+	{ // -pos syntax errors are reported during flag parsing, with usage and exit code 2
+		res := gopls(t, tree, "inspect", "-pos=a/a.go:abc", "someFunctionName")
+		if res.exitcode != 2 {
+			t.Errorf("%s: exit code = %d, want 2", res.command, res.exitcode)
+		}
+		res.checkStderr(regexp.QuoteMeta(`gopls inspect: invalid value "a/a.go:abc" for flag -pos: invalid line/column number "abc"`))
+		res.checkStderr(regexp.QuoteMeta("Usage:\n  gopls [flags] inspect"))
+	}
 	{ // success with -src on function
 		res := gopls(t, tree, "inspect", "-src", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)

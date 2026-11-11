@@ -15,8 +15,8 @@ import (
 
 // TargetQueryFlags defines the set of flags for subcommands that take a target query param
 type TargetQueryFlags struct {
-	Pkg string `flag:"pkg" help:"scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains."`
-	Pos string `flag:"pos" help:"targets a physical coordinate range (line and column are optional)"`
+	Pkg string       `flag:"pkg" help:"scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains."`
+	Pos locationFlag `flag:"pos" help:"targets a file span."`
 }
 
 type target struct {
@@ -59,18 +59,15 @@ func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, t
 		searchScope = dirURI(dir) // default to the passed in directory
 		searchRange protocol.Range
 	)
-	if len(flags.Pos) > 0 {
-		posSpan := parseSpan(flags.Pos)
-		if posSpan.IsValid() {
-			searchScope = posSpan.URI() // restrict scope to span's file.
-			file, err := cli.openFile(ctx, posSpan.URI())
-			if err != nil {
-				return nil, err
-			}
-			searchRange, err = file.spanRange(posSpan)
-			if err != nil {
-				return nil, err
-			}
+	if flags.Pos.IsValid() {
+		searchScope = flags.Pos.URI() // restrict scope to span's file.
+		file, err := cli.openFile(ctx, flags.Pos.URI())
+		if err != nil {
+			return nil, err
+		}
+		searchRange, err = file.spanRange(flags.Pos.span)
+		if err != nil {
+			return nil, err
 		}
 	}
 
