@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/types"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/assign"
 	"golang.org/x/tools/go/analysis/passes/findcall"
 	"golang.org/x/tools/go/analysis/passes/printf"
@@ -32,6 +34,9 @@ func TestMain(m *testing.M) {
 		panic("unreachable")
 	case "minivet":
 		minivet()
+		panic("unreachable")
+	case "usesprintf":
+		unitchecker.Main(usesPrintf)
 		panic("unreachable")
 	case "worker":
 		worker() // see ExampleSeparateAnalysis
@@ -280,4 +285,96 @@ func _() {
 		// after the newline; see go.dev/issue/34142.
 		substring(t, "stderr", stderr, "\ne/e.go:4:2: undefined: undefined")
 	})
+}
+
+// usesPrintf is an analyzer without facts that requires the printf
+// analyzer, which has facts. It appends the path of each package that
+// it analyzes to the file named by $RUNLOG, and reports each call of
+// an imported printf wrapper.
+var usesPrintf = &analysis.Analyzer{
+	Name:     "usesprintf",
+	Doc:      "report calls of imported printf wrappers",
+	Requires: []*analysis.Analyzer{printf.Analyzer},
+	Run: func(pass *analysis.Pass) (any, error) {
+		f, err := os.OpenFile(os.Getenv("RUNLOG"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintln(f, pass.Pkg.Path())
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
+
+		res := pass.ResultOf[printf.Analyzer].(*printf.Result)
+		for id, obj := range pass.TypesInfo.Uses {
+			if fn, ok := obj.(*types.Func); ok && fn.Pkg() != pass.Pkg && res.Kind(fn) == printf.KindPrintf {
+				pass.Reportf(id.Pos(), "call of printf wrapper %s", fn.Name())
+			}
+		}
+		return nil, nil
+	},
+}
+
+// TestVetxOnly checks that, when analyzing a dependency only for its
+// facts, unitchecker runs the analyzers that produce facts, even ones
+// that are only required by other analyzers, and skips the analyzers
+// that don't produce facts (go.dev/issue/57131).
+func TestVetxOnly(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skipf("skipping fork/exec test on this platform")
+	}
+	testenv.NeedsGoBuild(t)
+
+	const src = `
+-- go.mod --
+module golang.org/fake
+go 1.24
+
+-- a/a.go --
+package a
+
+import "golang.org/fake/b"
+
+func _() {
+	b.Wrapf("%d", 1)
+}
+
+-- b/b.go --
+package b
+
+import "fmt"
+
+func Wrapf(format string, args ...any) {
+	fmt.Printf(format, args...)
+}
+`
+	fs, err := txtar.FS(txtar.Parse([]byte(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpdir := testfiles.CopyToTmp(t, fs)
+	runlog := filepath.Join(t.TempDir(), "runlog")
+
+	cmd := exec.Command("go", "vet", "-vettool="+os.Args[0], "./a")
+	cmd.Env = append(os.Environ(), "ENTRYPOINT=usesprintf", "RUNLOG="+runlog)
+	cmd.Dir = tmpdir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("go vet succeeded, want the diagnostic in package a; output:\n%s", out)
+	}
+
+	// The facts of printf about package b reached package a.
+	if !strings.Contains(string(out), "call of printf wrapper Wrapf") {
+		t.Errorf("go vet output does not report the call of b.Wrapf:\n%s", out)
+	}
+
+	// usesprintf ran on package a only. Package b was analyzed
+	// only for its facts, and usesprintf produces none.
+	data, err := os.ReadFile(runlog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), "golang.org/fake/a\n"; got != want {
+		t.Errorf("usesprintf ran on packages:\n%s\nwant:\n%s", got, want)
+	}
 }
