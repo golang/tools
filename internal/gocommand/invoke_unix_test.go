@@ -51,7 +51,9 @@ func TestSleep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// The timeout bounds the wait for the child PID (see below);
+	// the explicit call to cancel is the cancellation under test.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	var runner gocommand.Runner
@@ -66,19 +68,25 @@ func TestSleep(t *testing.T) {
 	}()
 
 	// Wait for the test process to start and write its PID.
+	//
+	// This requires the go command to build, vet, and link the
+	// test binary, which may take a long time on slow builders
+	// (go.dev/issue/82088), hence the generous deadline.
+	// If the go command exits early (e.g. due to a build error),
+	// report its error.
 	var childPID int
-	for delay := time.Millisecond; delay < 10*time.Second; delay *= 2 {
-		data, err := os.ReadFile(pidFile)
-		if err == nil && len(data) > 0 {
-			fmt.Sscanf(string(data), "%d", &childPID)
-			if childPID > 0 {
-				break
+	for childPID == 0 {
+		select {
+		case <-ctx.Done():
+			t.Fatal("child test process did not write PID")
+		case err := <-errCh:
+			t.Fatalf("go command exited before child test process wrote PID: %v", err)
+		case <-time.After(100 * time.Millisecond):
+			// Poll the pid file every 100ms.
+			if data, err := os.ReadFile(pidFile); err == nil {
+				fmt.Sscanf(string(data), "%d", &childPID) // ignore error
 			}
 		}
-		time.Sleep(delay)
-	}
-	if childPID == 0 {
-		t.Fatal("child test process did not write PID")
 	}
 
 	cancel()
