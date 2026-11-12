@@ -208,8 +208,8 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
 		// modernizers not included in modernize.Suite (nor fix.Suite)
 		{analyzer: modernize.AppendClippedAnalyzer, nonDefault: true}, // not nil-preserving
-		{analyzer: modernize.BLoopAnalyzer},                           // may skew benchmark results, see golang/go#74967
-		{analyzer: modernize.FmtAppendfAnalyzer},                      // makes code less clear, see golang/go#77581
+		{analyzer: modernize.BLoopAnalyzer, nonDefault: true},         // may skew benchmark results, see golang/go#74967
+		{analyzer: modernize.FmtAppendfAnalyzer, nonDefault: true},    // makes code less clear, see golang/go#77581
 		{analyzer: modernize.SlicesDeleteAnalyzer, nonDefault: true},  // not nil-preserving
 
 		// type-error analyzers
