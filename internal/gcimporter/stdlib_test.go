@@ -5,7 +5,6 @@
 package gcimporter_test
 
 import (
-	"bytes"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -76,7 +75,7 @@ func TestStdlib(t *testing.T) {
 				if !ok {
 					return nil, fmt.Errorf("missing export data for %s", importPath)
 				}
-				return gcimporter.IImportData(pkg.Fset, packages, data, imported.PkgPath)
+				return gcimporter.Decode(pkg.Fset, imported.PkgPath, data, gcimporter.PackagesFromMap(packages), gcimporter.DecodeOptions{})
 			}),
 		}
 
@@ -85,10 +84,10 @@ func TestStdlib(t *testing.T) {
 		check := types.NewChecker(cfg, pkg.Fset, newPkg, nil)
 		check.Files(pkg.Syntax)
 
-		var out bytes.Buffer
-		if err := gcimporter.IExportData(&out, pkg.Fset, newPkg); err != nil {
+		data, err := gcimporter.Encode(pkg.Fset, newPkg, gcimporter.EncodeOptions{})
+		if err != nil {
 			t.Fatalf("internal error writing export data: %v", err)
 		}
-		export[pkg.ID] = out.Bytes()
+		export[pkg.ID] = data
 	})
 }

@@ -68,12 +68,11 @@ func main() {
 		// The Package will contain only exported symbols.
 		var tpkg2 *types.Package
 		{
-			var out bytes.Buffer
-			if err := gcimporter.IExportData(&out, cfg.Fset, tpkg1); err != nil {
+			data, err := gcimporter.Encode(cfg.Fset, tpkg1, gcimporter.EncodeOptions{})
+			if err != nil {
 				log.Fatal(err)
 			}
-			var err error
-			_, tpkg2, err = gcimporter.IImportData(cfg.Fset, make(map[string]*types.Package), out.Bytes(), tpkg1.Path())
+			tpkg2, err = gcimporter.Decode(cfg.Fset, tpkg1.Path(), data, gcimporter.PackagesFromMap(make(map[string]*types.Package)), gcimporter.DecodeOptions{})
 			if err != nil {
 				log.Fatal(err)
 			}

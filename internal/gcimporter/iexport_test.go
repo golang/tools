@@ -167,9 +167,9 @@ type UnknownType undefined
 func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Errorf("IImportData(%s): %v", pkg.Path(), err)
+		t.Errorf("Decode(%s): %v", pkg.Path(), err)
 	}
 
 	testPkg(t, fset, version, pkg, fset2, pkg2)
@@ -233,9 +233,9 @@ func TestIExportData_long(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Fatalf("IImportData(%s): %v", pkg.Path(), err)
+		t.Fatalf("Decode(%s): %v", pkg.Path(), err)
 	}
 
 	// compare
@@ -277,9 +277,9 @@ func TestIExportData_typealiases(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg1.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
+		t.Fatalf("Decode(%s): %v", pkg1.Path(), err)
 	}
 	checkPkg(t, pkg2, "import")
 }
@@ -413,7 +413,7 @@ func TestUnexportedStructFields(t *testing.T) {
 				if !ok {
 					return nil, fmt.Errorf("missing export data for %s", path)
 				}
-				return gcimporter.IImportData(fset, packages, data, path)
+				return gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(packages), gcimporter.DecodeOptions{})
 			}),
 		}
 		pkg := types.NewPackage(path, syntax.Name.Name)
@@ -421,11 +421,11 @@ func TestUnexportedStructFields(t *testing.T) {
 		if err := check.Files([]*ast.File{syntax}); err != nil {
 			t.Fatal(err)
 		}
-		var out bytes.Buffer
-		if err := gcimporter.IExportData(&out, fset, pkg); err != nil {
+		data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+		if err != nil {
 			t.Fatal(err)
 		}
-		export[path] = out.Bytes()
+		export[path] = data
 	}
 
 	// Historically this led to a spurious error:
@@ -440,7 +440,7 @@ type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
 
-// TestIExportDataTypeParameterizedAliases tests IExportData
+// TestIExportDataTypeParameterizedAliases tests Encode
 // on both declarations and uses of type parameterized aliases.
 func TestIExportDataTypeParameterizedAliases(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
@@ -451,7 +451,7 @@ func TestIExportDataTypeParameterizedAliases(t *testing.T) {
 
 	// High level steps:
 	// * parse  and typecheck
-	// * export the data for the importer (via IExportData),
+	// * export the data for the importer (via Encode),
 	// * import the data (via either x/tools or GOROOT's gcimporter), and
 	// * check the imported types.
 
@@ -477,7 +477,7 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 		t.Fatal(err)
 	}
 
-	// Read the result of IExportData through x/tools/internal/gcimporter.IImportData.
+	// Read the result of Encode through x/tools/internal/gcimporter.Decode.
 	// export
 	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
 	if err != nil {
@@ -487,9 +487,9 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg1.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
+		t.Fatalf("Decode(%s): %v", pkg1.Path(), err)
 	}
 
 	pkg := pkg2
@@ -550,8 +550,8 @@ const C3 Generic[struct{}] = 3
 
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	if _, err := gcimporter.IImportData(fset2, imports, data, pkg.Path()); err != nil {
-		t.Fatalf("IImportData: %v", err)
+	if _, err := gcimporter.Decode(fset2, pkg.Path(), data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{}); err != nil {
+		t.Fatalf("Decode: %v", err)
 	}
 }
 
@@ -594,9 +594,9 @@ const (
 	if err != nil {
 		t.Fatalf("iexport: %v", err)
 	}
-	pkg2, err := gcimporter.IImportData(token.NewFileSet(), make(map[string]*types.Package), data, pkg.Path())
+	pkg2, err := gcimporter.Decode(token.NewFileSet(), pkg.Path(), data, gcimporter.PackagesFromMap(make(map[string]*types.Package)), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Fatalf("IImportData: %v", err)
+		t.Fatalf("Decode: %v", err)
 	}
 
 	for _, name := range pkg.Scope().Names() {

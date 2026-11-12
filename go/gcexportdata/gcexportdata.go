@@ -180,7 +180,7 @@ func Read(in io.Reader, fset *token.FileSet, imports map[string]*types.Package, 
 			// indexed, produced by cmd/compile till go1.19,
 			// and also by [Write]. Starting with go1.28,
 			// go list -export runs cmd/export, which emits this format.
-			return gcimporter.IImportData(fset, imports, data, path)
+			return gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 
 		case 'u':
 			// unified, produced by cmd/compile since go1.20.
@@ -204,7 +204,12 @@ func Write(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
 		// in which case position information is missing.
 		fset = token.NewFileSet()
 	}
-	return gcimporter.IExportData(out, fset, pkg) // writes leading 'i'
+	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(data) // data begins with 'i'
+	return err
 }
 
 // Deprecated: ReadBundle is an unsupported obsolete experimental API. It returns an error.

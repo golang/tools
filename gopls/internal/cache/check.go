@@ -436,7 +436,7 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package, enc
 	}
 
 	if p.metadata.PkgPath != "unsafe" { // unsafe cannot be exported
-		exportData, err := gcimporter.IExportShallow(p.pkg.fset, p.pkg.types)
+		exportData, err := gcimporter.Encode(p.pkg.fset, p.pkg.types, gcimporter.EncodeOptions{Shallow: true})
 		if err != nil {
 			bug.Reportf("exporting package %v: %v", p.metadata.ID, err)
 		} else {
@@ -469,8 +469,9 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 	importLookup := importLookup(mp, b)
 
 	thisPackage := types.NewPackage(string(mp.PkgPath), string(mp.Name))
-	getPackages := func(items []gcimporter.GetPackagesItem) error {
-		for i, item := range items {
+	getPackages := func(refs []gcimporter.PackageRef) ([]*types.Package, error) {
+		pkgs := make([]*types.Package, len(refs))
+		for i, item := range refs {
 			var id PackageID
 			var pkg *types.Package
 			if item.Path == string(mp.PkgPath) {
@@ -484,7 +485,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 					// inconsistent with mp.Name. Or perhaps there
 					// are duplicate PkgPath items in the manifest?
 					if b.gopackagesdriver {
-						return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904) (using GOPACKAGESDRIVER)",
+						return nil, bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904) (using GOPACKAGESDRIVER)",
 							pkg.Name(), item.Name, id, item.Path)
 					} else {
 						// There's a package in the export data with the same path as the
@@ -518,27 +519,27 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 						}
 						switch {
 						case pkg.Name() == "":
-							return report()
+							return nil, report()
 						case item.Name == "":
-							return report()
+							return nil, report()
 						case metadata.IsCommandLineArguments(mp.ID):
-							return report()
+							return nil, report()
 						case mp.ForTest != "":
-							return report()
+							return nil, report()
 						case len(mp.CompiledGoFiles) == 0:
-							return report()
+							return nil, report()
 						case len(mp.Errors) > 0:
-							return report()
+							return nil, report()
 						case impliedName != "" && impliedName != string(mp.Name):
-							return report()
+							return nil, report()
 						case len(mp.CompiledGoFiles) != len(mp.GoFiles):
-							return report()
+							return nil, report()
 						case mp.Module == nil:
-							return report()
+							return nil, report()
 						case mp.Name == "main":
-							return report()
+							return nil, report()
 						default:
-							return report()
+							return nil, report()
 						}
 					}
 				}
@@ -548,12 +549,12 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 				if alt != "" {
 					// Any bug leading to this scenario would have already been reported
 					// in importLookup.
-					return fmt.Errorf("inconsistent metadata during import: for package path %q, found both IDs %q and %q", item.Path, id, alt)
+					return nil, fmt.Errorf("inconsistent metadata during import: for package path %q, found both IDs %q and %q", item.Path, id, alt)
 				}
 				var err error
 				pkg, err = b.getImportPackage(ctx, id)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				// We intentionally duplicate the bug.Errorf calls because
@@ -565,14 +566,14 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 					// export data of mp.PkgPath, one of its indirect
 					// dependencies had a name that differs from the
 					// Metadata.Name
-					return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+					return nil, bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
 						pkg.Name(), item.Name, id, item.Path)
 				}
 			}
-			items[i].Pkg = pkg
+			pkgs[i] = pkg
 
 		}
-		return nil
+		return pkgs, nil
 	}
 
 	// Importing is potentially expensive, and might not encounter cancellations
@@ -581,7 +582,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 		return nil, ctx.Err()
 	}
 
-	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(mp.PkgPath))
+	imported, err := gcimporter.Decode(b.fset, string(mp.PkgPath), data, getPackages, gcimporter.DecodeOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", mp.ID, err)
 	}
@@ -649,10 +650,10 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 
 	// Asynchronously record export data.
 	go func() {
-		exportData, err := gcimporter.IExportShallow(b.fset, pkg)
+		exportData, err := gcimporter.Encode(b.fset, pkg, gcimporter.EncodeOptions{Shallow: true})
 		if err != nil {
 			// Internal error (issue #71067).
-			event.Error(ctx, "IExportShallow failed", err, label.Package.Of(string(ph.mp.ID)))
+			event.Error(ctx, "encoding export data failed", err, label.Package.Of(string(ph.mp.ID)))
 			return
 		}
 		if err := filecache.Set(exportDataKind, ph.key, exportData); err != nil {

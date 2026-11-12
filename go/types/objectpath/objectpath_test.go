@@ -5,7 +5,6 @@
 package objectpath_test
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/importer"
@@ -327,13 +326,13 @@ func (unreachable) F() {} // not reachable in export data
 	}
 
 	// Export binary export data then reload it as a new package, "bin".
-	var buf bytes.Buffer
-	if err := gcimporter.IExportData(&buf, fset, srcpkg); err != nil {
+	data, err := gcimporter.Encode(fset, srcpkg, gcimporter.EncodeOptions{})
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	imports := make(map[string]*types.Package)
-	binpkg, err := gcimporter.IImportData(fset, imports, buf.Bytes(), "bin/p")
+	binpkg, err := gcimporter.Decode(fset, "bin/p", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

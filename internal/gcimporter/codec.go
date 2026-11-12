@@ -17,7 +17,8 @@ import (
 	"go/types"
 )
 
-// Encode returns the encoding of package pkg.
+// Encode returns the encoding of pkg.
+// Positions of objects are interpreted using fset, which must be non-nil.
 //
 // Positions of objects are interpreted using fset, which must be non-nil.
 func Encode(fset *token.FileSet, pkg *types.Package, opts EncodeOptions) ([]byte, error) {
@@ -49,6 +50,7 @@ type EncodeOptions struct {
 }
 
 // Decode decodes export data for the package with the given path.
+// (The encoding does not record the path.)
 //
 // Decode calls getPackages once, before decoding any objects, with
 // a reference to each package mentioned by the data, including the

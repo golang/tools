@@ -777,14 +777,14 @@ type K = StillBad[string]
 	}
 
 	// Export it. (Shallowness isn't important here.)
-	data, err := gcimporter.IExportShallow(fset, pkg1)
+	data, err := gcimporter.Encode(fset, pkg1, gcimporter.EncodeOptions{Shallow: true})
 	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p")
+	pkg2, err := gcimporter.Decode(fset, "p", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 	}
@@ -867,14 +867,14 @@ func TestExportInvalid(t *testing.T) {
 
 			// Export it.
 			// (Shallowness isn't important here.)
-			data, err := gcimporter.IExportShallow(fset, pkg1)
+			data, err := gcimporter.Encode(fset, pkg1, gcimporter.EncodeOptions{Shallow: true})
 			if err != nil {
 				t.Fatalf("export: %v", err) // any failure to export is a bug
 			}
 
 			// Re-import it.
 			imports := make(map[string]*types.Package)
-			pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p")
+			pkg2, err := gcimporter.Decode(fset, "p", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 			if err != nil {
 				t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 			}
@@ -1069,14 +1069,14 @@ type T int
 	}
 
 	// Export it.
-	var out bytes.Buffer
-	if err := gcimporter.IExportData(&out, fset, lib); err != nil {
+	data, err := gcimporter.Encode(fset, lib, gcimporter.EncodeOptions{})
+	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	lib2, err := gcimporter.IImportData(fset, imports, out.Bytes(), "lib")
+	lib2, err := gcimporter.Decode(fset, "lib", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of export+import is a bug.
 	}
@@ -1187,13 +1187,13 @@ func F(err b.Err) string {
 	if err != nil {
 		t.Fatalf("checking a: %v", err)
 	}
-	var outA bytes.Buffer
-	if err := gcimporter.IExportData(&outA, fset, pkgA); err != nil {
+	dataA, err := gcimporter.Encode(fset, pkgA, gcimporter.EncodeOptions{})
+	if err != nil {
 		t.Fatalf("exporting a: %v", err)
 	}
 
 	importsForB := make(map[string]*types.Package)
-	pkgAImported, err := gcimporter.IImportData(fset, importsForB, outA.Bytes(), "a")
+	pkgAImported, err := gcimporter.Decode(fset, "a", dataA, gcimporter.PackagesFromMap(importsForB), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("importing a: %v", err)
 	}
@@ -1202,22 +1202,22 @@ func F(err b.Err) string {
 	if err != nil {
 		t.Fatalf("checking b: %v", err)
 	}
-	var outB bytes.Buffer
-	if err := gcimporter.IExportData(&outB, fset, pkgB); err != nil {
+	dataB, err := gcimporter.Encode(fset, pkgB, gcimporter.EncodeOptions{})
+	if err != nil {
 		t.Fatalf("exporting b: %v", err)
 	}
 
 	importsForC := make(map[string]*types.Package)
-	pkgAForC, err := gcimporter.IImportData(fset, importsForC, outA.Bytes(), "a")
+	pkgAForC, err := gcimporter.Decode(fset, "a", dataA, gcimporter.PackagesFromMap(importsForC), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("re-importing a: %v", err)
 	}
-	pkgBForC, err := gcimporter.IImportData(fset, importsForC, outB.Bytes(), "b")
+	pkgBForC, err := gcimporter.Decode(fset, "b", dataB, gcimporter.PackagesFromMap(importsForC), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("importing b: %v", err)
 	}
 
 	if _, err := check("c", cSrc, importMap{"a": pkgAForC, "b": pkgBForC}); err != nil {
-		t.Fatalf("checking c against IExportData-imported a and b failed: %v", err)
+		t.Fatalf("checking c against Encode/Decode-imported a and b failed: %v", err)
 	}
 }

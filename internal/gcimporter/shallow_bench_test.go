@@ -12,10 +12,10 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// BenchmarkIExportShallow measures writing shallow export data for
+// BenchmarkEncodeShallow measures writing shallow export data for
 // each package of the standard library, as gopls does after
 // type-checking a package.
-func BenchmarkIExportShallow(b *testing.B) {
+func BenchmarkEncodeShallow(b *testing.B) {
 	testenv.NeedsGoPackages(b)
 
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax}
@@ -29,7 +29,7 @@ func BenchmarkIExportShallow(b *testing.B) {
 			if pkg.PkgPath == "unsafe" {
 				continue
 			}
-			if _, err := gcimporter.IExportShallow(pkg.Fset, pkg.Types, nil); err != nil {
+			if _, err := gcimporter.Encode(pkg.Fset, pkg.Types, gcimporter.EncodeOptions{Shallow: true}); err != nil {
 				b.Fatal(err)
 			}
 		}

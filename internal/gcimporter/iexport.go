@@ -258,68 +258,6 @@ import (
 	// This package is dependency-restricted; see x/tools/go/gcexportdata.TestDeps.
 )
 
-// IExportShallow encodes "shallow" export data for the specified package.
-//
-// For types, we use "shallow" export data. Historically, the Go
-// compiler always produced a summary of the types for a given package
-// that included types from other packages that it indirectly
-// referenced: "deep" export data. This had the advantage that the
-// compiler (and analogous tools such as gopls) need only load one
-// file per direct import.  However, it meant that the files tended to
-// get larger based on the level of the package in the import
-// graph. For example, higher-level packages in the kubernetes module
-// have over 1MB of "deep" export data, even when they have almost no
-// content of their own, merely because they mention a major type that
-// references many others. In pathological cases the export data was
-// 300x larger than the source for a package due to this quadratic
-// growth.
-//
-// "Shallow" export data means that the serialized types describe only
-// a single package. If those types mention types from other packages,
-// the type checker may need to request additional packages beyond
-// just the direct imports. Type information for the entire transitive
-// closure of imports is provided (lazily) by the DAG.
-//
-// No promises are made about the encoding other than that it can be decoded by
-// the same version of IIExportShallow. If you plan to save export data in the
-// file system, be sure to include a cryptographic digest of the executable in
-// the key to avoid version skew.
-//
-// It is equivalent to [Encode] in shallow mode.
-func IExportShallow(fset *token.FileSet, pkg *types.Package) ([]byte, error) {
-	// TODO(adonovan): use byte slices throughout, avoiding copying.
-	return Encode(fset, pkg, EncodeOptions{Shallow: true})
-}
-
-// IImportShallow decodes "shallow" types.Package data encoded by
-// [IExportShallow] in the same executable. This function cannot import data
-// from cmd/compile or gcexportdata.Write.
-//
-// The importer calls getPackages to obtain package symbols for all
-// packages mentioned in the export data, including the one being
-// decoded.
-//
-// It is equivalent to [Decode] in shallow mode.
-func IImportShallow(fset *token.FileSet, getPackages GetPackagesFunc, data []byte, path string) (*types.Package, error) {
-	return Decode(fset, path, data, adaptGetPackages(getPackages), DecodeOptions{})
-}
-
-// IExportData writes indexed export data for pkg to out.
-//
-// The file set must be non-nil.
-// The package path of the top-level package will not be recorded,
-// so that calls to IImportData can override with a provided package path.
-//
-// It is equivalent to [Encode] in deep mode.
-func IExportData(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
-	data, err := Encode(fset, pkg, EncodeOptions{})
-	if err != nil {
-		return err
-	}
-	_, err = out.Write(data)
-	return err
-}
-
 // iexportCommon encodes export data (without the leading 'i' tag byte).
 // In principle this operation can only fail if out.Write fails,
 // but that's impossible for bytes.Buffer---and as a matter of

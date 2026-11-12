@@ -106,7 +106,7 @@ func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDi
 		if err != nil {
 			return
 		}
-		pkg, err = IImportData(fset, packages, data, path)
+		pkg, err = Decode(fset, path, data, PackagesFromMap(packages), DecodeOptions{})
 		return
 	}
 	data, err := ReadUnified(buf)

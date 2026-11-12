@@ -119,23 +119,24 @@ func typecheck(t *testing.T, ppkg *packages.Package) {
 	)
 	loadFromExportData = func(imp *packages.Package) (*types.Package, error) {
 		export := []byte(imp.ExportFile)
-		getPackages := func(items []gcimporter.GetPackagesItem) error {
-			for i, item := range items {
-				pkg, ok := importMap[item.Path]
+		getPackages := func(refs []gcimporter.PackageRef) ([]*types.Package, error) {
+			pkgs := make([]*types.Package, len(refs))
+			for i, ref := range refs {
+				pkg, ok := importMap[ref.Path]
 				if !ok {
-					dep, ok := depsByPkgPath[item.Path]
+					dep, ok := depsByPkgPath[ref.Path]
 					if !ok {
-						return fmt.Errorf("can't find dependency: %q", item.Path)
+						return nil, fmt.Errorf("can't find dependency: %q", ref.Path)
 					}
-					pkg = types.NewPackage(item.Path, dep.Name)
-					importMap[item.Path] = pkg
+					pkg = types.NewPackage(ref.Path, dep.Name)
+					importMap[ref.Path] = pkg
 					loadFromExportData(dep) // side effect: populate package scope
 				}
-				items[i].Pkg = pkg
+				pkgs[i] = pkg
 			}
-			return nil
+			return pkgs, nil
 		}
-		return gcimporter.IImportShallow(fset, getPackages, export, imp.PkgPath)
+		return gcimporter.Decode(fset, imp.PkgPath, export, getPackages, gcimporter.DecodeOptions{})
 	}
 
 	// Type-check the syntax trees.
@@ -162,7 +163,7 @@ func typecheck(t *testing.T, ppkg *packages.Package) {
 	postTypeCheck(t, fset, tpkg)
 
 	// Save the export data.
-	data, err := gcimporter.IExportShallow(fset, tpkg)
+	data, err := gcimporter.Encode(fset, tpkg, gcimporter.EncodeOptions{Shallow: true})
 	if err != nil {
 		t.Fatalf("internal error marshalling export data: %v", err)
 	}

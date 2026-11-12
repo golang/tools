@@ -88,7 +88,7 @@ var W2 = a.VG.X
 	}
 	export := func(pkg *types.Package) []byte {
 		t.Helper()
-		data, err := gcimporter.IExportShallow(fset, pkg)
+		data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{Shallow: true})
 		if err != nil {
 			t.Fatalf("export %s: %v", pkg.Path(), err)
 		}
@@ -96,7 +96,7 @@ var W2 = a.VG.X
 	}
 	import_ := func(data []byte, path string, imports map[string]*types.Package) *types.Package {
 		t.Helper()
-		pkg, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, path)
+		pkg, err := gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 		if err != nil {
 			t.Fatalf("import %s: %v", path, err)
 		}

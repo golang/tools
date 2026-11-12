@@ -250,7 +250,7 @@ func (t *testImporter) Import(path string) (*types.Package, error) {
 	}
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
 		return nil, err
 	}

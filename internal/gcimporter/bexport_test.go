@@ -5,7 +5,6 @@
 package gcimporter_test
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -315,16 +314,15 @@ func TestVeryLongFile(t *testing.T) {
 	}
 
 	// export
-	var out bytes.Buffer
-	if err := gcimporter.IExportData(&out, fset1, pkg); err != nil {
+	exportdata, err := gcimporter.Encode(fset1, pkg, gcimporter.EncodeOptions{})
+	if err != nil {
 		t.Fatal(err)
 	}
-	exportdata := out.Bytes()
 
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg.Path())
+	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("BImportData(%s): %v", pkg.Path(), err)
 	}
