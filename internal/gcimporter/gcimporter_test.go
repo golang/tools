@@ -777,14 +777,14 @@ type K = StillBad[string]
 	}
 
 	// Export it. (Shallowness isn't important here.)
-	data, err := gcimporter.IExportShallow(fset, pkg1, nil)
+	data, err := gcimporter.IExportShallow(fset, pkg1)
 	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p", nil)
+	pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p")
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 	}
@@ -867,14 +867,14 @@ func TestExportInvalid(t *testing.T) {
 
 			// Export it.
 			// (Shallowness isn't important here.)
-			data, err := gcimporter.IExportShallow(fset, pkg1, nil)
+			data, err := gcimporter.IExportShallow(fset, pkg1)
 			if err != nil {
 				t.Fatalf("export: %v", err) // any failure to export is a bug
 			}
 
 			// Re-import it.
 			imports := make(map[string]*types.Package)
-			pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p", nil)
+			pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p")
 			if err != nil {
 				t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 			}

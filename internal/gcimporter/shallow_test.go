@@ -135,7 +135,7 @@ func typecheck(t *testing.T, ppkg *packages.Package) {
 			}
 			return nil
 		}
-		return gcimporter.IImportShallow(fset, getPackages, export, imp.PkgPath, nil)
+		return gcimporter.IImportShallow(fset, getPackages, export, imp.PkgPath)
 	}
 
 	// Type-check the syntax trees.
@@ -162,11 +162,7 @@ func typecheck(t *testing.T, ppkg *packages.Package) {
 	postTypeCheck(t, fset, tpkg)
 
 	// Save the export data.
-	// Any bug reported by the exporter (such as a missing
-	// path to a literal of another package) is a test failure.
-	data, err := gcimporter.IExportShallow(fset, tpkg, func(format string, args ...any) {
-		t.Errorf("%s: %s", ppkg.PkgPath, fmt.Sprintf(format, args...))
-	})
+	data, err := gcimporter.IExportShallow(fset, tpkg)
 	if err != nil {
 		t.Fatalf("internal error marshalling export data: %v", err)
 	}

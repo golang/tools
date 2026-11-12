@@ -15,8 +15,9 @@
 // The top-level data format is structured as:
 //
 //     Header struct {
-//         Tag        byte   // 'i'
+//         Tag        byte    // 'i' = "indexed" format
 //         Version    uvarint
+//         Shallow    bool    // since iexportVersionShallowFlag
 //         StringSize uvarint
 //         DataSize   uvarint
 //     }
@@ -37,7 +38,8 @@
 //
 //     Fingerprint [8]byte
 //
-// uvarint means a uint64 written out using uvarint encoding.
+// uvarint (or varint) means a uint64 (or int64) written out using
+// uvarint (or varint) encoding; bool means a uvarint 0 or 1.
 //
 // []T means a uvarint followed by that many T objects. In other
 // words:
@@ -283,20 +285,10 @@ import (
 // file system, be sure to include a cryptographic digest of the executable in
 // the key to avoid version skew.
 //
-// If the provided reportf func is non-nil, it is used for reporting
-// bugs (e.g. recovered panics) encountered during export, enabling us
-// to obtain via telemetry the stack that would otherwise be lost by
-// merely returning an error.
-func IExportShallow(fset *token.FileSet, pkg *types.Package, reportf ReportFunc) ([]byte, error) {
-	// In principle this operation can only fail if out.Write fails,
-	// but that's impossible for bytes.Buffer---and as a matter of
-	// fact iexportCommon doesn't even check for I/O errors.
-	// TODO(adonovan): handle I/O errors properly.
+// It is equivalent to [Encode] in shallow mode.
+func IExportShallow(fset *token.FileSet, pkg *types.Package) ([]byte, error) {
 	// TODO(adonovan): use byte slices throughout, avoiding copying.
-	const shallow = true
-	var out bytes.Buffer
-	err := iexportCommon(&out, fset, shallow, iexportVersion, []*types.Package{pkg}, reportf)
-	return out.Bytes(), err
+	return Encode(fset, pkg, EncodeOptions{Shallow: true})
 }
 
 // IImportShallow decodes "shallow" types.Package data encoded by
@@ -307,38 +299,36 @@ func IExportShallow(fset *token.FileSet, pkg *types.Package, reportf ReportFunc)
 // packages mentioned in the export data, including the one being
 // decoded.
 //
-// If the provided reportf func is non-nil, it will be used for reporting bugs
-// encountered during import.
-func IImportShallow(fset *token.FileSet, getPackages GetPackagesFunc, data []byte, path string, reportf ReportFunc) (*types.Package, error) {
-	const shallow = true
-	pkgs, err := iimportCommon(fset, getPackages, data, path, shallow, reportf)
-	if err != nil {
-		return nil, err
-	}
-	return pkgs[0], nil
+// It is equivalent to [Decode] in shallow mode.
+func IImportShallow(fset *token.FileSet, getPackages GetPackagesFunc, data []byte, path string) (*types.Package, error) {
+	return Decode(fset, path, data, adaptGetPackages(getPackages), DecodeOptions{})
 }
-
-// ReportFunc is the type of a function used to report formatted bugs.
-type ReportFunc = func(string, ...any)
 
 // IExportData writes indexed export data for pkg to out.
 //
-// If no file set is provided, position info will be missing.
+// The file set must be non-nil.
 // The package path of the top-level package will not be recorded,
 // so that calls to IImportData can override with a provided package path.
+//
+// It is equivalent to [Encode] in deep mode.
 func IExportData(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
-	const shallow = false
-	return iexportCommon(out, fset, shallow, iexportVersion, []*types.Package{pkg}, nil)
+	data, err := Encode(fset, pkg, EncodeOptions{})
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(data)
+	return err
 }
 
-func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int, pkgs []*types.Package, reportf ReportFunc) (err error) {
+// iexportCommon encodes export data (without the leading 'i' tag byte).
+// In principle this operation can only fail if out.Write fails,
+// but that's impossible for bytes.Buffer---and as a matter of
+// fact iexportCommon doesn't even check for I/O errors.
+// TODO(adonovan): handle I/O errors properly.
+func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int, pkg *types.Package) (err error) {
 	if !debug {
 		defer func() {
 			if e := recover(); e != nil {
-				// Report the stack via telemetry (see #71067).
-				if reportf != nil {
-					reportf("panic in exporter")
-				}
 				if ierr, ok := e.(internalError); ok {
 					// internalError usually means we exported a
 					// bad go/types data structure: a violation
@@ -361,8 +351,7 @@ func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int
 		declIndex:   map[types.Object]uint64{},
 		tparamNames: map[types.Object]string{},
 		typIndex:    map[types.Type]uint64{},
-		localpkg:    pkgs[0],
-		reportf:     reportf,
+		localpkg:    pkg,
 	}
 
 	for i, pt := range predeclared() {
@@ -373,12 +362,10 @@ func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int
 	}
 
 	// Initialize work queue with exported declarations.
-	for _, pkg := range pkgs {
-		scope := pkg.Scope()
-		for _, name := range scope.Names() {
-			if token.IsExported(name) {
-				p.pushDecl(scope.Lookup(name))
-			}
+	scope := pkg.Scope()
+	for _, name := range scope.Names() {
+		if token.IsExported(name) {
+			p.pushDecl(scope.Lookup(name))
 		}
 	}
 
@@ -407,6 +394,9 @@ func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int
 	// Assemble header.
 	var hdr intWriter
 	hdr.uint64(uint64(p.version))
+	if p.version >= iexportVersionShallowFlag {
+		hdr.bool(shallow)
+	}
 	hdr.uint64(uint64(p.strings.Len()))
 	if p.shallow {
 		hdr.uint64(uint64(files.Len()))
@@ -551,7 +541,6 @@ type iexporter struct {
 	shallow     bool                                       // don't encode types from other packages; refer to them by name (or typePath)
 	typeIndexes map[*types.Package]map[types.Type]typePath // paths to literals of other packages in shallow mode; lazily populated
 	localpkg    *types.Package
-	reportf     ReportFunc // if non-nil, used to report bugs
 
 	// allPkgs tracks all packages that have been referenced by
 	// the export data, so we can ensure to include them in the
@@ -845,11 +834,6 @@ func (w *exportWriter) posV2(pos token.Pos) {
 }
 
 func (w *exportWriter) posV1(pos token.Pos) {
-	if w.p.fset == nil {
-		w.int64(0)
-		return
-	}
-
 	p := w.p.fset.Position(pos)
 	file := p.Filename
 	line := int64(p.Line)
@@ -879,11 +863,6 @@ func (w *exportWriter) posV1(pos token.Pos) {
 }
 
 func (w *exportWriter) posV0(pos token.Pos) {
-	if w.p.fset == nil {
-		w.int64(0)
-		return
-	}
-
 	p := w.p.fset.Position(pos)
 	file := p.Filename
 	line := int64(p.Line)
@@ -1196,10 +1175,7 @@ func (w *exportWriter) externalLiteral(t types.Type) bool {
 	}
 	path, ok := ix[t]
 	if !ok {
-		if p.reportf != nil {
-			p.reportf("shallow export: no path to %s (a literal of package %s)", t, pkg.Path())
-		}
-		return false
+		return false // e.g. literal created by instantiation (golang/go#61674)
 	}
 
 	w.startType(externalType)
@@ -1561,6 +1537,14 @@ func (w *intWriter) uint64(x uint64) {
 	var buf [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(buf[:], x)
 	w.Write(buf[:n])
+}
+
+func (w *intWriter) bool(b bool) {
+	var x uint64
+	if b {
+		x = 1
+	}
+	w.uint64(x)
 }
 
 func assert(cond bool) {

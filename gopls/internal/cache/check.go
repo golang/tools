@@ -436,7 +436,7 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package, enc
 	}
 
 	if p.metadata.PkgPath != "unsafe" { // unsafe cannot be exported
-		exportData, err := gcimporter.IExportShallow(p.pkg.fset, p.pkg.types, bug.Reportf)
+		exportData, err := gcimporter.IExportShallow(p.pkg.fset, p.pkg.types)
 		if err != nil {
 			bug.Reportf("exporting package %v: %v", p.metadata.ID, err)
 		} else {
@@ -581,7 +581,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 		return nil, ctx.Err()
 	}
 
-	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(mp.PkgPath), bug.Reportf)
+	imported, err := gcimporter.IImportShallow(b.fset, getPackages, data, string(mp.PkgPath))
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", mp.ID, err)
 	}
@@ -649,11 +649,9 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 
 	// Asynchronously record export data.
 	go func() {
-		exportData, err := gcimporter.IExportShallow(b.fset, pkg, bug.Reportf)
+		exportData, err := gcimporter.IExportShallow(b.fset, pkg)
 		if err != nil {
-			// Internal error; the stack will have been reported via
-			// bug.Reportf within IExportShallow, so there's not much
-			// to do here (issue #71067).
+			// Internal error (issue #71067).
 			event.Error(ctx, "IExportShallow failed", err, label.Package.Of(string(ph.mp.ID)))
 			return
 		}

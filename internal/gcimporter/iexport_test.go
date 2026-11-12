@@ -28,10 +28,33 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+// TODO(adonovan): add a compatibility test for deep export data.
+//
+// Today's tests encode with the current encoder at an old version
+// number and then decode, so they check only that the encoder and
+// decoder agree, not that the decoder can read bytes written by a
+// past encoder. A change to a shared code path could alter old-version
+// output without any test failing.
+//
+// Instead, check in testdata/iexport/vN.i, the deep export data of a
+// reference package, written by the encoder as of the time version
+// N was current. Each file is generated once, when its version
+// becomes current (e.g. by an -update flag that refuses to overwrite
+// existing files), and is never regenerated. The test decodes each
+// file and compares the result against the reference package
+// type-checked from source (objects, types, and positions, to the
+// fidelity of each version). It should also assert that each version
+// accepted by the decoder has a file, and the file for version N
+// should be deleted when the decoder drops support for N.
+//
+// Once this exists, the encoder need no longer support old versions.
+// Shallow export data needs no such test: it has no compatibility
+// guarantee.
 func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
+	buf.WriteByte('i') // indexed format tag
 	const shallow = false
-	if err := gcimporter.IExportCommon(&buf, fset, shallow, version, []*types.Package{pkg}, nil); err != nil {
+	if err := gcimporter.IExportCommon(&buf, fset, shallow, version, pkg); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -244,8 +267,9 @@ func TestIExportData_typealiases(t *testing.T) {
 	checkPkg(t, pkg1, "export")
 
 	// export
-	// use a nil fileset here to confirm that it doesn't panic
-	exportdata, err := iexport(nil, gcimporter.IExportVersion, pkg1)
+	// Use an empty FileSet here (as gcexportdata.Write does for a nil
+	// one) to confirm that positions not in the FileSet don't panic.
+	exportdata, err := iexport(token.NewFileSet(), gcimporter.IExportVersion, pkg1)
 	if err != nil {
 		t.Fatal(err)
 	}
