@@ -438,9 +438,8 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 
 	// Register fact types with gob.
 	// In VetxOnly mode, analyzers are only for their facts,
-	// so we need only run the analyzers that produce facts,
-	// including those required by other analyzers.
-	// Running an analyzer also runs everything it requires.
+	// so we need only run the analyzers that produce facts
+	// and the analyzers that are required by analyzers that produce facts.
 	//
 	// Also build a map to hold working state and result.
 	type action struct {
