@@ -542,3 +542,33 @@ var (
 	OtherThing dest.Thing
 )
 
+-- src/local_after_use.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// LocalAfterUse declares Existing only after the use of dest.Existing, so the
+// unqualified reference still resolves to the function.
+func LocalAfterUse() int { //@codeaction(re"LocalAfterUse", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_local_after_use)
+	dest.Existing()
+	Existing := 1
+	return Existing
+}
+
+-- @move_local_after_use/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// LocalAfterUse declares Existing only after the use of dest.Existing, so the
+// unqualified reference still resolves to the function.
+func LocalAfterUse() int { //@codeaction(re"LocalAfterUse", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_local_after_use)
+	Existing()
+	Existing := 1
+	return Existing
+}
+-- @move_local_after_use/src/local_after_use.go --
+package src
+
+
+
