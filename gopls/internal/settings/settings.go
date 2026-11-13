@@ -1173,6 +1173,31 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
+// validateBuildFlags reports an error if flags contains an argument that
+// the go command would not parse as a flag, such as "integration" in place
+// of "-tags=integration". The go command treats such an argument, and every
+// argument after it including flags added by gopls, as a package pattern,
+// which leads to confusing errors (golang/go#58023).
+//
+// A non-flag argument is accepted after a flag that has no "=", since it may
+// be that flag's value, as in ["-tags", "integration"]. This means a stray
+// argument after a boolean flag, as in ["-race", "integration"], is not
+// detected.
+func validateBuildFlags(flags []string) error {
+	prevMayTakeValue := false
+	for _, flag := range flags {
+		isFlag := strings.HasPrefix(flag, "-") && flag != "-" && flag != "--"
+		if !isFlag && !prevMayTakeValue {
+			if flag != "" && !strings.ContainsAny(flag, " \t=") {
+				return fmt.Errorf("invalid build flag %q: build flags must start with '-' (did you mean \"-tags=%s\"?)", flag, flag)
+			}
+			return fmt.Errorf("invalid build flag %q: build flags must start with '-'", flag)
+		}
+		prevMayTakeValue = isFlag && !strings.Contains(flag, "=")
+	}
+	return nil
+}
+
 // setOne updates a field of o based on the name and value.
 //
 // The applied result describes the counter values to be updated as a result of
@@ -1210,7 +1235,15 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 		return nil, nil
 
 	case "buildFlags":
-		return nil, setStringSlice(&o.BuildFlags, value)
+		flags, err := asStringSlice(value)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateBuildFlags(flags); err != nil {
+			return nil, err
+		}
+		o.BuildFlags = flags
+		return nil, nil
 
 	case "directoryFilters":
 		filterStrings, err := asStringSlice(value)

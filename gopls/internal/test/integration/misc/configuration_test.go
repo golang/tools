@@ -216,3 +216,28 @@ func TestDeprecatedSettings(t *testing.T) {
 		)
 	})
 }
+
+// TestInvalidBuildFlags checks that a build flag without a leading dash is
+// reported as an invalid setting, rather than being passed to the go
+// command, which then failed with errors about gopls's own flags
+// (golang/go#58023).
+func TestInvalidBuildFlags(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com/m
+
+go 1.18
+-- m.go --
+package m
+`
+	WithOptions(
+		Settings{"buildFlags": []string{"integration"}},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			ShownMessage(`invalid build flag "integration"`),
+		)
+		env.OpenFile("m.go")
+		env.AfterChange(NoDiagnostics(ForFile("m.go")))
+	})
+}
