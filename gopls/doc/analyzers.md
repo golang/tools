@@ -2963,7 +2963,7 @@ This change makes benchmark code more readable and also removes the need for man
 Caveats: The b.Loop() method is designed to prevent the compiler from optimizing away the benchmark loop, which can occasionally result in slower execution due to increased allocations in some specific cases. Since its fix may change the performance of nanosecond-scale benchmarks, bloop is disabled by default in the \`go fix\` analyzer suite; see golang/go#74967.
 
 
-Default: off. Enable by setting `"analyses": {"bloop": true}`.
+Default: on.
 
 Package documentation: [bloop](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_bloop)
 
@@ -3239,7 +3239,7 @@ The fmtappendf analyzer suggests replacing \`\[]byte(fmt.Sprintf(...))\` with \`
 Since its fix is not a Pareto improvement, fmtappendf is disabled by default in the \`go fix\` analyzer suite; see golang/go#77581.
 
 
-Default: off. Enable by setting `"analyses": {"fmtappendf": true}`.
+Default: on.
 
 Package documentation: [fmtappendf](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_fmtappendf)
 
