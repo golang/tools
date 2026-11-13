@@ -34,3 +34,20 @@ var (
 	_ = alreadyAnnotated[int](123) // want `call of alreadyAnnotated\(x\) can be simplified to new\(x\)`
 	_ = variadic[int]()            // nope: reject variadic function calls
 )
+
+// Untyped non-constant arguments (golang/go#83039).
+
+type flag bool
+
+var (
+	n uint
+	_ = int64Var(1 << n)   // nope: implicit conversion from untyped int to int64
+	_ = varOf[flag](n > 0) // nope: implicit conversion from untyped bool to flag
+	_ = varOf[*int](nil)   // nope: new(nil) is ill-typed
+	_ = varOf(1 << n)      // want `call of varOf\(x\) can be simplified to new\(x\)`
+)
+
+func _(m uint, x int64) {
+	_ = int64Var(x)      // want `call of int64Var\(x\) can be simplified to new\(x\)`
+	_ = int64Var(1 << m) // nope: implicit conversion from untyped int to int64
+}
