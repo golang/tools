@@ -191,6 +191,19 @@ func _() {
 		fmt.Println()
 		wg.Done()
 	}()
+
+	wg.Add(1) // noop: Done is called on a variable that shadows wg (go.dev/issue/82875).
+	go func() {
+		wg := &wg1
+		wg.Done()
+	}()
+
+	var s Server
+	s.wg.Add(1) // noop: Done is called on a variable that shadows s (go.dev/issue/82875).
+	go func() {
+		s := Server{}
+		s.wg.Done()
+	}()
 }
 
 func cleanup() {}
