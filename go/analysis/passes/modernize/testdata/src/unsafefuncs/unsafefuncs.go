@@ -25,3 +25,22 @@ type namedUP unsafe.Pointer
 func _(ptr namedUP) namedUP {
 	return namedUP(uintptr(ptr) + 1) // nope: Add does not accept named unsafe.Pointer types
 }
+
+// Operands that unsafe.Add does not accept (golang/go#83050).
+
+func _(ptr unsafe.Pointer, f float64) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(ptr) + uintptr(f)) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _[T ~int | ~uint8](ptr unsafe.Pointer, n T) unsafe.Pointer {
+	// The conversion is kept for a type parameter, even one whose type set is all integers.
+	return unsafe.Pointer(uintptr(ptr) + uintptr(n)) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _(ptr unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(ptr) + ^uintptr(0)) // nope: constant operand of Add would overflow int
+}
+
+func _(ptr unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(ptr) + uintptr(^uint(0))) // nope: constant operand of Add would overflow int
+}

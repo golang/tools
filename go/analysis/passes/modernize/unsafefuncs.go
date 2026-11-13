@@ -7,6 +7,7 @@ package modernize
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 
@@ -101,6 +102,15 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 			}
 			// Have: result ≡ unsafe.Pointer(x:uintptr(...unsafe.Pointer...) + y:...uintptr...)
 
+			// A constant operand of unsafe.Add must be representable
+			// as an int, unlike a constant uintptr such as ^uintptr(0).
+			if v := info.Types[sum.Y].Value; v != nil {
+				maxInt := constant.MakeUint64(1<<(8*pass.TypesSizes.Sizeof(types.Typ[types.Int])-1) - 1)
+				if constant.Compare(v, token.GTR, maxInt) {
+					continue
+				}
+			}
+
 			file := astutil.EnclosingFile(curSum)
 			if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_17) {
 				continue // unsafe.Add not available in this file
@@ -141,7 +151,7 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 			// e.g. unsafe.Pointer(uintptr(ptr) + uintptr(len(s)))
 			//                                    --------      -
 			//      unsafe.Add    (        ptr,           len(s))
-			if t, _ := isConversion(curY); t != nil && isInteger(t) {
+			if _, curN := isConversion(curY); curN.Valid() && isInteger(info.TypeOf(curN.Node().(ast.Expr))) {
 				edits = append(edits, deleteConv(curY)...)
 			}
 
