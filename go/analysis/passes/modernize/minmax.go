@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -311,12 +310,12 @@ nextFunc:
 			// instantiated. Require every reference to be a direct call,
 			// allowing parentheses around the callee.
 			for use := range index.Uses(fn) {
-				callee := cursorutil.UnparenEnclosing(use)
+				callee := use.UnparenEnclosing()
 				if callee.ParentEdgeKind() != edge.CallExpr_Fun {
 					continue nextFunc
 				}
 				// Built-in min/max calls cannot discard their results.
-				switch cursorutil.UnparenEnclosing(callee.Parent()).ParentEdgeKind() {
+				switch callee.Parent().UnparenEnclosing().ParentEdgeKind() {
 				case edge.ExprStmt_X, edge.DeferStmt_Call, edge.GoStmt_Call:
 					continue nextFunc
 				}
