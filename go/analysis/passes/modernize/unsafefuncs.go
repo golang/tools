@@ -10,6 +10,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"math"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -17,7 +18,9 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -103,12 +106,10 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 			// Have: result ≡ unsafe.Pointer(x:uintptr(...unsafe.Pointer...) + y:...uintptr...)
 
 			// A constant operand of unsafe.Add must be representable
-			// as an int, unlike a constant uintptr such as ^uintptr(0).
-			if v := info.Types[sum.Y].Value; v != nil {
-				maxInt := constant.MakeUint64(1<<(8*pass.TypesSizes.Sizeof(types.Typ[types.Int])-1) - 1)
-				if constant.Compare(v, token.GTR, maxInt) {
-					continue
-				}
+			// as an int, which is only 32 bits on some platforms.
+			if v := info.Types[sum.Y].Value; v != nil &&
+				constant.Compare(v, token.GTR, constant.MakeInt64(math.MaxInt32)) {
+				continue
 			}
 
 			file := astutil.EnclosingFile(curSum)
@@ -151,8 +152,12 @@ func unsafefuncs(pass *analysis.Pass) (any, error) {
 			// e.g. unsafe.Pointer(uintptr(ptr) + uintptr(len(s)))
 			//                                    --------      -
 			//      unsafe.Add    (        ptr,           len(s))
-			if _, curN := isConversion(curY); curN.Valid() && isInteger(info.TypeOf(curN.Node().(ast.Expr))) {
-				edits = append(edits, deleteConv(curY)...)
+			// (A type parameter counts if its type set is all integers.)
+			if _, curN := isConversion(curY); curN.Valid() {
+				ts := typeparams.TypeSetOf(info.TypeOf(curN.Node().(ast.Expr)))
+				if ts.Len() != 0 && moreiters.Every(ts.UnderlyingTypes(), isInteger) {
+					edits = append(edits, deleteConv(curY)...)
+				}
 			}
 
 			pass.Report(analysis.Diagnostic{

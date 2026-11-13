@@ -33,8 +33,15 @@ func _(ptr unsafe.Pointer, f float64) unsafe.Pointer {
 }
 
 func _[T ~int | ~uint8](ptr unsafe.Pointer, n T) unsafe.Pointer {
-	// The conversion is kept for a type parameter, even one whose type set is all integers.
 	return unsafe.Pointer(uintptr(ptr) + uintptr(n)) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _[T ~int | ~float64](ptr unsafe.Pointer, n T) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(ptr) + uintptr(n)) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _(ptr unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(uintptr(ptr) + 0x80000000) // nope: constant operand of Add would overflow a 32-bit int
 }
 
 func _(ptr unsafe.Pointer) unsafe.Pointer {
