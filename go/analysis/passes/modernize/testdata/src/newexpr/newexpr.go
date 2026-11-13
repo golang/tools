@@ -49,6 +49,10 @@ var (
 	_ = varOf(1 << n)      // want `call of varOf\(x\) can be simplified to new\(x\)`
 )
 
+// Arguments containing a func type (golang/go#83063).
+
+var _ = varOf(func() int { return 1 }()) // nope: CheckExpr would add the func's scope to the package
+
 func _(m uint, x int64) {
 	_ = int64Var(x)      // want `call of int64Var\(x\) can be simplified to new\(x\)`
 	_ = int64Var(1 << m) // nope: implicit conversion from untyped int to int64
