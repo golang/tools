@@ -1,0 +1,41 @@
+Test of the "function end names" inlay hint (#80465).
+
+-- settings.json --
+{"hints": {"functionEndNames": true}, "analyses": {"unusedfunc": false}}
+
+-- p/p.go --
+package p //@inlayhints(out)
+
+type T struct{}
+
+func foo() {
+	_ = func() {}
+}
+
+func (T) method() {}
+
+func (*T) pointerMethod() {}
+
+func generic[T any](v T) {}
+
+func 日本語() {}
+
+func bodyless()
+-- @out --
+package p //@inlayhints(out)
+
+type T struct{}
+
+func foo() {
+	_ = func() {}
+}< // foo>
+
+func (T) method() {}< // method>
+
+func (*T) pointerMethod() {}< // pointerMethod>
+
+func generic[T any](v T) {}< // generic>
+
+func 日本語() {}< // 日本語>
+
+func bodyless()
