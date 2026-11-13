@@ -3181,7 +3181,7 @@ Package documentation: [errorsastypeshadow](https://pkg.go.dev/golang.org/x/tool
 <a id='fieldalignment'></a>
 ## `fieldalignment`: find structs that would use less memory if their fields were sorted
 
-This analyzer finds structs that can be rearranged to use less memory, and provides a suggested edit with the most compact order.
+This analyzer finds structs that can be rearranged to use less memory, and provides a suggested edit with the most compact order. It does not report a struct that has an unkeyed composite literal in the same package, because the suggested edit reorders the fields without updating those literals.
 
 Note that there are two different diagnostics reported. One checks struct size, and the other reports "pointer bytes" used. Pointer bytes is how many bytes of the object that the garbage collector has to potentially scan for pointers, for example:
 
