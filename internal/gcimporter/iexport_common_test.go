@@ -4,9 +4,21 @@
 
 package gcimporter
 
+import "testing"
+
 // Temporarily expose version-related functionality so that we can test at
 // specific export data versions.
 
 var IExportCommon = iexportCommon
 
 const IExportVersion = iexportVersion
+
+// TestFileInfosField checks that mayHaveLineInfos can find the
+// token.File.infos field. If this fails, the layout has changed, and
+// fileInfosField must be updated; until then the encoder conservatively
+// (and expensively) computes adjusted positions for every file.
+func TestFileInfosField(t *testing.T) {
+	if fileInfosField < 0 {
+		t.Fatal("unexpected layout of token.File; update fileInfosField")
+	}
+}

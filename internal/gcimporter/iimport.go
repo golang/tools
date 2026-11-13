@@ -27,6 +27,14 @@ type intReader struct {
 	path string
 }
 
+func (r *intReader) int64() int64 {
+	i, err := binary.ReadVarint(r.Reader)
+	if err != nil {
+		errorf("import %q: read varint error: %v", r.path, err)
+	}
+	return i
+}
+
 func (r *intReader) uint64() uint64 {
 	i, err := binary.ReadUvarint(r.Reader)
 	if err != nil {
@@ -45,9 +53,10 @@ const (
 	iexportVersionGenericMethods = 3
 	iexportVersionRationalFloats = 4 // allow float constants to be represented as multiprecision rationals
 	iexportVersionShallowFlag    = 5 // header records deep/shallow mode
-	iexportVersion               = iexportVersionShallowFlag
+	iexportVersionFullPos        = 6 // both modes use posV3 and a file table, which records //line info
+	iexportVersion               = iexportVersionFullPos
 
-	iexportVersionCurrent = 5
+	iexportVersionCurrent = 6
 )
 
 type ident struct {
@@ -123,11 +132,11 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 
 	version = int64(r.uint64())
 	switch version {
-	case iexportVersionShallowFlag, iexportVersionRationalFloats, iexportVersionGenericMethods, iexportVersionGo1_18, iexportVersionPosCol, iexportVersionGo1_11:
+	case iexportVersionFullPos, iexportVersionShallowFlag, iexportVersionRationalFloats, iexportVersionGenericMethods, iexportVersionGo1_18, iexportVersionPosCol, iexportVersionGo1_11:
 		// known version
 	default:
 		// unknown version
-		if version > iexportVersionShallowFlag {
+		if version > iexportVersionFullPos {
 			errorf("unstable iexport format version %d, just rebuild compiler and std library", version)
 		} else {
 			errorf("unknown iexport format version %d", version)
@@ -138,14 +147,8 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 
 	sLen := int64(r.uint64())
 	var fLen int64
-	var fileOffset []uint64
-	if shallow {
-		// Shallow mode uses a different position encoding.
+	if version >= iexportVersionFullPos {
 		fLen = int64(r.uint64())
-		fileOffset = make([]uint64, r.uint64())
-		for i := range fileOffset {
-			fileOffset[i] = r.uint64()
-		}
 	}
 	dLen := int64(r.uint64())
 
@@ -156,15 +159,14 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 	r.Seek(sLen+fLen+dLen, io.SeekCurrent)
 
 	p := iimporter{
+		fset:    fset,
 		version: int(version),
 		ipath:   path,
 		shallow: shallow,
 
 		stringData:  stringData,
 		stringCache: make(map[uint64]string),
-		fileOffset:  fileOffset,
 		fileData:    fileData,
-		fileCache:   make([]*token.File, len(fileOffset)),
 		pkgCache:    make(map[uint64]*types.Package),
 
 		declData: declData,
@@ -173,13 +175,14 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 		// Separate map for typeparams, keyed by their package and unique
 		// name.
 		tparamIndex: make(map[ident]types.Type),
-
-		fake: fakeFileSet{
+	}
+	if version < iexportVersionFullPos {
+		p.fake = fakeFileSet{
 			fset:  fset,
 			files: make(map[string]*fileInfo),
-		},
+		}
+		defer p.fake.setLines() // set lines for files in fset
 	}
-	defer p.fake.setLines() // set lines for files in fset
 
 	for i, pt := range predeclared() {
 		p.typCache[uint64(i)] = pt
@@ -215,6 +218,14 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 		}
 
 		nameIndexes[i] = nameIndex
+	}
+
+	if version >= iexportVersionFullPos {
+		p.fileOffset = make([]uint64, r.uint64())
+		for i := range p.fileOffset {
+			p.fileOffset[i] = r.uint64()
+		}
+		p.fileCache = make([]*token.File, len(p.fileOffset))
 	}
 
 	// Request packages all at once from the client,
@@ -299,6 +310,7 @@ type setConstraintArgs struct {
 }
 
 type iimporter struct {
+	fset    *token.FileSet
 	version int
 	ipath   string
 
@@ -383,7 +395,9 @@ func (p *iimporter) stringAt(off uint64) string {
 	return s
 }
 
-func (p *iimporter) fileAt(index uint64) *token.File {
+// fileAt returns the decoded token.File for index, decoding it lazily
+// (avoiding work for files of already-complete dependencies in deep mode).
+func (p *iimporter) fileAt(index int) *token.File {
 	file := p.fileCache[index]
 	if file == nil {
 		off := p.fileOffset[index]
@@ -396,40 +410,79 @@ func (p *iimporter) fileAt(index uint64) *token.File {
 func (p *iimporter) decodeFile(rd intReader) *token.File {
 	filename := p.stringAt(rd.uint64())
 	size := int(rd.uint64())
-	file := p.fake.fset.AddFile(filename, -1, size)
+	nlines := int(rd.uint64()) // total line count (see TODO below)
+	file := p.fset.AddFile(filename, -1, size)
 
-	// SetLines requires a nondecreasing sequence.
-	// Because it is common for clients to derive the interval
-	// [start, start+len(name)] from a start position, and we
-	// want to ensure that the end offset is on the same line,
-	// we fill in the gaps of the sparse encoding with values
-	// that strictly increase by the largest possible amount.
-	// This allows us to avoid having to record the actual end
-	// offset of each needed line.
+	avg := size / max(1, nlines)
+	sparse := readLines(rd, avg)
 
-	lines := make([]int, int(rd.uint64()))
-	var index, offset int
-	for i, n := 0, int(rd.uint64()); i < n; i++ {
-		index += int(rd.uint64())
-		offset += int(rd.uint64())
-		lines[index] = offset
-
-		// Ensure monotonicity between points.
-		for j := index - 1; j > 0 && lines[j] == 0; j-- {
-			lines[j] = lines[j+1] - 1
+	// Expand the sparse line starts into a dense slice for SetLines,
+	// which requires a strictly increasing sequence of offsets < size.
+	//
+	// We truncate the line table after the last needed line: lines
+	// beyond it are never referenced by any encoded position, and
+	// this saves memory. (The cost is that File.LineCount is not
+	// faithful.)
+	//
+	// Each gap (prev, line.index) between needed lines is filled with
+	// consecutive offsets ending at line.offset - 1. Because the
+	// original file had at least (line.index - prev - 1) bytes of
+	// intervening lines, the first filler offset is >= the true end of
+	// line prev, so every byte on a needed line---such as the end of an
+	// identifier [start, start+len(name)]---remains on that line. This
+	// avoids having to record the actual end offset of each needed line.
+	//
+	// TODO(adonovan): the dense line table required by SetLines
+	// dominates the decoder's allocation; most of its entries are
+	// filler. When this code moves to std, consider using go/token
+	// internals to install a sparse (or more compact) line table,
+	// which would also permit a faithful LineCount using nlines.
+	//
+	// TODO(adonovan): let Decode calls that share a FileSet also share
+	// token.Files that are commonly mentioned by deep export data
+	// (e.g. reflect/value.go), merging their needed lines.
+	//
+	// Neither TODO requires a change to the format.
+	var lines []int
+	if n := len(sparse); n > 0 {
+		lines = make([]int, sparse[n-1].index+1)
+		prev := 0
+		for _, line := range sparse {
+			for j := prev + 1; j < line.index; j++ {
+				lines[j] = line.offset - (line.index - j)
+			}
+			lines[line.index] = line.offset
+			prev = line.index
 		}
 	}
-
-	// Ensure monotonicity after last point.
-	for j := len(lines) - 1; j > 0 && lines[j] == 0; j-- {
-		size--
-		lines[j] = size
-	}
-
-	if !file.SetLines(lines) {
+	if len(lines) > 1 && !file.SetLines(lines) { // AddFile already set lines to []int{0}
 		errorf("SetLines failed: %d", lines) // can't happen
 	}
+
+	// Restore //line directive information (alternative positions).
+	// See writeLineInfos.
+	offset := 0
+	for n := int(rd.uint64()); n > 0; n-- {
+		offset += int(rd.uint64())
+		altFile := p.stringAt(rd.uint64())
+		line := int(rd.uint64())
+		column := int(rd.uint64())
+		file.AddLineColumnInfo(offset, altFile, line, column)
+	}
 	return file
+}
+
+// readLines reads a sparse list of line starts. See [writeLines].
+func readLines(rd intReader, avg int) []lineStart {
+	lines := make([]lineStart, rd.uint64())
+	var prev lineStart
+	for i := range lines {
+		index := prev.index + int(rd.uint64())
+		offset := predictLineStart(prev, index, avg) + int(rd.int64())
+		lines[i] = lineStart{index, offset}
+		prev = lines[i]
+	}
+	return lines
 }
 
 func (p *iimporter) pkgAt(off uint64) *types.Package {
@@ -481,9 +534,15 @@ func canReuse(def *types.Named, rhs types.Type) bool {
 type importReader struct {
 	p          *iimporter
 	declReader bytes.Reader
+
+	// posV0/posV1 state
 	prevFile   string
 	prevLine   int64
 	prevColumn int64
+
+	// posV3 state (initially file 0, offset 0)
+	prevFileIdx int
+	prevOffset  int64
 }
 
 // markBlack is redefined in iimport_go123.go, to work around golang/go#69912.
@@ -788,9 +847,8 @@ func (r *importReader) qualifiedIdent() (*types.Package, string) {
 }
 
 func (r *importReader) pos() token.Pos {
-	if r.p.shallow {
-		// precise offsets are encoded only in shallow mode
-		return r.posV2()
+	if r.p.version >= iexportVersionFullPos {
+		return r.posV3()
 	}
 	if r.p.version >= iexportVersionPosCol {
 		r.posV1()
@@ -828,13 +886,18 @@ func (r *importReader) posV1() {
 	}
 }
 
-func (r *importReader) posV2() token.Pos {
-	file := r.uint64()
-	if file == 0 {
+// posV3 decodes a position. See [exportWriter.posV3] for the encoding.
+func (r *importReader) posV3() token.Pos {
+	switch x := r.int64(); {
+	case x == -1: // NoPos
 		return token.NoPos
+	case x&1 == 0: // same file
+		r.prevOffset += x >> 1
+	default: // new file
+		r.prevFileIdx = int(x >> 1)
+		r.prevOffset = int64(r.uint64())
 	}
-	tf := r.p.fileAt(file - 1)
-	return tf.Pos(int(r.uint64()))
+	return r.p.fileAt(r.prevFileIdx).Pos(int(r.prevOffset))
 }
 
 func (r *importReader) typ() types.Type {

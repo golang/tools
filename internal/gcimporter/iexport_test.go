@@ -28,7 +28,7 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// TODO(adonovan): add a compatibility test for deep export data.
+// TODO(adonovan): add a compatibility test for export data.
 //
 // Today's tests encode with the current encoder at an old version
 // number and then decode, so they check only that the encoder and
@@ -48,8 +48,6 @@ import (
 // should be deleted when the decoder drops support for N.
 //
 // Once this exists, the encoder need no longer support old versions.
-// Shallow export data needs no such test: it has no compatibility
-// guarantee.
 func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('i') // indexed format tag
@@ -208,8 +206,8 @@ func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package,
 }
 
 // TestIExportData_long tests the position of an import object declared in
-// a very long input file.  Line numbers greater than maxlines are
-// reported as line 1, not garbage or token.NoPos.
+// a very long input file. Positions are preserved exactly
+// (since iexportVersionFullPos).
 func TestIExportData_long(t *testing.T) {
 	// parse and typecheck
 	longFile := "package foo" + strings.Repeat("\n", 123456) + "var X int"
@@ -241,9 +239,8 @@ func TestIExportData_long(t *testing.T) {
 	// compare
 	posn1 := fset1.Position(pkg.Scope().Lookup("X").Pos())
 	posn2 := fset2.Position(pkg2.Scope().Lookup("X").Pos())
-	if want := "foo.go:1:1"; posn2.String() != want {
-		t.Errorf("X position = %s, want %s (orig was %s)",
-			posn2, want, posn1)
+	if posn2 != posn1 {
+		t.Errorf("X position = %s, want %s", posn2, posn1)
 	}
 }
 

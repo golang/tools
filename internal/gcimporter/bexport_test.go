@@ -297,8 +297,8 @@ func equalTypeParams(x, y *types.TypeParamList) error {
 }
 
 // TestVeryLongFile tests the position of an import object declared in
-// a very long input file.  Line numbers greater than maxlines are
-// reported as line 1, not garbage or token.NoPos.
+// a very long input file. Positions are preserved exactly
+// (since iexportVersionFullPos).
 func TestVeryLongFile(t *testing.T) {
 	// parse and typecheck
 	longFile := "package foo" + strings.Repeat("\n", 123456) + "var X int"
@@ -330,9 +330,8 @@ func TestVeryLongFile(t *testing.T) {
 	// compare
 	posn1 := fset1.Position(pkg.Scope().Lookup("X").Pos())
 	posn2 := fset2.Position(pkg2.Scope().Lookup("X").Pos())
-	if want := "foo.go:1:1"; posn2.String() != want {
-		t.Errorf("X position = %s, want %s (orig was %s)",
-			posn2, want, posn1)
+	if posn2 != posn1 {
+		t.Errorf("X position = %s, want %s", posn2, posn1)
 	}
 }
 
