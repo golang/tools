@@ -24,7 +24,12 @@ const deltaNewFile = -64 // see cmd/compile/internal/gc/bexport.go
 // Synthesize a token.Pos
 type fakeFileSet struct {
 	fset  *token.FileSet
-	files map[string]*fileInfo
+	files map[fileKey]*fileInfo
+}
+
+type fileKey struct {
+	name     string
+	lineBase int
 }
 
 type fileInfo struct {
@@ -37,17 +42,21 @@ const maxlines = 64 * 1024
 func (s *fakeFileSet) pos(file string, line, column int) token.Pos {
 	_ = column // TODO(mdempsky): Make use of column.
 
-	// Since we don't know the set of needed file positions, we reserve maxlines
-	// positions per file. We delay calling token.File.SetLines until all
-	// positions have been calculated (by way of fakeFileSet.setLines), so that
-	// we can avoid setting unnecessary lines. See also golang/go#46586.
-	f := s.files[file]
+	// Use fixed-size windows so high line numbers can share the same
+	// line table. Delay SetLines until all positions have been calculated
+	// to avoid setting unnecessary lines. See golang/go#46586.
+	key := fileKey{name: file}
+	if line > maxlines {
+		key.lineBase = (line - 1) / maxlines * maxlines
+		line -= key.lineBase
+	}
+	f := s.files[key]
 	if f == nil {
 		f = &fileInfo{file: s.fset.AddFile(file, -1, maxlines)}
-		s.files[file] = f
-	}
-	if line > maxlines {
-		line = 1
+		if key.lineBase != 0 {
+			f.file.AddLineColumnInfo(0, file, key.lineBase+1, 1)
+		}
+		s.files[key] = f
 	}
 	if line > f.lastline {
 		f.lastline = line
