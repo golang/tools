@@ -2,6 +2,8 @@
 
 package newexpr
 
+import "math"
+
 // intVar returns a new var whose value is i.
 func intVar(i int) *int { return &i } // want `intVar can be an inlinable wrapper around new\(expr\)` intVar:"newlike"
 
@@ -50,4 +52,12 @@ var (
 func _(m uint, x int64) {
 	_ = int64Var(x)      // want `call of int64Var\(x\) can be simplified to new\(x\)`
 	_ = int64Var(1 << m) // nope: implicit conversion from untyped int to int64
+
+	// Constants that refer to local or imported names.
+	const c = 1
+	const c64 int64 = 1
+	_ = intVar(c)            // want `call of intVar\(x\) can be simplified to new\(x\)`
+	_ = int64Var(c)          // nope: implicit conversion from untyped int to int64
+	_ = int64Var(c64)        // want `call of int64Var\(x\) can be simplified to new\(x\)`
+	_ = intVar(math.MaxInt8) // want `call of intVar\(x\) can be simplified to new\(x\)`
 }
