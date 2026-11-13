@@ -113,7 +113,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 			astutil.EqualSyntax(ast.Unparen(deferStmt.Call.Fun).(*ast.SelectorExpr).X, addCallRecv) {
 			doneStmt = deferStmt // "defer wg.Done()"
 
-		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok && cannotRecover(lit.Body, info) {
+		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok && cannotRecover(lit.Body, info) && !containsReturn(lit.Body) {
 			if doneCall, ok := lastStmt.X.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, doneCall) == syncWaitGroupDone &&
 				astutil.EqualSyntax(ast.Unparen(doneCall.Fun).(*ast.SelectorExpr).X, addCallRecv) {
@@ -198,6 +198,23 @@ func cannotRecover(body *ast.BlockStmt, info *types.Info) bool {
 		return true
 	})
 	return res
+}
+
+// containsReturn reports whether body contains a return statement,
+// which would skip a trailing wg.Done() call.
+func containsReturn(body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.ReturnStmt:
+			found = true
+		case *ast.FuncLit:
+			// A return in a nested function does not return from this body.
+			return false
+		}
+		return !found
+	})
+	return found
 }
 
 func containsRecover(body *ast.BlockStmt, info *types.Info) bool {

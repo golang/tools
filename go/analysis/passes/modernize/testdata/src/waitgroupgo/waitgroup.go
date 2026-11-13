@@ -219,6 +219,43 @@ func _() {
 	}()
 }
 
+func _(skip bool) {
+	var wg sync.WaitGroup
+	wg.Add(1) // noop: the trailing Done is skipped by an early return.
+	go func() {
+		if skip {
+			return
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1) // noop: WaitGroup.Go would call Done a second time after the early Done.
+	go func() {
+		if skip {
+			wg.Done()
+			return
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		f := func() {
+			return
+		}
+		f()
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		defer wg.Done()
+		if skip {
+			return
+		}
+	}()
+}
+
 func cleanup() {}
 
 type Server struct {
