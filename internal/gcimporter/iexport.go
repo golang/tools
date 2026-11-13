@@ -775,6 +775,13 @@ func (p *iexporter) doDecl(obj types.Object) {
 		}
 
 		underlying := named.Underlying()
+		if comparable := types.Universe.Lookup("comparable").Type(); underlying == comparable.Underlying() {
+			// The underlying interface of comparable has no methods or
+			// embedded types and would otherwise be exported as any.
+			// Export comparable itself; the importer calls Underlying()
+			// on it.
+			underlying = comparable
+		}
 		w.typ(underlying, obj.Pkg())
 
 		if types.IsInterface(t) {
