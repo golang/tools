@@ -138,3 +138,119 @@ type DuplicateWithAnotherPackage struct {
 	b.AnonymousJSONField
 	AnonymousJSONField2 // want "struct field DuplicateAnonJSON repeats json tag .a. also at b.b.go:8"
 }
+
+// JSON tags that set the name of a field when they were almost
+// certainly meant to do something else. See go.dev/issue/74376.
+
+type JSONDash struct {
+	Omitted int `json:"-"`  // ok: the field is omitted
+	Dash    int `json:"-,"` // ok: the documented way to name a field "-"
+}
+
+type JSONDashOmitempty struct {
+	A int `json:"-,omitempty"` // want "struct field A has json tag `-,omitempty`, which names the field \"-\" rather than omitting it \\(did you mean `-`\\?\\)"
+}
+
+type JSONDashString struct {
+	A int `json:"-,string"` // want "struct field A has json tag `-,string`, which names the field \"-\" rather than omitting it"
+}
+
+type JSONDashOptions struct {
+	A int `json:"-,omitempty,string"` // want "struct field A has json tag `-,omitempty,string`, which names the field \"-\" rather than omitting it"
+}
+
+type JSONDashEmbedded struct {
+	AnonymousJSON `json:"-,omitempty"` // want "struct field AnonymousJSON has json tag `-,omitempty`, which names the field \"-\" rather than omitting it"
+}
+
+type JSONDashEmbeddedPointer struct {
+	*AnonymousJSON `json:"-,omitempty"` // want "struct field AnonymousJSON has json tag `-,omitempty`, which names the field \"-\" rather than omitting it"
+}
+
+type JSONDashEmbeddedUnexported struct {
+	unexp `json:"-,omitempty"` // want "struct field unexp has json tag `-,omitempty`, which names the field \"-\" rather than omitting it"
+}
+
+type JSONDashEmbeddedUnexportedPointer struct {
+	*unexp `json:"-,omitempty"` // want "struct field unexp has json tag `-,omitempty`, which names the field \"-\" rather than omitting it"
+}
+
+type unexpInt int
+
+type JSONDashEmbeddedUnexportedInt struct {
+	unexpInt `json:"-,omitempty"` // ok: encoding/json ignores the field
+}
+
+type JSONDashEmbeddedUnexportedIntPointer struct {
+	*unexpInt `json:"-,omitempty"` // ok: encoding/json ignores the field
+}
+
+type JSONDashUnexported struct {
+	a int `json:"-,omitempty"` // want "struct field a has json tag but is not exported"
+}
+
+type JSONDashRepeated struct {
+	A int `json:"-,omitempty"` // want "struct field A has json tag `-,omitempty`, which names the field \"-\" rather than omitting it"
+	B int `json:"-,omitempty"` // want "struct field B has json tag `-,omitempty`, which names the field \"-\" rather than omitting it" "struct field B repeats json tag \"-\" also at a.go:193"
+}
+
+type JSONDashOtherKeys struct {
+	A int `xml:"-,omitempty" yaml:"-,omitempty"` // ok: only json tags are checked
+	B int `json:"b" yaml:"-,omitempty"`          // ok
+}
+
+type JSONOmitempty struct {
+	A int `json:"omitempty"`   // want "struct field A has json tag `omitempty`, which names the field \"omitempty\" rather than setting the option \\(did you mean `,omitempty`\\?\\)"
+	B int `json:",omitempty"`  // ok
+	C int `json:"c,omitempty"` // ok
+	D int `json:"Omitempty"`   // ok: not the name of the option
+	E int `json:"omitzero"`    // not reported: only omitempty is checked
+}
+
+type JSONOmitemptyOptions struct {
+	A int `json:"omitempty,string"` // want "struct field A has json tag `omitempty,string`, which names the field \"omitempty\" rather than setting the option \\(did you mean `,omitempty,string`\\?\\)"
+}
+
+type JSONOmitemptyName struct {
+	A int `json:"omitempty,"` // ok: the comma says that omitempty is the name
+}
+
+type JSONOmitemptyNameAndOption struct {
+	A int `json:"omitempty,omitempty"` // ok: the name, and the option too
+}
+
+type JSONOmitemptyNameAndOptions struct {
+	A int `json:"omitempty,string,omitempty"` // ok
+}
+
+type JSONOmitemptyField struct {
+	OmitEmpty bool `json:"omitempty"` // ok: the tag is the name of the field
+}
+
+type JSONOmitemptyFieldUnderscore struct {
+	Omit_Empty bool `json:"omitempty"` // ok: the tag is the name of the field
+}
+
+type JSONOmitemptyFieldLonger struct {
+	OmitEmptyFlag bool `json:"omitempty"` // want "struct field OmitEmptyFlag has json tag `omitempty`, which names the field \"omitempty\" rather than setting the option"
+}
+
+type JSONOmitemptyEmbedded struct {
+	AnonymousJSON `json:"omitempty"` // want "struct field AnonymousJSON has json tag `omitempty`, which names the field \"omitempty\" rather than setting the option"
+}
+
+type JSONOmitemptyEmbeddedUnexported struct {
+	unexp `json:"omitempty"` // want "struct field unexp has json tag `omitempty`, which names the field \"omitempty\" rather than setting the option"
+}
+
+type JSONOmitemptyEmbeddedUnexportedInt struct {
+	unexpInt `json:"omitempty"` // ok: encoding/json ignores the field
+}
+
+type JSONOmitemptyUnexported struct {
+	a int `json:"omitempty"` // want "struct field a has json tag but is not exported"
+}
+
+type JSONOmitemptyOtherKeys struct {
+	A int `xml:"omitempty" yaml:"omitempty"` // ok: only json tags are checked
+}
