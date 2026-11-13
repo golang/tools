@@ -369,7 +369,7 @@ func (p *process) start(body string, opt *Options) error {
 
 	// write body to x.go files
 	a := txtar.Parse([]byte(body))
-	if len(a.Comment) != 0 {
+	if strings.TrimSpace(string(a.Comment)) != "" {
 		a.Files = append(a.Files, txtar.File{Name: "prog.go", Data: a.Comment})
 		a.Comment = nil
 	}
