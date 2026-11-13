@@ -223,6 +223,24 @@ func (f Foo) bar(s string, i int) string {
 }
 ```
 
+The fix also works when a missing method is passed as a callback argument.
+For example, given a local type `Server`, the call
+`mux.HandleFunc("/", s.handle)` can generate:
+
+```go
+func (s *Server) handle(writer http.ResponseWriter, request *http.Request) {
+	panic("unimplemented")
+}
+```
+
+The callback's parameter and result types come from the corresponding
+parameter of the enclosing call. Named function types and variadic callbacks
+are supported. The fix is not offered if the expected type is not a function,
+or if the receiver or signature cannot safely be declared at package scope.
+In particular, callback inference currently excludes generic receivers,
+receivers declared in other packages, and signatures containing function-local
+or inaccessible types. Assignments and method expressions are not supported.
+
 ### `CreateUndeclared`: Create missing declaration for "undeclared name: X"
 
 A Go compiler error "undeclared name: X" indicates that a variable or function is being used before

@@ -1,0 +1,42 @@
+Exercise callback signatures and contexts where a method cannot be inferred.
+
+-- signatures.go --
+package callbacks
+
+type callbackStore struct{}
+
+type Callback func(param2 int, c string, rest ...bool) (param3 int, err error)
+type Register func(Callback)
+
+func callbacks() {
+	c := &callbackStore{}
+	var register Register
+	register(c.named)           //@quickfix("named", re"has no field or method", named)
+	withFixed((c.fixed), 1, 2)  //@quickfix("fixed", re"has no field or method", fixed)
+	withMany(func() {}, c.many) //@quickfix("many", re"has no field or method", many)
+	withString(c.field)         //@quickfixerr("field", re"has no field or method", re"found 0 CodeActions")
+	x := c.unknown              //@quickfixerr("unknown", re"has no field or method", re"found 0 CodeActions")
+	_ = x
+}
+
+func withFixed(func(int) string, ...int) {}
+func withMany(...func())                 {}
+func withString(string)                  {}
+-- @named/signatures.go --
+@@ -4 +4,4 @@
++
++func (c *callbackStore) named(param2 int, param3 string, rest ...bool) (int, error) {
++	panic("unimplemented")
++}
+-- @fixed/signatures.go --
+@@ -4 +4,4 @@
++
++func (c *callbackStore) fixed(i int) string {
++	panic("unimplemented")
++}
+-- @many/signatures.go --
+@@ -4 +4,4 @@
++
++func (c *callbackStore) many() {
++	panic("unimplemented")
++}
