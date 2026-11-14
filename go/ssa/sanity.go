@@ -8,7 +8,6 @@ package ssa
 // Currently it checks CFG invariants but little at the instruction level.
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -510,11 +509,6 @@ func (s *sanity) checkFunction(fn *Function) bool {
 	if fn.Prog == nil {
 		s.errorf("nil Prog")
 	}
-
-	var buf bytes.Buffer
-	_ = fn.String()               // must not crash
-	_ = fn.RelString(fn.relPkg()) // must not crash
-	WriteFunction(&buf, fn)       // must not crash
 
 	// All functions have a package, except delegates (which are
 	// shared across packages, or duplicated as weak symbols in a

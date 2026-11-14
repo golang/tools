@@ -182,6 +182,9 @@ func testLoad(t *testing.T, minPkgs int, patterns ...string) {
 	t.Log("#Instructions:        ", numInstrs)
 	t.Log("#MB AST+types:        ", int64(alloc1-alloc0)/1e6)
 	t.Log("#MB SSA:              ", int64(alloc3-alloc1)/1e6)
+
+	// Printing is tested separately from building and structural validation.
+	checkFunctionPrinting(allFuncs)
 }
 
 // srcFunctions gathers all ssa.Functions corresponding to syntax.
