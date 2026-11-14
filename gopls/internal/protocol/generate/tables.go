@@ -4,7 +4,11 @@
 
 package main
 
-import "log"
+import (
+	"log"
+
+	"golang.org/x/tools/internal/collection/set"
+)
 
 // prop combines the name of a property (class.field) with the name of
 // the structure it is in, using LSP field capitalization.
@@ -65,7 +69,7 @@ var goplsStar = map[prop]int{
 }
 
 // keep track of which entries in goplsStar are used
-var usedGoplsStar = make(map[prop]bool)
+var usedGoplsStar = make(set.Set[prop])
 
 // For gopls compatibility, use a different, typically more restrictive, type for some fields.
 var renameProp = map[prop]string{
@@ -104,7 +108,7 @@ var renameProp = map[prop]string{
 }
 
 // which entries of renameProp were used
-var usedRenameProp = make(map[prop]bool)
+var usedRenameProp = make(set.Set[prop])
 
 type adjust struct {
 	prefix, suffix string
@@ -130,7 +134,7 @@ var disambiguate = map[string]adjust{
 }
 
 // which entries of disambiguate got used
-var usedDisambiguate = make(map[string]bool)
+var usedDisambiguate = make(set.Set[string])
 
 // for gopls compatibility, replace generated type names with existing ones
 var goplsType = map[string]string{
@@ -180,7 +184,7 @@ var goplsType = map[string]string{
 	"uinteger":                                       "uint32",
 }
 
-var usedGoplsType = make(map[string]bool)
+var usedGoplsType = make(set.Set[string])
 
 // methodNames is a map from the method to the name of the function that handles it
 var methodNames = map[string]string{

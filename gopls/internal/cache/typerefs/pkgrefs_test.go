@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -100,7 +101,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	//    imports
 	//
 	// By definition, loads < reaches < imports.
-	type edgeSet map[PackageID]map[PackageID]bool
+	type edgeSet map[PackageID]set.Set[PackageID]
 	var (
 		imports    = make(edgeSet) // A imports B transitively
 		importedBy = make(edgeSet) // A is imported by B transitively
@@ -111,13 +112,13 @@ func TestBuildPackageGraph(t *testing.T) {
 	)
 	recordEdge := func(from, to PackageID, fwd, rev edgeSet) {
 		if fwd[from] == nil {
-			fwd[from] = make(map[PackageID]bool)
+			fwd[from] = make(set.Set[PackageID])
 		}
-		fwd[from][to] = true
+		fwd[from].Insert(to)
 		if rev[to] == nil {
-			rev[to] = make(map[PackageID]bool)
+			rev[to] = make(set.Set[PackageID])
 		}
-		rev[to][from] = true
+		rev[to].Insert(from)
 	}
 
 	exportedPackages := make(map[PackageID]*types.Package)

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -64,12 +65,11 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 
 		// Inspect the references.
 		imported := make(map[PackagePath][]*freeRef) // refs to imported symbols
-		seen := make(map[string]bool)                // to de-dup dotted paths
+		seen := make(set.Set[string])                // to de-dup dotted paths
 		for _, ref := range refs {
-			if seen[ref.dotted] {
+			if !seen.Insert(ref.dotted) {
 				continue // de-dup
 			}
-			seen[ref.dotted] = true
 
 			var symbols *[]Symbol
 			switch ref.scope {

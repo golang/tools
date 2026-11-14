@@ -23,6 +23,7 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/vulntest"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 func TestRunGovulncheckError(t *testing.T) {
@@ -325,9 +326,9 @@ func testFetchVulncheckResult(t *testing.T, env *Env, runPath string, fromRun *v
 		sort.Strings(v.IDs)
 	}
 	summarize := func(r *vulncheck.Result) fetchVulncheckResult {
-		osv := map[string]bool{}
+		osv := make(set.Set[string])
 		for _, v := range r.Findings {
-			osv[v.OSV] = true
+			osv.Insert(v.OSV)
 		}
 		ids := make([]string, 0, len(osv))
 		for id := range osv {

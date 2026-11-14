@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -121,7 +122,7 @@ nextComp:
 		// will be filled as C: C{} unless its own fields are accessed.
 		fieldCount := fillableFields(tStruct)
 
-		var seen map[*types.Var]bool
+		var seen set.Set[*types.Var]
 
 	nextElem:
 		for _, el := range expr.Elts {
@@ -172,11 +173,10 @@ nextComp:
 			}
 
 			for i, field := range fields {
-				if !seen[field] {
-					if seen == nil {
-						seen = make(map[*types.Var]bool)
-					}
-					seen[field] = true
+				if seen == nil {
+					seen = make(set.Set[*types.Var])
+				}
+				if seen.Insert(field) {
 					fieldCount += fillableFields(typs[i]) - 1
 				}
 			}

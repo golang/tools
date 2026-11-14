@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moreslices"
@@ -927,7 +928,7 @@ func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDi
 	// command with support for textDocument/diagnostic,
 	// so that we don't need to do this de-duplication.
 	type key [6]any
-	seen := make(map[key]bool)
+	seen := make(set.Set[key])
 	out := file.diagnostics[:0]
 	for _, d := range file.diagnostics {
 		var codeHref string
@@ -935,8 +936,7 @@ func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDi
 			codeHref = desc.Href
 		}
 		k := key{d.Range, d.Severity, d.Code, codeHref, d.Source, d.MessageString()}
-		if !seen[k] {
-			seen[k] = true
+		if seen.Insert(k) {
 			out = append(out, d)
 		}
 	}

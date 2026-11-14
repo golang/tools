@@ -37,8 +37,8 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/flow"
-	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -129,11 +129,11 @@ func run(pass *analysis.Pass) (any, error) {
 
 func run1(pass *analysis.Pass, callSyntax func(call *ssa.Call) *ast.CallExpr, fn *ssa.Function) {
 	// Find SSA instruction of each yield call.
-	ssaYieldCalls := make(map[*ssa.Call]bool)
+	ssaYieldCalls := make(set.Set[*ssa.Call])
 	for _, b := range fn.Blocks {
 		for _, instr := range b.Instrs {
 			if call, ok := instr.(*ssa.Call); ok && callSyntax(call) != nil {
-				ssaYieldCalls[call] = true
+				ssaYieldCalls.Insert(call)
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func run1(pass *analysis.Pass, callSyntax func(call *ssa.Call) *ast.CallExpr, fn
 	}
 	isYieldCall := func(v ssa.Value) bool {
 		call, ok := v.(*ssa.Call)
-		return ok && ssaYieldCalls[call]
+		return ok && ssaYieldCalls.Contains(call)
 	}
 
 	numb := make(numbering)
@@ -226,7 +226,7 @@ func run1(pass *analysis.Pass, callSyntax func(call *ssa.Call) *ast.CallExpr, fn
 
 	// Report a diagnostic for each problematic 'first' call.
 	for _, p := range problems {
-		if !moremaps.Delete(ssaYieldCalls, p.first) {
+		if !ssaYieldCalls.Delete(p.first) {
 			continue // already reported
 		}
 

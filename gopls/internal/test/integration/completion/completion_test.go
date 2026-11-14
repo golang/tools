@@ -21,6 +21,7 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -811,9 +812,9 @@ func _() {
 	WithOptions(Settings{
 		"completionBudget": "1ns", // must be non-zero as 0 => infinity
 	}).Run(t, src, func(t *testing.T, env *Env) {
-		wantFields := make(map[string]bool)
+		wantFields := make(set.Set[string])
 		for c := 'a'; c <= 'z'; c++ {
-			wantFields[string(c)] = true
+			wantFields.Insert(string(c))
 		}
 
 		env.OpenFile("p/p.go")
@@ -821,10 +822,10 @@ func _() {
 		env.EditBuffer("p/p.go", fake.NewEdit(0, 0, 0, 0, fmt.Sprintf("// current time: %v\n", time.Now())))
 		loc := env.RegexpSearch("p/p.go", `s\.()`)
 		completions := env.Completion(loc)
-		gotFields := make(map[string]bool)
+		gotFields := make(set.Set[string])
 		for _, item := range completions.Items {
 			if item.Kind == protocol.FieldCompletion {
-				gotFields[item.Label] = true
+				gotFields.Insert(item.Label)
 			}
 		}
 

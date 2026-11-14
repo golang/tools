@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -99,7 +100,7 @@ func suggestedFixTypeSwitch(f *ast.File, stmt *ast.TypeSwitchStmt, pkg *types.Pa
 		}
 
 		if key.named != nil {
-			if existingCases[key] {
+			if existingCases.Contains(key) {
 				continue
 			}
 
@@ -171,7 +172,7 @@ func suggestedFixSwitch(f *ast.File, stmt *ast.SwitchStmt, pkg *types.Package, i
 		if c, ok := obj.(*types.Const); ok &&
 			(obj.Pkg() == pkg || obj.Exported()) && // accessible
 			types.Identical(obj.Type(), namedType.Obj().Type()) &&
-			!existingCases[c] {
+			!existingCases.Contains(c) {
 
 			if buf.Len() > 0 {
 				buf.WriteString("\t")
@@ -276,8 +277,8 @@ func hasDefaultCase(body *ast.BlockStmt) bool {
 	return false
 }
 
-func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
-	out := map[*types.Const]bool{}
+func caseConsts(body *ast.BlockStmt, info *types.Info) set.Set[*types.Const] {
+	out := make(set.Set[*types.Const])
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
 			if info.Types[e].Value == nil {
@@ -290,7 +291,7 @@ func caseConsts(body *ast.BlockStmt, info *types.Info) map[*types.Const]bool {
 
 			if e, ok := e.(*ast.Ident); ok {
 				if c, ok := info.Uses[e].(*types.Const); ok {
-					out[c] = true
+					out.Insert(c)
 				}
 			}
 		}
@@ -304,8 +305,8 @@ type caseType struct {
 	ptr   bool
 }
 
-func caseTypes(body *ast.BlockStmt, info *types.Info) map[caseType]bool {
-	out := map[caseType]bool{}
+func caseTypes(body *ast.BlockStmt, info *types.Info) set.Set[caseType] {
+	out := make(set.Set[caseType])
 	for _, stmt := range body.List {
 		for _, e := range stmt.(*ast.CaseClause).List {
 			if tv, ok := info.Types[e]; ok && tv.IsType() {
@@ -317,7 +318,7 @@ func caseTypes(body *ast.BlockStmt, info *types.Info) map[caseType]bool {
 				}
 
 				if named, ok := t.(*types.Named); ok {
-					out[caseType{named, ptr}] = true
+					out.Insert(caseType{named, ptr})
 				}
 			}
 		}

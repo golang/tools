@@ -45,6 +45,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/moremaps"
@@ -1118,12 +1119,11 @@ func AnalyzerRunTimes() []LabelDuration {
 // requiredAnalyzers returns the transitive closure of required analyzers in preorder.
 func requiredAnalyzers(analyzers []*analysis.Analyzer) []*analysis.Analyzer {
 	var result []*analysis.Analyzer
-	seen := make(map[*analysis.Analyzer]bool)
+	seen := make(set.Set[*analysis.Analyzer])
 	var visitAll func([]*analysis.Analyzer)
 	visitAll = func(analyzers []*analysis.Analyzer) {
 		for _, a := range analyzers {
-			if !seen[a] {
-				seen[a] = true
+			if seen.Insert(a) {
 				result = append(result, a)
 				visitAll(a.Requires)
 			}

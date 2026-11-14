@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/moremaps"
@@ -1709,7 +1710,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 
 	// Track URIs with parse errors so that we can suppress type errors for these
 	// files.
-	unparsable := map[protocol.DocumentURI]bool{}
+	unparsable := make(set.Set[protocol.DocumentURI])
 	for _, e := range pkg.parseErrors {
 		diags, err := parseErrorDiagnostics(pkg, e)
 		if err != nil {
@@ -1717,7 +1718,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 			continue
 		}
 		for _, diag := range diags {
-			unparsable[diag.URI] = true
+			unparsable.Insert(diag.URI)
 			pkg.diagnostics = append(pkg.diagnostics, diag)
 		}
 	}
@@ -1727,7 +1728,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 		// If the file didn't parse cleanly, it is highly likely that type
 		// checking errors will be confusing or redundant. But otherwise, type
 		// checking usually provides a good enough signal to include.
-		if !unparsable[diag.URI] {
+		if !unparsable.Contains(diag.URI) {
 			pkg.diagnostics = append(pkg.diagnostics, diag)
 		}
 	}

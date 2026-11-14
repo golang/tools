@@ -74,6 +74,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -86,7 +87,7 @@ import (
 // syntax package.
 type renamer struct {
 	pkg                *cache.Package        // the syntax package in which the renaming is applied
-	objsToUpdate       map[types.Object]bool // records progress of calls to check
+	objsToUpdate       set.Set[types.Object] // records progress of calls to check
 	conflicts          []string
 	from, to           string
 	satisfyConstraints map[satisfy.Constraint]bool
@@ -255,10 +256,10 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 	ftype = astutil.CloneNode(ftype)
 
 	// First, collect existing names.
-	scope := make(map[string]bool)
+	scope := make(set.Set[string])
 	for name := range astutil.FlatFields(ftype.Params) {
 		if name != nil {
-			scope[name.Name] = true
+			scope.Insert(name.Name)
 		}
 	}
 	blanks := 0
@@ -271,7 +272,7 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 			for {
 				newName := fmt.Sprintf("_%d", blanks)
 				blanks++
-				if !scope[newName] {
+				if !scope.Contains(newName) {
 					name.Name = newName
 					break
 				}
@@ -884,7 +885,7 @@ func renameExported(pkgs []*cache.Package, declPkgPath PackagePath, declObjPath 
 	// Or we could decide that the logic below is fast enough not
 	// to need parallelism. In small measurements so far the
 	// type-checking step is about 95% and the renaming only 5%.
-	targets := map[target]bool{{declPkgPath, declObjPath}: true}
+	targets := set.Of(target{declPkgPath, declObjPath})
 
 	// Apply the renaming operation to each package.
 	allEdits := make(map[protocol.DocumentURI][]diff.Edit)
@@ -935,7 +936,7 @@ func renameExported(pkgs []*cache.Package, declPkgPath PackagePath, declObjPath 
 				continue // not exported
 			}
 			target := target{PackagePath(obj.Pkg().Path()), objpath}
-			targets[target] = true
+			targets.Insert(target)
 
 			// TODO(adonovan): methods requires dynamic
 			// programming of the product targets x
@@ -1333,10 +1334,10 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 // consequence of the requested renamings.
 //
 // It returns an error if the renaming would cause a conflict.
-func renameObjects(newName string, pkg *cache.Package, targets ...types.Object) (map[protocol.DocumentURI][]diff.Edit, map[types.Object]bool, error) {
+func renameObjects(newName string, pkg *cache.Package, targets ...types.Object) (map[protocol.DocumentURI][]diff.Edit, set.Set[types.Object], error) {
 	r := renamer{
 		pkg:          pkg,
-		objsToUpdate: make(map[types.Object]bool),
+		objsToUpdate: make(set.Set[types.Object]),
 		from:         targets[0].Name(),
 		to:           newName,
 	}

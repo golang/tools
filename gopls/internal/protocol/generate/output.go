@@ -329,7 +329,7 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 	for _, p := range props {
 		tp := goplsName(p.Type)
 		if newNm, ok := renameProp[prop{name, p.Name}]; ok {
-			usedRenameProp[prop{name, p.Name}] = true
+			usedRenameProp.Insert(prop{name, p.Name})
 			if tp == newNm {
 				log.Printf("renameProp useless {%q, %q} for %s", name, p.Name, tp)
 			}
@@ -433,7 +433,7 @@ func genConsts(model *Model) {
 			nm := goName(v.Name)
 			more, ok := disambiguate[e.Name]
 			if ok {
-				usedDisambiguate[e.Name] = true
+				usedDisambiguate.Insert(e.Name)
 				nm = more.prefix + nm + more.suffix
 				nm = goName(nm) // stringType
 			}
@@ -498,7 +498,7 @@ func goplsName(t *Type) string {
 	nm := typeNames[t]
 	// translate systematic name to gopls name
 	if newNm, ok := goplsType[nm]; ok {
-		usedGoplsType[nm] = true
+		usedGoplsType.Insert(nm)
 		nm = newNm
 	}
 	return nm

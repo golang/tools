@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -214,13 +215,13 @@ func lookupVulns(vulns *vulncheck.Result, modpath, version string) (affecting, n
 	// The current wording of hover message doesn't clearly
 	// present this case well IMO, so let's skip reporting nonaffecting.
 	if len(affecting) > 0 && len(nonaffecting) > 0 {
-		affectingSet := map[string]bool{}
+		affectingSet := make(set.Set[string])
 		for _, f := range affecting {
-			affectingSet[f.OSV] = true
+			affectingSet.Insert(f.OSV)
 		}
 		n := 0
 		for _, v := range nonaffecting {
-			if !affectingSet[v.OSV] {
+			if !affectingSet.Contains(v.OSV) {
 				nonaffecting[n] = v
 				n++
 			}
@@ -302,11 +303,10 @@ func formatVulnerabilities(affecting, nonaffecting []*govulncheck.Finding, osvs 
 
 func vulnerablePkgsInfo(findings []*govulncheck.Finding, useMarkdown bool) string {
 	var b strings.Builder
-	seen := map[string]bool{}
+	seen := make(set.Set[string])
 	for _, f := range findings {
 		p := f.Trace[0].Package
-		if !seen[p] {
-			seen[p] = true
+		if seen.Insert(p) {
 			if useMarkdown {
 				b.WriteString("\n  * `")
 			} else {

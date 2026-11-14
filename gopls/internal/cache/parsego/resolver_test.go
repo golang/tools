@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -76,12 +77,7 @@ func TestGoplsSourceDoesNotUseObjectResolution(t *testing.T) {
 	UsesImport := astutilPkg.Types.Scope().Lookup("UsesImport")
 	assert(UsesImport != nil, "nil UsesImport")
 
-	disallowed := map[types.Object]bool{
-		Scope:      true,
-		Unresolved: true,
-		Obj:        true,
-		UsesImport: true,
-	}
+	disallowed := set.Of(Scope, Unresolved, Obj, UsesImport)
 
 	// exceptions catalogues packages or declarations that are allowed to use
 	// forbidden symbols, with a rationale.
@@ -120,7 +116,7 @@ func TestGoplsSourceDoesNotUseObjectResolution(t *testing.T) {
 
 	searchUses:
 		for ident, obj := range pkg.TypesInfo.Uses {
-			if disallowed[obj] {
+			if disallowed.Contains(obj) {
 				decl := findEnclosingFuncDecl(ident, pkg)
 				if decl == "" {
 					posn := safetoken.Position(pkg.Fset.File(ident.Pos()), ident.Pos())

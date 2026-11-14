@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 )
 
@@ -412,13 +413,12 @@ func (h *handler) fileOf(ctx context.Context, filePath string) (file.Handle, *ca
 func checkForFileChanges(ctx context.Context, snapshot *cache.Snapshot, id metadata.PackageID) ([]protocol.FileEvent, error) {
 	var events []protocol.FileEvent
 
-	seen := make(map[metadata.PackageID]struct{})
+	seen := make(set.Set[metadata.PackageID])
 	var checkPkg func(id metadata.PackageID) error
 	checkPkg = func(id metadata.PackageID) error {
-		if _, ok := seen[id]; ok {
+		if !seen.Insert(id) {
 			return nil
 		}
-		seen[id] = struct{}{}
 
 		mp := snapshot.Metadata(id)
 		for _, uri := range mp.CompiledGoFiles {

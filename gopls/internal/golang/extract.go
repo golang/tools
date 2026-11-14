@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -717,7 +718,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	// Avoid duplicates while traversing vars and uninitialized.
 	seenVars := make(map[types.Object]ast.Expr)
-	seenUninitialized := make(map[types.Object]struct{})
+	seenUninitialized := make(set.Set[types.Object])
 
 	// Some variables on the left-hand side of our assignment statement may be free. If our
 	// selection begins in the same scope in which the free variable is defined, we can
@@ -1838,13 +1839,12 @@ func generateFuncCall(hasNonNestedReturn, hasReturnVals bool, params, returns []
 // var x int
 // var y string
 // x, y, z = fn()
-func initializeVars(uninitialized []types.Object, retVars []*returnVariable, seenUninitialized map[types.Object]struct{}, seenVars map[types.Object]ast.Expr) []ast.Stmt {
+func initializeVars(uninitialized []types.Object, retVars []*returnVariable, seenUninitialized set.Set[types.Object], seenVars map[types.Object]ast.Expr) []ast.Stmt {
 	var declarations []ast.Stmt
 	for _, obj := range uninitialized {
-		if _, ok := seenUninitialized[obj]; ok {
+		if !seenUninitialized.Insert(obj) {
 			continue
 		}
-		seenUninitialized[obj] = struct{}{}
 		valSpec := &ast.ValueSpec{
 			Names: []*ast.Ident{ast.NewIdent(obj.Name())},
 			Type:  seenVars[obj],

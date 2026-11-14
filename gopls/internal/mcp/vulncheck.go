@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 type vulncheckParams struct {
@@ -56,17 +57,17 @@ func (h *handler) vulncheckHandler(ctx context.Context, req *mcp.CallToolRequest
 		return nil, nil, fmt.Errorf("running govulncheck failed: %v\nLogs:\n%s", err, logBuf.String())
 	}
 
-	groupedPkgs := make(map[string]map[string]struct{})
+	groupedPkgs := make(map[string]set.Set[string])
 	for _, finding := range result.Findings {
 		if osv := result.Entries[finding.OSV]; osv != nil {
 			if _, ok := groupedPkgs[osv.ID]; !ok {
-				groupedPkgs[osv.ID] = make(map[string]struct{})
+				groupedPkgs[osv.ID] = make(set.Set[string])
 			}
 			pkg := finding.Trace[0].Package
 			if pkg == "" {
 				pkg = "Go standard library"
 			}
-			groupedPkgs[osv.ID][pkg] = struct{}{}
+			groupedPkgs[osv.ID].Insert(pkg)
 		}
 	}
 

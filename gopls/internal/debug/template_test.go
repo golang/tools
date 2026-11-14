@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -80,7 +81,7 @@ func TestTemplates(t *testing.T) {
 	if len(renders) == 0 {
 		t.Fatalf("found no calls to render")
 	}
-	var found = make(map[string]bool)
+	var found = make(set.Set[string])
 	for _, r := range renders {
 		if len(r.Args) != 2 {
 			// template, func
@@ -93,7 +94,7 @@ func TestTemplates(t *testing.T) {
 		if id, ok := r.Args[0].(*ast.Ident); !ok {
 			t.Errorf("expected *ast.Ident, got %T", r.Args[0])
 		} else {
-			found[id.Name] = true
+			found.Insert(id.Name)
 		}
 	}
 	// make sure found and templates have the same templates
@@ -103,7 +104,7 @@ func TestTemplates(t *testing.T) {
 		}
 	}
 	for k := range templates {
-		if _, ok := found[k]; !ok {
+		if !found.Contains(k) {
 			t.Errorf("test has template %s, code does not", k)
 		}
 	}

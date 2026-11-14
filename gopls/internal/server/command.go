@@ -42,6 +42,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -147,7 +148,7 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 	// [Session.SnapshotOf] doesn't work on directories. Thus we check every
 	// view.
 	var result command.ModulesResult
-	seen := map[protocol.DocumentURI]bool{}
+	seen := make(set.Set[protocol.DocumentURI])
 	for _, v := range h.s.session.Views() {
 		s, release, err := v.Snapshot()
 		if err != nil {
@@ -161,10 +162,9 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 			}
 
 			// Deduplicate
-			if seen[modFile] {
+			if !seen.Insert(modFile) {
 				continue
 			}
-			seen[modFile] = true
 
 			fh, err := s.ReadFile(ctx, modFile)
 			if err != nil {
@@ -432,7 +432,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	if cfg.progress != "" {
 		header := ""
-		if _, ok := c.s.options.SupportedWorkDoneProgressFormats[cfg.progressStyle]; ok && cfg.progressStyle != "" {
+		if c.s.options.SupportedWorkDoneProgressFormats.Contains(cfg.progressStyle) && cfg.progressStyle != "" {
 			header = fmt.Sprintf("style: %s\n\n", cfg.progressStyle)
 		}
 		deps.work = c.s.progress.Start(ctx, cfg.progress, header+"Running...", c.params.WorkDoneToken, cancel)
@@ -1313,10 +1313,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 		commandResult.Result = result
 		commandResult.Token = deps.work.Token()
 
-		affecting := make(map[string]bool, len(result.Entries))
+		affecting := make(set.Set[string], len(result.Entries))
 		for _, finding := range result.Findings {
 			if len(finding.Trace) > 1 { // at least 2 frames if callstack exists (vulnerability, entry)
-				affecting[finding.OSV] = true
+				affecting.Insert(finding.OSV)
 			}
 		}
 		if len(affecting) == 0 {
@@ -1381,10 +1381,10 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		affecting := make(map[string]bool, len(result.Entries))
+		affecting := make(set.Set[string], len(result.Entries))
 		for _, finding := range result.Findings {
 			if len(finding.Trace) > 1 { // at least 2 frames if callstack exists (vulnerability, entry)
-				affecting[finding.OSV] = true
+				affecting.Insert(finding.OSV)
 			}
 		}
 		if len(affecting) == 0 {
@@ -1512,7 +1512,7 @@ func collectViewStats(ctx context.Context, view *cache.View) (command.ViewStats,
 func collectPackageStats(mps []*metadata.Package) command.PackageStats {
 	var stats command.PackageStats
 	stats.Packages = len(mps)
-	modules := make(map[string]bool)
+	modules := make(set.Set[string])
 
 	for _, mp := range mps {
 		n := len(mp.CompiledGoFiles)
@@ -1521,7 +1521,7 @@ func collectPackageStats(mps []*metadata.Package) command.PackageStats {
 			stats.LargestPackage = n
 		}
 		if mp.Module != nil {
-			modules[mp.Module.Path] = true
+			modules.Insert(mp.Module.Path)
 		}
 	}
 	stats.Modules = len(modules)
@@ -1745,18 +1745,17 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 		ctx, done := event.Start(ctx, "commandHandler.DiagnoseFiles")
 		defer done()
 
-		snapshots := make(map[*cache.Snapshot]bool)
+		snapshots := make(set.Set[*cache.Snapshot])
 		for _, uri := range args.Files {
 			fh, snapshot, release, err := c.s.session.FileOf(ctx, uri)
 			if err != nil {
 				return err
 			}
-			if snapshots[snapshot] || snapshot.FileKind(fh) != file.Go {
+			if snapshot.FileKind(fh) != file.Go || !snapshots.Insert(snapshot) {
 				release()
 				continue
 			}
 			defer release()
-			snapshots[snapshot] = true
 		}
 
 		var wg sync.WaitGroup

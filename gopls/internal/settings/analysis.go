@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/writestring"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 	"honnef.co/go/tools/analysis/lint"
 )
 
@@ -128,7 +129,7 @@ func (a *Analyzer) Tags() []protocol.DiagnosticTag { return a.tags }
 func (a *Analyzer) String() string { return a.analyzer.String() }
 
 func initAnalyzers() (res []*Analyzer) {
-	seen := make(map[*analysis.Analyzer]bool)
+	seen := make(set.Set[*analysis.Analyzer])
 
 	// Start with the traditional vet and fix suites.
 	for _, suite := range []struct {
@@ -141,8 +142,7 @@ func initAnalyzers() (res []*Analyzer) {
 	} {
 		for _, a := range suite.analyzers {
 			// De-duplicate, since the suites overlap.
-			if !seen[a] {
-				seen[a] = true
+			if seen.Insert(a) {
 				res = append(res, &Analyzer{analyzer: a, severity: suite.severity})
 			}
 		}
@@ -222,10 +222,9 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: noresultvalues.Analyzer},
 		{analyzer: unusedvariable.Analyzer},
 	} {
-		if seen[a.analyzer] {
+		if !seen.Insert(a.analyzer) {
 			log.Fatalf("duplicate analyzer: %q", a.analyzer.Name)
 		}
-		seen[a.analyzer] = true
 		res = append(res, a)
 	}
 

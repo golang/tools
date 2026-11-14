@@ -43,6 +43,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
@@ -580,15 +581,15 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		// For an interface type, explicit methods will have
 		// already been displayed when the node was formatted
 		// above. Don't list these again.
-		var skip map[string]bool
+		var skip set.Set[string]
 		if iface, ok := spec1.Type.(*ast.InterfaceType); ok {
 			if iface.Methods.List != nil {
 				for _, m := range iface.Methods.List {
 					if len(m.Names) == 1 {
 						if skip == nil {
-							skip = make(map[string]bool)
+							skip = make(set.Set[string])
 						}
-						skip[m.Names[0].Name] = true
+						skip.Insert(m.Names[0].Name)
 					}
 				}
 			}
@@ -603,7 +604,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 			if !accessibleTo(m.Obj(), pkg.Types()) {
 				continue // inaccessible
 			}
-			if skip[m.Obj().Name()] {
+			if skip.Contains(m.Obj().Name()) {
 				continue // redundant with format.Node above
 			}
 			if b.Len() > 0 {

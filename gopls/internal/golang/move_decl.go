@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/moreiters"
@@ -373,12 +374,12 @@ func moveDeclTarget(info *types.Info, curSel inspector.Cursor) (inspector.Cursor
 // declGraph records, for each top-level symbol of a package, the other
 // top-level symbols that must move along with it.
 type declGraph struct {
-	// If explicit[u][v] is true, u refers to v by name in its declaration.
-	explicit map[types.Object]map[types.Object]bool
+	// If explicit[u] contains v, u refers to v by name in its declaration.
+	explicit map[types.Object]set.Set[types.Object]
 
-	// If implicit[u][v] is true, u does not refer to v, but v must move
+	// If implicit[u] contains v, u does not refer to v, but v must move
 	// whenever u moves.
-	implicit map[types.Object]map[types.Object]bool
+	implicit map[types.Object]set.Set[types.Object]
 }
 
 type graphBuilder struct {
@@ -447,7 +448,7 @@ func (gb *graphBuilder) addExplicit(from, to types.Object) {
 	}
 	// Because we do a pass to initialize an edge set for every symbol,
 	// explicit[from] is guaranteed to be non-nil.
-	explicit[from][to] = true
+	explicit[from].Insert(to)
 }
 
 // addImplicit records that "to" must move whenever "from" moves.
@@ -457,9 +458,9 @@ func (gb *graphBuilder) addImplicit(from, to types.Object) {
 	}
 	implicit := gb.graph.implicit
 	if implicit[from] == nil {
-		implicit[from] = make(map[types.Object]bool)
+		implicit[from] = make(set.Set[types.Object])
 	}
-	implicit[from][to] = true
+	implicit[from].Insert(to)
 }
 
 // buildSymbolRefGraph computes the declaration graph for the src package.
@@ -470,8 +471,8 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 		pkg:  src.Types(),
 		info: src.TypesInfo(),
 		graph: &declGraph{
-			explicit: make(map[types.Object]map[types.Object]bool),
-			implicit: make(map[types.Object]map[types.Object]bool),
+			explicit: make(map[types.Object]set.Set[types.Object]),
+			implicit: make(map[types.Object]set.Set[types.Object]),
 		},
 	}
 	explicit := gb.graph.explicit
@@ -498,7 +499,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 				default:
 					return true
 				}
-				explicit[obj] = make(map[types.Object]bool)
+				explicit[obj] = make(set.Set[types.Object])
 				// Link owner and member in both directions, so that one never
 				// moves without the other. Code that reaches a member already
 				// reaches its owner through some other edge (it must obtain a
@@ -518,7 +519,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
 				if fn, ok := gb.info.Defs[decl.Name].(*types.Func); ok {
-					explicit[fn] = make(map[types.Object]bool)
+					explicit[fn] = make(set.Set[types.Object])
 					addMembers(fn, decl)
 				}
 			case *ast.GenDecl:
@@ -527,7 +528,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 					for _, spec := range decl.Specs {
 						for _, id := range spec.(*ast.ValueSpec).Names {
 							if obj := gb.info.Defs[id]; obj != nil {
-								explicit[obj] = make(map[types.Object]bool)
+								explicit[obj] = make(set.Set[types.Object])
 								addMembers(obj, spec)
 							}
 						}
@@ -535,7 +536,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 				case token.TYPE:
 					for _, spec := range decl.Specs {
 						if obj := gb.info.Defs[spec.(*ast.TypeSpec).Name]; obj != nil {
-							explicit[obj] = make(map[types.Object]bool)
+							explicit[obj] = make(set.Set[types.Object])
 							addMembers(obj, spec)
 						}
 					}
@@ -663,8 +664,8 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // so the srcPkg == destPkg check below treats them as different packages.
 // (Currently, dialog_move_decl_tests.txt lacks complete tests for moves
 // involving internal test files).
-func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetObj types.Object) map[types.Object]bool {
-	visited := map[types.Object]bool{targetObj: true}
+func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetObj types.Object) set.Set[types.Object] {
+	visited := set.Of(targetObj)
 	if srcPkg == destPkg {
 		// If the move is within the same package, we only need to move the
 		// declaration itself.
@@ -673,11 +674,10 @@ func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetOb
 
 	queue := []types.Object{targetObj}
 	enqueue := func(obj types.Object) {
-		if visited[obj] {
+		if !visited.Insert(obj) {
 			return // visited
 		}
 
-		visited[obj] = true
 		queue = append(queue, obj)
 	}
 	for len(queue) > 0 {
@@ -711,18 +711,17 @@ func pkgTransitivelyImports(g *metadata.Graph, fromPkg, targetPkg *metadata.Pack
 // remainingReferencesMoving reports whether any decl in the graph that is not in the
 // moving set depends on any object in the moving set. It also reports a list of the names of unexported
 // objects in the moving set that are referenced by an object in the remaining set.
-func remainingReferencesMoving(graph *declGraph, moving map[types.Object]bool) (names []string, refExisting bool) {
+func remainingReferencesMoving(graph *declGraph, moving set.Set[types.Object]) (names []string, refExisting bool) {
 	var unexported []types.Object
-	seen := make(map[types.Object]bool)
+	seen := make(set.Set[types.Object])
 	// Only explicit edges can cross the boundary: the moving set is closed
 	// under implicit edges, so a coupling class always moves as a whole.
 	for obj, deps := range graph.explicit {
-		if !moving[obj] {
+		if !moving.Contains(obj) {
 			for n := range deps {
-				if moving[n] {
+				if moving.Contains(n) {
 					refExisting = true
-					if !n.Exported() && !seen[n] {
-						seen[n] = true
+					if !n.Exported() && seen.Insert(n) {
 						unexported = append(unexported, n)
 					}
 				}
@@ -747,7 +746,7 @@ func remainingReferencesMoving(graph *declGraph, moving map[types.Object]bool) (
 //   - import cycles
 //   - illegal imports (i.e. internal imports)
 //   - shadowing and name conflicts in the destination package
-func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool) error {
+func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, destURI protocol.DocumentURI, graph *declGraph, moving set.Set[types.Object]) error {
 	var (
 		srcMeta    = srcPkg.Metadata()
 		destPkg    = dest.pkg // nil if dest is a new package
@@ -893,14 +892,14 @@ func ranges(movingRanges []movingRange) []astutil.Range {
 // extractMovingDeclarations returns the declarations to move, in file order.
 // If all specs of a GenDecl are moving, its range covers the whole GenDecl;
 // otherwise each moving spec gets its own range.
-func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bool) ([]movingRange, error) {
+func extractMovingDeclarations(srcPkg *cache.Package, moving set.Set[types.Object]) ([]movingRange, error) {
 	var (
 		info         = srcPkg.TypesInfo()
 		movingRanges []movingRange
 	)
 	isMoving := func(id *ast.Ident) bool {
 		obj := info.Defs[id]
-		return obj != nil && moving[obj]
+		return obj != nil && moving.Contains(obj)
 	}
 	for _, pgf := range srcPkg.CompiledGoFiles() {
 		addMovingRange := func(n ast.Node, tok token.Token) {
@@ -1012,7 +1011,7 @@ func updateSrcDestImports(srcPkg *cache.Package, dest moveDest, destPGF *parsego
 	destURI := destFH.URI()
 	var adds []*ast.ImportSpec
 	type importKey struct{ name, path string }
-	seen := make(map[importKey]bool) // imports already in adds
+	seen := make(set.Set[importKey]) // imports already in adds
 	for _, curPGF := range srcPkg.CompiledGoFiles() {
 		var curFileRanges []astutil.Range
 		for _, r := range movingRanges {
@@ -1037,8 +1036,7 @@ func updateSrcDestImports(srcPkg *cache.Package, dest moveDest, destPGF *parsego
 			if spec.Name != nil {
 				key.name = spec.Name.Name
 			}
-			if !seen[key] {
-				seen[key] = true
+			if seen.Insert(key) {
 				// Do not add a self-import of destPkg to the destination file.
 				// (findImportChanges may return a dest import if the dest package is referenced
 				// as part of some moving declaration.)
@@ -1108,7 +1106,7 @@ func addImport(info *types.Info, pgf *parsego.File, preferredName, pkgPath, memb
 // It also adds imports for the dest package in files that reference a moving
 // decl and removes imports for the source package in files whose only
 // reference to the source package is a reference to a moving decl.
-func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, srcPGF *parsego.File, moving map[types.Object]bool, movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
+func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, srcPGF *parsego.File, moving set.Set[types.Object], movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
 ) error {
 	var (
 		srcPkgPath  = string(srcPkg.Metadata().PkgPath)
@@ -1120,11 +1118,11 @@ func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *c
 		return nil
 	}
 
-	movingNames := make(map[string]bool)
+	movingNames := make(set.Set[string])
 	for obj := range moving {
 		// Only rewrite references to package-level symbols (i.e. not methods).
 		if typesinternal.IsPackageLevel(obj) {
-			movingNames[obj.Name()] = true
+			movingNames.Insert(obj.Name())
 		}
 	}
 	if len(movingNames) == 0 {
@@ -1141,7 +1139,7 @@ func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *c
 			obj.Pkg() != nil &&
 			obj.Pkg().Path() == srcPkgPath &&
 			typesinternal.IsPackageLevel(obj) &&
-			movingNames[obj.Name()]
+			movingNames.Contains(obj.Name())
 	}
 
 	// Rewrite references to objects in the moving set that are located
@@ -1160,7 +1158,7 @@ func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *c
 	// Track seen files because pkgs may include both an ordinary package (e.g. "p")
 	// and its internal test variant (e.g. "p [p.test]"), which have the same non-test
 	// CompiledGoFiles. Processing a file more than once would produce duplicate edits.
-	seenFiles := make(map[protocol.DocumentURI]bool)
+	seenFiles := make(set.Set[protocol.DocumentURI])
 	for _, curPkg := range pkgs {
 		var (
 			curInfo   = curPkg.TypesInfo()
@@ -1170,10 +1168,9 @@ func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *c
 		)
 
 		for _, curPgf := range curPkg.CompiledGoFiles() {
-			if seenFiles[curPgf.URI] {
+			if !seenFiles.Insert(curPgf.URI) {
 				continue
 			}
-			seenFiles[curPgf.URI] = true
 
 			var fileEdits []protocol.TextEdit
 			if isSrcPkg {

@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/vulncheck"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
@@ -191,7 +192,7 @@ type viewDefinition struct {
 	// "includeReplaceInWorkspace" is set).
 	//
 	// TODO(rfindley): should we just run `go list -m` to compute this set?
-	workspaceModFiles    map[protocol.DocumentURI]struct{}
+	workspaceModFiles    set.Set[protocol.DocumentURI]
 	workspaceModFilesErr error // error encountered computing workspaceModFiles
 
 	// envOverlay holds additional environment to apply to this viewDefinition.
@@ -268,7 +269,7 @@ func viewDefinitionsEqual(x, y *viewDefinition) bool {
 		if x.workspaceModFilesErr.Error() != y.workspaceModFilesErr.Error() {
 			return false
 		}
-	} else if !moremaps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
+	} else if !x.workspaceModFiles.Equal(y.workspaceModFiles) {
 		return false
 	}
 	if len(x.envOverlay) != len(y.envOverlay) {
@@ -929,8 +930,8 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 
 	// gomodWorkspace is a helper to compute the correct set of workspace
 	// modfiles for a go.mod file, based on folder options.
-	gomodWorkspace := func() map[protocol.DocumentURI]unit {
-		modFiles := map[protocol.DocumentURI]struct{}{def.gomod: {}}
+	gomodWorkspace := func() set.Set[protocol.DocumentURI] {
+		modFiles := set.Of(def.gomod)
 		if folder.Options.IncludeReplaceInWorkspace {
 			includingReplace, err := goModModules(ctx, def.gomod, fs)
 			if err == nil {
@@ -960,7 +961,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 		// If forURI is in a module but that module is not
 		// included in the go.work file, use a go.mod view with GOWORK=off.
 		if forFile != nil && def.workspaceModFilesErr == nil && def.gomod != "" {
-			if _, ok := def.workspaceModFiles[def.gomod]; !ok {
+			if !def.workspaceModFiles.Contains(def.gomod) {
 				def.typ = GoModView
 				def.root = def.gomod.Dir()
 				def.workspaceModFiles = gomodWorkspace()

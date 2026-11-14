@@ -41,6 +41,7 @@ import (
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/lru"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // Start causes the filecache to initialize and start garbage collection.
@@ -551,7 +552,7 @@ func gc(goplsDir string) {
 	const debug = false
 
 	// Names of all directories found in first pass; nil thereafter.
-	dirs := make(map[string]bool)
+	dirs := make(set.Set[string])
 
 	for {
 		// Wait unconditionally for the minimum period.
@@ -575,7 +576,7 @@ func gc(goplsDir string) {
 			if stat.IsDir() {
 				// Collect (potentially empty) directories.
 				if dirs != nil {
-					dirs[path] = true
+					dirs.Insert(path)
 				}
 			} else {
 				// Unconditionally delete files we haven't used in ages.

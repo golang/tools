@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moremaps"
@@ -525,7 +526,7 @@ func (s *server) updateWatchedDirectories(ctx context.Context) error {
 // updateServerSideWatcher synchronizes the file watcher's lifecycle with the
 // current session settings (creating, replacing, or closing it as needed)
 // and updates the directories it monitors based on the provided patterns.
-func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
+func (s *server) updateServerSideWatcher(ctx context.Context, patterns set.Set[protocol.RelativePattern]) error {
 	wantMode := s.Options().FileWatcher
 	s.fileWatcherMu.Lock()
 	defer s.fileWatcherMu.Unlock()
@@ -564,10 +565,10 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 	}
 
 	// Inv: s.fileWatcher.Mode() == want
-	dirs := make(map[string]struct{})
+	dirs := make(set.Set[string])
 	for pattern := range patterns {
 		if pattern.BaseURI != "" {
-			dirs[pattern.BaseURI.Path()] = struct{}{}
+			dirs.Insert(pattern.BaseURI.Path())
 		}
 	}
 	for dir := range dirs {
@@ -586,7 +587,7 @@ func watchedFilesCapabilityID(id int) string {
 // registerWatchedDirectoriesLocked sends the workspace/didChangeWatchedFiles
 // registrations to the client and updates s.watchedDirectories.
 // The caller must not subsequently mutate patterns.
-func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
+func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns set.Set[protocol.RelativePattern]) error {
 	if !s.Options().DynamicWatchedFilesSupported {
 		return nil
 	}

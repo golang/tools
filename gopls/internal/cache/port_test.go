@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -79,7 +80,7 @@ func TestMatchingPortsStdlib(t *testing.T) {
 	_ = g.Wait() // can't fail
 }
 
-func matchingPreferredPorts(tb testing.TB, fh file.Handle, trimContent bool) map[port]unit {
+func matchingPreferredPorts(tb testing.TB, fh file.Handle, trimContent bool) set.Set[port] {
 	content, err := fh.Content()
 	if err != nil {
 		tb.Fatal(err)
@@ -88,10 +89,10 @@ func matchingPreferredPorts(tb testing.TB, fh file.Handle, trimContent bool) map
 		content = buildConstraintFile(fileKind(fh), content)
 	}
 	path := fh.URI().Path()
-	matching := make(map[port]unit)
+	matching := make(set.Set[port])
 	for _, port := range preferredPorts {
 		if port.matches(path, content) {
-			matching[port] = unit{}
+			matching.Insert(port)
 		}
 	}
 	return matching

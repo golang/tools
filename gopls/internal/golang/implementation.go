@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
@@ -832,7 +833,7 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 func typeParams(t types.Type) iter.Seq[*types.TypeParam] {
 
 	return func(yield func(*types.TypeParam) bool) {
-		seen := map[*types.TypeParam]bool{} // yield each type param only once
+		seen := make(set.Set[*types.TypeParam]) // yield each type param only once
 
 		// tps(t) yields each TypeParam in t and returns false to stop.
 		var tps func(types.Type) bool
@@ -841,10 +842,9 @@ func typeParams(t types.Type) iter.Seq[*types.TypeParam] {
 
 			switch t := t.(type) {
 			case *types.TypeParam:
-				if seen[t] {
+				if !seen.Insert(t) {
 					return true
 				}
-				seen[t] = true
 				return yield(t)
 
 			case *types.Basic:

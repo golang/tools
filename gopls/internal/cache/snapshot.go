@@ -41,6 +41,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/gocommand"
@@ -190,7 +191,7 @@ type Snapshot struct {
 
 	// compilerOptDetails is the set of directories whose packages
 	// and tests need compiler optimization details in the diagnostics.
-	compilerOptDetails map[protocol.DocumentURI]unit
+	compilerOptDetails set.Set[protocol.DocumentURI]
 
 	// Concurrent type checking:
 	// typeCheckMu guards the ongoing type checking batch, and reference count of
@@ -813,9 +814,9 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 
 // See Session.FileWatchingGlobPatterns for a description of gopls' file
 // watching heuristic.
-func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit {
+func (s *Snapshot) fileWatchingGlobPatterns() set.Set[protocol.RelativePattern] {
 	// Always watch files that may change the view definition.
-	patterns := make(map[protocol.RelativePattern]unit)
+	patterns := make(set.Set[protocol.RelativePattern])
 
 	// If GOWORK is outside the folder, ensure we are watching it.
 	if s.view.gowork != "" && !s.view.folder.Dir.Encloses(s.view.gowork) {
@@ -823,11 +824,11 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 			BaseURI: s.view.gowork.Dir(),
 			Pattern: path.Base(string(s.view.gowork)),
 		}
-		patterns[workPattern] = unit{}
+		patterns.Insert(workPattern)
 	}
 
 	for _, glob := range s.Options().WorkspaceFiles {
-		patterns[protocol.RelativePattern{Pattern: glob}] = unit{}
+		patterns.Insert(protocol.RelativePattern{Pattern: glob})
 	}
 
 	var extensions strings.Builder
@@ -843,7 +844,7 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 		if s.view.typ == GoWorkView {
 			workVendorDir := filepath.Join(s.view.gowork.DirPath(), "vendor")
 			workVendorURI := protocol.URIFromPath(workVendorDir)
-			patterns[protocol.RelativePattern{BaseURI: workVendorURI, Pattern: watchGoFiles}] = unit{}
+			patterns.Insert(protocol.RelativePattern{BaseURI: workVendorURI, Pattern: watchGoFiles})
 		}
 
 		// In module mode, watch directories containing active modules, and collect
@@ -859,12 +860,12 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 			//
 			// Note that glob patterns should use '/' on Windows:
 			// https://code.visualstudio.com/docs/editor/glob-patterns
-			patterns[protocol.RelativePattern{BaseURI: modFile.Dir(), Pattern: watchGoFiles}] = unit{}
+			patterns.Insert(protocol.RelativePattern{BaseURI: modFile.Dir(), Pattern: watchGoFiles})
 		}
 	} else {
 		// In non-module modes (GOPATH or AdHoc), we just watch the workspace root.
 		dirs = []string{s.view.root.Path()}
-		patterns[protocol.RelativePattern{Pattern: watchGoFiles}] = unit{}
+		patterns.Insert(protocol.RelativePattern{Pattern: watchGoFiles})
 	}
 
 	if s.watchSubdirs() {
@@ -893,14 +894,14 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 	return patterns
 }
 
-func (s *Snapshot) addKnownSubdirs(patterns map[protocol.RelativePattern]unit, wsDirs []string) {
+func (s *Snapshot) addKnownSubdirs(patterns set.Set[protocol.RelativePattern], wsDirs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for dir := range s.files.getDirs().All() {
 		for _, wsDir := range wsDirs {
 			if pathutil.InDir(wsDir, dir) {
-				patterns[protocol.RelativePattern{Pattern: filepath.ToSlash(dir)}] = unit{}
+				patterns.Insert(protocol.RelativePattern{Pattern: filepath.ToSlash(dir)})
 			}
 		}
 	}
@@ -1026,7 +1027,7 @@ func (s *Snapshot) GoModForFile(uri protocol.DocumentURI) protocol.DocumentURI {
 	return moduleForURI(s.view.workspaceModFiles, uri)
 }
 
-func moduleForURI(modFiles map[protocol.DocumentURI]struct{}, uri protocol.DocumentURI) protocol.DocumentURI {
+func moduleForURI(modFiles set.Set[protocol.DocumentURI], uri protocol.DocumentURI) protocol.DocumentURI {
 	var match protocol.DocumentURI
 	for modURI := range modFiles {
 		if !modURI.Dir().Encloses(uri) {
@@ -1227,17 +1228,16 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 	}
 
 	var scopes []loadScope
-	var seen map[PackagePath]bool
+	var seen set.Set[PackagePath]
 	s.mu.Lock()
 	for _, pkgPaths := range s.shouldLoad.All() {
 		for _, pkgPath := range pkgPaths {
 			if seen == nil {
-				seen = make(map[PackagePath]bool)
+				seen = make(set.Set[PackagePath])
 			}
-			if seen[pkgPath] {
+			if !seen.Insert(pkgPath) {
 				continue
 			}
-			seen[pkgPath] = true
 			scopes = append(scopes, packageLoadScope(pkgPath))
 		}
 	}
@@ -1311,17 +1311,17 @@ searchOverlays:
 		return nil, nil
 	}
 
-	loadedModFiles := make(map[protocol.DocumentURI]struct{}) // all mod files, including dependencies
-	ignoredFiles := make(map[protocol.DocumentURI]bool)       // files reported in packages.Package.IgnoredFiles
+	loadedModFiles := make(set.Set[protocol.DocumentURI]) // all mod files, including dependencies
+	ignoredFiles := make(set.Set[protocol.DocumentURI])   // files reported in packages.Package.IgnoredFiles
 
 	g := s.MetadataGraph()
 	for _, meta := range g.Packages {
 		if meta.Module != nil && meta.Module.GoMod != "" {
 			gomod := protocol.URIFromPath(meta.Module.GoMod)
-			loadedModFiles[gomod] = struct{}{}
+			loadedModFiles.Insert(gomod)
 		}
 		for _, ignored := range meta.IgnoredFiles {
-			ignoredFiles[ignored] = true
+			ignoredFiles.Insert(ignored)
 		}
 	}
 
@@ -1345,8 +1345,8 @@ searchOverlays:
 			// the file is outside of a workspace folder. The latter covers cases
 			// where the file is inside a workspace module, but perhaps no packages
 			// were loaded for that module.
-			_, loadedMod := loadedModFiles[goMod]
-			_, workspaceMod := s.view.workspaceModFiles[goMod]
+			loadedMod := loadedModFiles.Contains(goMod)
+			workspaceMod := s.view.workspaceModFiles.Contains(goMod)
 			// If we have a relevant go.mod file, check whether the file is orphaned
 			// due to its go.mod file being inactive. We could also offer a
 			// prescriptive diagnostic in the case that there is no go.mod file, but
@@ -1431,7 +1431,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fi
 		}
 
 		if msg == "" {
-			if ignoredFiles[fh.URI()] {
+			if ignoredFiles.Contains(fh.URI()) {
 				// TODO(rfindley): use the constraint package to check if the file
 				// _actually_ satisfies the current build context.
 				hasConstraint := !moreiters.Empty(buildConstraints(pgf.File))
@@ -1570,15 +1570,15 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// Compute the new set of packages for which we want compiler
 	// optimization details, after applying changed.CompilerOptDetails.
 	if len(s.compilerOptDetails) > 0 || len(changed.CompilerOptDetails) > 0 {
-		newCompilerOptDetails := make(map[protocol.DocumentURI]unit)
+		newCompilerOptDetails := make(set.Set[protocol.DocumentURI])
 		for dir := range s.compilerOptDetails {
 			if _, ok := changed.CompilerOptDetails[dir]; !ok {
-				newCompilerOptDetails[dir] = unit{} // no change
+				newCompilerOptDetails.Insert(dir) // no change
 			}
 		}
 		for dir, want := range changed.CompilerOptDetails {
 			if want {
-				newCompilerOptDetails[dir] = unit{}
+				newCompilerOptDetails.Insert(dir)
 			}
 		}
 		if len(newCompilerOptDetails) > 0 {
@@ -1646,7 +1646,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 
 	// Reinitialize if any workspace mod file has changed on disk.
 	for uri, newFH := range changedFiles {
-		if _, ok := result.view.workspaceModFiles[uri]; ok && changedOnDisk(oldFiles[uri], newFH) {
+		if result.view.workspaceModFiles.Contains(uri) && changedOnDisk(oldFiles[uri], newFH) {
 			reinit = true
 		}
 	}
@@ -1662,7 +1662,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		}
 		if base == "go.sum" {
 			modURI := protocol.URIFromPath(filepath.Join(dir, "go.mod"))
-			if _, active := result.view.workspaceModFiles[modURI]; active {
+			if result.view.workspaceModFiles.Contains(modURI) {
 				reinit = true
 			}
 		}
@@ -1987,12 +1987,12 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 // If packageFileChanged is set, the file is either a new file, or has a new
 // package name. In this case, all known packages in the directory will be
 // invalidated.
-func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.DocumentURI][]*metadata.Package, packageFileChanged bool) map[PackageID]struct{} {
-	invalidated := make(map[PackageID]struct{})
+func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.DocumentURI][]*metadata.Package, packageFileChanged bool) set.Set[PackageID] {
+	invalidated := make(set.Set[PackageID])
 
 	// At a minimum, we invalidate packages known to contain uri.
 	for _, pkg := range known[uri] {
-		invalidated[pkg.ID] = struct{}{}
+		invalidated.Insert(pkg.ID)
 	}
 
 	// If the file didn't move to a new package, we should only invalidate the
@@ -2033,7 +2033,7 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 			}
 			if os.SameFile(fi, knownFI) {
 				for _, pkg := range pkgs {
-					invalidated[pkg.ID] = struct{}{}
+					invalidated.Insert(pkg.ID)
 				}
 			}
 		}
@@ -2097,9 +2097,7 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 	newImports := validImportPaths(newHead.File.Imports)
 
 	for path := range newImports {
-		if _, ok := oldImports[path]; ok {
-			delete(oldImports, path)
-		} else {
+		if !oldImports.Delete(path) {
 			invalidate = true // a new, potentially valid import was added
 		}
 	}
@@ -2144,11 +2142,11 @@ func magicCommentsChanged(original *ast.File, current *ast.File) bool {
 }
 
 // validImportPaths extracts the set of valid import paths from imports.
-func validImportPaths(imports []*ast.ImportSpec) map[string]struct{} {
-	m := make(map[string]struct{})
+func validImportPaths(imports []*ast.ImportSpec) set.Set[string] {
+	m := make(set.Set[string])
 	for _, spec := range imports {
 		if path := spec.Path.Value; validImportPath(path) {
-			m[path] = struct{}{}
+			m.Insert(path)
 		}
 	}
 	return m
@@ -2229,8 +2227,7 @@ func (s *Snapshot) setBuiltin(path string) {
 // WantCompilerOptDetails reports whether to compute compiler
 // optimization details for packages and tests in the given directory.
 func (s *Snapshot) WantCompilerOptDetails(dir protocol.DocumentURI) bool {
-	_, ok := s.compilerOptDetails[dir]
-	return ok
+	return s.compilerOptDetails.Contains(dir)
 }
 
 // A CodeLensSourceFunc is a function that reports CodeLenses (range-associated

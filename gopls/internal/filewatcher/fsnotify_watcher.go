@@ -17,6 +17,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/robustio"
 )
 
@@ -36,7 +37,7 @@ func NewFSNotifyWatcher(log *slog.Logger, onEvents func([]protocol.FileEvent), o
 		watcher:   watcher,
 		onEvents:  onEvents,
 		onError:   onError,
-		knownDirs: make(map[string]struct{}),
+		knownDirs: make(set.Set[string]),
 		stop:      make(chan struct{}),
 		ready:     make(chan struct{}, 1),
 	}
@@ -78,7 +79,7 @@ type fsnotifyWatcher struct {
 
 	// knownDirs tracks all known directories to help distinguish between file
 	// and directory deletion events.
-	knownDirs map[string]struct{}
+	knownDirs set.Set[string]
 }
 
 // run is the receiver and sender loop.
@@ -380,7 +381,7 @@ func (w *fsnotifyWatcher) convertEvent(event fsnotify.Event) (_ protocol.FileEve
 // all retries.
 func (w *fsnotifyWatcher) watchDir(path string) error {
 	w.mu.Lock()
-	w.knownDirs[path] = struct{}{}
+	w.knownDirs.Insert(path)
 	w.mu.Unlock()
 
 	// On darwin, watching a directory will fail if it contains broken symbolic
@@ -422,7 +423,7 @@ func (w *fsnotifyWatcher) isWatchedDir(path string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	_, isDir := w.knownDirs[path]
+	isDir := w.knownDirs.Contains(path)
 	return isDir
 }
 

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -74,12 +75,11 @@ func (s *Snapshot) Symbols(ctx context.Context, ids ...PackageID) ([]*symbols.Pa
 }
 
 func symbolKey(ctx context.Context, mp *metadata.Package, fs file.Source) (file.Hash, []file.Handle, error) {
-	seen := make(map[protocol.DocumentURI]bool)
+	seen := make(set.Set[protocol.DocumentURI])
 	var fhs []file.Handle
 	for _, list := range [][]protocol.DocumentURI{mp.GoFiles, mp.CompiledGoFiles} {
 		for _, uri := range list {
-			if !seen[uri] {
-				seen[uri] = true
+			if seen.Insert(uri) {
 				fh, err := fs.ReadFile(ctx, uri)
 				if err != nil {
 					return file.Hash{}, nil, err // context cancelled

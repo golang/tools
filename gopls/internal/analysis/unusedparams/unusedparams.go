@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moreslices"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -70,9 +71,9 @@ func run(pass *analysis.Pass) (any, error) {
 	// - all referenced variables
 
 	usesOutsideCall := make(map[types.Object][]*ast.Ident)
-	unexportedIMethodNames := make(map[string]bool)
+	unexportedIMethodNames := make(set.Set[string])
 	{
-		callPosn := make(map[*ast.Ident]bool) // all idents f appearing in f() calls
+		callPosn := make(set.Set[*ast.Ident]) // all idents f appearing in f() calls
 		filter := []ast.Node{
 			(*ast.CallExpr)(nil),
 			(*ast.InterfaceType)(nil),
@@ -86,7 +87,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if id != nil && !id.IsExported() {
 					switch pass.TypesInfo.Uses[id].(type) {
 					case *types.Func, *types.Var:
-						callPosn[id] = true
+						callPosn.Insert(id)
 					}
 				}
 
@@ -98,14 +99,14 @@ func run(pass *analysis.Pass) (any, error) {
 				t := pass.TypesInfo.TypeOf(n).(*types.Interface)
 				for m := range t.ExplicitMethods() {
 					if !m.Exported() && m.Name() != "_" {
-						unexportedIMethodNames[m.Name()] = true
+						unexportedIMethodNames.Insert(m.Name())
 					}
 				}
 			}
 		})
 
 		for id, obj := range pass.TypesInfo.Uses {
-			if !callPosn[id] {
+			if !callPosn.Contains(id) {
 				// This includes "f = func() {...}", which we deal with below.
 				usesOutsideCall[obj] = append(usesOutsideCall[obj], id)
 			}
@@ -113,13 +114,13 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	// Find all vars (notably parameters) that are used.
-	usedVars := make(map[*types.Var]bool)
+	usedVars := make(set.Set[*types.Var])
 	for _, obj := range pass.TypesInfo.Uses {
 		if v, ok := obj.(*types.Var); ok {
 			if v.IsField() {
 				continue // no point gathering these
 			}
-			usedVars[v] = true
+			usedVars.Insert(v)
 		}
 	}
 
@@ -149,7 +150,7 @@ funcloop:
 			// interface method declared in this package,
 			// as the method's signature may need to conform
 			// to the interface.
-			if n.Recv != nil && unexportedIMethodNames[n.Name.Name] {
+			if n.Recv != nil && unexportedIMethodNames.Contains(n.Name.Name) {
 				continue
 			}
 
@@ -254,7 +255,7 @@ funcloop:
 					continue
 				}
 				param := pass.TypesInfo.Defs[id].(*types.Var)
-				if !usedVars[param] {
+				if !usedVars.Contains(param) {
 					start, end := field.Pos(), field.End()
 					if len(field.Names) > 1 {
 						start, end = id.Pos(), id.End()

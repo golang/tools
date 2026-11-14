@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -143,14 +144,11 @@ func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDo
 // generated file for the first time.
 func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri protocol.DocumentURI) error {
 	s.changedFilesMu.Lock()
-	_, ok := s.changedFiles[uri]
-	if !ok {
-		s.changedFiles[uri] = struct{}{}
-	}
+	added := s.changedFiles.Insert(uri)
 	s.changedFilesMu.Unlock()
 
 	// This file has already been edited before.
-	if ok {
+	if !added {
 		return nil
 	}
 
@@ -435,10 +433,10 @@ func (s *server) handleModuleChanges(ctx context.Context, modifications []file.M
 		}
 	}
 
-	uris := make(map[protocol.DocumentURI]struct{})
+	uris := make(set.Set[protocol.DocumentURI])
 	for _, m := range modifications {
 		if (m.URI.Base() == "go.mod" || m.URI.Base() == "go.work") && (m.Action == file.Create || m.Action == file.Save) {
-			uris[m.URI] = struct{}{}
+			uris.Insert(m.URI)
 		}
 	}
 

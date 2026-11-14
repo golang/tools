@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -54,7 +55,7 @@ func ResolveTarget(ctx context.Context, snapshot *cache.Snapshot, params command
 
 	var matches []command.TargetMatch
 	var lastErr error
-	seen := make(map[protocol.Location]bool) // dedupe matches
+	seen := make(set.Set[protocol.Location]) // dedupe matches
 	for _, pkg := range pkgs {
 		pkgType := pkg.Types()
 		obj, err := resolveTarget(pkgType, target)
@@ -67,10 +68,9 @@ func ResolveTarget(ctx context.Context, snapshot *cache.Snapshot, params command
 			lastErr = err
 			continue
 		}
-		if seen[loc] {
+		if !seen.Insert(loc) {
 			continue // Skip duplicate matches (e.g. test variants)
 		}
-		seen[loc] = true
 		matches = append(matches, command.TargetMatch{
 			Name:     obj.Name(),
 			Package:  pkgType.Path(),

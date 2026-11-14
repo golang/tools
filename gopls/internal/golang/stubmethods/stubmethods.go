@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 
@@ -79,10 +80,10 @@ func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, 
 func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	conc := si.Concrete.Obj()
 	// Record all direct methods of the current object
-	concreteFuncs := make(map[string]struct{})
+	concreteFuncs := make(set.Set[string])
 	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
 		for method := range named.Methods() {
-			concreteFuncs[method.Name()] = struct{}{}
+			concreteFuncs.Insert(method.Name())
 		}
 	}
 
@@ -101,7 +102,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 				conc.Name(), imethod.Name())
 		}
 
-		if _, exist := concreteFuncs[imethod.Name()]; exist {
+		if concreteFuncs.Contains(imethod.Name()) {
 			if !types.Identical(cmethod.Type(), imethod.Type()) {
 				return fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
 					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
