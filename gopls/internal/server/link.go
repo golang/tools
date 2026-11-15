@@ -127,7 +127,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 	}
 
 	// Get all the links that are contained in the comments of the file.
-	urlRegexp := xurls.Strict()
+	urlRegexp := xurls.Relaxed()
 	for _, expr := range pm.File.Syntax.Stmt {
 		comments := expr.Comment()
 		if comments == nil {
@@ -199,7 +199,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 		}
 	}
 
-	urlRegexp := xurls.Strict()
+	urlRegexp := xurls.Relaxed()
 
 	// Gather links found in string literals, ignoring import strings.
 	for curLit := range pgf.Cursor().Preorder((*ast.BasicLit)(nil)) {
@@ -251,6 +251,14 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		start, end := index[0], index[1]
 		link := src[start:end]
 		linkURL, err := url.Parse(link)
+		if err == nil && linkURL.Scheme == "" {
+			// Without a scheme, only link hosts with a common top-level domain,
+			// so that text such as "p.name" is left alone (golang/go#70033).
+			linkURL, err = url.Parse("https://" + link)
+			if err == nil && !hasCommonTLD(linkURL.Hostname()) {
+				continue
+			}
+		}
 		// Not all potential links will be valid, so don't return this error.
 		if err != nil || !acceptedSchemes[linkURL.Scheme] {
 			continue
@@ -279,6 +287,15 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		links = append(links, l)
 	}
 	return links, nil
+}
+
+func hasCommonTLD(host string) bool {
+	for _, tld := range []string{".com", ".net", ".org", ".dev"} {
+		if strings.HasSuffix(host, tld) {
+			return true
+		}
+	}
+	return false
 }
 
 func getIssueRegexp() *regexp.Regexp {

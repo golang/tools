@@ -1,5 +1,5 @@
-This test verifies that dotted text without a scheme is not linkified
-(golang/go#70033).
+This test verifies that dotted text without a scheme is only linkified
+when its host ends in a common top-level domain (golang/go#70033).
 
 -- go.mod --
 module example.com
@@ -16,5 +16,7 @@ var _ = []string{
 
 // See example.com/doc or https://go.dev/doc.
 -- @links --
+a/a.go:5:3-9 https://go.dev
 a/a.go:6:3-17 https://p.name
+a/a.go:9:8-23 https://example.com/doc
 a/a.go:9:27-45 https://go.dev/doc
