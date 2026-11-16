@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
@@ -22,10 +23,9 @@ import (
 
 var anyType = types.Universe.Lookup("any").Type()
 
-// CallStubInfo represents a missing method
-// that a receiver type is about to generate
-// which has "type X has no field or method Y" error
-type CallStubInfo struct {
+// MethodStubInfo describes the stub for a missing method that is either called
+// directly or used as a callback argument.
+type MethodStubInfo struct {
 	Fset       *token.FileSet             // the FileSet used to type-check the types below
 	Receiver   typesinternal.NamedOrAlias // the method's receiver type
 	MethodName string
@@ -33,19 +33,45 @@ type CallStubInfo struct {
 	pointer    bool
 	info       *types.Info
 	curCall    inspector.Cursor // cursor to the CallExpr
+	sig        *types.Signature // expected signature when the missing method is a callback
 }
 
-// GetCallStubInfo extracts necessary information to generate a method definition from
-// a CallExpr.
-func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *CallStubInfo {
-	callCur, _ := pgf.Cursor().FindByPos(start, end)
-	call, callCur := cursorutil.FirstEnclosing[*ast.CallExpr](callCur)
-	if call == nil {
+// GetMethodStubInfo extracts necessary information to generate a method definition from
+// a missing selector that is called or passed as a callback.
+func GetMethodStubInfo(fset *token.FileSet, pkg *types.Package, info *types.Info, pgf *parsego.File, start, end token.Pos) *MethodStubInfo {
+	cur, ok := pgf.Cursor().FindByPos(start, end)
+	if !ok {
 		return nil
 	}
-	s, ok := call.Fun.(*ast.SelectorExpr)
-	// TODO: support generating stub functions in the same way.
-	if !ok {
+	s, curSel := cursorutil.FirstEnclosing[*ast.SelectorExpr](cur)
+	if s == nil || info.Uses[s.Sel] != nil {
+		return nil
+	}
+
+	// Anchor the fix to the missing selector, not the enclosing call:
+	// in mux.HandleFunc(pattern, s.create), the missing method is create.
+	curSel = cursorutil.UnparenEnclosing(curSel)
+	callCur := curSel.Parent()
+	var sig *types.Signature
+	switch curSel.ParentEdgeKind() {
+	case edge.CallExpr_Fun:
+		// Infer the signature from arguments and the call's result context.
+	case edge.CallExpr_Args:
+		call := callCur.Node().(*ast.CallExpr)
+		// Method expressions and conversions need different inference rules.
+		if info.Types[s.X].IsType() || info.Types[call.Fun].IsType() {
+			return nil
+		}
+		expected := typesutil.FromContext(info, curSel)
+		if expected == nil {
+			return nil
+		}
+		sig, _ = expected.Underlying().(*types.Signature)
+		if sig == nil || containsInvalid(sig) {
+			return nil
+		}
+	default:
+		// A missing field or an untyped assignment doesn't identify a method.
 		return nil
 	}
 
@@ -56,6 +82,19 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 
 	if recvType == nil || recvType.Obj().Pkg() == nil {
 		return nil
+	}
+	// Defined pointer and interface types cannot have concrete methods.
+	switch recvType.Underlying().(type) {
+	case *types.Pointer, *types.Interface:
+		return nil
+	}
+	if sig != nil {
+		// A callback must be expressible at the receiver's declaration. Do not
+		// edit dependencies or introduce references to function-local types.
+		// TODO: support generic receivers by substituting receiver type parameters.
+		if recvType.Obj().Pkg() != pkg || recvType.TypeParams().Len() != 0 || !nameableSignature(sig, pkg) {
+			return nil
+		}
 	}
 
 	// A method of a function-local type cannot be stubbed
@@ -79,7 +118,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 			after = info.ObjectOf(decl.Name)
 		}
 	}
-	return &CallStubInfo{
+	return &MethodStubInfo{
 		Fset:       fset,
 		Receiver:   recvType,
 		MethodName: s.Sel.Name,
@@ -87,13 +126,28 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 		pointer:    pointer,
 		curCall:    callCur,
 		info:       info,
+		sig:        sig,
 	}
 }
 
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
-func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+func (si *MethodStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	ret := typesutil.FromContext(si.info, si.curCall)
+	var ret types.Type
+	if si.sig != nil {
+		// Omit result names, which may conflict with the receiver or parameters.
+		var results []types.Type
+		for v := range si.sig.Results().Variables() {
+			results = append(results, v.Type())
+		}
+		if len(results) == 1 {
+			ret = results[0]
+		} else if len(results) > 1 {
+			ret = typesinternal.TupleOf(results...)
+		}
+	} else {
+		ret = typesutil.FromContext(si.info, si.curCall)
+	}
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -114,6 +168,11 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		}
 	}
 
+	// The generated body calls panic. A receiver named panic would shadow it.
+	if recvName == "panic" {
+		recvName = "recv"
+	}
+
 	// Emit method declaration.
 	fmt.Fprintf(out, "\nfunc (%s %s%s%s) %s",
 		recvName,
@@ -123,19 +182,23 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		si.MethodName)
 
 	// Emit parameters, avoiding name conflicts.
-	seen := map[string]bool{recvName: true}
+	seen := map[string]bool{recvName: true, "panic": true}
 	out.WriteString("(")
 	for i, param := range params {
 		name := param.name
-		if seen[name] {
-			name = fmt.Sprintf("param%d", i+1)
+		for n := i + 1; seen[name]; n++ {
+			name = fmt.Sprintf("param%d", n)
 		}
 		seen[name] = true
 
 		if i > 0 {
 			out.WriteString(", ")
 		}
-		fmt.Fprintf(out, "%s %s", name, types.TypeString(param.typ, qual))
+		if si.sig != nil && si.sig.Variadic() && i == len(params)-1 {
+			fmt.Fprintf(out, "%s ...%s", name, types.TypeString(param.typ.(*types.Slice).Elem(), qual))
+		} else {
+			fmt.Fprintf(out, "%s %s", name, types.TypeString(param.typ, qual))
+		}
 	}
 	out.WriteString(") ")
 
@@ -158,8 +221,21 @@ type param struct {
 
 // collectParams gathers the parameter information needed to generate a method stub.
 // The param's type default to any if there is a type error in the argument.
-func (si *CallStubInfo) collectParams() []param {
+func (si *MethodStubInfo) collectParams() []param {
 	var params []param
+	if si.sig != nil {
+		for v := range si.sig.Params().Variables() {
+			name := v.Name()
+			if name == "" || name == "_" {
+				name = paramName(nil, v.Type())
+			}
+			if !token.IsIdentifier(name) {
+				name = "param"
+			}
+			params = append(params, param{name, v.Type()})
+		}
+		return params
+	}
 	appendParam := func(e ast.Expr, t types.Type) {
 		p := param{"param", anyType}
 		if t != nil && !containsInvalid(t) {

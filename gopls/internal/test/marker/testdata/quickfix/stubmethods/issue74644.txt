@@ -1,0 +1,37 @@
+Missing method values must not generate a stub for the enclosing call.
+The callback signature is inferred from the expected function type.
+
+-- http.go --
+package callbacks
+
+import "net/http"
+
+type store struct{}
+
+func handler() {
+	s := &store{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /items", s.create) //@quickfix("create", re"has no field or method", http)
+}
+-- @http/http.go --
+@@ -6 +6,4 @@
++
++func (s *store) create(writer http.ResponseWriter, request *http.Request) {
++	panic("unimplemented")
++}
+-- doer.go --
+package callbacks
+
+type doer struct{}
+
+func (doer) do(fn func()) { fn() }
+
+func (d doer) doA() {
+	d.do(d.a) //@quickfix("a", re"has no field or method", doer)
+}
+-- @doer/doer.go --
+@@ -10 +10,4 @@
++
++func (d doer) a() {
++	panic("unimplemented")
++}

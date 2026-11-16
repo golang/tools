@@ -39,10 +39,9 @@ func stubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snaps
 }
 
 // stubMissingCalledFunctionFixer returns a suggested fix to declare the missing
-// method that the user may want to generate based on CallExpr
-// at the cursor position.
+// method identified by the selector at the cursor position.
 func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	si := stubmethods.GetCallStubInfo(pkg.FileSet(), pkg.TypesInfo(), pgf, start, end)
+	si := stubmethods.GetMethodStubInfo(pkg.FileSet(), pkg.Types(), pkg.TypesInfo(), pgf, start, end)
 	if si == nil {
 		return nil, nil, fmt.Errorf("invalid type request")
 	}
@@ -107,6 +106,29 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 		importEnv[importPath] = name // latest alias wins
 	}
 
+	// Reserve names that a new import must not shadow, including names from
+	// dot imports. Unlike refactor.AddImport, this code has only metadata for
+	// the declaring file, not its types.Info and file scope.
+	usedNames := make(map[string]bool)
+	for _, name := range sym.Pkg().Scope().Names() {
+		usedNames[name] = true
+	}
+	for _, name := range types.Universe.Names() {
+		usedNames[name] = true
+	}
+	for _, name := range importEnv {
+		usedNames[name] = true
+	}
+	for _, imported := range sym.Pkg().Imports() {
+		if name, ok := importEnv[ImportPath(imported.Path())]; ok && name == "" {
+			for _, name := range imported.Scope().Names() {
+				if token.IsExported(name) {
+					usedNames[name] = true
+				}
+			}
+		}
+	}
+
 	// Create a package name qualifier that uses the
 	// locally appropriate imported package name.
 	// It records any needed new imports.
@@ -132,13 +154,13 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 		importPath := ImportPath(pkg.Path())
 		name, ok := importEnv[importPath]
 		if !ok {
-			// Insert new import using package's declared name.
-			//
-			// TODO(adonovan): resolve conflict between declared
-			// name and existing file-level (declPGF.File.Imports)
-			// or package-level (sym.Pkg.Scope) decls by
-			// generating a fresh name.
+			// Prefer the package's declared name, avoiding conflicts with
+			// existing declarations and imports added by this fix.
 			name = pkg.Name()
+			for i := 1; usedNames[name]; i++ {
+				name = fmt.Sprintf("%s%d", pkg.Name(), i)
+			}
+			usedNames[name] = true
 			importEnv[importPath] = name
 			new := newImport{importPath: string(importPath)}
 			// For clarity, use a renaming import whenever the

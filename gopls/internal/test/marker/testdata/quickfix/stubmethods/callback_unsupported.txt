@@ -1,0 +1,76 @@
+Callback inference must decline contexts that do not identify a safe method
+signature, and must not fall back to the enclosing call or edit dependencies.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.27
+
+-- negative.go --
+package negative
+
+import (
+	"example.com/hidden"
+	"strings"
+)
+
+type S struct{}
+type I interface{}
+type P *S
+type G[T any] struct{}
+
+func noSignature(s S, i I, p P, n int, external strings.Builder, generic G[int]) {
+	acceptString(s.field)                    //@quickfixerr("field", re"has no field or method", re"found 0 CodeActions")
+	acceptAny(s.unknown)                     //@quickfixerr("unknown", re"has no field or method", re"found 0 CodeActions")
+	x := s.assignment                        //@quickfixerr("assignment", re"has no field or method", re"found 0 CodeActions")
+	var typed func(int) = s.typedAssignment  //@quickfixerr("typedAssignment", re"has no field or method", re"found 0 CodeActions")
+	accept(i.iface)                          //@quickfixerr("iface", re"has no field or method", re"found 0 CodeActions")
+	accept(p.pointer)                        //@quickfixerr("pointer", re"has no field or method", re"found 0 CodeActions")
+	accept(n.basic)                          //@quickfixerr("basic", re"has no field or method", re"found 0 CodeActions")
+	accept(external.Missing)                 //@quickfixerr("Missing", re"has no field or method", re"found 0 CodeActions")
+	accept(generic.genericReceiver)          //@quickfixerr("genericReceiver", re"has no field or method", re"found 0 CodeActions")
+	acceptExpression(S.expression)           //@quickfixerr("expression", re"has no field or method", re"found 0 CodeActions")
+	accept(func(int) {}, s.excess)           //@quickfixerr("excess", re"has no field or method", re"found 0 CodeActions")
+	acceptMany(s.slice...)                   //@quickfixerr("slice", re"has no field or method", re"found 0 CodeActions")
+	_ = (func(int))(s.conversion)            //@quickfixerr("conversion", re"has no field or method", re"found 0 CodeActions")
+	hidden.Accept(s.inaccessible)            //@quickfixerr("inaccessible", re"has no field or method", re"found 0 CodeActions")
+	hidden.AcceptStruct(s.foreignField)      //@quickfixerr("foreignField", re"has no field or method", re"found 0 CodeActions")
+	hidden.AcceptInterface(s.foreignMethod)  //@quickfixerr("foreignMethod", re"has no field or method", re"found 0 CodeActions")
+	hidden.AcceptEmbedded(s.foreignEmbedded) //@quickfixerr("foreignEmbedded", re"has no field or method", re"found 0 CodeActions")
+	_, _ = x, typed
+}
+
+func localTypes(s S) {
+	type local int
+	func(func(local)) {}(s.localParam)   //@quickfixerr("localParam", re"has no field or method", re"found 0 CodeActions")
+	func(func() local) {}(s.localResult) //@quickfixerr("localResult", re"has no field or method", re"found 0 CodeActions")
+	var l local
+	accept(l.localReceiver) //@quickfixerr("localReceiver", re"has no field or method", re"found 0 CodeActions")
+}
+
+func typeParams[T any](s S) {
+	func(func(T)) {}(s.freeTypeParam) //@quickfixerr("freeTypeParam", re"has no field or method", re"found 0 CodeActions")
+}
+func returnValue(s S) func(int) {
+	return s.returned //@quickfixerr("returned", re"has no field or method", re"found 0 CodeActions")
+}
+func accept(func(int))              {}
+func acceptExpression(func(S, int)) {}
+func acceptString(string)           {}
+func acceptAny(any)                 {}
+func acceptMany(...func(int))       {}
+-- hidden/hidden.go --
+package hidden
+
+type private int
+
+func Accept(func(private))                        {}
+func AcceptStruct(func(struct{ field int }))      {}
+func AcceptInterface(func(interface{ method() })) {}
+
+type privateInterface interface{ Exported() }
+
+func AcceptEmbedded(func(interface{ privateInterface })) {}
