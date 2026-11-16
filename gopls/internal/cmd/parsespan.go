@@ -50,9 +50,9 @@ func parseSpanErr(input string) (span, error) {
 //	span        = file [ ':' coords ]
 //	coords      = lineRange | offsetRange
 //	lineRange   = line [ ':' col ] (point)
-//	            | line '-' line [ ':' col ]
-//	            | line ':' col '-' col
 //	            | line ':' col '-' line ':' col
+//	            | line ':' col '-' col
+//	            | line '-' line
 //	offsetRange = '#' offset [ '-' '#' offset ]
 //	line, col   = int >= 1 (no leading '+')
 //	offset      = int >= 0 (no leading '+')
@@ -63,6 +63,8 @@ func parseSpanErr(input string) (span, error) {
 //     characters excluding '#', or ':' other than at input[1] where it is
 //     interpreted as a Windows drive letter
 //   - if a range has a start and an end, start <= end
+//
+// TODO(aputman): Make 'file:4-7' have end line also use end col of line.
 func parseSpanRaw(input string) (span, error) {
 	if input == "" {
 		return span{}, errors.New("empty input")
@@ -138,6 +140,9 @@ func parseSpanRaw(input string) (span, error) {
 	// messages.
 	if startPt.HasOffset() != endPt.HasOffset() {
 		return span{}, errors.New("cannot mix line/column and '#offset' in a range")
+	}
+	if !strings.Contains(startStr, ":") && strings.Contains(endStr, ":") {
+		return span{}, errors.New("end cannot specify a column when start omits it")
 	}
 	if startPt.HasOffset() {
 		if endPt.Offset() < startPt.Offset() {

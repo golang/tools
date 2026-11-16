@@ -159,9 +159,7 @@ func (s *span) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &s.v) }
 func (f locationFlag) String() string   { return fmt.Sprint(f.span) }
 func (f locationFlag) HelpType() string { return "location" }
 func (f locationFlag) HelpString() string {
-	// TODO(aputman): Change this to suggest running `gopls help location`
-	// which will give documentation for the type.
-	return "Format: file.go[:lineStart[:colStart]-lineEnd[:colEnd]], file.go[:line:colStart-colEnd], or file.go[:#offsetStart-#offsetEnd] (1-based line, 1-based column in UTF-8 bytes, 0-based byte offset). Also accepts a single point, returning a location that has that point as both the start and end."
+	return "Run 'gopls help location' for accepted location syntax."
 }
 func (f *locationFlag) Set(value string) error {
 	s, err := parseSpanRaw(value)

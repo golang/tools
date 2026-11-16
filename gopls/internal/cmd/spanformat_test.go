@@ -44,8 +44,6 @@ func TestSpanFormat(t *testing.T) {
 			"C:/file_i", "C:/file_i", "file:///C:/file_i:1:1"},
 		{"C:/file_j:#0-#10", "C:/file_j:#0-#10", "file:///C:/file_j:#0-0#10"},
 		{"C:/file_j:#26-#28", "C:/file_j:#26-#28", "file:///C:/file_j:#26-0#28"}, // 0#28?
-		{"C:/file_m:3-4:8", // not canonical: start has line only, end has line:col
-			"C:/file_m:3:1-4:8", "C:/file_m:3:1-4:8", "file:///C:/file_m:3:1-4:8"},
 		// Special characters (':', '#', '-') in directory names.
 		{"C:/a:b/c-d.go:3:4", "C:/a:b/c-d.go:3:4", "file:///C:/a:b/c-d.go:3:4"},
 		{"C:/my-dir/my-file.go:1:1-5", "C:/my-dir/my-file.go:1:1-5", "file:///C:/my-dir/my-file.go:1:1-1:5"},
@@ -131,6 +129,7 @@ func TestParseSpanErrors(t *testing.T) {
 		{input: "file.go:1:2#10", wantErr: "cannot specify both line/column and '#offset'"},
 		{input: "file.go:#26-28", wantErr: "cannot mix line/column and '#offset' in a range"},
 		{input: "file.go:3:7-#28", wantErr: "cannot mix line/column and '#offset' in a range"},
+		{input: "file.go:3-4:8", wantErr: "end cannot specify a column when start omits it"},
 	} {
 		spn, err := parseSpanErr(tc.input)
 		if err == nil {

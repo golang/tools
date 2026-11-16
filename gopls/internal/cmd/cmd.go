@@ -12,9 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -186,6 +188,12 @@ Command:
 		fmt.Fprint(w, "\t\nInternal Use Only\t\n")
 		for _, c := range app.internalCommands() {
 			fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
+		}
+	}
+	if len(helpTopics) > 0 {
+		fmt.Fprint(w, "\t\nAdditional help topics\t\n")
+		for _, name := range slices.Sorted(maps.Keys(helpTopics)) {
+			fmt.Fprintf(w, "  %s\t%s\n", name, helpTopics[name].short)
 		}
 	}
 	fmt.Fprint(w, "\nflags:\n")
