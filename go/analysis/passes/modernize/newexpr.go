@@ -162,6 +162,10 @@ func run(pass *analysis.Pass) (any, error) {
 				// CheckExpr (below) would add the scope of a func type
 				// in arg to the package's scope tree, racing with other
 				// analyzers that read it (go.dev/issue/83063).
+				//
+				// TODO(golang/go#83063): remove this workaround once
+				// CheckExpr no longer modifies the package's scope tree.
+				// Other callers of CheckExpr have the same problem.
 				curArg := curCall.ChildAt(edge.CallExpr_Args, 0)
 				if !moreiters.Empty(curArg.Preorder((*ast.FuncType)(nil))) {
 					continue
