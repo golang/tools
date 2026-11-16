@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/token"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -290,10 +291,9 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 }
 
 func hasCommonTLD(host string) bool {
-	for _, tld := range []string{".com", ".net", ".org", ".dev"} {
-		if strings.HasSuffix(host, tld) {
-			return true
-		}
+	switch path.Ext(host) {
+	case ".com", ".net", ".org", ".dev":
+		return true
 	}
 	return false
 }

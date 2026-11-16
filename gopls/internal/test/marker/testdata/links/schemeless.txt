@@ -8,6 +8,8 @@ go 1.18
 -- a/a.go --
 package a //@documentlink(links)
 
+import _ "example.com/b"
+
 var _ = []string{
 	"p.name is %q",
 	"go.dev is my favorite site!",
@@ -15,8 +17,11 @@ var _ = []string{
 }
 
 // See example.com/doc or https://go.dev/doc.
+-- b/b.go --
+package b
 -- @links --
-a/a.go:5:3-9 https://go.dev
-a/a.go:6:3-17 https://p.name
-a/a.go:9:8-23 https://example.com/doc
-a/a.go:9:27-45 https://go.dev/doc
+a/a.go:3:11-24 https://pkg.go.dev/example.com/b
+a/a.go:7:3-9 https://go.dev
+a/a.go:8:3-17 https://p.name
+a/a.go:11:8-23 https://example.com/doc
+a/a.go:11:27-45 https://go.dev/doc
