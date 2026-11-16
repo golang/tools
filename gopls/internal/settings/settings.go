@@ -277,10 +277,6 @@ type UIOptions struct {
 	// RenameMovesSubpackages enables Rename operations on packages to
 	// move subdirectories of the target package.
 	RenameMovesSubpackages bool `status:"experimental"`
-
-	// MoveDeclaration enables producing Move Declaration codeactions. The implementation
-	// is unfinished so we use this setting to gate its use.
-	MoveDeclaration bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -816,6 +812,12 @@ type InternalOptions struct {
 	// on the server.
 	// This option applies only during initialization.
 	ShowBugReports bool
+
+	// WatchedFileDelay controls the amount of time that gopls waits to debounce
+	// bursts of workspace/didChangeWatchedFiles notifications.
+	//
+	// A value of 0 disables debouncing, processing changes immediately.
+	WatchedFileDelay time.Duration
 
 	// SubdirWatchPatterns configures the file watching glob patterns registered
 	// by gopls.
@@ -1471,9 +1473,6 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 	case "fileWatcher":
 		return setEnum(&o.FileWatcher, value, FileWatcherOff, FileWatcherFSNotify, FileWatcherPoll)
 
-	case "moveDeclaration":
-		return setBool(&o.MoveDeclaration, value)
-
 	// deprecated and renamed settings
 	//
 	// These should never be deleted: there is essentially no cost
@@ -1521,6 +1520,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "experimentalTemplateSupport":
 		return nil, deprecatedError("")
+
+	case "watchedFileDelay":
+		return nil, setDuration(&o.WatchedFileDelay, value)
 
 	case "experimentalWatchedFileDelay":
 		return nil, deprecatedError("")

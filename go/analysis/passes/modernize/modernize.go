@@ -152,6 +152,16 @@ func lookup(info *types.Info, cur inspector.Cursor, name string) types.Object {
 	return obj
 }
 
+// uses reports whether the subtree cur contains a use of obj.
+func uses(index *typeindex.Index, cur inspector.Cursor, obj types.Object) bool {
+	for use := range index.Uses(obj) {
+		if cur.Contains(use) {
+			return true
+		}
+	}
+	return false
+}
+
 func first[T any](x T, _ any) T { return x }
 
 // freshName returns a fresh name at the given pos and scope based on preferredName.

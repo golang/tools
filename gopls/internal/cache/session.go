@@ -241,6 +241,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		gocmdRunner:          s.gocmdRunner,
 		initialWorkspaceLoad: make(chan struct{}),
 		initializationSema:   make(chan struct{}, 1),
+		reloadSema:           make(chan struct{}, 1),
 		baseCtx:              baseCtx,
 		pkgIndex:             typerefs.NewPackageIndex(),
 		parseCache:           s.parseCache,

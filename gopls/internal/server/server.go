@@ -44,7 +44,7 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 	// If this assignment fails to compile after a protocol
 	// upgrade, it means that one or more new methods need new
 	// stub declarations in unimplemented.go.
-	return &server{
+	s := &server{
 		diagnostics:         make(map[protocol.DocumentURI]*fileDiagnostics),
 		watchedGlobPatterns: nil, // empty
 		changedFiles:        make(map[protocol.DocumentURI]unit),
@@ -55,6 +55,8 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 		options:             options,
 		viewsToDiagnose:     make(map[*cache.View]uint64),
 	}
+	s.watchedFiles = newWatchedFileDebouncer(s.flushWatchedFiles)
+	return s
 }
 
 type serverState int
@@ -114,6 +116,8 @@ type server struct {
 
 	fileWatcherMu sync.Mutex
 	fileWatcher   filewatcher.Watcher
+
+	watchedFiles *watchedFileDebouncer
 
 	diagnosticsMu sync.Mutex // guards map and its values
 	diagnostics   map[protocol.DocumentURI]*fileDiagnostics

@@ -242,6 +242,15 @@ func Set(kind string, key [32]byte, value []byte) error {
 	iolimit <- struct{}{}        // acquire a token
 	defer func() { <-iolimit }() // release a token
 
+	// TODO(adonovan): opt: reduce the ~10 metadata syscalls per Set,
+	// which are costly on macOS (APFS updates the Spotlight index,
+	// and many companies install endpoint security clients that
+	// intercept file I/O). We could:
+	// - remember which of the 256 "XX/" directories exist, to avoid MkdirAll;
+	// - skip touch(casName) when we just created the CAS file;
+	// - replace the ReadFile+Equal probe with something cheaper
+	//   (e.g. Stat+size check, or O_EXCL create).
+
 	// First, add the value to the content-
 	// addressable store (CAS), if not present.
 	hash := sha256.Sum256(value)
@@ -319,7 +328,7 @@ const (
 	bugKind = "bug" // gopls bug reports
 )
 
-var iolimit = make(chan struct{}, 128) // counting semaphore to limit I/O concurrency in Set.
+var iolimit = make(chan struct{}, 8) // counting semaphore to limit I/O concurrency in Set.
 
 var budget int64 = 1e9 // 1GB
 

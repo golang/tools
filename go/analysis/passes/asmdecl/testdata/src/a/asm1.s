@@ -9,6 +9,12 @@
 //	TEXT ·unknown(SB),0,$0
 //		RET
 
+TEXT ·argfloat(SB),$0-12
+	CVTTSD2SL x+0(FP), AX
+	CVTSD2SS x+0(FP), X0
+	CVTSS2SD y+8(FP), X0
+	RET
+
 TEXT ·arg1(SB),0,$0-2
 	MOVB	x+0(FP), AX
 	// MOVB x+0(FP), AX // commented out instructions used to panic

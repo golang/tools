@@ -160,7 +160,7 @@ func upgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 		cmd := command.NewUpgradeDependencyCommand(title, command.DependencyArgs{
 			URI:        fh.URI(),
 			AddRequire: false,
-			GoCmdArgs:  []string{req.Mod.Path + "@" + ver},
+			GoCmdArgs:  []string{"--", req.Mod.Path + "@" + ver},
 		})
 		upgradeDiagnostics = append(upgradeDiagnostics, &cache.Diagnostic{
 			URI:            fh.URI(),
@@ -487,7 +487,7 @@ func getUpgradeCodeAction(fh file.Handle, req *modfile.Require, version string) 
 	return command.NewUpgradeDependencyCommand(upgradeTitle(version), command.DependencyArgs{
 		URI:        fh.URI(),
 		AddRequire: false,
-		GoCmdArgs:  []string{req.Mod.Path + "@" + version},
+		GoCmdArgs:  []string{"--", req.Mod.Path + "@" + version},
 	})
 }
 

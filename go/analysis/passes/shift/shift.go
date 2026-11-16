@@ -14,7 +14,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/token"
-	"go/types"
+
 	"math"
 
 	"golang.org/x/tools/go/analysis"
@@ -98,22 +98,9 @@ func checkLongShift(pass *analysis.Pass, node ast.Node, x, y ast.Expr) {
 	if t == nil {
 		return
 	}
-	var structuralTypes []types.Type
-	switch t := types.Unalias(t).(type) {
-	case *types.TypeParam:
-		terms, err := typeparams.StructuralTerms(t)
-		if err != nil {
-			return // invalid type
-		}
-		for _, term := range terms {
-			structuralTypes = append(structuralTypes, term.Type())
-		}
-	default:
-		structuralTypes = append(structuralTypes, t)
-	}
 	sizes := make(map[int64]struct{})
-	for _, t := range structuralTypes {
-		size := 8 * pass.TypesSizes.Sizeof(t)
+	for term := range typeparams.TypeSetOf(t).Terms() {
+		size := 8 * pass.TypesSizes.Sizeof(term.Type())
 		sizes[size] = struct{}{}
 	}
 	minSize := int64(math.MaxInt64)

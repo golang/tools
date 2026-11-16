@@ -9,25 +9,21 @@ go 1.18
 -- p.go --
 package extract
 
-import "fmt"
-
 func main() {
 	x := []rune{} //@codeaction("x", "refactor.extract.function", end=end, result=ext)
 	s := "HELLO"
 	for _, c := range s {
 		x = append(x, c)
 	} //@loc(end, "}")
-	fmt.Printf("%x\n", x)
+	println(x)
 }
 
 -- @ext/p.go --
 package extract
 
-import "fmt"
-
 func main() {
 	x := newFunction() //@loc(end, "}")
-	fmt.Printf("%x\n", x)
+	println(x)
 }
 
 func newFunction() []rune {

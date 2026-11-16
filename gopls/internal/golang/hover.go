@@ -123,7 +123,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	ctx, done := event.Start(ctx, "golang.Hover")
 	defer done()
 
-	rng, h, err := hover(ctx, snapshot, fh, rng)
+	rng, h, err := hover(ctx, snapshot, fh, rng, true)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 // hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (protocol.Range, *hoverResult, error) {
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, sizeInfo bool) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
 	// whether this is a GOROOT view, but even if it does succeed the resulting
@@ -489,7 +489,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	//
 	var sizeOffset string
 
-	if ident.Pos() == obj.Pos() {
+	if sizeInfo && ident.Pos() == obj.Pos() {
 		// This is the declaring identifier.
 
 		// format returns the decimal and hex representation of x.
@@ -1038,9 +1038,9 @@ func hoverPackageName(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 // the value of the rune under the cursor.
 func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, posRange astutil.Range) (protocol.Range, *hoverResult, error) {
 	var (
-		value      string    // if non-empty, a constant value to format in hover
-		r          rune      // if non-zero, format a description of this rune in hover
-		start, end token.Pos // hover span
+		value      string         // if non-empty, a constant value to format in hover
+		r          rune      = -1 // if >= 0, format a description of this rune in hover
+		start, end token.Pos      // hover span
 	)
 	if lit, ok := expr.(*ast.BasicLit); ok {
 		switch tv.Value.Kind() {
@@ -1056,16 +1056,14 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 		case constant.Int:
 			switch lit.Kind {
 			case token.CHAR:
-				s, err := strconv.Unquote(lit.Value)
-				if err != nil {
-					// If the conversion fails, it's because of an invalid syntax, therefore
-					// there is no rune to be found.
+				// Use strconv.UnquoteChar because strconv.Unquote does not decode
+				// non-ASCII byte escapes as UTF-8 (https://go.dev/issue/82205).
+				rr, _, tail, err := strconv.UnquoteChar(lit.Value[1:], '\'')
+				if err != nil || tail != "'" {
 					return protocol.Range{}, nil, nil
 				}
-				r, _ = utf8.DecodeRuneInString(s)
-				if r == utf8.RuneError {
-					return protocol.Range{}, nil, fmt.Errorf("rune error")
-				}
+
+				r = rr
 				start, end = lit.Pos(), lit.End()
 			case token.INT:
 				// Short literals (e.g. 99 decimal, 07 octal) are uninteresting.
@@ -1139,7 +1137,7 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 		start, end = expr.Pos(), expr.End()
 	}
 
-	if value == "" && r == 0 { // nothing to format
+	if value == "" && r < 0 { // nothing to format
 		return protocol.Range{}, nil, nil
 	}
 
@@ -1152,7 +1150,7 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 	if value != "" {
 		b.WriteString(value)
 	}
-	if r != 0 {
+	if r >= 0 {
 		runeName := runenames.Name(r)
 		if len(runeName) > 0 && runeName[0] == '<' {
 			// Check if the rune looks like an HTML tag. If so, trim the surrounding <>

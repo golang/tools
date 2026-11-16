@@ -11,3 +11,10 @@ TEXT ·returnint(SB),NOSPLIT|NOFRAME,$0-8
 
 TEXT ·returnbyte(SB),$0-9
 	RET // want `RET without writing`
+
+TEXT ·argint(SB),$0-16
+	I64Load x+0(FP)
+	MOVD y+8(FP), R0
+	I32Load x+0(FP) // want `invalid I32Load of x\+0\(FP\); int is 8-byte value`
+	MOVW y+8(FP), R0 // want `invalid MOVW of y\+8\(FP\); uint is 8-byte value`
+	RET

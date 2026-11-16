@@ -66,6 +66,12 @@ func _() {
 	}
 
 	<-a //@rank(re"() \\/\\/", builtinChan, builtinInt)
+
+	// golang/go#75155: incomplete outer map type.
+	var partialMap map[string]
+	partialMap = make(map[])       //@rank(re"()\\]", string, int)
+	partialMap = make(map[string]) //@rank(re"()\\)", int, "struct")
+	partialMap = make(map)         //@rank(re"()\\)", "!map[string]invalid type")
 }
 
 -- builtin_types.go --
@@ -79,6 +85,16 @@ func _() {
 	var _ []bool = make([], 0) //@rank(re"(),", bool, int)
 
 	var _ [][]bool = make([][], 0) //@rank(re"(),", bool, int)
+
+	// golang/go#75155: make(map) in composite literal field assignment.
+	var _ map[string]int //@item(builtinStringIntMapType, "map[string]int", "map[string]int", "type")
+	_ = struct {
+		Foo map[string]int
+	}{
+		Foo: make(map[]),       //@rank(re"()\\]", string, int)
+		Foo: make(map[string]), //@rank(re"()\\)", int, bool)
+		Foo: make(map),         //@rank(re"()\\)", builtinStringIntMapType, "!map[invalid type]invalid type")
+	}
 }
 
 -- builtins.go --

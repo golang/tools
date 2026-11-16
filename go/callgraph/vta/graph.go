@@ -708,29 +708,6 @@ func (b *builder) rtrn(r *ssa.Return) {
 func (b *builder) multiconvert(c *ssa.MultiConvert) {
 	// TODO(zpavlinovic): decide what to do on MultiConvert long term.
 	// TODO(zpavlinovic): add unit tests.
-	typeSetOf := func(typ types.Type) []*types.Term {
-		// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
-		var terms []*types.Term
-		var err error
-		switch typ := types.Unalias(typ).(type) {
-		case *types.TypeParam:
-			terms, err = typeparams.StructuralTerms(typ)
-		case *types.Union:
-			terms, err = typeparams.UnionTermSet(typ)
-		case *types.Interface:
-			terms, err = typeparams.InterfaceTermSet(typ)
-		default:
-			// Common case.
-			// Specializing the len=1 case to avoid a slice
-			// had no measurable space/time benefit.
-			terms = []*types.Term{types.NewTerm(false, typ)}
-		}
-
-		if err != nil {
-			return nil
-		}
-		return terms
-	}
 	// isValuePreserving returns true if a conversion from ut_src to
 	// ut_dst is value-preserving, i.e. just a change of type.
 	// Precondition: neither argument is a named or alias type.
@@ -753,12 +730,10 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 		}
 		return false
 	}
-	dst_terms := typeSetOf(c.Type())
-	src_terms := typeSetOf(c.X.Type())
-	for _, s := range src_terms {
-		us := s.Type().Underlying()
-		for _, d := range dst_terms {
-			ud := d.Type().Underlying()
+	dst_terms := typeparams.TypeSetOf(c.Type())
+	src_terms := typeparams.TypeSetOf(c.X.Type())
+	for us := range src_terms.UnderlyingTypes() {
+		for ud := range dst_terms.UnderlyingTypes() {
 			if isValuePreserving(us, ud) {
 				// This is equivalent to a ChangeType.
 				b.addInFlowAliasEdges(b.nodeFromVal(c), b.nodeFromVal(c.X))

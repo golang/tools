@@ -26,7 +26,6 @@ package golang
 // - move this into a new package, golang/web, and then
 //   split out the various helpers without fear of polluting
 //   the golang package namespace?
-// - show "Deprecated" chip when appropriate.
 
 import (
 	"bytes"
@@ -377,6 +376,18 @@ header {
   padding: 0.3em;
 }
 
+.deprecation {
+  background-color: #c6c8ca; /* pkgsite's --color-border */
+  border-radius: 0.125rem;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: normal;
+  line-height: 1.375;
+  padding: 0.125rem 0.25rem;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .Documentation-sinceVersion {
   font-weight: normal;
   color: #808080;
@@ -659,6 +670,31 @@ window.addEventListener('load', function() {
 		return strings.ReplaceAll(buf.String(), ", invalid type)", ", ...)")
 	}
 
+	// deprecatedHTML returns an HTML "deprecated" tag (with a
+	// leading space) if any of the doc comments contains a
+	// deprecation notice, or "" otherwise.
+	// See https://go.dev/wiki/Deprecated.
+	//
+	// (The comments are available because we use doc.PreserveAST.)
+	deprecatedHTML := func(docs ...*ast.CommentGroup) string {
+		for _, doc := range docs {
+			if astutil.Deprecation(doc) != "" {
+				return " <span class='deprecation'>deprecated</span>"
+			}
+		}
+		return ""
+	}
+
+	// typeDoc returns the doc comments of a go/doc type: that of
+	// its TypeSpec, and that of its (possibly synthetic) GenDecl.
+	typeDoc := func(t *doc.Type) []*ast.CommentGroup {
+		docs := []*ast.CommentGroup{t.Decl.Doc}
+		if len(t.Decl.Specs) == 1 {
+			docs = append(docs, t.Decl.Specs[0].(*ast.TypeSpec).Doc)
+		}
+		return docs
+	}
+
 	fmt.Fprintf(&buf, "<main>\n")
 
 	// package name
@@ -690,13 +726,13 @@ window.addEventListener('load', function() {
 	}
 	for _, fn := range docpkg.Funcs {
 		obj := scope.Lookup(fn.Name).(*types.Func)
-		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-			obj.Name(), escape(fnString(obj)))
+		fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a>%s</li>\n",
+			obj.Name(), escape(fnString(obj)), deprecatedHTML(fn.Decl.Doc))
 	}
 	for _, doctype := range docpkg.Types {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
-		fmt.Fprintf(&buf, "<li><a href='#%[1]s'>type %[1]s</a></li>\n",
-			tname.Name())
+		fmt.Fprintf(&buf, "<li><a href='#%[1]s'>type %[1]s</a>%[2]s</li>\n",
+			tname.Name(), deprecatedHTML(typeDoc(doctype)...))
 
 		if len(doctype.Funcs)+len(doctype.Methods) > 0 {
 			fmt.Fprintf(&buf, "<ul>\n")
@@ -704,16 +740,17 @@ window.addEventListener('load', function() {
 			// constructors
 			for _, docfn := range doctype.Funcs {
 				obj := scope.Lookup(docfn.Name).(*types.Func)
-				fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a></li>\n",
-					docfn.Name, escape(fnString(obj)))
+				fmt.Fprintf(&buf, "<li><a href='#%s'>%s</a>%s</li>\n",
+					docfn.Name, escape(fnString(obj)), deprecatedHTML(docfn.Decl.Doc))
 			}
 			// methods
 			for _, docmethod := range doctype.Methods {
 				method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-				fmt.Fprintf(&buf, "<li><a href='#%s.%s'>%s</a></li>\n",
+				fmt.Fprintf(&buf, "<li><a href='#%s.%s'>%s</a>%s</li>\n",
 					doctype.Name,
 					docmethod.Name,
-					escape(fnString(method.(*types.Func))))
+					escape(fnString(method.(*types.Func))),
+					deprecatedHTML(docmethod.Decl.Doc))
 			}
 			fmt.Fprintf(&buf, "</ul>\n")
 		}
@@ -727,6 +764,11 @@ window.addEventListener('load', function() {
 			// anchors
 			for _, name := range v.Names {
 				fmt.Fprintf(&buf, "<a id='%s'></a>\n", escape(name))
+			}
+
+			// deprecation tag (if any)
+			if tag := deprecatedHTML(v.Decl.Doc); tag != "" {
+				fmt.Fprintf(&buf, "<div>%s</div>\n", strings.TrimSpace(tag))
 			}
 
 			// declaration
@@ -768,8 +810,8 @@ window.addEventListener('load', function() {
 		for _, docfn := range funcs {
 			obj := scope.Lookup(docfn.Name).(*types.Func)
 
-			fmt.Fprintf(&buf, "<h3 id='%s'>func %s %s</h3>\n",
-				docfn.Name, objHTML(pkg.FileSet(), web, obj), addedInHTML(obj))
+			fmt.Fprintf(&buf, "<h3 id='%s'>func %s%s %s</h3>\n",
+				docfn.Name, objHTML(pkg.FileSet(), web, obj), deprecatedHTML(docfn.Decl.Doc), addedInHTML(obj))
 
 			// decl: func F(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
@@ -787,8 +829,8 @@ window.addEventListener('load', function() {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
 
 		// title and source link
-		fmt.Fprintf(&buf, "<h3 id='%s'>type %s %s</h3>\n",
-			doctype.Name, objHTML(pkg.FileSet(), web, tname), addedInHTML(tname))
+		fmt.Fprintf(&buf, "<h3 id='%s'>type %s%s %s</h3>\n",
+			doctype.Name, objHTML(pkg.FileSet(), web, tname), deprecatedHTML(typeDoc(doctype)...), addedInHTML(tname))
 
 		// declaration
 		// TODO(adonovan): excise non-exported struct fields somehow.
@@ -807,10 +849,10 @@ window.addEventListener('load', function() {
 		// methods on T
 		for _, docmethod := range doctype.Methods {
 			method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s %s</h4>\n",
+			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s%s %s</h4>\n",
 				doctype.Name, docmethod.Name,
 				docmethod.Orig, // T or *T
-				objHTML(pkg.FileSet(), web, method), addedInHTML(method))
+				objHTML(pkg.FileSet(), web, method), deprecatedHTML(docmethod.Decl.Doc), addedInHTML(method))
 
 			// decl: func (x T) M(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",

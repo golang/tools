@@ -943,21 +943,12 @@ func testVulnDiagnostics(t *testing.T, env *Env, pattern string, want vulnDiagEx
 	return modPathDiagnostics
 }
 
-type vulnRelatedInfo struct {
-	Filename string
-	Line     uint32
-	Message  string
-}
-
 type vulnDiag struct {
 	msg      string
 	severity protocol.DiagnosticSeverity
 	// codeActions is a list titles of code actions that we get with this
 	// diagnostics as the context.
 	codeActions []string
-	// relatedInfo is related info message prefixed by the file base.
-	// See summarizeRelatedInfo.
-	relatedInfo []vulnRelatedInfo
 	// diagnostic source.
 	source string
 }

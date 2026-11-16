@@ -138,11 +138,11 @@ func sliceArrayElem(t types.Type) types.Type {
 	case *types.Basic:
 		return types.Typ[types.Byte]
 	case *types.Interface: // type param.
-		terms, err := typeparams.InterfaceTermSet(u)
-		if err != nil || len(terms) == 0 {
+		ts := typeparams.TypeSetOf(u)
+		if ts.Len() == 0 {
 			panic(t)
 		}
-		return sliceArrayElem(terms[0].Type()) // Element types must match.
+		return sliceArrayElem(ts.Term(0).Type()) // Element types must match.
 	default:
 		panic(t)
 	}

@@ -73,4 +73,7 @@ func doTypeSwitch() {
 	var t data.ExportedInterface
 	switch t {
 	}
-}
+
+	// Unclosed switch at EOF (golang/go#82678): should not panic or report a diagnostic.
+	var a typeA
+	switch a {

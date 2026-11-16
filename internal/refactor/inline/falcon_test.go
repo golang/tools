@@ -385,6 +385,32 @@ func TestFalconMisc(t *testing.T) {
 	_ = func() { _ = [1]int{}[x] }
 }`,
 		},
+		// The following three cases are regression tests for a crash (#83129).
+		// TODO(adonovan): falcon does not yet emit constraints for
+		// operands of type-parameter type, so e.g. f[int](1) in the
+		// map-key case would produce a duplicate key.
+		{
+			"Untyped constant converted to type parameter in shift (#83129).",
+			`func f[T ~int](n int, x T) T { return 1<<n + x }`,
+			`func _() { f[int](3, 1) }`,
+			`func _() { _ = 1<<3 + int(1) }`,
+		},
+		{
+			"Untyped constant converted to type parameter in map key (#83129).",
+			`func f[T ~int](x T) { _ = map[T]int{1: 0, x: 1} }`,
+			`func _() { f[int](2) }`,
+			`func _() { _ = map[int]int{1: 0, int(2): 1} }`,
+		},
+		{
+			"Untyped constant converted to type parameter in switch case (#83129).",
+			`func f[T ~int](x, y T) { switch x { case 1, y: } }`,
+			`func _() { f[int](0, 2) }`,
+			`func _() {
+	switch int(0) {
+	case 1, int(2):
+	}
+}`,
+		},
 		{
 			"Falcon violation rejects only the constant arguments (x, z).",
 			`func f(x, y, z string) string { return x[:2] + y + z[:2] }; var b string`,

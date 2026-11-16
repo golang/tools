@@ -120,6 +120,10 @@ func TestLineEdits(t *testing.T) {
 	}
 }
 
+func TestUnified(t *testing.T) {
+	difftest.DiffTest(t, diff.Lines)
+}
+
 func TestToUnified(t *testing.T) {
 	// Plan 9 has no patch command, so use ape/patch, the POSIX patch.
 	patch := "patch"

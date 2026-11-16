@@ -9,6 +9,9 @@ Fixed bugs:
 - golang/go#61635: renaming type parameters did not work when they were
   capitalized and the package was imported by another package.
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module example.com
 go 1.20

@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -58,6 +59,7 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 func minmax(pass *analysis.Pass) (any, error) {
 	var (
 		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info    = pass.TypesInfo
 	)
 	// Check for user-defined min/max functions that can be removed
@@ -189,6 +191,14 @@ func minmax(pass *analysis.Pass) (any, error) {
 					return // min/max is too new
 				}
 
+				// If lhs0 is newly defined (x := a), ensure x is still used
+				// outside ifStmt so replacing "x := a; if x < b { x = b }"
+				// with "x := max(a, b)" does not leave x unused.
+				if fassign.Tok == token.DEFINE &&
+					moreiters.Every(index.Uses(info.Defs[lhs0.(*ast.Ident)]), curIfStmt.Contains) {
+					return
+				}
+
 				// pattern 2
 				pass.Report(analysis.Diagnostic{
 					// Highlight the condition a < b.
@@ -283,18 +293,17 @@ func isSimpleAssign(n ast.Node) bool {
 }
 
 // maybeNaN reports whether t is (or may be) a floating-point type.
+// For a type parameter, it reports whether any type in its type set
+// is a floating-point type.
 func maybeNaN(t types.Type) bool {
-	// For now, we rely on core types.
-	// TODO(adonovan): In the post-core-types future,
-	// follow the approach of types.Checker.applyTypeFunc.
-	t = typeparams.CoreType(t)
-	if t == nil {
+	ts := typeparams.TypeSetOf(t)
+	if ts.Unrestricted() {
 		return true // fail safe
 	}
-	if basic, ok := t.(*types.Basic); ok && basic.Info()&types.IsFloat != 0 {
-		return true
-	}
-	return false
+	return moreiters.Any(ts.UnderlyingTypes(), func(u types.Type) bool {
+		basic, ok := u.(*types.Basic)
+		return ok && basic.Info()&types.IsFloat != 0
+	})
 }
 
 // checkUserDefinedMinMax looks for user-defined min/max functions that are
@@ -303,8 +312,24 @@ func checkUserDefinedMinMax(pass *analysis.Pass) {
 	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 
 	// Look up min and max functions by name in package scope
+nextFunc:
 	for _, funcName := range []string{"min", "max"} {
 		if fn, ok := pass.Pkg.Scope().Lookup(funcName).(*types.Func); ok {
+			// Built-ins cannot be used as function values or explicitly
+			// instantiated. Require every reference to be a direct call,
+			// allowing parentheses around the callee.
+			for use := range index.Uses(fn) {
+				callee := use.UnparenEnclosing()
+				if callee.ParentEdgeKind() != edge.CallExpr_Fun {
+					continue nextFunc
+				}
+				// Built-in min/max calls cannot discard their results.
+				switch callee.Parent().UnparenEnclosing().ParentEdgeKind() {
+				case edge.ExprStmt_X, edge.DeferStmt_Call, edge.GoStmt_Call:
+					continue nextFunc
+				}
+			}
+
 			// Use typeindex to get the FuncDecl directly
 			if def, ok := index.Def(fn); ok {
 				decl := def.Parent().Node().(*ast.FuncDecl)

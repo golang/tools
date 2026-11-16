@@ -1520,3 +1520,69 @@ func TestBuildPackageGo120(t *testing.T) {
 		})
 	}
 }
+
+// TestArrayLen checks that len and cap of an operand whose type set
+// consists of arrays (or pointers to arrays) all of the same length
+// are built as constants, even when the type set has no single
+// underlying type.
+func TestArrayLen(t *testing.T) {
+	const src = `
+package p
+
+type PA *[3]int
+
+func array(x [3]int)                          { print(len(x)) }
+func ptrArray(x *[3]int)                      { print(cap(x)) }
+func namedPtrArray(x PA)                      { print(len(x)) }
+func core[P ~[3]int](x P)                     { print(len(x)) }
+func mixed[P ~[3]int | ~[3]string](x P)       { print(len(x)) }
+func mixedPtr[P *[3]int | ~[3]string](x P)    { print(cap(x)) }
+func diffLen[P ~[3]int | ~[4]int](x P)        { print(len(x)) }
+func withSlice[P ~[3]int | ~[]int](x P)       { print(len(x)) }
+func slice(x []int)                           { print(len(x)) }
+`
+	want := map[string]string{
+		"array":         "3:int",
+		"ptrArray":      "3:int",
+		"namedPtrArray": "3:int",
+		"core":          "3:int",
+		"mixed":         "3:int",
+		"mixedPtr":      "3:int",
+		"diffLen":       "", // not constant
+		"withSlice":     "",
+		"slice":         "",
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := types.NewPackage("p", "")
+	p, _, err := ssautil.BuildPackage(&types.Config{}, fset, pkg, []*ast.File{f}, ssa.SanityCheckFunctions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range want {
+		fn := p.Func(name)
+		if fn == nil {
+			t.Errorf("no function %s", name)
+			continue
+		}
+		calls := callsTo(map[*ssa.Function]bool{fn: true}, "print")
+		if len(calls) != 1 {
+			t.Errorf("%s: got %d calls to print, want 1", name, len(calls))
+			continue
+		}
+		for call := range calls {
+			got := ""
+			if c, ok := call.Args[0].(*ssa.Const); ok {
+				got = c.String()
+			}
+			if got != want {
+				t.Errorf("%s: print argument is %q, want %q", name, got, want)
+				logFunction(t, fn)
+			}
+		}
+	}
+}

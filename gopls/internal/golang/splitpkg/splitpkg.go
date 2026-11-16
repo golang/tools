@@ -162,6 +162,9 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 					if fn.Signature().Recv() != nil {
 						fn = fn.Origin()
 						_, named := typesinternal.RecvBase(fn)
+						if named == nil {
+							continue // invalid recv (#82906)
+						}
 						name = named.Obj().Name() + "." + name
 					} else if name == "init" {
 						// Disambiguate top-level init functions.
@@ -234,7 +237,7 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
 				kind = "func"
-				if fn, ok := info.Defs[decl.Name].(*types.Func); ok {
+				if fn, ok := info.Defs[decl.Name].(*types.Func); ok && symbols[fn] != nil { // nil => skipped in pass 1
 					symbol := symbols[fn]
 					rc := newCollector(symbol).collect(decl)
 					refs = append(refs, rc.refs...)

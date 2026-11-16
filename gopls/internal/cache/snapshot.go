@@ -154,6 +154,7 @@ type Snapshot struct {
 	//
 	// When we try to load a package, we clear it from the shouldLoad map
 	// regardless of whether the load succeeded, to prevent endless loads.
+	// Concurrent workspace reloads consuming shouldLoad are serialized by view.reloadSema.
 	shouldLoad *persistent.Map[PackageID, []PackagePath]
 
 	// unloadableFiles keeps track of files that we've failed to load.
@@ -1202,6 +1203,29 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 		return
 	}
 
+	// Fast path: return immediately if there are no invalidated packages to load.
+	s.mu.Lock()
+	empty := moreiters.Empty(s.shouldLoad.Keys())
+	s.mu.Unlock()
+	if empty {
+		return
+	}
+
+	// Acquire reloadSema (effectively a mutex with context cancellation) to
+	// serialize workspace reloads across concurrent goroutines in the view.
+	select {
+	case <-ctx.Done():
+		return
+	case s.view.reloadSema <- struct{}{}:
+	}
+	defer func() {
+		<-s.view.reloadSema
+	}()
+
+	if ctx.Err() != nil {
+		return
+	}
+
 	var scopes []loadScope
 	var seen map[PackagePath]bool
 	s.mu.Lock()
@@ -1219,6 +1243,8 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 	}
 	s.mu.Unlock()
 
+	// If another goroutine finished reloading while we waited on reloadSema,
+	// shouldLoad was cleared and scopes is empty.
 	if len(scopes) == 0 {
 		return
 	}

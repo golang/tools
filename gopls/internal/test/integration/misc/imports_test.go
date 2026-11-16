@@ -523,8 +523,8 @@ type Baz struct {}
 -- foo/foo.go --
 package foo
 type Foo struct {
-	bar notbar.NotBar
-	baz baz.Baz
+	Bar notbar.NotBar
+	Baz baz.Baz
 }`
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("foo/foo.go")

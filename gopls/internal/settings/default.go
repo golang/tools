@@ -70,7 +70,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 					RefactorExtractVariable:           true,
 					RefactorExtractVariableAll:        true,
 					RefactorExtractToNewFile:          true,
-					RefactorMoveDeclaration:           true, // gated by MoveDeclaration setting, which is off by default
+					RefactorMoveDeclaration:           true,
 					// Not GoTest: it must be explicit in CodeActionParams.Context.Only
 				},
 				file.Mod: {
@@ -96,6 +96,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			Vulncheck:                      ModeVulncheckPrompt,
 			DiagnosticsDelay:               1 * time.Second,
 			DiagnosticsTrigger:             DiagnosticsOnEdit,
+			WatchedFileDelay:               50 * time.Millisecond,
 			AnalysisProgressReporting:      true,
 			Hints:                          map[InlayHint]bool{},
 			HoverKind:                      FullDocumentation,

@@ -19,13 +19,17 @@ go 1.25
 require y.mod.test/resolvetarget v0.0.1
 require z.mod.test/resolvetarget v0.0.1
 
--- x/query.go --
-package main
+-- x/ --
 
 //@resolvetarget("y.mod.test/resolvetarget/a.T", "", y_T)
 //@resolvetarget("T", "y.mod.test/resolvetarget/a", y_T)
 //@resolvetarget("z.mod.test/resolvetarget/a.T", "", z_T)
 //@resolvetarget("T", "z.mod.test/resolvetarget/a", z_T)
+
+// This fails because it resolves relative to x's package path (x.mod.test/resolvetarget)
+// which produces "x.mod.test/y/a" instead of looking at the actual file system
+// to find module y (y.mod.test/resolvetarget/a).
+//@resolvetarget("T", "../y/a", y_T)
 
 -- y/go.mod --
 module y.mod.test/resolvetarget

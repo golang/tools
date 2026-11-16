@@ -41,6 +41,12 @@ func TestCoreType(t *testing.T) {
 	type S interface{ Foo() ; ~int }
 
 	type T interface{chan int|interface{chan int}|<-chan int}
+
+	type Chan1 chan int
+	type Chan2 chan int
+	type U interface{Chan1|Chan2|<-chan int}
+	type V interface{Chan1|<-chan int|Chan2}
+	type W interface{Chan1|Chan2|chan float32}
 `
 
 	fset := token.NewFileSet()
@@ -80,6 +86,9 @@ func TestCoreType(t *testing.T) {
 		{"R", "int"},             // interface type with both terms and functions.
 		{"S", "int"},             // interface type with a tilde term
 		{"T", "<-chan int"},      // Prefix of 2 terms that are identical before switching to channel.
+		{"U", "<-chan int"},      // Distinct named terms with identical underlying types, then a directional channel.
+		{"V", "<-chan int"},      // Same, but with a term identical to the first after the mismatch.
+		{"W", "<nil>"},           // Distinct named terms with identical underlying types, then a differing element type.
 	} {
 		// Eval() expr for its type.
 		tv, err := types.Eval(fset, pkg, 0, test.expr)

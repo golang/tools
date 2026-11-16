@@ -1,0 +1,36 @@
+Test move declaration refactoring when the destination file exists but has no
+package clause. NarrowestPackageForFile still succeeds for such a file, since
+go/packages adds a file with a missing or malformed package clause to the
+package in its directory (golang/go#39986), so MoveDeclaration must reject it
+explicitly.
+
+-- flags --
+-ignore_extra_diags
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- go.mod --
+module example.com
+
+go 1.20
+
+-- src/src.go --
+package src
+
+func ToEmpty() {} //@codeaction(re"ToEmpty", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/empty.go"}`, err=re"no (valid )?package clause")
+
+func ToMalformed() {} //@codeaction(re"ToMalformed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/malformed.go"}`, err=re"no (valid )?package clause")
+
+-- dest/dest.go --
+package dest
+
+func Existing() {}
+
+-- dest/empty.go --
+-- dest/malformed.go --
+packag dest
+
+func F() {}

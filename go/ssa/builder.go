@@ -403,10 +403,9 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		// We must still evaluate the value, though.  (If it
 		// was side-effect free, the whole call would have
 		// been constant-folded.)
-		t := typeparams.Deref(fn.typeOf(args[0]))
-		if at, ok := typeparams.CoreType(t).(*types.Array); ok {
+		if n, ok := arrayLen(fn.typeOf(args[0])); ok {
 			b.expr(fn, args[0]) // for effects only
-			return intConst(at.Len())
+			return intConst(n)
 		}
 		// Otherwise treat as normal.
 
@@ -834,7 +833,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				if recv, ok := types.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
-					if !typeSetIsEmpty(recv) {
+					if typeparams.TypeSetOf(recv).Len() > 0 {
 						// recv has a concrete term its typeset.
 						// So it cannot be instantiated as an interface.
 						//
@@ -908,7 +907,9 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			// An array in a register, a string or a combined type that contains
 			// either an [_]array (ixArrVar) or string (ixValue).
 
-			// Note: for ixArrVar and CoreType(xt)==nil can be IndexAddr and Load.
+			// Note: for ixArrVar, if xt is a type parameter whose type set
+			// mixes arrays with other types (e.g. ~[N]T | ~[]T), this
+			// could be IndexAddr and Load.
 			index := b.expr(fn, e.Index)
 			if isUntyped(index.Type()) {
 				index = emitConv(fn, index, tInt)

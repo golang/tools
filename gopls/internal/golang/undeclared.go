@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/cursorutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -89,7 +90,10 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	// first occurrence of the undefined ident.
 	var curFirstRef inspector.Cursor // *ast.Ident
 
-	// Search from enclosing FuncDecl to first use, since we can not use := syntax outside function.
+	// Search from the innermost enclosing function (FuncDecl or FuncLit)
+	// to the first use, since := syntax cannot be used outside a function
+	// and uses in sibling closures are not in scope.
+	//
 	// Adds the missing colon under the following conditions:
 	// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
 	// 2) ident must not be self assignment.
@@ -97,8 +101,11 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	// For example, we should not add a colon when
 	// a = a + 1
 	// ^   ^ cursor here
-	_, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
-	for curRef := range curFuncDecl.Preorder((*ast.Ident)(nil)) {
+	curFunc, ok := moreiters.First(curId.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+	if !ok {
+		return nil, nil, fmt.Errorf("no enclosing function found: %v", curId)
+	}
+	for curRef := range curFunc.Preorder((*ast.Ident)(nil)) {
 		n := curRef.Node().(*ast.Ident)
 		if n.Name == ident.Name && info.ObjectOf(n) == nil {
 			if curRef.ParentEdgeKind() == edge.AssignStmt_Lhs {
@@ -213,7 +220,10 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 			// only happens in case of a *ast.Ident
 			var name string
 			if ident, ok := arg.(*ast.Ident); ok {
-				name = ident.Name
+				// Don't reuse predeclared names such as true and false.
+				if obj := info.ObjectOf(ident); obj != nil && obj.Parent() != types.Universe {
+					name = ident.Name
+				}
 			}
 
 			if name == "" {
@@ -316,12 +326,10 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 }
 
 func typeToArgName(ty types.Type) string {
-	s := types.Default(ty).String()
-
-	switch t := types.Unalias(ty).(type) {
+	switch t := ty.(type) {
 	case *types.Basic:
 		// use first letter in type name for basic types
-		return s[0:1]
+		return types.Default(ty).String()[0:1]
 	case *types.Slice:
 		// use element type to decide var name for slices
 		return typeToArgName(t.Elem())
@@ -330,19 +338,39 @@ func typeToArgName(ty types.Type) string {
 		return typeToArgName(t.Elem())
 	case *types.Chan:
 		return "ch"
+	case *types.Pointer:
+		return typeToArgName(t.Elem())
+	case *types.Signature:
+		return "fn"
+	case *types.Map:
+		return "m"
+	case *types.Struct:
+		return "s"
+	case *types.Interface:
+		return "i"
 	}
 
-	s = strings.TrimFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r)
-	})
+	// Use the declared type name, avoiding type arguments and other syntax
+	// that may appear in the string representation of the type.
+	obj := typesinternal.TypeNameFor(ty)
+	if obj == nil {
+		return "arg"
+	}
+	s := obj.Name()
 
-	if s == "error" {
+	switch s {
+	case "error":
 		return "err"
+	case "any":
+		return "a"
 	}
 
-	// remove package (if present)
-	// and make first letter lowercase
-	a := []rune(s[strings.LastIndexByte(s, '.')+1:])
+	// Make the first letter lowercase, but don't produce a keyword.
+	a := []rune(s)
 	a[0] = unicode.ToLower(a[0])
-	return string(a)
+	s = string(a)
+	if token.IsKeyword(s) {
+		s += "_"
+	}
+	return s
 }

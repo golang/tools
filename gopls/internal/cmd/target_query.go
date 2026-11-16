@@ -7,6 +7,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	protocolcommand "golang.org/x/tools/gopls/internal/protocol/command"
@@ -14,8 +15,8 @@ import (
 
 // TargetQueryFlags defines the set of flags for subcommands that take a target query param
 type TargetQueryFlags struct {
-	Pkg string `flag:"pkg" help:"scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains."`
-	Pos string `flag:"pos" help:"targets a physical coordinate range (line and column are optional)"`
+	Pkg string       `flag:"pkg" help:"scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains."`
+	Pos locationFlag `flag:"pos" help:"targets a file span."`
 }
 
 type target struct {
@@ -54,23 +55,19 @@ func resolveSingleTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, 
 
 // resolveTarget calls gopls.resolve_target
 func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, targetQuery string) ([]target, error) {
-
 	var (
-		searchScope = protocol.URIFromPath(dir) // default to the passed in directory
+		searchScope = dirURI(dir) // default to the passed in directory
 		searchRange protocol.Range
 	)
-	if len(flags.Pos) > 0 {
-		posSpan := parseSpan(flags.Pos)
-		if posSpan.IsValid() {
-			searchScope = posSpan.URI() // restrict scope to span's file.
-			file, err := cli.openFile(ctx, posSpan.URI())
-			if err != nil {
-				return nil, err
-			}
-			searchRange, err = file.spanRange(posSpan)
-			if err != nil {
-				return nil, err
-			}
+	if flags.Pos.IsValid() {
+		searchScope = flags.Pos.URI() // restrict scope to span's file.
+		file, err := cli.openFile(ctx, flags.Pos.URI())
+		if err != nil {
+			return nil, err
+		}
+		searchRange, err = file.spanRange(flags.Pos.span)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -98,4 +95,11 @@ func resolveTarget(ctx context.Context, cli *cli, flags TargetQueryFlags, dir, t
 		}
 	}
 	return targets, nil
+}
+
+// dirURI returns a DocumentUri ending with a '/'. This is to help
+// resolve_target know that we are sending it a directory.
+func dirURI(dir string) protocol.DocumentURI {
+	uri := protocol.URIFromPath(dir)
+	return protocol.DocumentURI(strings.TrimSuffix(string(uri), "/") + "/")
 }

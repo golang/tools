@@ -44,7 +44,7 @@ forward the LSP. For example, here is a reasonable gopls invocation, that sets
 some additional flags for easier [debugging](#debugging):
 
 ```bash
-gopls -remote=auto -logfile=auto -debug=:0 -remote.debug=:0 -rpc.trace
+gopls -remote=auto -logfile=auto -debug=localhost:0 -remote.debug=localhost:0 -rpc.trace
 ```
 
 Note that the shared gopls process will automatically shut down after one
@@ -60,26 +60,26 @@ started by your editor.
 For example, to host the daemon on the TCP port `37374`, do:
 
 ```bash
-gopls -listen=:37374 -logfile=auto -debug=:0
+gopls -listen=:37374 -logfile=auto -debug=localhost:0
 ```
 
 And then from the editor, run
 
 ```bash
-gopls -remote=:37374 -logfile=auto -debug=:0 -rpc.trace
+gopls -remote=:37374 -logfile=auto -debug=localhost:0 -rpc.trace
 ```
 
 If you are on a POSIX system, you can also use unix domain sockets by prefixing
 the flag values with `unix;`. For example:
 
 ```bash
-gopls -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0
+gopls -listen="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=localhost:0
 ```
 
 And connect via:
 
 ```bash
-gopls -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=:0 -rpc.trace
+gopls -remote="unix;/tmp/gopls-daemon-socket" -logfile=auto -debug=localhost:0 -rpc.trace
 ```
 
 (Note that these flag values MUST be enclosed in quotes, because ';' is a
@@ -128,7 +128,7 @@ This works whether or not you have enabled `-remote.debug`.
 
 ### Traversing debug pages
 
-When `-debug=:0` is passed to gopls, it runs a webserver that serves stateful
+When `-debug=localhost:0` is passed to gopls, it runs a webserver that serves stateful
 debug pages (see [troubleshooting.md](troubleshooting.md)). You can find the
 actual port hosting these pages by either using the `gopls remote sessions`
 command, or by checking the start of the logfile -- it will be one of the first

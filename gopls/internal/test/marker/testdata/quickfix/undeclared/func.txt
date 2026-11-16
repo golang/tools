@@ -1,165 +1,318 @@
-This test checks the quick fix for undefined functions.
+This test checks the quick fix for undefined functions, including valid
+parameter names for golang/go#81810.
 
--- channels.go --
-package missingfunction
+Cases are grouped by how names and types are inferred:
+  - arguments/ident: names reused from argument identifiers.
+  - arguments/type: names derived from argument types.
+  - returns: result types inferred from the surrounding context.
+
+-- arguments/ident/consecutive.go --
+package ident
+
+func consecutiveParams() {
+	var s string
+	undefined(s, s) //@quickfix("undefined", re"(undeclared|undefined)", consecutive)
+}
+-- @consecutive/arguments/ident/consecutive.go --
+@@ -7 +7,4 @@
++
++func undefined(s1, s2 string) {
++	panic("unimplemented")
++}
+-- arguments/ident/error.go --
+package ident
+
+func errorParam() {
+	var err error
+	undefined(err) //@quickfix("undefined", re"(undeclared|undefined)", error)
+}
+-- @error/arguments/ident/error.go --
+@@ -7 +7,4 @@
++
++func undefined(err error) {
++	panic("unimplemented")
++}
+-- arguments/ident/unique_params.go --
+package ident
+
+func uniqueArguments() {
+	var s string
+	var i int
+	undefined(s, i, s) //@quickfix("undefined", re"(undeclared|undefined)", unique)
+}
+-- @unique/arguments/ident/unique_params.go --
+@@ -8 +8,4 @@
++
++func undefined(s1 string, i int, s2 string) {
++	panic("unimplemented")
++}
+-- arguments/ident/predeclared.go --
+package ident
+
+func _() {
+	undefined(true) //@quickfix("undefined", re"(undeclared|undefined)", predeclared)
+}
+-- @predeclared/arguments/ident/predeclared.go --
+@@ -6 +6,4 @@
++
++func undefined(b bool) {
++	panic("unimplemented")
++}
+-- arguments/type/channels.go --
+package a
 
 func channels(s string) {
-	undefinedChannels(c()) //@quickfix("undefinedChannels", re"(undeclared|undefined)", channels)
+	undefined(c()) //@quickfix("undefined", re"(undeclared|undefined)", channels)
 }
 
 func c() (<-chan string, chan string) {
 	return make(<-chan string), make(chan string)
 }
--- @channels/channels.go --
+-- @channels/arguments/type/channels.go --
 @@ -7 +7,4 @@
-+func undefinedChannels(ch1 <-chan string, ch2 chan string) {
++func undefined(ch1 <-chan string, ch2 chan string) {
 +	panic("unimplemented")
 +}
 +
--- consecutive.go --
-package missingfunction
-
-func consecutiveParams() {
-	var s string
-	undefinedConsecutiveParams(s, s) //@quickfix("undefinedConsecutiveParams", re"(undeclared|undefined)", consecutive)
-}
--- @consecutive/consecutive.go --
-@@ -7 +7,4 @@
-+
-+func undefinedConsecutiveParams(s1, s2 string) {
-+	panic("unimplemented")
-+}
--- error.go --
-package missingfunction
-
-func errorParam() {
-	var err error
-	undefinedErrorParam(err) //@quickfix("undefinedErrorParam", re"(undeclared|undefined)", error)
-}
--- @error/error.go --
-@@ -7 +7,4 @@
-+
-+func undefinedErrorParam(err error) {
-+	panic("unimplemented")
-+}
--- literals.go --
-package missingfunction
+-- arguments/type/literals.go --
+package a
 
 type T struct{}
 
 func literals() {
-	undefinedLiterals("hey compiler", T{}, &T{}) //@quickfix("undefinedLiterals", re"(undeclared|undefined)", literals)
+	undefined("hey compiler", T{}, &T{}) //@quickfix("undefined", re"(undeclared|undefined)", literals)
 }
--- @literals/literals.go --
+-- @literals/arguments/type/literals.go --
 @@ -8 +8,4 @@
 +
-+func undefinedLiterals(s string, t1 T, t2 *T) {
++func undefined(s string, t1 T, t2 *T) {
 +	panic("unimplemented")
 +}
--- operation.go --
-package missingfunction
+-- arguments/type/operation.go --
+package a
 
 import "time"
 
 func operation() {
-	undefinedOperation(10 * time.Second) //@quickfix("undefinedOperation", re"(undeclared|undefined)", operation)
+	undefined(10 * time.Second) //@quickfix("undefined", re"(undeclared|undefined)", operation)
 }
--- @operation/operation.go --
+-- @operation/arguments/type/operation.go --
 @@ -8 +8,4 @@
 +
-+func undefinedOperation(duration time.Duration) {
++func undefined(duration time.Duration) {
 +	panic("unimplemented")
 +}
--- selector.go --
-package missingfunction
+-- arguments/type/selector.go --
+package a
 
 func selector() {
 	m := map[int]bool{}
-	undefinedSelector(m[1]) //@quickfix("undefinedSelector", re"(undeclared|undefined)", selector)
+	undefined(m[1]) //@quickfix("undefined", re"(undeclared|undefined)", selector)
 }
--- @selector/selector.go --
+-- @selector/arguments/type/selector.go --
 @@ -7 +7,4 @@
 +
-+func undefinedSelector(b bool) {
++func undefined(b bool) {
 +	panic("unimplemented")
 +}
--- slice.go --
-package missingfunction
+-- arguments/type/slice.go --
+package a
 
 func slice() {
-	undefinedSlice([]int{1, 2}) //@quickfix("undefinedSlice", re"(undeclared|undefined)", slice)
+	undefined([]int{1, 2}) //@quickfix("undefined", re"(undeclared|undefined)", slice)
 }
--- @slice/slice.go --
+-- @slice/arguments/type/slice.go --
 @@ -6 +6,4 @@
 +
-+func undefinedSlice(i []int) {
++func undefined(i []int) {
 +	panic("unimplemented")
 +}
--- tuple.go --
-package missingfunction
+-- arguments/type/tuple.go --
+package a
 
 func tuple() {
-	undefinedTuple(b()) //@quickfix("undefinedTuple", re"(undeclared|undefined)", tuple)
+	undefined(b()) //@quickfix("undefined", re"(undeclared|undefined)", tuple)
 }
 
 func b() (string, error) {
 	return "", nil
 }
--- @tuple/tuple.go --
+-- @tuple/arguments/type/tuple.go --
 @@ -7 +7,4 @@
-+func undefinedTuple(s string, err error) {
++func undefined(s string, err error) {
 +	panic("unimplemented")
 +}
 +
--- unique_params.go --
-package missingfunction
+-- arguments/type/funclit.go --
+package a
 
-func uniqueArguments() {
-	var s string
-	var i int
-	undefinedUniqueArguments(s, i, s) //@quickfix("undefinedUniqueArguments", re"(undeclared|undefined)", unique)
+func _() {
+	undefined(func() (int, int) { return 0, 0 }) //@quickfix("undefined", re"(undeclared|undefined)", funclit)
 }
--- @unique/unique_params.go --
+-- @funclit/arguments/type/funclit.go --
+@@ -6 +6,4 @@
++
++func undefined(fn func() (int, int)) {
++	panic("unimplemented")
++}
+-- arguments/type/funcresult.go --
+package a
+
+type Receiver struct{}
+
+func (Receiver) M() (Receiver, error) { return Receiver{}, nil }
+
+func _() {
+	undefined(Receiver{}.M) //@quickfix("undefined", re"(undeclared|undefined)", funcresult)
+}
+-- @funcresult/arguments/type/funcresult.go --
+@@ -10 +10,4 @@
++
++func undefined(fn func() (Receiver, error)) {
++	panic("unimplemented")
++}
+-- arguments/type/keyword.go --
+package a
+
+type Range struct{}
+
+func _() {
+	undefined([]Range{}) //@quickfix("undefined", re"(undeclared|undefined)", keyword)
+}
+-- @keyword/arguments/type/keyword.go --
 @@ -8 +8,4 @@
 +
-+func undefinedUniqueArguments(s1 string, i int, s2 string) {
++func undefined(range_ []Range) {
 +	panic("unimplemented")
 +}
--- param.go --
-package missingfunction
+-- arguments/type/map.go --
+package a
+
+func _() {
+	undefined(map[string]int{}) //@quickfix("undefined", re"(undeclared|undefined)", map)
+}
+-- @map/arguments/type/map.go --
+@@ -6 +6,4 @@
++
++func undefined(m map[string]int) {
++	panic("unimplemented")
++}
+-- arguments/type/struct.go --
+package a
+
+func _() {
+	undefined(struct{}{}) //@quickfix("undefined", re"(undeclared|undefined)", struct)
+}
+-- @struct/arguments/type/struct.go --
+@@ -6 +6,4 @@
++
++func undefined(s struct{}) {
++	panic("unimplemented")
++}
+-- arguments/type/interface.go --
+package a
+
+func _() {
+	undefined(interface{}(nil)) //@quickfix("undefined", re"(undeclared|undefined)", interface)
+}
+-- @interface/arguments/type/interface.go --
+@@ -6 +6,4 @@
++
++func undefined(i interface{}) {
++	panic("unimplemented")
++}
+-- arguments/type/pointer.go --
+package a
+
+func _() {
+	var callback func() int
+	undefined(&callback) //@quickfix("undefined", re"(undeclared|undefined)", pointer)
+}
+-- @pointer/arguments/type/pointer.go --
+@@ -7 +7,4 @@
++
++func undefined(fn *func() int) {
++	panic("unimplemented")
++}
+-- arguments/type/generic.go --
+package a
+
+type Box[T any] struct{ Value T }
+
+func _() {
+	undefined(Box[int]{}) //@quickfix("undefined", re"(undeclared|undefined)", generic)
+}
+-- @generic/arguments/type/generic.go --
+@@ -8 +8,4 @@
++
++func undefined(box Box[int]) {
++	panic("unimplemented")
++}
+-- arguments/type/alias.go --
+package a
+
+type A[T any] struct{ Value T }
+type B = A[int]
+type C = map[string]int
+type D = int
+type E = []int
+
+func _() {
+	undefined(B{}, C{}, D(0), E{}, any(nil)) //@quickfix("undefined", re"(undeclared|undefined)", alias)
+}
+-- @alias/arguments/type/alias.go --
+@@ -12 +12,4 @@
++
++func undefined(b B, c C, d D, e E, a any) {
++	panic("unimplemented")
++}
+-- arguments/type/array.go --
+package a
+
+func _() {
+	undefined([1]Range{}) //@quickfix("undefined", re"(undeclared|undefined)", array)
+}
+-- @array/arguments/type/array.go --
+@@ -6 +6,4 @@
++
++func undefined(range_ [1]Range) {
++	panic("unimplemented")
++}
+-- returns/param.go --
+package a
 
 func inferFromParam() {
 	f(as_param()) //@quickfix("as_param", re"undefined", infer_param)
 }
 
 func f(i int) {}
--- @infer_param/param.go --
+-- @infer_param/returns/param.go --
 @@ -7 +7,4 @@
 +func as_param() int {
 +	panic("unimplemented")
 +}
 +
--- assign.go --
-package missingfunction
+-- returns/assign.go --
+package a
 
 func inferFromAssign() {
 	i := 42
 	i = i
 	i = assign() //@quickfix("assign", re"undefined", infer_assign)
 }
--- @infer_assign/assign.go --
+-- @infer_assign/returns/assign.go --
 @@ -8 +8,4 @@
 +
 +func assign() int {
 +	panic("unimplemented")
 +}
--- return.go --
-package missingfunction
+-- returns/return.go --
+package a
 
 func inferFromReturn() int {
 	return foo(1, "") //@quickfix("foo", re"(undeclared|undefined)", infer_return)
 }
--- @infer_return/return.go --
+-- @infer_return/returns/return.go --
 @@ -6 +6,4 @@
 +
 +func foo(i int, s string) int {

@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/stdlib"
+	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -85,9 +86,8 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// Gather names of unexported interface methods declared in this package.
 	localIfaceMethods := make(map[string]bool)
-	nodeFilter := []ast.Node{(*ast.InterfaceType)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		iface := n.(*ast.InterfaceType)
+	for cur := range inspect.Root().Preorder((*ast.InterfaceType)(nil)) {
+		iface := cur.Node().(*ast.InterfaceType)
 		for _, field := range iface.Methods.List {
 			if len(field.Names) > 0 {
 				id := field.Names[0]
@@ -97,7 +97,7 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		}
-	})
+	}
 
 	// used reports whether the object declared at id is (potentially) used.
 	// References within curSelf are ignored.
@@ -162,13 +162,64 @@ func run(pass *analysis.Pass) (any, error) {
 		return true
 	}
 
-	// Check each package-level declaration (and method) for uses.
+	// Gather fields implicitly used by unkeyed struct literals T{x, y}.
+	// Such fields are unreferenced but cannot be deleted.
+	//
+	// TODO(adonovan): a conversion U(t) between two struct types
+	// with identical fields also implicitly uses every field of
+	// both types. We don't detect this, so an otherwise
+	// unreferenced field of T or U is falsely reported as unused,
+	// and the suggested fix breaks the conversion.
+	unkeyedFields := make(map[*types.Var]bool)
+	for curLit := range inspect.Root().Preorder((*ast.CompositeLit)(nil)) {
+		lit := curLit.Node().(*ast.CompositeLit)
+		if len(lit.Elts) > 0 && !is[*ast.KeyValueExpr](lit.Elts[0]) { // unkeyed
+			if s, ok := typeparams.CoreType(pass.TypesInfo.TypeOf(lit)).(*types.Struct); ok {
+				for field := range s.Fields() {
+					unkeyedFields[field.Origin()] = true
+				}
+			}
+		}
+	}
+
+	// Check each package-level declaration, method, and field for uses.
 	for curFile := range inspect.Root().Preorder((*ast.File)(nil)) {
 		file := curFile.Node().(*ast.File)
 		if ast.IsGenerated(file) {
 			continue // skip generated files
 		}
 		tokFile := pass.Fset.File(file.Pos())
+
+		// Check each unexported field of each named struct type
+		// (at any level) for uses.
+		//
+		// Anonymous struct types are ignored: two identical
+		// anonymous struct types (struct{ x int }) may be
+		// written out in full in different places, and values
+		// of one may be assigned to the other, implicitly
+		// using fields that are never referenced by name.
+		for curStruct := range curFile.Preorder((*ast.StructType)(nil)) {
+			if ek, _ := curStruct.ParentEdge(); ek != edge.TypeSpec_Type ||
+				curStruct.Parent().Node().(*ast.TypeSpec).Assign.IsValid() {
+				continue // not type T struct{...}
+			}
+			curFields := curStruct.ChildAt(edge.StructType_Fields, -1)
+			for i, field := range curFields.Node().(*ast.FieldList).List {
+				curField := curFields.ChildAt(edge.FieldList_List, i)
+				// Embedded fields (which have no Field.Names)
+				// are not reported: their uses may be
+				// implicit, via promotion.
+				for j, id := range field.Names {
+					curId := curField.ChildAt(edge.Field_Names, j)
+					v := pass.TypesInfo.Defs[id].(*types.Var)
+					if !unkeyedFields[v] && !isPadding(id.Name) {
+						checkUnused("field", id, curStruct, func() []analysis.TextEdit {
+							return refactor.DeleteStructField(curId)
+						})
+					}
+				}
+			}
+		}
 
 	nextDecl:
 		for i := range file.Decls {
@@ -280,10 +331,23 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
+// isPadding heuristically reports whether name is a
+// common name for a struct padding field, such as
+// "pad", "pad0", or "padFoo", but not "paddle".
+func isPadding(name string) bool {
+	return strings.HasPrefix(name, "pad") &&
+		(len(name) == 3 || !('a' <= name[3] && name[3] <= 'z'))
+}
+
 func cond[T any](cond bool, t, f T) T {
 	if cond {
 		return t
 	} else {
 		return f
 	}
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }

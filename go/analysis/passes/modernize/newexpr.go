@@ -149,7 +149,6 @@ func run(pass *analysis.Pass) (any, error) {
 			var targ types.Type
 			{
 				arg := call.Args[0]
-				tvarg := info.Types[arg]
 
 				// A composite literal whose type is inferred from
 				// the parameter (go1.28) cannot be an operand of new,
@@ -158,26 +157,27 @@ func run(pass *analysis.Pass) (any, error) {
 					continue
 				}
 
-				// Constants: we must work around the type checker
+				// Untyped expressions: we must work around the type checker
 				// bug that causes info.Types to wrongly report the
 				// "typed" type for an untyped constant.
 				// (See "historical reasons" in issue go.dev/issue/70638.)
+				// Similarly, an untyped non-constant expression such as
+				// 1<<n or a<b takes its type from the parameter, but
+				// would have its default type as the operand of new
+				// (go.dev/issue/83039).
 				//
 				// We don't have a reliable way to do this but we can attempt
-				// to re-typecheck the constant expression on its own, in
+				// to re-typecheck the argument expression on its own, in
 				// the original lexical environment but not as a part of some
 				// larger expression that implies a conversion to some "typed" type.
 				// (For the genesis of this idea see (*state).arguments
 				// in ../../../../internal/refactor/inline/inline.go.)
-				if tvarg.Value != nil {
-					info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
-					if err := types.CheckExpr(token.NewFileSet(), pass.Pkg, token.NoPos, arg, info2); err != nil {
-						continue // unexpected error
-					}
-					tvarg = info2.Types[arg]
+				info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
+				if err := types.CheckExpr(pass.Fset, pass.Pkg, call.Pos(), arg, info2); err != nil {
+					continue // unexpected error
 				}
 
-				targ = types.Default(tvarg.Type)
+				targ = types.Default(info2.Types[arg].Type)
 			}
 			if !types.Identical(types.NewPointer(targ), info.TypeOf(call)) {
 				continue

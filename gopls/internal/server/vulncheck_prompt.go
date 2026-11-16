@@ -357,7 +357,7 @@ func (s *server) runGoGet(ctx context.Context, snapshot *cache.Snapshot, uri pro
 	work := s.progress.Start(ctx, "Upgrading Modules", "Running go get...", nil, nil)
 	defer work.End(ctx, "Done.")
 
-	var upgrades []string
+	upgrades := []string{"--"} // module paths may begin with a dash
 	for module, version := range modulesToUpgrade {
 		upgrades = append(upgrades, module+"@"+version)
 	}

@@ -44,6 +44,7 @@ const (
 	Generate                Command = "gopls.generate"
 	GoGetPackage            Command = "gopls.go_get_package"
 	ImplementInterface      Command = "gopls.implement_interface"
+	Inspect                 Command = "gopls.inspect"
 	ListImports             Command = "gopls.list_imports"
 	ListKnownPackages       Command = "gopls.list_known_packages"
 	LSP                     Command = "gopls.lsp"
@@ -96,6 +97,7 @@ var Commands = []Command{
 	Generate,
 	GoGetPackage,
 	ImplementInterface,
+	Inspect,
 	ListImports,
 	ListKnownPackages,
 	LSP,
@@ -268,6 +270,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.ImplementInterface(ctx, a0, &params.InteractiveParams)
+	case Inspect:
+		var a0 InspectArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.Inspect(ctx, a0)
 	case ListImports:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -583,6 +591,14 @@ func NewImplementInterfaceCommand(title string, a0 ImplementInterfaceArgs) *prot
 	return &protocol.Command{
 		Title:     title,
 		Command:   ImplementInterface.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewInspectCommand(title string, a0 InspectArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   Inspect.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

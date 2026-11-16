@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -21,6 +22,7 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -29,6 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
@@ -36,10 +39,10 @@ import (
 
 var (
 	// MoveDeclarationFileQuestion asks for the destination file for a moved declaration,
-	// preferring the client's native file picker and falling back to a plain string URI input.
+	// preferring the client's native file picker and falling back to a plain string input.
 	MoveDeclarationFileQuestion = formQuestion[string, protocol.DocumentURI]{
 		ID:          "file",
-		Description: "destination file uri for the moved declaration, e.g. file:///path/to/file.go",
+		Description: "destination file uri or absolute path for the moved declaration, e.g. file:///path/to/file.go or /path/to/file.go",
 		Required:    true,
 		Types: []any{
 			protocol.FormFieldTypeFile{
@@ -51,10 +54,19 @@ var (
 			},
 		},
 		convert: func(dest string) (protocol.DocumentURI, error) {
-			destURI, err := protocol.ParseDocumentURI(dest)
-			if err != nil {
-				destURI = protocol.URIFromPath(dest)
+			path := dest
+			if strings.HasPrefix(dest, "file:") {
+				uri, err := protocol.ParseDocumentURI(dest)
+				if err != nil {
+					return "", err
+				}
+				path = uri.Path()
 			}
+			if !filepath.IsAbs(path) {
+				return "", fmt.Errorf("destination must be a file URI or an absolute path: %q", dest)
+			}
+			// Clean the path (e.g. remove ".." elements) explicitly.
+			destURI := protocol.URIFromPath(filepath.Clean(path))
 			if filepath.Ext(destURI.Path()) != ".go" {
 				return "", fmt.Errorf("destination file must be a go file")
 			}
@@ -65,14 +77,30 @@ var (
 	moveDeclarationQuestions = []question{MoveDeclarationFileQuestion}
 )
 
+// moveDest is the destination package of a move. pkg is nil if the package
+// does not exist yet, in which case the move creates it.
+type moveDest struct {
+	pkg     *cache.Package
+	pkgPath metadata.PackagePath
+	pkgName metadata.PackageName
+}
+
 // TODO(mkalil): Find a way to notify users which additional declarations will need to be moved.
 func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.Handle, destURI protocol.DocumentURI, loc protocol.Location) ([]protocol.DocumentChange, protocol.Location, error) {
 	srcPkg, srcPGF, err := NarrowestPackageForFile(ctx, snapshot, srcFH.URI())
 	if err != nil {
 		return nil, protocol.Location{}, err
 	}
+	// Reject destinations that the go command ignores (directories starting
+	// with ".", "_", or containing "testdata"), since the moved declarations
+	// would not belong to any package. Also reject vendor directories and src
+	// packages that do not have a module.
+	srcMod := srcPkg.Metadata().Module
+	if srcMod == nil || snapshot.IgnoredFile(destURI) || inVendorDir(srcMod, destURI) {
+		return nil, protocol.Location{}, fmt.Errorf("cannot move declaration into %s: location is ignored by the go command or vendored", destURI.Path())
+	}
 	var (
-		destPkg *cache.Package
+		dest    moveDest
 		destFH  file.Handle
 		destPGF *parsego.File
 	)
@@ -82,22 +110,36 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 			return nil, protocol.Location{}, err
 		}
 		if _, err := destFH.Content(); err == nil { // destination file exists
-			destPkg, destPGF, err = NarrowestPackageForFile(ctx, snapshot, destURI)
+			dest.pkg, destPGF, err = NarrowestPackageForFile(ctx, snapshot, destURI)
 			if err != nil {
 				return nil, protocol.Location{}, err
+			}
+			if !destPGF.File.Package.IsValid() {
+				// NarrowestPackageForFile succeeds (err == nil) even if the
+				// file has a missing or malformed package clause. The
+				// destination file can have type errors that don't effect the
+				// move, but it must have a package clause.
+				return nil, protocol.Location{}, fmt.Errorf("destination file %s has no package clause", destURI.Path())
 			}
 		} else if errors.Is(err, os.ErrNotExist) { // destination file does not exist
 			// TODO(mkalil): narrowestPackageForDir always returns the non-test
 			// package, but if the dest URI is ".../_test.go", we should consider
 			// asking the user whether to use package "dest_test" or package
 			// "dest" through dynamic questions.
-			destPkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath())
-			if destPkg == nil {
-				// TODO: support destination file in a new package (new directory created, destPkg == nil).
-				return nil, protocol.Location{}, fmt.Errorf("could not resolve destination package")
-			}
+			dest.pkg = narrowestPackageForDir(ctx, snapshot, destURI.DirPath()) // if nil, will create a new package below
 		} else { // unknown error
 			return nil, protocol.Location{}, err
+		}
+
+		if dest.pkg != nil {
+			dest.pkgPath, dest.pkgName = dest.pkg.Metadata().PkgPath, dest.pkg.Metadata().Name
+		} else if dest.pkgPath, dest.pkgName, err = newPackage(srcMod, destURI); err != nil { // create package if it doesn't exist
+			return nil, protocol.Location{}, err
+		} else if dest.pkgPath == srcPkg.Metadata().PkgPath {
+			// The destination directory has no non-test package, but it is the
+			// source package's own directory (e.g. a directory containing only
+			// _test.go files). This is a same-package move.
+			dest.pkg, dest.pkgName = srcPkg, srcPkg.Metadata().Name
 		}
 	}
 
@@ -116,8 +158,8 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 		return nil, protocol.Location{}, fmt.Errorf("could not resolve target declaration")
 	}
 	graph := buildSymbolRefGraph(srcPkg)
-	moving := computeMovingSet(srcPkg, destPkg, graph, targetObj)
-	if err := canMove(snapshot, srcPkg, destPkg, destURI, graph, moving, targetObj); err != nil {
+	moving := computeMovingSet(srcPkg, dest.pkg, graph, targetObj)
+	if err := canMove(snapshot, srcPkg, dest, destURI, graph, moving); err != nil {
 		return nil, protocol.Location{}, err
 	}
 	// Generate protocol.DocumentChanges necessary for moving the declarations.
@@ -138,7 +180,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	// Dest: create the file and write header if the file does not exist.
 	if destPGF == nil {
 		changes = append(changes, protocol.DocumentChangeCreate(destFH.URI()))
-		newFileEdits, err := writeNewDestFile(srcPkg, destPkg, srcPGF)
+		newFileEdits, err := writeNewDestFile(srcPkg, srcPGF, dest)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
@@ -148,28 +190,39 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	// Source and dest: update imports based on packages referenced within the
 	// moving decls. This must come after the new file header edit, since both
 	// insert at the start of a new dest file and are applied in order.
-	if err := updateSrcDestImports(srcPkg, destPkg, destPGF, destFH.URI(), movingRanges, edits); err != nil {
+	if err := updateSrcDestImports(srcPkg, dest, destPGF, destFH, movingRanges, edits); err != nil {
 		return nil, protocol.Location{}, err
 	}
 
 	// Dest: determine file range to add moving declarations.
-	endRange := protocol.Range{}
+	var (
+		endRange protocol.Range
+		sep      string // separates the moving decls from the end of an existing dest file
+	)
 	if destPGF != nil {
-		// File exists - add to the end of the file.
+		// File exists - add to the end of the file, after one blank line.
 		endRange, err = destPGF.PosRange(destPGF.File.FileEnd, destPGF.File.FileEnd)
 		if err != nil {
 			return nil, protocol.Location{}, err
 		}
-		// Range where we add the moving declarations (two lines after the current
-		// file end to account for new lines)
+		switch src := destPGF.Src; {
+		case bytes.HasSuffix(src, []byte("\n\n")):
+			sep = ""
+		case bytes.HasSuffix(src, []byte("\n")):
+			sep = "\n"
+		default:
+			sep = "\n\n"
+		}
+		// Line where the moving declarations start. We'll redirect the editor view to here.
+		line := endRange.End.Line + uint32(strings.Count(sep, "\n"))
 		show = protocol.Range{
-			Start: protocol.Position{Line: endRange.End.Line + 2, Character: 0},
-			End:   protocol.Position{Line: endRange.End.Line + 2, Character: 0},
+			Start: protocol.Position{Line: line, Character: 0},
+			End:   protocol.Position{Line: line, Character: 0},
 		}
 	}
 	// Dest: write the declarations at the bottom of the file.
 	var declsText strings.Builder
-	destPkgPath := string(destPkg.Metadata().PkgPath)
+	destPkgPath := string(dest.pkgPath)
 	for i, r := range movingRanges {
 		text, err := r.text(srcInfo, destPkgPath)
 		if err != nil {
@@ -183,7 +236,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 	declsText.WriteString("\n")
 	edits[destFH.URI()] = append(edits[destFH.URI()], protocol.TextEdit{
 		Range:   endRange,
-		NewText: strings.TrimRight(declsText.String(), "\n") + "\n", // ensure decl text ends with one newline
+		NewText: sep + strings.TrimRight(declsText.String(), "\n") + "\n", // ensure decl text ends with one newline
 	})
 
 	// Source: remove the moving decls. Moving decls may be in any file of srcPkg,
@@ -209,7 +262,7 @@ func MoveDeclaration(ctx context.Context, snapshot *cache.Snapshot, srcFH file.H
 
 	// Rewrite references to moving decls in all packages and update imports as
 	// necessary.
-	if err := updateRefsToMoving(ctx, snapshot, srcPkg, destPkg, srcPGF, moving, declRanges, edits); err != nil {
+	if err := updateRefsToMoving(ctx, snapshot, srcPkg, dest, srcPGF, moving, declRanges, edits); err != nil {
 		return nil, protocol.Location{}, err
 	}
 	docChanges, err := editsToDocChanges(ctx, snapshot, edits)
@@ -250,11 +303,44 @@ func narrowestPackageForDir(ctx context.Context, snapshot *cache.Snapshot, dir s
 	return nil
 }
 
+// newPackage returns the path and name of a new package in the directory
+// of destURI, which must be within the module mod.
+func newPackage(mod *packages.Module, destURI protocol.DocumentURI) (metadata.PackagePath, metadata.PackageName, error) {
+	if mod == nil {
+		return "", "", fmt.Errorf("cannot create a new package: source package is not in a module")
+	}
+	rel, err := filepath.Rel(mod.Dir, destURI.DirPath())
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", "", fmt.Errorf("cannot create a new package: %s is not in module %s", destURI.DirPath(), mod.Path)
+	}
+	pkgPath := path.Join(mod.Path, filepath.ToSlash(rel))
+	// Use the pkgName that importers would assume based on the package path.
+	pkgName := imports.ImportPathToAssumedName(pkgPath)
+	if !token.IsIdentifier(pkgName) {
+		return "", "", fmt.Errorf("cannot create a new package: no valid package name for %s", pkgPath)
+	}
+	return metadata.PackagePath(pkgPath), metadata.PackageName(pkgName), nil
+}
+
+// inVendorDir reports whether destURI is within a vendor directory of the
+// module mod. We don't allow moving into a vendor directory.
+// TODO(mkalil): consolidate with other functions in cache/snapshot.go?
+func inVendorDir(mod *packages.Module, destURI protocol.DocumentURI) bool {
+	if mod == nil {
+		return false
+	}
+	rel, err := filepath.Rel(mod.Dir, destURI.DirPath())
+	if err != nil || !filepath.IsLocal(rel) {
+		return false
+	}
+	return slices.Contains(strings.Split(filepath.ToSlash(rel), "/"), "vendor")
+}
+
 // moveDeclTarget returns the cursor of the declaration to be moved, based on
 // curSel. The moving declaration is the innermost TypeSpec, ValueSpec, or
-// FuncDecl enclosing curSel, if any. It must be a package-level decl. If the
-// cursor is within a multi-value ValueSpec, we return the first enclosing
-// identifier, if any. It also returns the corresponding name and types.Object.
+// FuncDecl enclosing curSel, if any. It must be a package-level decl, and a
+// ValueSpec must declare a single name. It also returns the corresponding name
+// and types.Object.
 func moveDeclTarget(info *types.Info, curSel inspector.Cursor) (inspector.Cursor, string, types.Object) {
 	if cur, ok := moreiters.First(curSel.Enclosing(
 		(*ast.FuncDecl)(nil), (*ast.TypeSpec)(nil), (*ast.ValueSpec)(nil))); ok {
@@ -271,32 +357,12 @@ func moveDeclTarget(info *types.Info, curSel inspector.Cursor) (inspector.Cursor
 				}
 			}
 		case *ast.ValueSpec:
-			// Only support moving package-level decls.
-			if cur.Parent().ParentEdgeKind() == edge.File_Decls {
-				if len(n.Values) > 0 && len(n.Values) != len(n.Names) {
-					// Don't allow moving an ident in a multi-assignment with one value,
-					// e.g. x, y := f(). The RHS may have side effects, and when moving
-					// the variable it will change the number of calls.
-					// (This pattern can also occur with indexing a map, type assertions,
-					// and channels. We should also not support these types of moves)
-					return inspector.Cursor{}, "", nil
-				}
-				if len(n.Names) == 1 {
-					id := n.Names[0]
-					if obj := info.Defs[id]; obj != nil {
-						return cur, n.Names[0].Name, obj
-					}
-				} else {
-					// For a multi-value ValueSpec, only match if the cursor is directly
-					// on one of the declared names (not in the type or value expressions).
-					// var a, b = foo, bar <- cursor in foo/bar is ambiguous
-					// var a, b MyType <- cursor in MyType is ambiguous
-					if curSel.ParentEdgeKind() == edge.ValueSpec_Names {
-						id := curSel.Node().(*ast.Ident)
-						if obj := info.Defs[id]; obj != nil {
-							return cur, id.Name, obj
-						}
-					}
+			// Only support moving package-level decls that declare a single
+			// name. Moving one name of a multi-name spec (e.g. "var a, b = 1, 2"
+			// or "var x, y = f()") is not supported.
+			if cur.Parent().ParentEdgeKind() == edge.File_Decls && len(n.Names) == 1 {
+				if obj := info.Defs[n.Names[0]]; obj != nil {
+					return cur, n.Names[0].Name, obj
 				}
 			}
 		}
@@ -328,7 +394,8 @@ func (gb *graphBuilder) collect(from types.Object, root ast.Node) {
 	if from == nil || root == nil {
 		return
 	}
-	// All references to symbols are either a plain ident or a dotted selection.
+	// All references to symbols are a plain ident, a dotted selection, or
+	// use of a field in an unkeyed struct literal.
 	var visit func(n ast.Node) bool
 	visit = func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -342,6 +409,17 @@ func (gb *graphBuilder) collect(from types.Object, root ast.Node) {
 			}
 		case *ast.Ident:
 			gb.addExplicit(from, gb.info.Uses[n])
+		case *ast.CompositeLit:
+			// An unkeyed struct literal (e.g. T{1, 2}) refers to every field.
+			if t := gb.info.TypeOf(n); t != nil && len(n.Elts) > 0 {
+				if _, keyed := n.Elts[0].(*ast.KeyValueExpr); !keyed {
+					if st, ok := typesinternal.Unpointer(t).Underlying().(*types.Struct); ok {
+						for f := range st.Fields() {
+							gb.addExplicit(from, f)
+						}
+					}
+				}
+			}
 		}
 		return true
 	}
@@ -356,9 +434,12 @@ func (gb *graphBuilder) addExplicit(from, to types.Object) {
 	if to.Pkg() != gb.pkg {
 		return // cross-package reference
 	}
-	// Un-instantiate methods if necessary (e.g. F[int].M -> F[T].M).
-	if fn, ok := to.(*types.Func); ok {
-		to = fn.Origin()
+	// Un-instantiate methods and fields if necessary (e.g. F[int].M -> F[T].M).
+	switch obj := to.(type) {
+	case *types.Func:
+		to = obj.Origin()
+	case *types.Var:
+		to = obj.Origin()
 	}
 	explicit := gb.graph.explicit
 	if explicit[to] == nil {
@@ -395,6 +476,42 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 	}
 	explicit := gb.graph.explicit
 
+	// addMembers records every struct field and interface method declared
+	// within the syntax of owner's declaration (in a named, nested, or
+	// anonymous type) as a symbol that moves with owner. This lets canMove
+	// reject remaining references to unexported members (e.g. x.f, T{f: 1},
+	// x.m()).
+	addMembers := func(owner types.Object, decl ast.Node) {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				obj := gb.info.Defs[id]
+				switch o := obj.(type) {
+				case *types.Var:
+					if !o.IsField() {
+						return true
+					}
+				case *types.Func:
+					// Skip everything besides abstract (interface) methods. (recv == nil means it's a plain function)
+					if recv := o.Signature().Recv(); recv == nil || !types.IsInterface(recv.Type()) {
+						return true
+					}
+				default:
+					return true
+				}
+				explicit[obj] = make(map[types.Object]bool)
+				// Link owner and member in both directions, so that one never
+				// moves without the other. Code that reaches a member already
+				// reaches its owner through some other edge (it must obtain a
+				// value of the owner's type somehow), so the reverse edge is a
+				// safety net: it makes the invariant explicit in the graph
+				// instead of relying on that indirect reasoning.
+				gb.addImplicit(owner, obj)
+				gb.addImplicit(obj, owner)
+			}
+			return true
+		})
+	}
+
 	// First pass: collect all top-level symbols in the source package.
 	for _, pgf := range src.CompiledGoFiles() {
 		for _, decl := range pgf.File.Decls {
@@ -402,6 +519,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 			case *ast.FuncDecl:
 				if fn, ok := gb.info.Defs[decl.Name].(*types.Func); ok {
 					explicit[fn] = make(map[types.Object]bool)
+					addMembers(fn, decl)
 				}
 			case *ast.GenDecl:
 				switch decl.Tok {
@@ -410,6 +528,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 						for _, id := range spec.(*ast.ValueSpec).Names {
 							if obj := gb.info.Defs[id]; obj != nil {
 								explicit[obj] = make(map[types.Object]bool)
+								addMembers(obj, spec)
 							}
 						}
 					}
@@ -417,6 +536,7 @@ func buildSymbolRefGraph(src *cache.Package) *declGraph {
 					for _, spec := range decl.Specs {
 						if obj := gb.info.Defs[spec.(*ast.TypeSpec).Name]; obj != nil {
 							explicit[obj] = make(map[types.Object]bool)
+							addMembers(obj, spec)
 						}
 					}
 				}
@@ -537,6 +657,12 @@ func usesIota(info *types.Info, decl *ast.GenDecl) ([]types.Object, bool) {
 // For each of these symbols, we also include their coupled symbols, recursively.
 // For each symbol's dependencies (as specified by edges in the declGraph), we add
 // the symbol to the moving set.
+//
+// TODO(mkalil): handle same-package moves between test and non-test files. A
+// package and its test variant are distinct *cache.Packages with the same path,
+// so the srcPkg == destPkg check below treats them as different packages.
+// (Currently, dialog_move_decl_tests.txt lacks complete tests for moves
+// involving internal test files).
 func computeMovingSet(srcPkg, destPkg *cache.Package, graph *declGraph, targetObj types.Object) map[types.Object]bool {
 	visited := map[types.Object]bool{targetObj: true}
 	if srcPkg == destPkg {
@@ -621,24 +747,24 @@ func remainingReferencesMoving(graph *declGraph, moving map[types.Object]bool) (
 //   - import cycles
 //   - illegal imports (i.e. internal imports)
 //   - shadowing and name conflicts in the destination package
-func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool, moveTarget types.Object) error {
+func canMove(snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, destURI protocol.DocumentURI, graph *declGraph, moving map[types.Object]bool) error {
 	var (
 		srcMeta    = srcPkg.Metadata()
-		destMeta   = destPkg.Metadata()
+		destPkg    = dest.pkg // nil if dest is a new package
 		srcPkgPath = srcMeta.PkgPath
 		srcName    = srcMeta.Name
-		destName   = destMeta.Name
+		destName   = dest.pkgName
 		// Test variants have different IDs but share the same package path.
 		// A move from a normal package to a test variant is considered
 		// a same package move.
-		isCrossPkg = srcMeta.PkgPath != destMeta.PkgPath
+		isCrossPkg = srcMeta.PkgPath != dest.pkgPath
 	)
 	// We don't need to check for import cycles or package-level symbols conflicts
 	// if the move is in the same package.
 	if isCrossPkg {
 		if unexported, referencesMoving := remainingReferencesMoving(graph, moving); referencesMoving {
 			// Check for internal import rule violations.
-			if !metadata.IsValidImport(srcPkgPath, destMeta.PkgPath, true) {
+			if !metadata.IsValidImport(srcPkgPath, dest.pkgPath, true) {
 				return fmt.Errorf("illegal import: the move requires source package %s to import destination package %s, which violates internal import rules", srcName, destName)
 			}
 			if len(unexported) > 0 {
@@ -647,14 +773,19 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 			}
 			// Src must import dest. To avoid an import cycle, we must check that
 			// dest does not already directly or transitively import src.
-			if pkgTransitivelyImports(snapshot.MetadataGraph(), destMeta, srcMeta) {
+			if destPkg != nil && pkgTransitivelyImports(snapshot.MetadataGraph(), destPkg.Metadata(), srcMeta) {
 				return fmt.Errorf("import cycle: the move requires source package %s to import destination package %s, which already imports %s", srcName, destName, srcName)
 			}
 		}
+		if destPkg == nil {
+			return nil // a new package has no existing declarations to conflict with
+		}
 		// Check destPkg's package block for conflicts, since the moving
-		// declarations become package-level declarations.
+		// declarations become package-level declarations. Fields and methods
+		// in the moving set are skipped: they are scoped to their type, not
+		// the package block.
 		for obj := range moving {
-			if destPkg.Types().Scope().Lookup(obj.Name()) != nil {
+			if typesinternal.IsPackageLevel(obj) && destPkg.Types().Scope().Lookup(obj.Name()) != nil {
 				return fmt.Errorf("cannot move %s: %s is already declared in package %s",
 					obj.Name(), obj.Name(), destName)
 			}
@@ -664,7 +795,7 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 		for _, file := range destPkg.Syntax() {
 			if fileScope := destPkg.TypesInfo().Scopes[file]; fileScope != nil {
 				for obj := range moving {
-					if fileScope.Lookup(obj.Name()) != nil {
+					if typesinternal.IsPackageLevel(obj) && fileScope.Lookup(obj.Name()) != nil {
 						return fmt.Errorf("cannot move %s: conflicts with symbol in the destination package",
 							obj.Name())
 					}
@@ -673,13 +804,15 @@ func canMove(snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, destURI p
 			}
 		}
 
+		// TODO(mkalil): block moves that would separate an interface type from its methods' implementations.
+
 	} else {
 		// Check the destination file block for conflicts, since package-level
 		// declarations cannot share a name with a file-level import in the same file.
 		if destPGF, err := destPkg.File(destURI); err == nil {
 			if fileScope := destPkg.TypesInfo().Scopes[destPGF.File]; fileScope != nil {
 				for obj := range moving {
-					if fileScope.Lookup(obj.Name()) != nil {
+					if typesinternal.IsPackageLevel(obj) && fileScope.Lookup(obj.Name()) != nil {
 						return fmt.Errorf("cannot move %s: conflicts with symbol in destination file",
 							obj.Name())
 					}
@@ -803,7 +936,15 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 							movingSpecs = append(movingSpecs, spec)
 						}
 					case *ast.ValueSpec:
-						if slices.ContainsFunc(spec.Names, isMoving) {
+						// Moving only some of the names in a spec, as in moving
+						// "a" from "var a, b = 1, 2", is not supported.
+						if i := slices.IndexFunc(spec.Names, isMoving); i >= 0 {
+							if j := slices.IndexFunc(spec.Names, func(id *ast.Ident) bool {
+								return id.Name != "_" && !isMoving(id)
+							}); j >= 0 {
+								return nil, fmt.Errorf("cannot move %s: it is declared together with %s, which is not moving",
+									spec.Names[i].Name, spec.Names[j].Name)
+							}
 							movingSpecs = append(movingSpecs, spec)
 						}
 					}
@@ -826,13 +967,13 @@ func extractMovingDeclarations(srcPkg *cache.Package, moving map[types.Object]bo
 
 // writeNewDestFile reports edits needed to write a header with copyright, build
 // constraints, and package declaration to a new file.
-func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]protocol.TextEdit, error) {
+func writeNewDestFile(srcPkg *cache.Package, srcPGF *parsego.File, dest moveDest) ([]protocol.TextEdit, error) {
 	var (
 		edits     []protocol.TextEdit
 		headerBuf bytes.Buffer
 	)
 	// Add copyright and build constraints if same package move.
-	if srcPkg.Metadata().ID == destPkg.Metadata().ID {
+	if dest.pkg != nil && srcPkg.Metadata().ID == dest.pkg.Metadata().ID {
 		if c := CopyrightComment(srcPGF.File); c != nil {
 			text, err := srcPGF.NodeText(c)
 			if err != nil {
@@ -852,7 +993,7 @@ func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]p
 		}
 	}
 	// Add package clause
-	fmt.Fprintf(&headerBuf, "package %s\n\n", destPkg.Types().Name())
+	fmt.Fprintf(&headerBuf, "package %s\n\n", dest.pkgName)
 	edits = append(edits, protocol.TextEdit{
 		Range:   protocol.Range{},
 		NewText: headerBuf.String(),
@@ -865,9 +1006,10 @@ func writeNewDestFile(srcPkg, destPkg *cache.Package, srcPGF *parsego.File) ([]p
 // declarations to the destination file, destURI.
 // It only handles packages that are used by the moving declarations.
 // Note: destPGF may be nil if the target destination file is a new file.
-func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File, destURI protocol.DocumentURI, movingRanges []movingRange, edits map[protocol.DocumentURI][]protocol.TextEdit) error {
+func updateSrcDestImports(srcPkg *cache.Package, dest moveDest, destPGF *parsego.File, destFH file.Handle, movingRanges []movingRange, edits map[protocol.DocumentURI][]protocol.TextEdit) error {
 	// Imports belong to a file, so find the import changes separately for each
 	// source file that has moving declarations.
+	destURI := destFH.URI()
 	var adds []*ast.ImportSpec
 	type importKey struct{ name, path string }
 	seen := make(map[importKey]bool) // imports already in adds
@@ -901,7 +1043,7 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File,
 				// (findImportChanges may return a dest import if the dest package is referenced
 				// as part of some moving declaration.)
 				if pkgName := srcPkg.TypesInfo().PkgNameOf(spec); pkgName != nil &&
-					pkgName.Imported().Path() == string(destPkg.Metadata().PkgPath) {
+					pkgName.Imported().Path() == string(dest.pkgPath) {
 					continue
 				}
 				adds = append(adds, spec)
@@ -920,7 +1062,7 @@ func updateSrcDestImports(srcPkg, destPkg *cache.Package, destPGF *parsego.File,
 			if spec.Name != nil {
 				name = spec.Name.Name
 			}
-			_, impEdits, err := addImport(destPkg.TypesInfo(), destPGF, name, path, "", destPGF.File.FileEnd-1)
+			_, impEdits, err := addImport(dest.pkg.TypesInfo(), destPGF, name, path, "", destPGF.File.FileEnd-1)
 			if err != nil {
 				return err
 			}
@@ -966,12 +1108,12 @@ func addImport(info *types.Info, pgf *parsego.File, preferredName, pkgPath, memb
 // It also adds imports for the dest package in files that reference a moving
 // decl and removes imports for the source package in files whose only
 // reference to the source package is a reference to a moving decl.
-func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg, destPkg *cache.Package, srcPGF *parsego.File, moving map[types.Object]bool, movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
+func updateRefsToMoving(ctx context.Context, snapshot *cache.Snapshot, srcPkg *cache.Package, dest moveDest, srcPGF *parsego.File, moving map[types.Object]bool, movingDeclsRanges []astutil.Range, edits map[protocol.DocumentURI][]protocol.TextEdit,
 ) error {
 	var (
 		srcPkgPath  = string(srcPkg.Metadata().PkgPath)
-		destPkgPath = string(destPkg.Metadata().PkgPath)
-		destPkgName = string(destPkg.Metadata().Name)
+		destPkgPath = string(dest.pkgPath)
+		destPkgName = string(dest.pkgName)
 	)
 	// For a same-package move, we don't need to update any references.
 	if srcPkgPath == destPkgPath {

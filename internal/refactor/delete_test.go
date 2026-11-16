@@ -595,8 +595,7 @@ func TestDeleteVar(t *testing.T) {
 
 			curId := func() inspector.Cursor {
 				for curId := range inspector.New(files).Root().Preorder((*ast.Ident)(nil)) {
-					id := curId.Node().(*ast.Ident)
-					if id.Name == "v" {
+					if curId.Node().(*ast.Ident).Name == "v" {
 						return curId
 					}
 				}
@@ -682,13 +681,217 @@ func f() {
 		t.Fatal("decl not found")
 	}
 	tokFile := fset.File(f.FileStart)
-	got := []byte(src)
-	edits := refactor.DeleteDecl(tokFile, curDecl)
-	for i := len(edits) - 1; i >= 0; i-- {
-		start, end := tokFile.Offset(edits[i].Pos), tokFile.Offset(edits[i].End)
-		got = slices.Concat(got[:start], edits[i].NewText, got[end:])
-	}
+	got := applyEdits(tokFile, src, refactor.DeleteDecl(tokFile, curDecl))
 	if string(got) != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
+}
+
+func TestDeleteStructField(t *testing.T) {
+	// In each test, the field named v is deleted.
+	for i, test := range []struct {
+		src, want string
+	}{
+		// single-line structs
+		{
+			"package p; type T struct { v int }",
+			"package p; type T struct {}",
+		},
+		{
+			"package p; type T struct { v int; b int }",
+			"package p; type T struct { b int }",
+		},
+		{
+			"package p; type T struct { a int; v int }",
+			"package p; type T struct { a int }",
+		},
+		{
+			"package p; type T struct { a int; v int; b int }",
+			"package p; type T struct { a int; b int }",
+		},
+		{
+			`package p; type T struct { v int "tag"; b int }`,
+			"package p; type T struct { b int }",
+		},
+		// fields that declare multiple names
+		{
+			"package p; type T struct { v, b int }",
+			"package p; type T struct { b int }",
+		},
+		{
+			"package p; type T struct { a, v int }",
+			"package p; type T struct { a int }",
+		},
+		{
+			"package p; type T struct { a, v, b int }",
+			"package p; type T struct { a, b int }",
+		},
+		{
+			"package p; type T struct { a, v, b int; c int }",
+			"package p; type T struct { a, b int; c int }",
+		},
+		// nested and local struct types
+		{
+			"package p; type T struct { a struct { v int; b int } }",
+			"package p; type T struct { a struct { b int } }",
+		},
+		{
+			"package p; func _() { type T struct { a int; v int } }",
+			"package p; func _() { type T struct { a int } }",
+		},
+		{
+			"package p; var x struct { v int; b int }",
+			"package p; var x struct { b int }",
+		},
+		// comments
+		{
+			`package p
+type T struct {
+	// doc v
+	v int // comment v
+	// doc b
+	b int // comment b
+}`,
+			`package p
+type T struct {
+	// doc b
+	b int // comment b
+}`,
+		},
+		{
+			`package p
+type T struct {
+	// doc a
+	a int // comment a
+	// doc v
+	v int // comment v
+}`,
+			// The blank line before } is a known flaw; see TODO in DeleteStructField.
+			`package p
+type T struct {
+	// doc a
+	a int // comment a
+
+}`,
+		},
+		{
+			`package p
+type T struct {
+	a int /* comment a */ /* another */
+	v int
+}`,
+			// The blank line before } is a known flaw; see TODO in DeleteStructField.
+			`package p
+type T struct {
+	a int /* comment a */ /* another */
+
+}`,
+		},
+		{
+			`package p
+type T struct {
+	a int
+
+	// Free-floating comment.
+
+	// doc v
+	v int
+}`,
+			// The blank line before } is a known flaw; see TODO in DeleteStructField.
+			`package p
+type T struct {
+	a int
+
+	// Free-floating comment.
+
+}`,
+		},
+		{
+			`package p
+type T struct {
+	a struct {
+		x int // comment x
+	}
+	// doc v
+	v int
+}`,
+			// The blank line before } is a known flaw; see TODO in DeleteStructField.
+			`package p
+type T struct {
+	a struct {
+		x int // comment x
+	}
+
+}`,
+		},
+		{
+			`package p
+type T struct {
+	v int // comment v
+
+	b int
+}`,
+			`package p
+type T struct {
+	b int
+}`,
+		},
+		{
+			`package p
+type T struct {
+	a, v int // comment
+}`,
+			`package p
+type T struct {
+	a int // comment
+}`,
+		},
+	} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Logf("src: %s", test.src)
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "p.go", test.src, parser.ParseComments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tokFile := fset.File(f.FileStart)
+			root := inspector.New([]*ast.File{f}).Root()
+
+			var curId inspector.Cursor
+			for cur := range root.Preorder((*ast.Ident)(nil)) {
+				if cur.Node().(*ast.Ident).Name == "v" {
+					curId = cur
+					break
+				}
+			}
+
+			edits := refactor.DeleteStructField(curId)
+
+			got := applyEdits(tokFile, test.src, edits)
+			t.Logf("fixed: %s", got)
+			got, err = format.Source(got)
+			if err != nil {
+				t.Fatalf("format: %v", err)
+			}
+			want, err := format.Source([]byte(test.want))
+			if err != nil {
+				t.Fatalf("formatting want: %v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("got:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+func applyEdits(tokFile *token.File, src string, edits []refactor.Edit) []byte {
+	got := []byte(src)
+	for i := len(edits) - 1; i >= 0; i-- {
+		var (
+			start = tokFile.Offset(edits[i].Pos)
+			end   = tokFile.Offset(edits[i].End)
+		)
+		got = slices.Concat(got[:start], edits[i].NewText, got[end:])
+	}
+	return got
 }

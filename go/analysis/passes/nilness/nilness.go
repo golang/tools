@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -92,10 +93,24 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 			case *ssa.FieldAddr:
 				notNil(stack, instr, instr.X, "nil dereference in field selection")
 			case *ssa.IndexAddr:
-				switch typeparams.CoreType(instr.X.Type()).(type) {
-				case *types.Pointer: // *array
+				// X is a pointer to an array, a slice, or a type
+				// parameter whose type set contains only those types,
+				// possibly a mixture of the two (e.g. *[4]int | []int).
+				var ptrs, slices bool
+				for u := range typeparams.TypeSetOf(instr.X.Type()).UnderlyingTypes() {
+					switch u.(type) {
+					case *types.Pointer: // *array
+						ptrs = true
+					case *types.Slice:
+						slices = true
+					}
+				}
+				switch {
+				case ptrs && slices:
+					notNil(stack, instr, instr.X, "nil dereference in index operation")
+				case ptrs:
 					notNil(stack, instr, instr.X, "nil dereference in array index operation")
-				case *types.Slice:
+				case slices:
 					// This is not necessarily a runtime error, because
 					// it is usually dominated by a bounds check.
 					if isRangeIndex(instr) {
@@ -317,7 +332,7 @@ func nilnessOf(stack []fact, v ssa.Value) nilness {
 		// A MakeInterface of a type parameter is non-nil if
 		// the type parameter cannot be instantiated as an
 		// interface type (#66835).
-		if terms, err := typeparams.NormalTerms(tparam.Constraint()); err == nil && len(terms) > 0 {
+		if typeparams.TypeSetOf(tparam).Len() > 0 {
 			return isnonnil
 		}
 
@@ -452,22 +467,32 @@ func is[T any](x any) bool {
 	return ok
 }
 
+// isNillable reports whether the zero value of type t is nil.
+//
+// For a type parameter, this holds if every type in its type set is
+// nillable; it is false if the type set is unrestricted (e.g. any),
+// since the type parameter may then be instantiated by a non-nillable type.
 func isNillable(t types.Type) bool {
-	// TODO(adonovan): CoreType (+ case *Interface) looks wrong.
-	// This should probably use Underlying, and handle TypeParam
-	// by computing the union across its normal terms.
-	switch t := typeparams.CoreType(t).(type) {
-	case *types.Pointer,
-		*types.Map,
-		*types.Signature,
-		*types.Chan,
-		*types.Interface,
-		*types.Slice:
-		return true
-	case *types.Basic:
-		return t == types.Typ[types.UnsafePointer]
+	if types.IsInterface(t) && !typeparams.IsTypeParam(t) {
+		return true // the zero value of an interface is nil
 	}
-	return false
+	ts := typeparams.TypeSetOf(t)
+	if ts.Len() == 0 {
+		return false // unrestricted type parameter
+	}
+	return moreiters.Every(ts.UnderlyingTypes(), func(u types.Type) bool {
+		switch u := u.(type) {
+		case *types.Pointer,
+			*types.Map,
+			*types.Signature,
+			*types.Chan,
+			*types.Slice:
+			return true
+		case *types.Basic:
+			return u == types.Typ[types.UnsafePointer]
+		}
+		return false
+	})
 }
 
 // isRangeIndex reports whether the instruction is a slice indexing

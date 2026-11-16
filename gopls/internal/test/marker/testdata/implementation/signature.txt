@@ -3,7 +3,7 @@ Test of local Implementation queries using function signatures.
 Assertions:
 - Query on "func" of a function type returns the corresponding concrete functions.
 - Query on "func" of a concrete function returns corresponding function types.
-- Query on "(" of a dynamic function call returns corresponding function types.
+- Query on "(" (or the called identifier) of a dynamic function call returns corresponding function types.
 - Different signatures (Nullary vs Handler) don't correspond.
 
 The @loc markers use the suffixes Func, Type, Call for the three kinds.
@@ -33,6 +33,8 @@ func nullary() { //@ loc(nullaryFunc, "func"), implementation("func", Nullary, f
 
 type Nullary func() //@ loc(Nullary, "func")
 
+func (*Nullary) Error() string { return "" } //@ loc(NullaryError, "Error")
+
 func _(
 	h func(*R)) { //@ loc(hParamType, "func"), implementation("func", aFunc, bFunc, cFunc)
 
@@ -41,7 +43,7 @@ func _(
 	_ = nullary  // pacify unusedfunc
 	_ = h
 
-	h(nil) //@ loc(hCall, "("), implementation("(", aFunc, bFunc, cFunc)
+	h(nil) //@ loc(hCall, "("), implementation("(", aFunc, bFunc, cFunc), implementation("h", aFunc, bFunc, cFunc)
 }
 
 // generics:
@@ -66,14 +68,14 @@ func _(
 
 	f("") //@ loc(fCall, "("), implementation("(", f1Func, f2Func, f4Func)
 
-	struct{x Nullary}{}.x() //@ loc(fieldCall, "("), implementation("(", nullaryFunc)
+	struct{x Nullary}{}.x() //@ loc(fieldCall, "("), implementation("(", nullaryFunc), implementation(re`\.(x)`, nullaryFunc)
 
-	// Calls that are not dynamic function calls:
-	_ = len("")          //@ implementation("(", err="not a dynamic function call")
-	_ = int(0)           //@ implementation("(", err="not a dynamic function call")
-	_ = error.Error(nil) //@ implementation("(", err="not a dynamic function call")
-	_ = err.Error()      //@ implementation("(", err="not a dynamic function call")
-	_ = f4(0)            //@ implementation("(", err="not a dynamic function call"), loc(f4Call, "(")
+	// Calls that are not dynamic function calls fall back to method sets (#82415):
+	_ = len("")          //@ implementation("(", err="len is a builtin, not a type")
+	_ = int(0)           //@ implementation("(")
+	_ = error.Error(nil) //@ implementation("(", NullaryError)
+	_ = err.Error()      //@ implementation("(", NullaryError), implementation("Error", NullaryError), implementation(re`Error()\(`, NullaryError)
+	_ = f4(0)            //@ implementation("(", err="f4 is a function, not a method"), loc(f4Call, "(")
 }
 
 

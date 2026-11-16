@@ -361,8 +361,14 @@ func implementsObj(info *types.Info, cur inspector.Cursor) (types.Object, error)
 	// intervals to queries, you could ask about the method set of a
 	// subexpression such as x.f().)
 	// [Note that this process has begun; see #69058.]
-	id, ok := cur.Node().(*ast.Ident)
-	if !ok {
+	var id *ast.Ident
+	switch n := cur.Node().(type) {
+	case *ast.Ident:
+		id = n
+	case *ast.CallExpr:
+		id = typesinternal.UsedIdent(info, n.Fun)
+	}
+	if id == nil {
 		return nil, ErrNoIdentFound
 	}
 
@@ -929,10 +935,10 @@ var (
 //     (a) the "func" token of each FuncType that is not part of
 //     Func{Decl,Lit}. These are analogous to interface{...} types.
 //
-//     (b) the "(" paren of each dynamic call on a value of an
-//     abstract function type. These are analogous to references to
-//     interface method names, but no names are involved, which has
-//     historically made them hard to search for.
+//     (b) the "(" paren (or called identifier) of each dynamic call on
+//     a value of an abstract function type. These are analogous to
+//     references to interface method names, but no names are required,
+//     which has historically made them hard to search for.
 //
 // An Implementations query on a location in set 1 returns set 2,
 // and vice versa.
@@ -989,14 +995,18 @@ func implFuncs(pkg *cache.Package, curSel inspector.Cursor, start, end token.Pos
 			}
 
 		case *ast.CallExpr:
-			if inToken(n.Lparen, "(", start, end) {
-				t := dynamicFuncCallType(info, n)
-				if t == nil {
-					return nil, fmt.Errorf("not a dynamic function call")
+			if t := dynamicFuncCallType(info, n); t != nil {
+				// Matching on id (e.g. f in f() or s.f()) does not conflict with
+				// method-set queries even when id's type has methods (like
+				// http.HandlerFunc), because id denotes a *types.Var and
+				// implementsObj only accepts *types.TypeName and methods.
+				id := typesinternal.UsedIdent(info, n.Fun)
+				if inToken(n.Lparen, "(", start, end) ||
+					(id != nil && inToken(id.Pos(), id.Name, start, end)) {
+					// Case 2b: dynamic call of function value.
+					// Report declarations of corresponding concrete functions.
+					return funcDefs(pkg, t)
 				}
-				// Case 2b: dynamic call of function value.
-				// Report declarations of corresponding concrete functions.
-				return funcDefs(pkg, t)
 			}
 		}
 	}

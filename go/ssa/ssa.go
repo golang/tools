@@ -911,7 +911,7 @@ type Slice struct {
 type FieldAddr struct {
 	register
 	X     Value // *struct
-	Field int   // index into CoreType(CoreType(X.Type()).(*types.Pointer).Elem()).(*types.Struct).Fields
+	Field int   // index into the fields of the struct type underlying X's pointer element type
 }
 
 // The Field instruction yields the Field of struct X.
@@ -930,11 +930,11 @@ type FieldAddr struct {
 type Field struct {
 	register
 	X     Value // struct
-	Field int   // index into CoreType(X.Type()).(*types.Struct).Fields
+	Field int   // index into the fields of the struct type underlying X's type
 }
 
 // The IndexAddr instruction yields the address of the element at
-// index Index of collection X.  Index is an integer expression.
+// index Index of collection X. Index is an integer expression.
 //
 // The elements of maps and strings are not addressable; use Lookup (map),
 // Index (string), or MapUpdate instead.
@@ -952,7 +952,7 @@ type Field struct {
 //	t2 = &t0[t1]
 type IndexAddr struct {
 	register
-	X     Value // *array, slice or type parameter with types array, *array, or slice.
+	X     Value // indexable operand
 	Index Value // numeric index
 }
 

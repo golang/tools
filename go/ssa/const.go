@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"strconv"
 
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -41,21 +42,24 @@ func NewConst(val constant.Value, typ types.Type) *Const {
 //	types.IsString for ""
 //	0 otherwise.
 func soleTypeKind(typ types.Type) types.BasicInfo {
-	// State records the set of possible zero values (false, 0, "").
-	// Candidates (perhaps all) are eliminated during the type-set
-	// iteration, which executes at least once.
+	ts := typeparams.TypeSetOf(typ)
+	if ts.Len() == 0 {
+		return 0 // unrestricted or empty type set
+	}
+	// State records the set of possible zero values (false, 0, ""),
+	// narrowed by each term.
 	state := types.IsBoolean | types.IsInteger | types.IsString
-	underIs(typ, func(ut types.Type) bool {
-		var c types.BasicInfo
-		if t, ok := ut.(*types.Basic); ok {
-			c = t.Info()
+	for u := range ts.UnderlyingTypes() {
+		t, ok := u.(*types.Basic)
+		if !ok {
+			return 0 // non-basic: zero value has no constant.Value
 		}
+		c := t.Info()
 		if c&types.IsNumeric != 0 { // int/float/complex
 			c = types.IsInteger
 		}
-		state = state & c
-		return state != 0
-	})
+		state &= c
+	}
 	return state
 }
 
@@ -126,10 +130,10 @@ func (c *Const) IsNil() bool {
 // nillable reports whether *new(T) == nil is legal for type T.
 func nillable(t types.Type) bool {
 	if typeparams.IsTypeParam(t) {
-		return underIs(t, func(u types.Type) bool {
-			// empty type set (u==nil) => any underlying types => not nillable
-			return u != nil && nillable(u)
-		})
+		// All types in the type set must be nillable.
+		// An unrestricted or empty type set is not nillable.
+		ts := typeparams.TypeSetOf(t)
+		return ts.Len() > 0 && moreiters.Every(ts.UnderlyingTypes(), nillable)
 	}
 	switch t := t.Underlying().(type) {
 	case *types.Basic:

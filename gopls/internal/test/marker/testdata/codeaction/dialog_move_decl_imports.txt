@@ -5,14 +5,6 @@ Test move declaration refactoring: import additions and deletions.
 	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
 }
 
--- settings.json --
-{
-	"moveDeclaration": true
-}
-
--- flags --
--ignore_extra_diags
-
 -- go.mod --
 module golang.org/lsptests/movedeclimports
 

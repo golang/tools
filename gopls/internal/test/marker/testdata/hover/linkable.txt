@@ -4,6 +4,9 @@ identifiers.
 We should only produce links that work, meaning the object is reachable via the
 package's public API.
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module mod.com
 

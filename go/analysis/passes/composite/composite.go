@@ -68,11 +68,11 @@ func run(pass *analysis.Pass) (any, error) {
 		if typ == nil {
 			continue // no type info
 		}
-		terms, err := typeparams.NormalTerms(typ)
-		if err != nil || len(terms) == 0 {
-			continue // invalid or empty type
+		ts := typeparams.TypeSetOf(typ)
+		if ts.Len() == 0 {
+			continue // unrestricted, empty, or invalid type set
 		}
-		t := terms[0].Type()
+		t := ts.Term(0).Type()
 		strct, ok := typeparams.Deref(t).Underlying().(*types.Struct)
 		if !ok {
 			continue // not a struct literal

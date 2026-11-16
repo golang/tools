@@ -220,7 +220,7 @@ func BenchmarkUncontendedGet(b *testing.B) {
 	b.SetBytes(int64(len(value)))
 
 	var group errgroup.Group
-	group.SetLimit(50)
+	group.SetLimit(5)
 	for b.Loop() {
 		group.Go(func() error {
 			_, err := filecache.Get(kind, key, filecache.Bytes)
@@ -233,7 +233,7 @@ func BenchmarkUncontendedGet(b *testing.B) {
 }
 
 // These two benchmarks are asymmetric: the one for Get imposes a
-// modest bound on concurrency (50) whereas the one for Set imposes a
+// modest bound on concurrency (5) whereas the one for Set imposes a
 // much higher concurrency (1000) to test the implementation's
 // self-imposed bound.
 

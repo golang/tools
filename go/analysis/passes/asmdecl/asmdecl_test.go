@@ -38,3 +38,13 @@ func Test(t *testing.T) {
 		})
 	}
 }
+
+func TestWasm32(t *testing.T) {
+	// Load the declarations using wasm so this test also runs on Go versions
+	// that do not yet support GOARCH=wasm32. The assembly build tag selects
+	// wasm32's layout in the analyzer.
+	t.Setenv("GOOS", "wasip1")
+	t.Setenv("GOARCH", "wasm")
+	t.Setenv("GOFLAGS", "-tags=wasm32")
+	analysistest.Run(t, analysistest.TestData(), asmdecl.Analyzer, "wasm32")
+}

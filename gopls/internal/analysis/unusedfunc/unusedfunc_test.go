@@ -15,4 +15,5 @@ import (
 func Test(t *testing.T) {
 	analysistest.RunWithSuggestedFixes(t, testfiles.ExtractTxtarFileToTmp(t, "testdata/basic.txtar"), unusedfunc.Analyzer, "example.com/a")
 	analysistest.Run(t, testfiles.ExtractTxtarFileToTmp(t, "testdata/issue80555.txtar"), unusedfunc.Analyzer, "myapp/a")
+	analysistest.RunWithSuggestedFixes(t, testfiles.ExtractTxtarFileToTmp(t, "testdata/fields.txtar"), unusedfunc.Analyzer, "example.com/f")
 }

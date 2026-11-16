@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"log"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -151,16 +151,46 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						}
 
 						used := false
-						for curId := range curLoop.Child(loop.Body).Preorder((*ast.Ident)(nil)) {
-							id := curId.Node().(*ast.Ident)
-							if info.Uses[id] == v {
+						body := curLoop.Child(loop.Body)
+						for curId := range typeindex.Uses(v) {
+							if body.Contains(curId) {
 								used = true
 
-								// Reject if any is an l-value (assigned or address-taken):
-								// a "for range int" loop does not respect assignments to
-								// the loop variable.
+								// Reject if any use in the body is an l-value
+								// (assigned or address-taken): a "for range int" loop
+								// does not respect assignments to the loop variable.
 								if typesinternal.IsAssignedOrAddressTaken(info, curId) {
 									continue nextLoop
+								}
+							}
+
+							// If i is a pre-existing variable (for i = 0; ...),
+							// don't offer a fix if its value after the loop could
+							// be observed directly or via aliasing, as a range loop
+							// leaves i with a different final value (limit-1) and
+							// shares a single variable across iterations (go.dev/issue/77161).
+							if init.Tok == token.ASSIGN {
+								// Is i used after the loop?
+								if curId.Node().Pos() > loop.End() {
+									continue nextLoop
+								}
+								// Is i assigned or address-taken outside the loop?
+								//     var i int
+								//     p := &i
+								//     for i = 0; i < 10; i++ {}
+								//     return *p
+								if !curLoop.Contains(curId) && typesinternal.IsAssignedOrAddressTaken(info, curId) {
+									continue nextLoop
+								}
+								// Is i captured by a closure within the scope of i?
+								//     var i int
+								//     f := func() int { return i } // or defer func() { print(i) }()
+								//     for i = 0; i < 10; i++ {}
+								//     return f()
+								for curFunc := range curId.Enclosing((*ast.FuncLit)(nil)) {
+									if curFunc.Node().Pos() > v.Pos() {
+										continue nextLoop
+									}
 								}
 							}
 						}
@@ -174,73 +204,24 @@ func rangeint(pass *analysis.Pass) (any, error) {
 							})
 						}
 
-						// If i is used after the loop,
-						// don't offer a fix, as a range loop
-						// leaves i with a different final value (limit-1).
-						if init.Tok == token.ASSIGN {
-							// Find the nearest ancestor that is not a label.
-							// Otherwise, checking for i usage outside of a for
-							// loop might not function properly further below.
-							// This is because the i usage might be a child of
-							// the loop's parent's parent, for example:
-							//     var i int
-							// Loop:
-							//     for i = 0; i < 10; i++ { break loop }
-							//     // i is in the sibling of the label, not the loop
-							//     fmt.Println(i)
-							//
-							ancestor := curLoop.Parent()
-							for is[*ast.LabeledStmt](ancestor.Node()) {
-								ancestor = ancestor.Parent()
-							}
-							for curId := range ancestor.Preorder((*ast.Ident)(nil)) {
-								id := curId.Node().(*ast.Ident)
-								if info.Uses[id] == v {
-									// Is i used after loop?
-									if id.Pos() > loop.End() {
-										continue nextLoop
-									}
-									// Is i used within a defer statement
-									// that is within the scope of i?
-									//     var i int
-									//     defer func() { print(i)}
-									//     for i = ... { ... }
-									for curDefer := range curId.Enclosing((*ast.DeferStmt)(nil)) {
-										if curDefer.Node().Pos() > v.Pos() {
-											continue nextLoop
-										}
-									}
-								}
-							}
-						}
-
 						// The loop index (v) must not be a type parameter constrained by
 						// multiple distinct integer types, or a type parameter constrained
 						// by non-integer types. Transforming such instances to a range loop
 						// would result in a compiler error.
 						// See golang/go#78571.
-						terms, err := typeparams.NormalTerms(v.Type()) // NormalTerms works for any type
-						if err != nil {
-							log.Fatalf("internal error: cannot compute type set of loop var %v: %v", v, err)
-						}
-						if len(terms) != 0 {
+						if ts := typeparams.TypeSetOf(v.Type()); ts.Len() != 0 {
 							// From the spec (https://go.dev/ref/spec#For_range):
 							// "If the type of the range expression is a type parameter, all
 							// types in its type set must have the same underlying type and the
 							// range expression must be valid for that type."
 							//
-							// Check if all terms have the same underlying type by comparing
-							// them to the first term.
-							u := terms[0].Type().Underlying()
-							// If the constraint has any non-integer terms, skip. (Range over
-							// float is not allowed.)
-							if !isInteger(u) {
+							// Check that all terms have the same underlying type, and that it
+							// is an integer. (Range over float is not allowed.)
+							u := ts.Term(0).Type().Underlying()
+							if !isInteger(u) || !moreiters.Every(ts.UnderlyingTypes(), func(t types.Type) bool {
+								return types.Identical(u, t)
+							}) {
 								continue nextLoop
-							}
-							for _, term := range terms[1:] {
-								if !types.Identical(u, term.Type().Underlying()) {
-									continue nextLoop
-								}
 							}
 						}
 

@@ -398,3 +398,48 @@ func issue78571_floats[T float32 | float64](limit T) {
 		println(i)
 	}
 }
+
+// Regression tests for golang/go#77161: pre-existing loop variable i must not
+// be modernized if it is aliased via a closure or pointer, or used
+// after the loop.
+func issue77161() {
+	{
+		var i int
+		f := func() int { return i }
+		for i = 0; i < 10; i++ { // nope: i is captured by a closure before the loop
+		}
+		_ = f()
+	}
+	{
+		var i int
+		var f func() int
+		for i = 0; i < 10; i++ { // nope: i is captured by a closure in the loop body
+			f = func() int { return i }
+		}
+		_ = f()
+	}
+	{
+		var i int
+		p := &i
+		for i = 0; i < 10; i++ { // nope: i is address-taken before the loop
+		}
+		println(*p)
+	}
+	{
+		var i int
+		if true {
+			for i = 0; i < 10; i++ { // nope: i is used after enclosing block
+			}
+		}
+		println(i)
+	}
+	{
+		// When i is defined by the loop (:=), capturing i in a closure is fine
+		// because Go 1.22 creates a new variable per iteration.
+		var f func() int
+		for i := range 10 { // want "for loop can be modernized using range over int"
+			f = func() int { return i }
+		}
+		_ = f()
+	}
+}
