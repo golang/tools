@@ -163,6 +163,9 @@ func TestToUnified(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if runtime.GOOS == "windows" {
+				got = bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n"))
+			}
 			if string(got) != tc.Out {
 				t.Errorf("applying unified failed: got\n%q, wanted\n%q unified\n%q",
 					got, tc.Out, xunified)
