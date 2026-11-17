@@ -72,6 +72,19 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 	skipIfGoListExportNewFormat(t)
 	testenv.NeedsGoBuild(t)
 
+	// Since go1.28 (GOEXPERIMENT=golistexportnewformat), the
+	// compiler's export data is private (format 'p'), and "go list
+	// -export" produces export data that the compiler cannot read.
+	// So tests that run the compiler directly and read its output
+	// work only with go1.27 and earlier; tools should instead consume
+	// "go list -export" data, which is tested elsewhere.
+	//
+	// TODO(#81932): Rework tests so we don't lose coverage, for
+	// example by forking them into tests of go1.27's go tool
+	// compile (which we'll eventually delete) and of go1.28's go
+	// list -export (which we'll keep).
+	testenv.SkipAfterGoCommand1Point(t, 27)
+
 	// filename must end with ".go"
 	basename := strings.TrimSuffix(filepath.Base(filename), ".go")
 	ok := filename != basename
