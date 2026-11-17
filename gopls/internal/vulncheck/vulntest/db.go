@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/txtar"
 )
 
@@ -161,15 +162,15 @@ func generateOSVEntry(id, url string, lastModified time.Time, r Report) osv.Entr
 		DatabaseSpecific: &osv.DatabaseSpecific{URL: url},
 	}
 
-	moduleMap := make(map[string]bool)
+	moduleMap := make(set.Set[string])
 	for _, m := range r.Modules {
 		switch m.Module {
 		case stdModule:
-			moduleMap[osv.GoStdModulePath] = true
+			moduleMap.Insert(osv.GoStdModulePath)
 		case cmdModule:
-			moduleMap[osv.GoCmdModulePath] = true
+			moduleMap.Insert(osv.GoCmdModulePath)
 		default:
-			moduleMap[m.Module] = true
+			moduleMap.Insert(m.Module)
 		}
 		entry.Affected = append(entry.Affected, toAffected(m))
 	}

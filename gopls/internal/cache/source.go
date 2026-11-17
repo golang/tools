@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/symbols"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/moremaps"
 )
@@ -316,14 +317,14 @@ func commonpref(filename string, path string) int {
 }
 
 func satisfies(pkg *symbols.Package, missing map[string]bool) bool {
-	syms := make(map[string]bool)
+	syms := make(set.Set[string])
 	for _, x := range pkg.Symbols {
 		for _, s := range x {
-			syms[s.Name] = true
+			syms.Insert(s.Name)
 		}
 	}
 	for k := range missing {
-		if !syms[k] {
+		if !syms.Contains(k) {
 			return false
 		}
 	}

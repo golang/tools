@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/moremaps"
 )
@@ -236,7 +237,7 @@ func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh 
 		// others to 'info' level diagnostics.
 		// Fixes will include only the upgrades for warning level diagnostics.
 		var warningFixes, infoFixes []cache.SuggestedFix
-		var warningSet, infoSet = map[string]bool{}, map[string]bool{}
+		var warningSet, infoSet = make(set.Set[string]), make(set.Set[string])
 		for _, finding := range findings {
 			// It is possible that the source code was changed since the last
 			// govulncheck run and information in the `vulns` info is stale.
@@ -259,9 +260,9 @@ func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh 
 			}
 			switch _, typ := foundVuln(finding); typ {
 			case vulnImported:
-				infoSet[finding.OSV] = true
+				infoSet.Insert(finding.OSV)
 			case vulnCalled:
-				warningSet[finding.OSV] = true
+				warningSet.Insert(finding.OSV)
 			}
 			// Upgrade to the exact version we offer the user, not the most recent.
 			if fixedVersion := finding.FixedVersion; semver.IsValid(fixedVersion) && semver.Compare(req.Mod.Version, fixedVersion) < 0 {
@@ -280,13 +281,7 @@ func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh 
 			continue
 		}
 		// Remove affecting osvs from the non-affecting osv list if any.
-		if len(warningSet) > 0 {
-			for k := range infoSet {
-				if warningSet[k] {
-					delete(infoSet, k)
-				}
-			}
-		}
+		infoSet.DifferenceWith(warningSet)
 		// Add an upgrade for module@latest.
 		// TODO(suzmue): verify if latest is the same as fixedVersion.
 		latest := getUpgradeCodeAction(fh, req, "latest")
@@ -345,13 +340,13 @@ func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh 
 			return vulnDiagnostics, nil // TODO: bug report
 		}
 
-		var warningSet, infoSet = map[string]bool{}, map[string]bool{}
+		var warningSet, infoSet = make(set.Set[string]), make(set.Set[string])
 		for _, finding := range stdlibVulns {
 			switch _, typ := foundVuln(finding); typ {
 			case vulnImported:
-				infoSet[finding.OSV] = true
+				infoSet.Insert(finding.OSV)
 			case vulnCalled:
-				warningSet[finding.OSV] = true
+				warningSet.Insert(finding.OSV)
 			}
 		}
 		if len(warningSet) > 0 {
@@ -367,11 +362,7 @@ func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh 
 			})
 
 			// remove affecting osvs from the non-affecting osv list if any.
-			for k := range infoSet {
-				if warningSet[k] {
-					delete(infoSet, k)
-				}
-			}
+			infoSet.DifferenceWith(warningSet)
 		}
 		if len(infoSet) > 0 {
 			info := sortedKeys(infoSet)
@@ -421,7 +412,7 @@ func foundVuln(finding *govulncheck.Finding) (*govulncheck.Frame, vulnFindingTyp
 	return vuln, vulnCalled
 }
 
-func sortedKeys(m map[string]bool) []string {
+func sortedKeys(m set.Set[string]) []string {
 	keys := moremaps.KeySlice(m)
 	sort.Strings(keys)
 	return keys
@@ -508,7 +499,7 @@ func SelectUpgradeCodeActions(actions []protocol.CodeAction) []protocol.CodeActi
 	var chosenVersionedUpgrade string
 	var selected []protocol.CodeAction
 
-	seenTitles := make(map[string]bool)
+	seenTitles := make(set.Set[string])
 
 	for _, action := range actions {
 		if strings.HasPrefix(action.Title, upgradeCodeActionPrefix) {
@@ -520,8 +511,7 @@ func SelectUpgradeCodeActions(actions []protocol.CodeAction) []protocol.CodeActi
 			}
 		} else if strings.HasPrefix(action.Title, "Reset govulncheck") {
 			resetAction = action
-		} else if !seenTitles[action.Command.Title] {
-			seenTitles[action.Command.Title] = true
+		} else if seenTitles.Insert(action.Command.Title) {
 			selected = append(selected, action)
 		}
 	}

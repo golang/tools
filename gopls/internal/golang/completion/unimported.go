@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/stdlib"
@@ -488,14 +489,12 @@ func funcParams(fd *ast.FuncDecl) []string {
 		cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
 		params = append(params, buf.String())
 	}
-	for _, field := range fd.Type.Params.List {
-		if field.Names != nil {
-			for _, name := range field.Names {
-				param(name.Name, field.Type)
-			}
-		} else {
-			param("_", field.Type)
+	for id, field := range astutil.Fields(fd.Type.Params) {
+		name := "_"
+		if id != nil {
+			name = id.Name
 		}
+		param(name, field.Type)
 	}
 	return params
 }

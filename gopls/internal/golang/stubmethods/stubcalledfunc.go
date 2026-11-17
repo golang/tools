@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -123,14 +124,14 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		si.MethodName)
 
 	// Emit parameters, avoiding name conflicts.
-	seen := map[string]bool{recvName: true}
+	seen := set.Of(recvName)
 	out.WriteString("(")
 	for i, param := range params {
 		name := param.name
-		if seen[name] {
+		if seen.Contains(name) {
 			name = fmt.Sprintf("param%d", i+1)
 		}
-		seen[name] = true
+		seen.Insert(name)
 
 		if i > 0 {
 			out.WriteString(", ")

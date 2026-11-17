@@ -8,6 +8,8 @@ import (
 	"math"
 	"math/rand/v2"
 	"testing"
+
+	"golang.org/x/tools/internal/collection/set"
 )
 
 func TestFilter(t *testing.T) {
@@ -32,10 +34,7 @@ func TestFilter(t *testing.T) {
 	t.Logf("%d blocks, %d seeds, %.2g%% expected false positives", len(f.blocks), len(f.seeds), 100*fpRate)
 
 	// In practice, all positives below will be false, but be precise anyway.
-	truePositive := make(map[string]bool)
-	for _, e := range elems {
-		truePositive[e] = true
-	}
+	truePositive := set.Of(elems...)
 
 	// Generate a large number of random strings to measure the false positive
 	// rate.
@@ -48,7 +47,7 @@ func TestFilter(t *testing.T) {
 		if false {
 			t.Logf("MayContain(%q) = %t", s, got)
 		}
-		if got && !truePositive[s] {
+		if got && !truePositive.Contains(s) {
 			falsePositives++
 		}
 	}

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, _ protocol.Range) ([]protocol.InlayHint, error) {
@@ -43,12 +44,11 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, _ 
 	}
 
 	var ans []protocol.InlayHint
-	seen := make(map[string]bool)
+	seen := make(set.Set[string])
 	for _, meta := range am {
-		if meta.Module == nil || seen[meta.Module.Path] {
+		if meta.Module == nil || !seen.Insert(meta.Module.Path) {
 			continue
 		}
-		seen[meta.Module.Path] = true
 		metaVersion := meta.Module.Version
 		if meta.Module.Replace != nil {
 			metaVersion = meta.Module.Replace.Version

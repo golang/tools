@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
@@ -684,12 +685,12 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	// receiver's constructor. It adds prefix to the constructor's parameters
 	// until no conflicts remain.
 	if data.Receiver != nil && data.Receiver.Constructor != nil {
-		seen := map[string]bool{}
+		seen := make(set.Set[string])
 		for _, f := range data.Func.Args {
 			if f.Name == "" {
 				continue
 			}
-			seen[f.Name] = true
+			seen.Insert(f.Name)
 		}
 
 		// "" for no change, "c" for constructor, "i" for input.
@@ -699,7 +700,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				if f.Name == "" {
 					continue
 				}
-				if seen[prefix+f.Name] {
+				if seen.Contains(prefix + f.Name) {
 					conflict = true
 					break
 				}

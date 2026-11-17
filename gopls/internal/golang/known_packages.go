@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -45,11 +46,11 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	if err != nil {
 		return nil, err
 	}
-	imported := make(map[PackagePath]bool)
+	imported := make(set.Set[PackagePath])
 	for _, imp := range file.Imports {
 		if id := current.DepsByImpPath[metadata.UnquoteImportPath(imp)]; id != "" {
 			if mp := snapshot.Metadata(id); mp != nil {
-				imported[mp.PkgPath] = true
+				imported.Insert(mp.PkgPath)
 			}
 		}
 	}
@@ -59,7 +60,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	if err != nil {
 		return nil, err
 	}
-	seen := make(map[PackagePath]bool)
+	seen := make(set.Set[PackagePath])
 	for _, knownPkg := range knownPkgs {
 		// package main cannot be imported
 		if knownPkg.Name == "main" {
@@ -72,7 +73,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 		// No need to import what the file already imports.
 		// This check is based on PackagePath, not PackageID,
 		// so that all test variants are filtered out too.
-		if imported[knownPkg.PkgPath] {
+		if imported.Contains(knownPkg.PkgPath) {
 			continue
 		}
 		// make sure internal packages are importable by the file
@@ -84,7 +85,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 			continue
 		}
 		// AllMetadata may have multiple variants of a pkg.
-		seen[knownPkg.PkgPath] = true
+		seen.Insert(knownPkg.PkgPath)
 	}
 
 	// Augment the set by invoking the goimports algorithm.
@@ -96,7 +97,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 			seenMu.Lock()
 			defer seenMu.Unlock()
 			// TODO(adonovan): what if the actual package path has a vendor/ prefix?
-			seen[PackagePath(ifix.StmtInfo.ImportPath)] = true
+			seen.Insert(PackagePath(ifix.StmtInfo.ImportPath))
 		}
 		return imports.GetAllCandidates(ctx, wrapped, "", fh.URI().Path(), string(current.Name), o.Env)
 	}); err != nil {

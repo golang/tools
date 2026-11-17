@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // An Annotation is a category of Go compiler optimization diagnostic.
@@ -116,10 +117,10 @@ type ClientOptions struct {
 	ShowDocumentSupported                      bool
 	// SupportedWorkDoneProgressFormats specifies the formats supported by the
 	// client for handling workdone progress metadata.
-	SupportedWorkDoneProgressFormats map[WorkDoneProgressStyle]bool
+	SupportedWorkDoneProgressFormats set.Set[WorkDoneProgressStyle]
 	// SupportedInteractiveInputTypes specifies the interactive types supported
 	// by the client.
-	SupportedInteractiveInputTypes map[protocol.FormFieldKind]bool
+	SupportedInteractiveInputTypes set.Set[protocol.FormFieldKind]
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -127,7 +128,7 @@ type ClientOptions struct {
 //
 // ServerOptions must be comparable with reflect.DeepEqual.
 type ServerOptions struct {
-	SupportedCodeActions map[file.Kind]map[protocol.CodeActionKind]bool
+	SupportedCodeActions map[file.Kind]set.Set[protocol.CodeActionKind]
 	SupportedCommands    []string
 }
 
@@ -1025,7 +1026,7 @@ func (o *Options) Set(value any) (applied []CounterPath, errs []error) {
 	switch value := value.(type) {
 	case nil:
 	case map[string]any:
-		seen := make(map[string]struct{})
+		seen := make(set.Set[string])
 		for name, value := range value {
 			// Use only the last segment of a dotted name such as
 			// ui.navigation.symbolMatcher. The other segments
@@ -1035,10 +1036,9 @@ func (o *Options) Set(value any) (applied []CounterPath, errs []error) {
 			split := strings.Split(name, ".")
 			name = split[len(split)-1]
 
-			if _, ok := seen[name]; ok {
+			if !seen.Insert(name) {
 				errs = append(errs, fmt.Errorf("duplicate value for %s", name))
 			}
-			seen[name] = struct{}{}
 
 			paths, err := o.setOne(name, value)
 			if err != nil {
@@ -1124,18 +1124,18 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 	// Client experimental capabilities.
 	if experimental, ok := caps.Experimental.(map[string]any); ok {
 		if formats, ok := experimental["progressMessageStyles"].([]any); ok {
-			o.SupportedWorkDoneProgressFormats = make(map[WorkDoneProgressStyle]bool, len(formats))
+			o.SupportedWorkDoneProgressFormats = make(set.Set[WorkDoneProgressStyle], len(formats))
 			for _, f := range formats {
-				o.SupportedWorkDoneProgressFormats[WorkDoneProgressStyle(f.(string))] = true
+				o.SupportedWorkDoneProgressFormats.Insert(WorkDoneProgressStyle(f.(string)))
 			}
 		}
 
 		if interactiveCap, ok := experimental["interactiveResolve"].(map[string]any); ok {
 			if inputTypes, ok := interactiveCap["inputTypes"].([]any); ok {
-				o.SupportedInteractiveInputTypes = make(map[protocol.FormFieldKind]bool, len(inputTypes))
+				o.SupportedInteractiveInputTypes = make(set.Set[protocol.FormFieldKind], len(inputTypes))
 				for _, t := range inputTypes {
 					if s, ok := t.(string); ok {
-						o.SupportedInteractiveInputTypes[protocol.FormFieldKind(s)] = true
+						o.SupportedInteractiveInputTypes.Insert(protocol.FormFieldKind(s))
 					}
 				}
 			}

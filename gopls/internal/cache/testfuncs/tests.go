@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // An Index records the test set of a package.
@@ -55,7 +56,7 @@ func NewIndex(files []*parsego.File, info *types.Info) *Index {
 	b := &indexBuilder{
 		fileIndex: make(map[protocol.DocumentURI]int),
 		subNames:  make(map[string]int),
-		visited:   make(map[*types.Func]bool),
+		visited:   make(set.Set[*types.Func]),
 	}
 	return b.build(files, info)
 }
@@ -100,7 +101,7 @@ func (b *indexBuilder) build(files []*parsego.File, info *types.Info) *Index {
 			}
 
 			b.Files[i].Tests = append(b.Files[i].Tests, t)
-			b.visited[obj] = true
+			b.visited.Insert(obj)
 
 			// Check for subtests
 			if isTest {
@@ -185,11 +186,10 @@ func (b *indexBuilder) findSubtests(parent gobTest, typ *ast.FuncType, body *ast
 		}
 
 		// Don't recurse into functions that have already been visited
-		if b.visited[fn] {
+		if !b.visited.Insert(fn) {
 			continue
 		}
 
-		b.visited[fn] = true
 		tests = append(tests, b.findSubtests(t, typ, body, file, files, info)...)
 	}
 	return tests
@@ -329,7 +329,7 @@ type indexBuilder struct {
 	gobPackage
 	fileIndex map[protocol.DocumentURI]int
 	subNames  map[string]int
-	visited   map[*types.Func]bool
+	visited   set.Set[*types.Func]
 }
 
 // -- serial format of index --

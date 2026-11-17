@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"mvdan.cc/xurls/v2"
 )
@@ -239,10 +240,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 // acceptedSchemes controls the schemes that URLs must have to be shown to the
 // user. Other schemes can't be opened by LSP clients, so linkifying them is
 // distracting. See golang/go#43990.
-var acceptedSchemes = map[string]bool{
-	"http":  true,
-	"https": true,
-}
+var acceptedSchemes = set.Of("http", "https")
 
 // findLinksInString is the user-supplied regular expression to match URL.
 // srcOffset is the start offset of 'src' within m's file.
@@ -261,7 +259,7 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 			}
 		}
 		// Not all potential links will be valid, so don't return this error.
-		if err != nil || !acceptedSchemes[linkURL.Scheme] {
+		if err != nil || !acceptedSchemes.Contains(linkURL.Scheme) {
 			continue
 		}
 

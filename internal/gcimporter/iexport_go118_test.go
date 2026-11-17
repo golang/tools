@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -78,8 +77,14 @@ func testExportSrc(t *testing.T, src []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Use this package's importer rather than go/importer.Default so that
+	// imported stdlib packages reflect this version of gcimporter rather than
+	// the copy vendored into GOROOT.
+	imports := make(map[string]*types.Package)
 	conf := types.Config{
-		Importer: importer.Default(),
+		Importer: importerFunc(func(path string) (*types.Package, error) {
+			return gcimporter.Import(fset, imports, path, ".", nil)
+		}),
 	}
 	pkg, err := conf.Check("", fset, []*ast.File{f}, nil)
 	if err != nil {

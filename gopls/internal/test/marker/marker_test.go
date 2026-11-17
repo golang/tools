@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/gocommand"
@@ -497,17 +498,14 @@ func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 		panic(fmt.Sprintf("action marker function %#v cannot have results", ftype))
 	}
 
-	var allowed map[string]bool
+	var allowed set.Set[string]
 	if len(allowedNames) > 0 {
-		allowed = make(map[string]bool)
-		for _, name := range allowedNames {
-			allowed[name] = true
-		}
+		allowed = set.Of(allowedNames...)
 	}
 
 	return func(mark marker) {
 		for name := range mark.note.NamedArgs {
-			if !allowed[name] {
+			if !allowed.Contains(name) {
 				mark.errorf("unexpected named argument %q", name)
 			}
 		}
@@ -845,12 +843,11 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		directories: make(map[string][]byte),
 		golden:      make(map[expect.Identifier]*Golden),
 	}
-	seen := make(map[string]bool)
+	seen := make(set.Set[string])
 	for _, file := range archive.Files {
-		if seen[file.Name] {
+		if !seen.Insert(file.Name) {
 			return nil, fmt.Errorf("duplicate archive section %q", file.Name)
 		}
-		seen[file.Name] = true
 		switch {
 		case file.Name == "skip":
 			reason := strings.ReplaceAll(string(file.Data), "\n", " ")
@@ -944,12 +941,12 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 	}
 
 	// Parse flags after loading files, as they may have been set by the "flags" file.
-	set := test.flagSet()
-	if err := set.Parse(test.flags); err != nil {
+	flags := test.flagSet()
+	if err := flags.Parse(test.flags); err != nil {
 		return nil, fmt.Errorf("parsing flags: %v", err)
 	}
-	if set.NArg() > 0 {
-		return nil, fmt.Errorf("surplus arguments after flags: %q", set.Args())
+	if flags.NArg() > 0 {
+		return nil, fmt.Errorf("surplus arguments after flags: %q", flags.Args())
 	}
 
 	return test, nil

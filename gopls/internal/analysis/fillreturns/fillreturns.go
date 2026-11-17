@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
@@ -265,7 +266,7 @@ func MatchingIdents(typs []types.Type, node ast.Node, pos token.Pos, info *types
 		matches[typ] = nil // create entry
 	}
 
-	seen := map[types.Object]struct{}{}
+	seen := make(set.Set[types.Object])
 	ast.Inspect(node, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -294,10 +295,9 @@ func MatchingIdents(typs []types.Type, node ast.Node, pos token.Pos, info *types
 			return true
 		}
 		// Prevent duplicates in matches' values.
-		if _, ok = seen[obj]; ok {
+		if !seen.Insert(obj) {
 			return true
 		}
-		seen[obj] = struct{}{}
 		// Find the scope for the given position. Then, check whether the object
 		// exists within the scope.
 		innerScope := pkg.Scope().Innermost(pos)

@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	. "golang.org/x/tools/gopls/internal/fuzzy"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 func TestSymbolMatchIndex(t *testing.T) {
@@ -162,7 +163,7 @@ func collectIdentifiers(tb testing.TB) []string {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	uniqueIdents := make(map[string]bool)
+	uniqueIdents := make(set.Set[string])
 	decls := 0
 	for _, pkg := range pkgs {
 		for _, f := range pkg.Syntax {
@@ -176,11 +177,11 @@ func collectIdentifiers(tb testing.TB) []string {
 						case token.TYPE:
 							name := spec.(*ast.TypeSpec).Name.Name
 							qualified := pkg.Name + "." + name
-							uniqueIdents[qualified] = true
+							uniqueIdents.Insert(qualified)
 						case token.CONST, token.VAR:
 							for _, n := range spec.(*ast.ValueSpec).Names {
 								qualified := pkg.Name + "." + n.Name
-								uniqueIdents[qualified] = true
+								uniqueIdents.Insert(qualified)
 							}
 						}
 					}

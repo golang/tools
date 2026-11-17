@@ -4,19 +4,21 @@
 
 package splitpkg
 
+import "golang.org/x/tools/internal/collection/set"
+
 // SCC algorithm stolen from cmd/digraph.
 
 type (
-	graph    = map[int]map[int]bool
+	graph    = map[int]set.Set[int]
 	nodeList = []int
-	nodeSet  = map[int]bool
+	nodeSet  = set.Set[int]
 )
 
 // addNode ensures a node exists in the graph with an initialized edge set.
-func addNode(g graph, node int) map[int]bool {
+func addNode(g graph, node int) set.Set[int] {
 	edges := g[node]
 	if edges == nil {
-		edges = make(map[int]bool)
+		edges = make(set.Set[int])
 		g[node] = edges
 	}
 	return edges
@@ -27,7 +29,7 @@ func addEdges(g graph, from int, to ...int) {
 	edges := addNode(g, from)
 	for _, toNode := range to {
 		addNode(g, toNode)
-		edges[toNode] = true
+		edges.Insert(toNode)
 	}
 }
 
@@ -58,8 +60,7 @@ func sccs(g graph) []nodeSet {
 	seen := make(nodeSet)
 	var visit func(node int)
 	visit = func(node int) {
-		if !seen[node] {
-			seen[node] = true
+		if seen.Insert(node) {
 			for e := range g[node] {
 				visit(e)
 			}
@@ -76,9 +77,8 @@ func sccs(g graph) []nodeSet {
 	seen = make(nodeSet)
 	var rvisit func(node int)
 	rvisit = func(node int) {
-		if !seen[node] {
-			seen[node] = true
-			scc[node] = true
+		if seen.Insert(node) {
+			scc.Insert(node)
 			for e := range rev[node] {
 				rvisit(e)
 			}
@@ -88,10 +88,10 @@ func sccs(g graph) []nodeSet {
 	for len(S) > 0 {
 		top := S[len(S)-1]
 		S = S[:len(S)-1] // pop
-		if !seen[top] {
+		if !seen.Contains(top) {
 			scc = make(nodeSet)
 			rvisit(top)
-			if len(scc) == 1 && !g[top][top] {
+			if len(scc) == 1 && !g[top].Contains(top) {
 				continue
 			}
 			sccs = append(sccs, scc)

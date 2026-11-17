@@ -34,6 +34,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -47,7 +48,7 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 	s := &server{
 		diagnostics:         make(map[protocol.DocumentURI]*fileDiagnostics),
 		watchedGlobPatterns: nil, // empty
-		changedFiles:        make(map[protocol.DocumentURI]unit),
+		changedFiles:        make(set.Set[protocol.DocumentURI]),
 		session:             session,
 		client:              client,
 		diagnosticsSema:     make(chan unit, concurrentAnalyses),
@@ -99,7 +100,7 @@ type server struct {
 
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
-	changedFiles   map[protocol.DocumentURI]unit
+	changedFiles   set.Set[protocol.DocumentURI]
 
 	// folders is only valid between initialize and initialized, and holds the
 	// set of folders to build views for when we are ready.
@@ -111,7 +112,7 @@ type server struct {
 	// that the server should watch changes.
 	// The map field may be reassigned but the map is immutable.
 	watchedGlobPatternsMu  sync.Mutex
-	watchedGlobPatterns    map[protocol.RelativePattern]unit
+	watchedGlobPatterns    set.Set[protocol.RelativePattern]
 	watchRegistrationCount int
 
 	fileWatcherMu sync.Mutex

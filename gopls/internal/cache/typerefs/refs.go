@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // Encode analyzes the Go syntax trees of a package, constructs a
@@ -72,7 +73,7 @@ type IndexID int
 //
 // TODO(adonovan): opt: evaluate unifying Symbol and symbol.
 // (Encode would have to create a private PackageIndex.)
-type symbolSet map[symbol]bool
+type symbolSet = set.Set[symbol]
 
 // A symbol is the internal representation of an external
 // (imported) symbol referenced by the analyzed package.
@@ -91,7 +92,7 @@ type declNode struct {
 	rep  *declNode // canonical representative of this SCC (initially self)
 
 	// outgoing graph edges
-	intRefs      map[*declNode]bool // to symbols in this package
+	intRefs      set.Set[*declNode] // to symbols in this package
 	extRefs      symbolSet          // to imported symbols
 	extRefsClass int                // extRefs equivalence class number (-1 until set at end)
 
@@ -119,22 +120,22 @@ type state struct {
 
 // getClassIndex returns the small integer (an index into
 // state.class) that identifies the given set.
-func (st *state) getClassIndex(set symbolSet) int {
-	key := classKey(set)
+func (st *state) getClassIndex(syms symbolSet) int {
+	key := classKey(syms)
 	i, ok := st.classIndex[key]
 	if !ok {
 		i = len(st.class)
 		st.classIndex[key] = i
-		st.class = append(st.class, set)
+		st.class = append(st.class, syms)
 	}
 	return i
 }
 
 // appendSorted appends the symbols to syms, sorts by ascending
 // (PackageID, name), and returns the result.
-// The argument must be an empty slice, ideally with capacity len(set).
-func (set symbolSet) appendSorted(syms []symbol) []symbol {
-	for sym := range set {
+// The argument must be an empty slice, ideally with capacity len(symset).
+func appendSorted(symset symbolSet, syms []symbol) []symbol {
+	for sym := range symset {
 		syms = append(syms, sym)
 	}
 	sort.Slice(syms, func(i, j int) bool {
@@ -149,13 +150,13 @@ func (set symbolSet) appendSorted(syms []symbol) []symbol {
 
 // classKey returns a key such that equal keys imply equal sets.
 // (e.g. a sorted string representation, or a cryptographic hash of same).
-func classKey(set symbolSet) string {
+func classKey(symset symbolSet) string {
 	// Sort symbols into a stable order.
 	// TODO(adonovan): opt: a cheap crypto hash (e.g. BLAKE2b) might
 	// make a cheaper map key than a large string.
 	// Try using a hasher instead of a builder.
 	var s strings.Builder
-	for _, sym := range set.appendSorted(make([]symbol, 0, len(set))) {
+	for _, sym := range appendSorted(symset, make([]symbol, 0, len(symset))) {
 		fmt.Fprintf(&s, "%s:%s;", sym.pkg, sym.name)
 	}
 	return s.String()
@@ -270,14 +271,14 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 				if decl.extRefs == nil {
 					decl.extRefs = make(symbolSet)
 				}
-				decl.extRefs[symbol{depID, name}] = true
+				decl.extRefs.Insert(symbol{depID, name})
 			}
 		}
 	}
 
 	// visit finds refs within node and builds edges from fromId's decl.
 	// References to the type parameters are ignored.
-	visit := func(fromId *ast.Ident, node ast.Node, tparams map[string]bool) {
+	visit := func(fromId *ast.Ident, node ast.Node, tparams set.Set[string]) {
 		if fromId.Name == "_" {
 			return
 		}
@@ -292,7 +293,7 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 		// Visit each reference to name or name.sel.
 		visitDeclOrSpec(node, func(name, sel string) {
 			// Ignore references to type parameters.
-			if tparams[name] {
+			if tparams.Contains(name) {
 				return
 			}
 
@@ -306,9 +307,9 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 			//  var y = struct{ F int }{}
 			if to, ok := decls[name]; ok {
 				if from.intRefs == nil {
-					from.intRefs = make(map[*declNode]bool)
+					from.intRefs = make(set.Set[*declNode])
 				}
-				from.intRefs[to] = true
+				from.intRefs.Insert(to)
 
 			} else {
 				// Only record an edge to dot-imported packages
@@ -386,12 +387,12 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 				// Method. Associate it with the receiver.
 				_, id, typeParams := astutil.UnpackRecv(d.Recv.List[0].Type)
 				if id != nil {
-					var tparams map[string]bool
+					var tparams set.Set[string]
 					if len(typeParams) > 0 {
-						tparams = make(map[string]bool)
+						tparams = make(set.Set[string])
 						for _, tparam := range typeParams {
 							if tparam.Name != "_" {
-								tparams[tparam.Name] = true
+								tparams.Insert(tparam.Name)
 							}
 						}
 					}
@@ -409,15 +410,15 @@ func visitFile(file *ast.File, imports map[metadata.ImportPath]*metadata.Package
 // tparamsMap returns a set recording each name declared by the provided field
 // list. It so happens that we only care about names declared by type parameter
 // lists.
-func tparamsMap(tparams *ast.FieldList) map[string]bool {
+func tparamsMap(tparams *ast.FieldList) set.Set[string] {
 	if tparams == nil || len(tparams.List) == 0 {
 		return nil
 	}
-	m := make(map[string]bool)
+	m := make(set.Set[string])
 	for _, f := range tparams.List {
 		for _, name := range f.Names {
 			if name.Name != "_" {
-				m[name.Name] = true
+				m.Insert(name.Name)
 			}
 		}
 	}
@@ -676,11 +677,11 @@ func (st *state) visit(x *declNode) {
 				continue // already coalesced
 			}
 			assert(y.scc == 1, "edge to non-scc node")
-			for z := range y.extRefs {
+			if len(y.extRefs) > 0 {
 				if x.extRefs == nil {
 					x.extRefs = make(symbolSet)
 				}
-				x.extRefs[z] = true // extRefs: x U= y
+				x.extRefs.UnionWith(y.extRefs) // extRefs: x U= y
 			}
 		}
 
@@ -695,17 +696,15 @@ func coalesce(x, y *declNode) {
 	y.rep = x
 
 	// x accumulates y's internal references.
-	for z := range y.intRefs {
-		x.intRefs[z] = true
-	}
+	x.intRefs.UnionWith(y.intRefs)
 	y.intRefs = nil
 
 	// x accumulates y's external references.
-	for z := range y.extRefs {
+	if len(y.extRefs) > 0 {
 		if x.extRefs == nil {
 			x.extRefs = make(symbolSet)
 		}
-		x.extRefs[z] = true
+		x.extRefs.UnionWith(y.extRefs)
 	}
 	y.extRefs = nil
 }
@@ -775,7 +774,7 @@ func encode(classNames map[int][]string, classes []symbolSet) []byte {
 
 	var refs []symbol // recycled temporary
 	for class, names := range classNames {
-		set := classes[class]
+		symset := classes[class]
 
 		// names, sorted
 		sort.Strings(names)
@@ -785,8 +784,8 @@ func encode(classNames map[int][]string, classes []symbolSet) []byte {
 		}
 
 		// refs, sorted by ascending (PackageID, name)
-		gobRefs := make([]int32, 0, 2*len(set))
-		for _, sym := range set.appendSorted(refs[:0]) {
+		gobRefs := make([]int32, 0, 2*len(symset))
+		for _, sym := range appendSorted(symset, refs[:0]) {
 			gobRefs = append(gobRefs,
 				stringIndex(string(sym.pkg)),
 				stringIndex(sym.name))

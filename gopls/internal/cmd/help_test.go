@@ -128,6 +128,17 @@ func TestHelpTree(t *testing.T) {
 				"list sessions for the default daemon",
 			},
 		},
+		// gopls help location
+		{
+			args:        []string{"help", "location"},
+			wantSuccess: true,
+			wantPatterns: []string{
+				"file location syntax for flags and positional arguments",
+				"file.go:line:colStart-colEnd",
+				"1-based",
+				"0-based",
+			},
+		},
 		// gopls help remote nonesuch
 		{
 			args: []string{"help", "remote", "nonesuch"},

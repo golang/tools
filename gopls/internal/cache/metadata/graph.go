@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // A Graph is an immutable and transitively closed graph of [Package] data.
@@ -103,16 +104,16 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 	// Collect file associations.
 	uriPkgs := make(map[protocol.DocumentURI][]*Package)
 	for _, mp := range pkgs {
-		uris := map[protocol.DocumentURI]struct{}{}
+		uris := make(set.Set[protocol.DocumentURI])
 		for _, uri := range mp.CompiledGoFiles {
-			uris[uri] = struct{}{}
+			uris.Insert(uri)
 		}
 		for _, uri := range mp.GoFiles {
-			uris[uri] = struct{}{}
+			uris.Insert(uri)
 		}
 		for _, uri := range mp.OtherFiles {
 			if strings.HasSuffix(string(uri), ".s") { // assembly
-				uris[uri] = struct{}{}
+				uris.Insert(uri)
 			}
 		}
 		for uri := range uris {
@@ -201,11 +202,10 @@ func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageI
 // topological (dependencies-first) order. The order may vary.
 func (g *Graph) ForwardReflexiveTransitiveClosure(ids ...PackageID) iter.Seq[*Package] {
 	return func(yield func(*Package) bool) {
-		seen := make(map[PackageID]bool)
+		seen := make(set.Set[PackageID])
 		var visit func(PackageID) bool
 		visit = func(id PackageID) bool {
-			if !seen[id] {
-				seen[id] = true
+			if seen.Insert(id) {
 				if mp := g.Packages[id]; mp != nil {
 					for _, depID := range mp.DepsByPkgPath {
 						if !visit(depID) {
@@ -271,19 +271,19 @@ func breakImportCycles(metadata, updates map[PackageID]*Package) {
 		// cycle-forming import of A, both A and B will be
 		// invalidated.
 		for _, cycle := range cycles {
-			cyclic := make(map[PackageID]bool)
+			cyclic := make(set.Set[PackageID])
 			for _, mp := range cycle {
-				cyclic[mp.ID] = true
+				cyclic.Insert(mp.ID)
 			}
 			for id := range cyclic {
 				if mp := updates[id]; mp != nil {
 					for path, depID := range mp.DepsByImpPath {
-						if cyclic[depID] {
+						if cyclic.Contains(depID) {
 							delete(mp.DepsByImpPath, path)
 						}
 					}
 					for path, depID := range mp.DepsByPkgPath {
-						if cyclic[depID] {
+						if cyclic.Contains(depID) {
 							delete(mp.DepsByPkgPath, path)
 						}
 					}

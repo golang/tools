@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 //go:embed doc.go
@@ -28,10 +29,10 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (any, error) {
 	// Gather information whether file is generated or not
-	generated := make(map[*token.File]bool)
+	generated := make(set.Set[*token.File])
 	for _, file := range pass.Files {
 		if ast.IsGenerated(file) {
-			generated[pass.Fset.File(file.FileStart)] = true
+			generated.Insert(pass.Fset.File(file.FileStart))
 		}
 	}
 
@@ -61,7 +62,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		if generated[pass.Fset.File(n.Pos())] {
+		if generated.Contains(pass.Fset.File(n.Pos())) {
 			return
 		}
 

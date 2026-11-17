@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/stdlib"
@@ -235,7 +236,7 @@ type completer struct {
 	path []ast.Node
 
 	// seen is the map that ensures we do not return duplicate results.
-	seen map[types.Object]bool
+	seen set.Set[types.Object]
 
 	// items is the list of completion items returned.
 	items []CompletionItem
@@ -630,7 +631,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		goversion:                 versions.FileVersion(info, pgf.File), // may be "" => no version check
 		path:                      path,
 		pos:                       pos,
-		seen:                      make(map[types.Object]bool),
+		seen:                      make(set.Set[types.Object]),
 		enclosingFunc:             enclosingFunction(path, info),
 		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, info),
 		deepState: deepCompletionState{
@@ -759,7 +760,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 
 	if c.emptySwitchStmt() {
 		// Empty switch statements only admit "default" and "case" keywords.
-		c.addKeywordItems(map[string]bool{}, highScore, CASE, DEFAULT)
+		c.addKeywordItems(make(set.Set[string]), highScore, CASE, DEFAULT)
 		return nil
 	}
 
@@ -1043,7 +1044,7 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	}
 	c.surrounding.check()
 
-	seenImports := make(map[string]struct{})
+	seenImports := make(set.Set[string])
 	for _, importSpec := range c.pgf.File.Imports {
 		if importSpec.Path.Value == importPath {
 			continue
@@ -1052,14 +1053,14 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 		if err != nil {
 			return err
 		}
-		seenImports[seenImportPath] = struct{}{}
+		seenImports.Insert(seenImportPath)
 	}
 
 	var mu sync.Mutex // guard c.items locally, since searchImports is called in parallel
-	seen := make(map[string]struct{})
+	seen := make(set.Set[string])
 	searchImports := func(pkg imports.ImportFix) {
 		path := pkg.StmtInfo.ImportPath
-		if _, ok := seenImports[path]; ok {
+		if seenImports.Contains(path) {
 			return
 		}
 
@@ -1088,10 +1089,9 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 			pkgToConsider += "/"
 		}
 
-		if _, ok := seen[pkgToConsider]; ok {
+		if !seen.Insert(pkgToConsider) {
 			return
 		}
-		seen[pkgToConsider] = struct{}{}
 
 		mu.Lock()
 		defer mu.Unlock()
@@ -1505,7 +1505,7 @@ func (c *completer) lexical(ctx context.Context) error {
 
 	// Track seen variables to avoid showing completions for shadowed variables.
 	// This works since we look at scopes from innermost to outermost.
-	seen := make(map[string]struct{})
+	seen := make(set.Set[string])
 
 	// Process scopes innermost first.
 	for i, scope := range c.scopes {
@@ -1559,8 +1559,7 @@ func (c *completer) lexical(ctx context.Context) error {
 			}
 
 			// If we haven't already added a candidate for an object with this name.
-			if _, ok := seen[obj.Name()]; !ok {
-				seen[obj.Name()] = struct{}{}
+			if seen.Insert(obj.Name()) {
 				c.deepState.enqueue(candidate{
 					obj:         obj,
 					score:       score,
@@ -1582,8 +1581,8 @@ func (c *completer) lexical(ctx context.Context) error {
 				// Make sure the package name isn't already in use by another
 				// object, and that this file doesn't import the package yet.
 				// TODO(adonovan): what if pkg.Path has vendor/ prefix?
-				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.pgf.File, golang.ImportPath(pkg.Path())) {
-					seen[pkg.Name()] = struct{}{}
+				if !seen.Contains(pkg.Name()) && pkg != c.pkg.Types() && !alreadyImports(c.pgf.File, golang.ImportPath(pkg.Path())) {
+					seen.Insert(pkg.Name())
 					obj := types.NewPkgName(0, nil, pkg.Name(), pkg)
 					imp := &importInfo{
 						importPath: pkg.Path(),
@@ -1669,7 +1668,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 	}
 }
 
-func (c *completer) unimportedPackages(ctx context.Context, seen map[string]struct{}) error {
+func (c *completer) unimportedPackages(ctx context.Context, seen set.Set[string]) error {
 	var prefix string
 	if c.surrounding != nil {
 		prefix = c.surrounding.Prefix()
@@ -1727,7 +1726,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 
 	for _, path := range paths {
 		name := pkgNameByPath[golang.PackagePath(path)]
-		if _, ok := seen[name]; ok {
+		if seen.Contains(name) {
 			continue
 		}
 		imp := &importInfo{
@@ -1755,7 +1754,7 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		if _, ok := seen[pkg.IdentName]; ok {
+		if seen.Contains(pkg.IdentName) {
 			return
 		}
 		if _, ok := relevances[pkg.StmtInfo.ImportPath]; ok {

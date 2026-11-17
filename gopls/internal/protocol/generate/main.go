@@ -409,22 +409,22 @@ func (t *Type) UnmarshalJSON(data []byte) error {
 // which table entries were not used
 func checkTables() {
 	for k := range disambiguate {
-		if !usedDisambiguate[k] {
+		if !usedDisambiguate.Contains(k) {
 			log.Printf("disambiguate[%v] unused", k)
 		}
 	}
 	for k := range renameProp {
-		if !usedRenameProp[k] {
+		if !usedRenameProp.Contains(k) {
 			log.Printf("renameProp {%q, %q} unused", k[0], k[1])
 		}
 	}
 	for k := range goplsStar {
-		if !usedGoplsStar[k] {
+		if !usedGoplsStar.Contains(k) {
 			log.Printf("goplsStar {%q, %q} unused", k[0], k[1])
 		}
 	}
 	for k := range goplsType {
-		if !usedGoplsType[k] {
+		if !usedGoplsType.Contains(k) {
 			log.Printf("unused goplsType[%q]->%s", k, goplsType[k])
 		}
 	}

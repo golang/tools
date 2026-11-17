@@ -17,6 +17,6 @@ inspect-flags:
   -pkg=string
     	scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains.
   -pos=location
-    	targets a file span. Format: file.go[:lineStart[:colStart]-lineEnd[:colEnd]], file.go[:line:colStart-colEnd], or file.go[:#offsetStart-#offsetEnd] (1-based line, 1-based column in UTF-8 bytes, 0-based byte offset). Also accepts a single point, returning a location that has that point as both the start and end.
+    	targets a file span. Run 'gopls help location' for accepted location syntax.
   -src
     	prints the source code of the definition (declaration and body)

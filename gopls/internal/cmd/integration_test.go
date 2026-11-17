@@ -645,32 +645,147 @@ func TestReferences(t *testing.T) {
 module example.com
 go 1.18
 
--- a.go --
+-- a/a.go --
 package a
+
 import "fmt"
+
+func Foo() {}
+
 func f() {
 	fmt.Println()
+	Foo()
 }
 
--- b.go --
-package a
-import "fmt"
+-- b/b.go --
+package b
+
+import (
+	"fmt"
+	"example.com/a"
+)
+
 func g() {
 	fmt.Println()
+	a.Foo()
 }
 `)
 	// no arguments
 	{
 		res := gopls(t, tree, "references")
 		res.checkExit(false)
-		res.checkStderr("expects 1 argument")
+		res.checkStderr(regexp.QuoteMeta(`references expects 1 argument (target)`))
 	}
 	// fmt.Println
 	{
-		res := gopls(t, tree, "references", "a.go:4:10")
+		res := gopls(t, tree, "references", "fmt.Println")
 		res.checkExit(true)
-		res.checkStdout("a.go:4:6-13")
-		res.checkStdout("b.go:4:6-13")
+		res.checkStdout("a.go:8:6-13", "b.go:9:6-13")
+	}
+	// resolve target error
+	{
+		res := gopls(t, tree, "references", "example.com/c.Foo")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/c")
+	}
+	// basic target query (without declaration)
+	{
+		res := gopls(t, tree, "references", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdout(`a.go:9:2-5`, `b.go:10:4-7`)
+	}
+	// relative target query and -pkg flag
+	{
+		res := gopls(t, tree, "references", "-pkg=example.com/a", "Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// rel target query without pkg fails, validation for the two tests below
+	{
+		res := gopls(t, tree, "references", "Foo")
+		res.checkExit(false)
+		res.checkStderr("no package metadata for directory")
+	}
+	// relative target query
+	{
+		res := gopls(t, tree+"/a/", "references", "Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -pos target query (with just providing the definition file of the target)
+	{
+		res := gopls(t, tree, "references", "-pos=a/a.go", "Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -declaration flag includes declaration at a.go:5:6-9
+	{
+		res := gopls(t, tree, "references", "-declaration", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain("a.go:5:6-9", "a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -limit flag caps results ordered by location
+	{
+		res := gopls(t, tree, "references", "-declaration", "-limit=2", "example.com/a.Foo")
+		res.checkExit(true)
+		// make sure there are exactly two results in line sorted order.
+		res.checkStdoutExactLinesContain(`a.go:5:6-9`, `a.go:9:2-5`)
+	}
+	// -context=1 prints only the reference line itself
+	{
+		res := gopls(t, tree, "references", "-context=1", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain(
+			"a.go:9:2-5",
+			regexp.QuoteMeta("\t9: \tFoo()"),
+			"", // -context adds an empty line at the end of each ref
+		)
+	}
+	// -context=2 prints 1 line before and 1 line after the reference line
+	{
+		res := gopls(t, tree, "references", "-context=2", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain(
+			"a.go:9:2-5",
+			regexp.QuoteMeta("\t8: \tfmt.Println()"),
+			regexp.QuoteMeta("\t9: \tFoo()"),
+			regexp.QuoteMeta("\t10: }"),
+			"", // -context adds an empty line at the end of each ref
+		)
+	}
+	// -json flag without -context omits context field
+	{
+		res := gopls(t, tree, "references", "-json", "example.com/a.Foo")
+		res.checkExit(true)
+		if strings.Contains(res.stdout, `"context"`) {
+			t.Errorf("unexpected context field in JSON output: %s", res.stdout)
+		}
+		var refs cmd.ReferencesJSON
+		if res.toJSON(&refs) {
+			if len(refs.References) != 2 {
+				t.Fatalf("got %d references, want 2", len(refs.References))
+			}
+			if loc := fmt.Sprint(refs.References[0].Location); !strings.HasSuffix(filepath.ToSlash(loc), "a/a.go:9:2-5") {
+				t.Errorf("References[0].Location = %q, expected suffix a/a.go:9:2-5", loc)
+			}
+			if loc := fmt.Sprint(refs.References[1].Location); !strings.HasSuffix(filepath.ToSlash(loc), "b/b.go:10:4-7") {
+				t.Errorf("References[1].Location = %q, expected suffix b/b.go:10:4-7", loc)
+			}
+		}
+	}
+	// -json flag with -context=2 includes surrounding lines without line numbers
+	{
+		res := gopls(t, tree, "references", "-json", "-context=2", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		var refs cmd.ReferencesJSON
+		if res.toJSON(&refs) {
+			if len(refs.References) != 1 {
+				t.Fatalf("got %d references, want 1", len(refs.References))
+			}
+			if refs.References[0].Context != "\tfmt.Println()\n\tFoo()\n}" {
+				t.Errorf("unexpected References[0].Context: %q", refs.References[0].Context)
+			}
+		}
 	}
 }
 
@@ -1454,10 +1569,26 @@ func (res *result) checkExit(success bool) {
 	}
 }
 
-// checkStdout asserts that the gopls standard output matches the pattern.
-func (res *result) checkStdout(pattern string) {
+// checkStdoutExactLinesContain takes a list of patterns, where each pattern
+// must sequentially match each line on stdout. The stdout is expected to end
+// on a new line, so don't include that in the list of patterns passed in.
+func (res *result) checkStdoutExactLinesContain(patterns ...string) {
 	res.t.Helper()
-	res.checkOutput(pattern, "stdout", res.stdout)
+	anyCharsOnFirstLine := `^[^\r\n]*`
+	endOfCurrentLine := `[^\r\n]*\n`
+	newPats := make([]string, len(patterns)+1)
+	for i, pat := range patterns {
+		newPats[i] = anyCharsOnFirstLine + pat + endOfCurrentLine
+	}
+	newPats[len(patterns)] = "^$"
+	res.checkStdout(newPats...)
+}
+
+// checkStdout asserts that the gopls standard output matches the patterns.
+// The patterns must match in order passed in.
+func (res *result) checkStdout(patterns ...string) {
+	res.t.Helper()
+	res.checkOutput("stdout", res.stdout, patterns...)
 }
 
 // checkStdoutOmits asserts that the gopls standard output doesn't contain the string.
@@ -1469,18 +1600,38 @@ func (res *result) checkStdoutOmits(s string) {
 }
 
 // checkStderr asserts that the gopls standard error matches the pattern.
-func (res *result) checkStderr(pattern string) {
+// The patterns must match in order passed in.
+func (res *result) checkStderr(patterns ...string) {
 	res.t.Helper()
-	res.checkOutput(pattern, "stderr", res.stderr)
+	res.checkOutput("stderr", res.stderr, patterns...)
 }
 
-func (res *result) checkOutput(pattern, name, content string) {
+func (res *result) checkOutput(name, content string, patterns ...string) {
 	res.t.Helper()
-	if match, err := regexp.MatchString(pattern, content); err != nil {
-		res.t.Errorf("invalid regexp: %v", err)
-	} else if !match {
-		res.t.Errorf("%s: %s does not match [%s]; got <<%s>>",
-			res.command, name, pattern, content)
+	offset := 0
+	for i, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			res.t.Errorf("invalid regexp %q: %v", pattern, err)
+			return
+		}
+		loc := re.FindStringIndex(content[offset:])
+		if loc == nil {
+			if i > 0 {
+				if re.MatchString(content) {
+					res.t.Errorf("%s: %s matched [%s] out of order (expected after [%s]); got <<%s>>",
+						res.command, name, pattern, patterns[i-1], content)
+				} else {
+					res.t.Errorf("%s: %s does not match [%s]; got <<%s>>; matching on substr <<%s>>",
+						res.command, name, pattern, content, content[offset:])
+				}
+			} else {
+				res.t.Errorf("%s: %s does not match [%s]; got <<%s>>",
+					res.command, name, pattern, content)
+			}
+			return
+		}
+		offset += loc[1]
 	}
 }
 

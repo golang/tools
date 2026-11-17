@@ -34,6 +34,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/asm"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -274,7 +275,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	var (
 		globalScope   = make(map[PackageID]*metadata.Package) // (excludes ITVs)
 		globalTargets map[PackagePath]map[objectpath.Path]unit
-		expansions    = make(map[PackageID]unit) // packages that caused search expansion
+		expansions    = make(set.Set[PackageID]) // packages that caused search expansion
 	)
 	// TODO(adonovan): what about generic functions? Need to consider both
 	// uninstantiated and instantiated. The latter have no objectpath. Use Origin?
@@ -430,9 +431,9 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			}
 
 			// Convert objects list to targets set.
-			targets := make(map[types.Object]bool)
+			targets := make(set.Set[types.Object])
 			for _, o := range objects {
-				targets[o.obj] = true
+				targets.Insert(o.obj)
 			}
 
 			return localReferences(pkg, targets, true, report)
@@ -451,7 +452,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			}
 			pkg := pkgs[0]
 
-			targets := make(map[types.Object]bool)
+			targets := make(set.Set[types.Object])
 			for objpath := range globalTargets[pkg.Metadata().PkgPath] {
 				obj, err := objectpath.Object(pkg.Types(), objpath)
 				if err != nil {
@@ -459,7 +460,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 					// declared only in the test variant.
 					continue
 				}
-				targets[obj] = true
+				targets.Insert(obj)
 			}
 
 			// Don't include corresponding types or methods
@@ -505,7 +506,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 // The scope is expanded by a sequence of calls (not concurrent) to addRdeps.
 //
 // recv is the method's effective receiver type, for method-set computations.
-func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspaceIDs []PackageID, method *types.Func, recv types.Type, addRdeps func(id PackageID, transitive bool) error, targets map[PackagePath]map[objectpath.Path]unit, expansions map[PackageID]unit) error {
+func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspaceIDs []PackageID, method *types.Func, recv types.Type, addRdeps func(id PackageID, transitive bool) error, targets map[PackagePath]map[objectpath.Path]unit, expansions set.Set[PackageID]) error {
 	// Compute the method-set fingerprint used as a key to the global search.
 	key, hasMethods := methodsets.KeyOf(recv)
 	if !hasMethods {
@@ -543,7 +544,7 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 
 			// Mark this package so that we search within it for
 			// local references to the additional types/methods.
-			expansions[id] = unit{}
+			expansions.Insert(id)
 
 			// Add each corresponding method the to set of global search targets.
 			for _, res := range results {
@@ -564,7 +565,7 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 // localReferences traverses syntax and reports each reference to one
 // of the target objects, or (if correspond is set) an object that
 // corresponds to one of them via interface satisfaction.
-func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspond bool, report func(loc protocol.Location, isDecl bool)) error {
+func localReferences(pkg *cache.Package, targets set.Set[types.Object], correspond bool, report func(loc protocol.Location, isDecl bool)) error {
 	// If we're searching for references to a method optionally
 	// broaden the search to include references to corresponding
 	// methods of mutually assignable receiver types.
@@ -603,16 +604,16 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 
 	// Collect target names for fast pre-filtering:
 	// skip identifiers whose name can't match any target.
-	targetNames := make(map[string]struct{}, len(targets))
+	targetNames := make(set.Set[string], len(targets))
 	for obj := range targets {
-		targetNames[obj.Name()] = struct{}{}
+		targetNames.Insert(obj.Name())
 	}
 
 	// Scan through syntax looking for uses of one of the target objects.
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
-			if _, ok := targetNames[id.Name]; !ok {
+			if !targetNames.Contains(id.Name) {
 				continue
 			}
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {

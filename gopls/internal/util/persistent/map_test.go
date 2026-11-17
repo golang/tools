@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
+
+	"golang.org/x/tools/internal/collection/set"
 )
 
 type mapEntry struct {
@@ -43,7 +45,7 @@ func TestSimpleMap(t *testing.T) {
 	validateRef(t, m1, m3)
 	m3.destroy()
 
-	assertSameMap(t, entrySet(deletedEntries), map[mapEntry]struct{}{
+	assertSameMap(t, entrySet(deletedEntries), set.Set[mapEntry]{
 		{key: 8, value: 8}: {},
 	})
 
@@ -59,7 +61,7 @@ func TestSimpleMap(t *testing.T) {
 	m1.set(t, 6, 6)
 	validateRef(t, m1)
 
-	assertSameMap(t, entrySet(deletedEntries), map[mapEntry]struct{}{
+	assertSameMap(t, entrySet(deletedEntries), set.Set[mapEntry]{
 		{key: 2, value: 2}: {},
 		{key: 8, value: 8}: {},
 	})
@@ -98,7 +100,7 @@ func TestSimpleMap(t *testing.T) {
 
 	m1.destroy()
 
-	assertSameMap(t, entrySet(deletedEntries), map[mapEntry]struct{}{
+	assertSameMap(t, entrySet(deletedEntries), set.Set[mapEntry]{
 		{key: 2, value: 2}:    {},
 		{key: 6, value: 60}:   {},
 		{key: 8, value: 8}:    {},
@@ -149,12 +151,8 @@ func TestRandomMap(t *testing.T) {
 	assertSameMap(t, entrySet(seenEntries), entrySet(deletedEntries))
 }
 
-func entrySet(m map[mapEntry]int) map[mapEntry]struct{} {
-	set := make(map[mapEntry]struct{})
-	for k := range m {
-		set[k] = struct{}{}
-	}
-	return set
+func entrySet(m map[mapEntry]int) set.Set[mapEntry] {
+	return set.Collect(maps.Keys(m))
 }
 
 func TestUpdate(t *testing.T) {
@@ -184,7 +182,7 @@ func validateRef(t *testing.T, maps ...*validatedMap) {
 	t.Helper()
 
 	actualCountByEntry := make(map[mapEntry]int32)
-	nodesByEntry := make(map[mapEntry]map[*mapNode]struct{})
+	nodesByEntry := make(map[mapEntry]set.Set[*mapNode])
 	expectedCountByEntry := make(map[mapEntry]int32)
 	for i, m := range maps {
 		dfsRef(m.impl.root, actualCountByEntry, nodesByEntry)
@@ -196,7 +194,7 @@ func validateRef(t *testing.T, maps ...*validatedMap) {
 	assertSameMap(t, expectedCountByEntry, actualCountByEntry)
 }
 
-func dfsRef(node *mapNode, countByEntry map[mapEntry]int32, nodesByEntry map[mapEntry]map[*mapNode]struct{}) {
+func dfsRef(node *mapNode, countByEntry map[mapEntry]int32, nodesByEntry map[mapEntry]set.Set[*mapNode]) {
 	if node == nil {
 		return
 	}
@@ -206,10 +204,10 @@ func dfsRef(node *mapNode, countByEntry map[mapEntry]int32, nodesByEntry map[map
 
 	nodes, ok := nodesByEntry[entry]
 	if !ok {
-		nodes = make(map[*mapNode]struct{})
+		nodes = make(set.Set[*mapNode])
 		nodesByEntry[entry] = nodes
 	}
-	nodes[node] = struct{}{}
+	nodes.Insert(node)
 
 	dfsRef(node.left, countByEntry, nodesByEntry)
 	dfsRef(node.right, countByEntry, nodesByEntry)

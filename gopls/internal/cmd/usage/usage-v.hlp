@@ -16,40 +16,43 @@ Usage:
 
 Command:
 
-Main                
-  serve             run a server for Go code using the Language Server Protocol
-  version           print the gopls version information
-  help              print usage information for subcommands
-  api-json          print JSON describing gopls API
-  licenses          print licenses of included software
-                    
-Features            
-  call_hierarchy    display selected identifier's call hierarchy
-  check             show diagnostic results for the specified file
-  codeaction        list or execute code actions
-  codelens          List or execute code lenses for a file
-  definition        show declaration of selected identifier
-  execute           Execute a gopls custom LSP command
-  folding_ranges    display selected file's folding ranges
-  format            format the code according to the go standard
-  mcp               start the gopls MCP server in headless mode
-  highlight         display selected identifier's highlights
-  implementation    display selected identifier's implementation
-  imports           updates import statements
-  inspect           display the target's definition location, hover docs, and signature
-  remote            interact with the gopls daemon
-  links             list links in a file
-  prepare_rename    test validity of a rename operation at location
-  references        display selected identifier's references
-  rename            rename selected identifier
-  semtok            show semantic tokens for the specified file
-  signature         display selected identifier's signature
-  stats             print workspace statistics
-  symbols           display selected file's symbols
-  workspace_symbol  search symbols in workspace
-                    
-Internal Use Only   
-  vulncheck         run vulncheck analysis (internal-use only)
+Main                    
+  serve                 run a server for Go code using the Language Server Protocol
+  version               print the gopls version information
+  help                  print usage information for subcommands
+  api-json              print JSON describing gopls API
+  licenses              print licenses of included software
+                        
+Features                
+  call_hierarchy        display selected identifier's call hierarchy
+  check                 show diagnostic results for the specified file
+  codeaction            list or execute code actions
+  codelens              List or execute code lenses for a file
+  definition            show declaration of selected identifier
+  execute               Execute a gopls custom LSP command
+  folding_ranges        display selected file's folding ranges
+  format                format the code according to the go standard
+  mcp                   start the gopls MCP server in headless mode
+  highlight             display selected identifier's highlights
+  implementation        display selected identifier's implementation
+  imports               updates import statements
+  inspect               display the target's definition location, hover docs, and signature
+  remote                interact with the gopls daemon
+  links                 list links in a file
+  prepare_rename        test validity of a rename operation at location
+  references            display selected identifier's references
+  rename                rename selected identifier
+  semtok                show semantic tokens for the specified file
+  signature             display selected identifier's signature
+  stats                 print workspace statistics
+  symbols               display selected file's symbols
+  workspace_symbol      search symbols in workspace
+                        
+Internal Use Only       
+  vulncheck             run vulncheck analysis (internal-use only)
+                        
+Additional help topics  
+  location              file location syntax for flags and arguments
 
 flags:
   -otel=string

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/doc"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -23,13 +24,13 @@ func TestVetSuite(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 
 	// Read gopls' suite from the API JSON.
-	goplsAnalyzers := make(map[string]bool)
+	goplsAnalyzers := make(set.Set[string])
 	var api doc.API
 	if err := json.Unmarshal([]byte(doc.JSON), &api); err != nil {
 		t.Fatal(err)
 	}
 	for _, a := range api.Analyzers {
-		goplsAnalyzers[a.Name] = true
+		goplsAnalyzers.Insert(a.Name)
 	}
 
 	// Read vet's suite by parsing its help message.
@@ -43,7 +44,7 @@ func TestVetSuite(t *testing.T) {
 	out, _, _ = strings.Cut(out, "\n\n")
 	for line := range strings.SplitSeq(out, "\n") {
 		name := strings.Fields(line)[0]
-		if !goplsAnalyzers[name] {
+		if !goplsAnalyzers.Contains(name) {
 			t.Errorf("gopls lacks vet analyzer %q", name)
 		}
 	}

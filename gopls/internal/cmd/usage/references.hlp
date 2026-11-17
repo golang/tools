@@ -1,14 +1,22 @@
 display selected identifier's references
 
 Usage:
-  gopls [flags] references [references-flags] <position>
+  gopls [flags] references [references-flags] <target>
 
 Example:
-
-	$ # 1-indexed location (:line:column or :#offset) of the target identifier
-	$ gopls references helper/helper.go:8:6
-	$ gopls references helper/helper.go:#53
+	$ gopls references -pkg go/ast Decl
+	$ gopls references golang.org/x/tools/go/ast/inspector.Cursor
 
 references-flags:
+  -context=int
+    	number of lines of surrounding code context to print around each reference (inclusive of ref line, so 1 prints just the ref line)
   -d,-declaration
     	include the declaration of the specified identifier in the results
+  -json
+    	emit output in JSON format
+  -limit=int
+    	maximum number of results to return (0 means no limit)
+  -pkg=string
+    	scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains.
+  -pos=location
+    	targets a file span. Run 'gopls help location' for accepted location syntax.

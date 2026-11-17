@@ -444,3 +444,19 @@ func issue77161() {
 		_ = f()
 	}
 }
+
+type _Ctype_int int32
+
+func issue82954() {
+	for i := _Ctype_int(0); i < 10; i++ { // nope: would emit _Ctype_int(10)
+		println(i)
+	}
+	var i _Ctype_int
+	for i = 0; i < 1e3; i++ { // nope: would emit _Ctype_int(1e3)
+		println(i)
+	}
+	var j _Ctype_int
+	for j = 0; j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+}

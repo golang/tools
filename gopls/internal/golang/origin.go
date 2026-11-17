@@ -4,13 +4,17 @@
 
 package golang
 
-import "go/types"
+import (
+	"go/types"
+
+	"golang.org/x/tools/internal/collection/set"
+)
 
 // containsOrigin reports whether the provided object set contains an object
 // with the same origin as the provided obj (which may be a synthetic object
 // created during instantiation).
-func containsOrigin(objSet map[types.Object]bool, obj types.Object) bool {
-	if objSet[obj] {
+func containsOrigin(objSet set.Set[types.Object], obj types.Object) bool {
+	if objSet.Contains(obj) {
 		return true // fast path: exact match (common for non-generic code)
 	}
 	objOrigin := origin(obj)

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // Use a global edit counter as bench function may execute multiple times, and
@@ -212,17 +213,17 @@ func makeImportEditFunc(env *Env, file string) func() {
 	if err != nil {
 		env.TB.Fatal(err)
 	}
-	used := make(map[string]bool)
+	used := make(set.Set[string])
 	for _, imp := range header.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
 		if err != nil {
 			env.TB.Fatal(err)
 		}
-		used[path] = true
+		used.Insert(path)
 	}
 	var paths []string
 	for _, path := range []string{"math", "math/cmplx", "math/bits", "container/list", "container/heap"} {
-		if !used[path] {
+		if !used.Contains(path) {
 			paths = append(paths, path)
 			if len(paths) == 2 {
 				break

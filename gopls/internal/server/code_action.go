@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -365,18 +367,11 @@ func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.D
 }
 
 func (s *server) getSupportedCodeActions() []protocol.CodeActionKind {
-	allCodeActionKinds := make(map[protocol.CodeActionKind]struct{})
+	allCodeActionKinds := make(set.Set[protocol.CodeActionKind])
 	for _, kinds := range s.Options().SupportedCodeActions {
-		for kind := range kinds {
-			allCodeActionKinds[kind] = struct{}{}
-		}
+		allCodeActionKinds.UnionWith(kinds)
 	}
-	var result []protocol.CodeActionKind
-	for kind := range allCodeActionKinds {
-		result = append(result, kind)
-	}
-	slices.Sort(result)
-	return result
+	return slices.Sorted(maps.Keys(allCodeActionKinds))
 }
 
 type unit = struct{}

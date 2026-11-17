@@ -14,10 +14,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -154,6 +156,18 @@ func run(pass *analysis.Pass) (any, error) {
 				// the parameter (go1.28) cannot be an operand of new,
 				// which supplies no target type: new({1, 2}) is an error.
 				if lit, ok := ast.Unparen(arg).(*ast.CompositeLit); ok && lit.Type == nil {
+					continue
+				}
+
+				// CheckExpr (below) would add the scope of a func type
+				// in arg to the package's scope tree, racing with other
+				// analyzers that read it (go.dev/issue/83063).
+				//
+				// TODO(golang/go#83063): remove this workaround once
+				// CheckExpr no longer modifies the package's scope tree.
+				// Other callers of CheckExpr have the same problem.
+				curArg := curCall.ChildAt(edge.CallExpr_Args, 0)
+				if !moreiters.Empty(curArg.Preorder((*ast.FuncType)(nil))) {
 					continue
 				}
 

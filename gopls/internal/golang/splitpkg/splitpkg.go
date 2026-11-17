@@ -67,6 +67,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -321,10 +322,10 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 			// inter-component reference
 			m, ok := g[from.component]
 			if !ok {
-				m = make(map[int]bool)
+				m = make(set.Set[int])
 				g[from.component] = m
 			}
-			m[to.component] = true
+			m.Insert(to.component)
 
 			key := [2]int{from.component, to.component}
 			edgeRefs[key] = append(edgeRefs[key], ref)

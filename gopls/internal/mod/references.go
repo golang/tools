@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // References returns the locations of imports referenced by a required module
@@ -51,15 +52,15 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, nil
 	}
 
-	locs := make(map[protocol.Location]bool)
+	locs := make(set.Set[protocol.Location])
 
 	includeDecl := params.Context.IncludeDeclaration
 	// A. find the IDs of all packages in the module that was required
-	ids := make(map[metadata.PackageID]bool)
+	ids := make(set.Set[metadata.PackageID])
 	g := snapshot.MetadataGraph()
 	for _, pkg := range g.Packages {
 		if pkg.Module != nil && pkg.Module.Path == modpath {
-			ids[pkg.ID] = true
+			ids.Insert(pkg.ID)
 			// once, if the definition is needed
 			if includeDecl {
 				fh, err := snapshot.ReadFile(ctx, protocol.URIFromPath(pkg.Module.GoMod))
@@ -76,7 +77,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 					if err != nil {
 						return nil, err
 					}
-					locs[loc] = true
+					locs.Insert(loc)
 					includeDecl = false // no need to do this again
 				}
 			}
@@ -115,12 +116,12 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		xpkg := uris[uri]
 		for _, spec := range pgf.File.Imports {
 			importPath := metadata.UnquoteImportPath(spec)
-			if ids[xpkg.DepsByImpPath[importPath]] {
+			if ids.Contains(xpkg.DepsByImpPath[importPath]) {
 				loc, err := pgf.NodeLocation(spec.Path)
 				if err != nil {
 					return nil, err
 				}
-				locs[loc] = true
+				locs.Insert(loc)
 				continue
 			}
 		}

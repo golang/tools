@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typeparams"
@@ -85,7 +86,7 @@ func run(pass *analysis.Pass) (any, error) {
 	)
 
 	// Gather names of unexported interface methods declared in this package.
-	localIfaceMethods := make(map[string]bool)
+	localIfaceMethods := make(set.Set[string])
 	for cur := range inspect.Root().Preorder((*ast.InterfaceType)(nil)) {
 		iface := cur.Node().(*ast.InterfaceType)
 		for _, field := range iface.Methods.List {
@@ -93,7 +94,7 @@ func run(pass *analysis.Pass) (any, error) {
 				id := field.Names[0]
 				if !id.IsExported() {
 					// TODO(adonovan): check not just name but signature too.
-					localIfaceMethods[id.Name] = true
+					localIfaceMethods.Insert(id.Name)
 				}
 			}
 		}
@@ -170,13 +171,13 @@ func run(pass *analysis.Pass) (any, error) {
 	// both types. We don't detect this, so an otherwise
 	// unreferenced field of T or U is falsely reported as unused,
 	// and the suggested fix breaks the conversion.
-	unkeyedFields := make(map[*types.Var]bool)
+	unkeyedFields := make(set.Set[*types.Var])
 	for curLit := range inspect.Root().Preorder((*ast.CompositeLit)(nil)) {
 		lit := curLit.Node().(*ast.CompositeLit)
 		if len(lit.Elts) > 0 && !is[*ast.KeyValueExpr](lit.Elts[0]) { // unkeyed
 			if s, ok := typeparams.CoreType(pass.TypesInfo.TypeOf(lit)).(*types.Struct); ok {
 				for field := range s.Fields() {
-					unkeyedFields[field.Origin()] = true
+					unkeyedFields.Insert(field.Origin())
 				}
 			}
 		}
@@ -212,7 +213,7 @@ func run(pass *analysis.Pass) (any, error) {
 				for j, id := range field.Names {
 					curId := curField.ChildAt(edge.Field_Names, j)
 					v := pass.TypesInfo.Defs[id].(*types.Var)
-					if !unkeyedFields[v] && !isPadding(id.Name) {
+					if !unkeyedFields.Contains(v) && !isPadding(id.Name) {
 						checkUnused("field", id, curStruct, func() []analysis.TextEdit {
 							return refactor.DeleteStructField(curId)
 						})
@@ -248,7 +249,7 @@ func run(pass *analysis.Pass) (any, error) {
 				// An (unexported) method whose name matches an
 				// interface method declared in the same package
 				// may be dynamically called via that interface.
-				if decl.Recv != nil && localIfaceMethods[id.Name] {
+				if decl.Recv != nil && localIfaceMethods.Contains(id.Name) {
 					continue
 				}
 

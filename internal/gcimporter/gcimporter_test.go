@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/constant"
 	goimporter "go/importer"
 	goparser "go/parser"
@@ -21,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -34,11 +36,20 @@ import (
 
 func TestMain(m *testing.M) {
 	testenv.ExitIfSmallMachine()
-	// TODO(mark): Express this suite in terms of "go list -export" and enable.
-	// os.Exit(m.Run())
+	os.Exit(m.Run())
 }
 
 // ----------------------------------------------------------------------------
+
+// skipIfGoListExportNewFormat skips tests that rely on "go tool compile" when
+// GOEXPERIMENT=golistexportnewformat is enabled.
+func skipIfGoListExportNewFormat(t *testing.T) {
+	t.Helper()
+	if slices.Contains(build.Default.ToolTags, "goexperiment.golistexportnewformat") {
+		// TODO(mark): Express tests using "go tool compile" in terms of "go list -export" and enable.
+		t.Skip("skipping under GOEXPERIMENT=golistexportnewformat")
+	}
+}
 
 func needsCompiler(t *testing.T, compiler string) {
 	if runtime.Compiler == compiler {
@@ -58,6 +69,7 @@ func compile(t *testing.T, dirname, filename, outdirname string, packagefiles ma
 }
 
 func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles map[string]string, pkg string) string {
+	skipIfGoListExportNewFormat(t)
 	testenv.NeedsGoBuild(t)
 
 	// filename must end with ".go"
@@ -158,6 +170,7 @@ func TestImportTestdata(t *testing.T) {
 }
 
 func TestImportTypeparamTests(t *testing.T) {
+	skipIfGoListExportNewFormat(t)
 	if testing.Short() {
 		t.Skipf("in short mode, skipping test that requires export data for all of std")
 	}
@@ -1101,4 +1114,97 @@ func TestGenericMethods(t *testing.T) {
 
 	compilePkg(t, srcdir, "a.go", testoutdir, nil, apkg(testoutdir))
 	compile(t, testoutdir, bpath, testoutdir, map[string]string{apkg(testoutdir): filepath.Join(testoutdir, "a.o")})
+}
+
+func TestCrossPackageDefinedInterfaceMethods(t *testing.T) {
+	fset := token.NewFileSet()
+
+	check := func(pkgname, src string, imports importMap) (*types.Package, error) {
+		f, err := goparser.ParseFile(fset, pkgname+".go", src, 0)
+		if err != nil {
+			return nil, err
+		}
+		config := &types.Config{
+			Importer: imports,
+		}
+		return config.Check(pkgname, fset, []*ast.File{f}, nil)
+	}
+
+	const aSrc = `package a
+
+type AI interface {
+	m()
+}
+
+type GI[T any] interface {
+	gm(T)
+}
+
+type Impl struct{}
+
+func (Impl) m()       {}
+func (Impl) gm(int)   {}
+`
+	const bSrc = `package b
+
+import "a"
+
+type BI a.AI
+type BGI[T any] a.GI[T]
+type Err error
+
+func Accept(BI)        {}
+func AcceptG[T any](BGI[T]) {}
+`
+	const cSrc = `package c
+
+import (
+	"a"
+	"b"
+)
+
+func F(err b.Err) string {
+	b.Accept(a.Impl{})
+	b.AcceptG[int](a.Impl{})
+	return err.Error()
+}
+`
+
+	pkgA, err := check("a", aSrc, nil)
+	if err != nil {
+		t.Fatalf("checking a: %v", err)
+	}
+	var outA bytes.Buffer
+	if err := gcimporter.IExportData(&outA, fset, pkgA); err != nil {
+		t.Fatalf("exporting a: %v", err)
+	}
+
+	importsForB := make(map[string]*types.Package)
+	pkgAImported, err := gcimporter.IImportData(fset, importsForB, outA.Bytes(), "a")
+	if err != nil {
+		t.Fatalf("importing a: %v", err)
+	}
+
+	pkgB, err := check("b", bSrc, importMap{"a": pkgAImported})
+	if err != nil {
+		t.Fatalf("checking b: %v", err)
+	}
+	var outB bytes.Buffer
+	if err := gcimporter.IExportData(&outB, fset, pkgB); err != nil {
+		t.Fatalf("exporting b: %v", err)
+	}
+
+	importsForC := make(map[string]*types.Package)
+	pkgAForC, err := gcimporter.IImportData(fset, importsForC, outA.Bytes(), "a")
+	if err != nil {
+		t.Fatalf("re-importing a: %v", err)
+	}
+	pkgBForC, err := gcimporter.IImportData(fset, importsForC, outB.Bytes(), "b")
+	if err != nil {
+		t.Fatalf("importing b: %v", err)
+	}
+
+	if _, err := check("c", cSrc, importMap{"a": pkgAForC, "b": pkgBForC}); err != nil {
+		t.Fatalf("checking c against IExportData-imported a and b failed: %v", err)
+	}
 }

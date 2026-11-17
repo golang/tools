@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 type fileContextParams struct {
@@ -39,7 +40,7 @@ func (h *handler) fileContextHandler(ctx context.Context, req *mcp.CallToolReque
 	}
 
 	// Group objects defined in other files by file URI.
-	otherFiles := make(map[protocol.DocumentURI]map[string]bool)
+	otherFiles := make(map[protocol.DocumentURI]set.Set[string])
 	addObj := func(obj types.Object) {
 		if obj == nil {
 			return
@@ -57,9 +58,9 @@ func (h *handler) fileContextHandler(ctx context.Context, req *mcp.CallToolReque
 			return
 		}
 		if _, ok := otherFiles[uri]; !ok {
-			otherFiles[uri] = make(map[string]bool)
+			otherFiles[uri] = make(set.Set[string])
 		}
-		otherFiles[uri][obj.Name()] = true
+		otherFiles[uri].Insert(obj.Name())
 	}
 
 	for cur := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {

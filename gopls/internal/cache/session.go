@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
@@ -665,11 +666,11 @@ func RelevantViews[V viewDefiner](ctx context.Context, fs file.Source, uri proto
 				pushView(&goPackagesViews, view)
 			}
 		case GoWorkView:
-			if _, ok := def.workspaceModFiles[modURI]; ok || uri == def.gowork {
+			if def.workspaceModFiles.Contains(modURI) || uri == def.gowork {
 				pushView(&workViews, view)
 			}
 		case GoModView:
-			if _, ok := def.workspaceModFiles[modURI]; ok {
+			if def.workspaceModFiles.Contains(modURI) {
 				modViews = append(modViews, view)
 			}
 		case GOPATHView:
@@ -821,16 +822,15 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 	// Views, but since we always have a default View for each folder, this
 	// works for now.
 	var folders []*Folder // preserve folder order
-	workspaceFileGlobsSet := make(map[string]bool)
-	seen := make(map[*Folder]unit)
+	workspaceFileGlobsSet := make(set.Set[string])
+	seen := make(set.Set[*Folder])
 	for _, v := range s.views {
-		if _, ok := seen[v.folder]; ok {
+		if !seen.Insert(v.folder) {
 			continue
 		}
-		seen[v.folder] = unit{}
 		folders = append(folders, v.folder)
 		for _, glob := range v.folder.Options.WorkspaceFiles {
-			workspaceFileGlobsSet[glob] = true
+			workspaceFileGlobsSet.Insert(glob)
 		}
 	}
 	workspaceFileGlobs := slices.Collect(maps.Keys(workspaceFileGlobsSet))
@@ -901,7 +901,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 			// could report a bug, but it's not really a bug.
 			event.Error(ctx, "selecting new views", err)
 		} else {
-			kept := make(map[*View]unit)
+			kept := make(set.Set[*View])
 			var newViews []*View
 			for _, def := range defs {
 				var newView *View
@@ -909,7 +909,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 				for _, v := range s.views {
 					if viewDefinitionsEqual(def, v.viewDefinition) {
 						newView = v
-						kept[v] = unit{}
+						kept.Insert(v)
 						break
 					}
 				}
@@ -921,7 +921,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 				newViews = append(newViews, newView)
 			}
 			for _, v := range s.views {
-				if _, ok := kept[v]; !ok {
+				if !kept.Contains(v) {
 					v.shutdown()
 				}
 			}
@@ -987,10 +987,10 @@ func (s *Session) ExpandModificationsToDirectories(ctx context.Context, changes 
 	// we don't need to invalidate them.
 	var result []file.Modification
 	for _, c := range changes {
-		expanded := make(map[protocol.DocumentURI]bool)
+		expanded := make(set.Set[protocol.DocumentURI])
 		for _, snapshot := range snapshots {
 			for _, uri := range snapshot.filesInDir(c.URI) {
-				expanded[uri] = true
+				expanded.Insert(uri)
 			}
 		}
 		if len(expanded) == 0 {
@@ -1162,21 +1162,19 @@ func (b brokenFile) ModTime() (time.Time, error) { return time.Time{}, b.err }
 // Consider the case where we incidentally read a file, then it moved outside
 // of an active module, and subsequently changed: we would still observe the
 // original file state.
-func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[protocol.RelativePattern]unit {
+func (s *Session) FileWatchingGlobPatterns(ctx context.Context) set.Set[protocol.RelativePattern] {
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
 
 	// Always watch files that may change the set of views.
-	patterns := map[protocol.RelativePattern]unit{
-		{Pattern: "**/*.{mod,work}"}: {},
-	}
+	patterns := set.Of(protocol.RelativePattern{Pattern: "**/*.{mod,work}"})
 
 	for _, view := range s.views {
 		snapshot, release, err := view.Snapshot()
 		if err != nil {
 			continue // view is shut down; continue with others
 		}
-		maps.Copy(patterns, snapshot.fileWatchingGlobPatterns())
+		patterns.UnionWith(snapshot.fileWatchingGlobPatterns())
 		release()
 	}
 	return patterns
