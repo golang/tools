@@ -314,7 +314,11 @@ func (b *builder) exprN(fn *Function, e ast.Expr) Value {
 		return fn.emit(lookup)
 
 	case *ast.TypeAssertExpr:
-		return emitTypeTest(fn, b.expr(fn, e.X), typ.At(0).Type(), e.Lparen)
+		x, t := b.expr(fn, e.X), typ.At(0).Type()
+		if impossibleAssert(fn, x, t) {
+			return zeroConst(typ)
+		}
+		return emitTypeTest(fn, x, t, e.Lparen)
 
 	case *ast.UnaryExpr: // must be receive <-
 		unop := &UnOp{
@@ -327,6 +331,13 @@ func (b *builder) exprN(fn *Function, e ast.Expr) Value {
 		return fn.emit(unop)
 	}
 	panic(fmt.Sprintf("exprN(%T) in %s", e, fn))
+}
+
+// impossibleAssert reports whether the type assertion x.(t) can never
+// succeed.
+func impossibleAssert(fn *Function, x Value, t types.Type) bool {
+	// These can only occur in generic instantiations.
+	return fn.subst != nil && !types.AssertableTo(x.Type().Underlying().(*types.Interface), t)
 }
 
 // builtin emits to fn SSA instructions to implement a call to the
@@ -656,7 +667,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		return fn.emit(v)
 
 	case *ast.TypeAssertExpr: // single-result form only
-		return emitTypeAssert(fn, b.expr(fn, e.X), fn.typ(tv.Type), e.Lparen)
+		x, t := b.expr(fn, e.X), fn.typ(tv.Type)
+		if impossibleAssert(fn, x, t) {
+			// Widening to any makes the assertion possible, so it
+			// fails at run time with a *runtime.TypeAssertionError.
+			x = emitConv(fn, x, tEface)
+		}
+		return emitTypeAssert(fn, x, t, e.Lparen)
 
 	case *ast.CallExpr:
 		if fn.info.Types[e.Fun].IsType() {
@@ -1553,24 +1570,30 @@ func (b *builder) typeSwitchStmt(fn *Function, s *ast.TypeSwitchStmt, label *lbl
 			continue
 		}
 		body := fn.newBasicBlock("typeswitch.body")
-		var next *BasicBlock
-		var casetype types.Type
+		next := fn.currentBlock
 		var ti Value // ti, ok := typeassert,ok x <Ti>
 		for _, cond := range cc.List {
-			next = fn.newBasicBlock("typeswitch.next")
-			casetype = fn.typeOf(cond)
+			casetype := fn.typeOf(cond)
 			var condv Value
-			if casetype == tUntypedNil {
+			switch {
+			case casetype == tUntypedNil:
 				condv = emitCompare(fn, token.EQL, x, zeroConst(x.Type()), cond.Pos())
 				ti = x
-			} else {
+			case impossibleAssert(fn, x, casetype):
+				// If this is the single type in the case, the body is unreachable.
+				ti = zeroConst(casetype)
+				continue
+			default:
 				yok := emitTypeTest(fn, x, casetype, cc.Case)
 				ti = emitExtract(fn, yok, 0)
 				condv = emitExtract(fn, yok, 1)
 			}
+			next = fn.newBasicBlock("typeswitch.next")
 			emitIf(fn, condv, body, next)
 			fn.currentBlock = next
 		}
+		// Unless there is a single type in the case,
+		// use the original type of x in the body.
 		if len(cc.List) != 1 {
 			ti = x
 		}

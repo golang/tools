@@ -454,8 +454,13 @@ func emitIf(f *Function, cond Value, tblock, fblock *BasicBlock) {
 // emitExtract emits to f an instruction to extract the index'th
 // component of tuple.  It returns the extracted value.
 func emitExtract(f *Function, tuple Value, index int) Value {
+	typ := tuple.Type().(*types.Tuple).At(index).Type()
+	// Fold away a zero-valued tuple Const (see exprN).
+	if _, ok := tuple.(*Const); ok {
+		return zeroConst(typ)
+	}
 	e := &Extract{Tuple: tuple, Index: index}
-	e.setType(tuple.Type().(*types.Tuple).At(index).Type())
+	e.setType(typ)
 	return f.emit(e)
 }
 

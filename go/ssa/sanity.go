@@ -214,6 +214,12 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 				instr.Val.Type(), instr.Addr.Type())
 		}
 	case *TypeAssert:
+		if V, ok := instr.X.Type().Underlying().(*types.Interface); !ok {
+			s.errorf("TypeAssert: operand has non-interface type %s", instr.X.Type())
+		} else if !types.AssertableTo(V, instr.AssertedType) {
+			s.errorf("TypeAssert: impossible type assertion: %s cannot have dynamic type %s",
+				instr.X.Type(), instr.AssertedType)
+		}
 	case *UnOp:
 	case *DebugRef:
 		// TODO(adonovan): implement checks.

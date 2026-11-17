@@ -1039,6 +1039,7 @@ func TestFixedBugs(t *testing.T) {
 		"issue73594",
 		"issue78110",
 		"issue73871",
+		"issue83062",
 	} {
 		t.Run(name, func(t *testing.T) {
 			base := name + ".go"
