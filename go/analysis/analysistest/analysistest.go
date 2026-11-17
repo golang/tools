@@ -150,10 +150,11 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 	inTools := false
 	{
 		var pcs [1]uintptr
-		n := runtime.Callers(1, pcs[:])
+		n := runtime.Callers(2, pcs[:]) // skip Callers and RunWithSuggestedFixes
 		frames := runtime.CallersFrames(pcs[:n])
 		fr, _ := frames.Next()
-		if fr.Func != nil && strings.HasPrefix(fr.Func.Name(), "golang.org/x/tools/") {
+		// Use Function, not Func, which is nil if the caller was inlined.
+		if strings.HasPrefix(fr.Function, "golang.org/x/tools/") {
 			inTools = true
 		}
 	}
@@ -199,7 +200,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 			for _, fix := range diag.SuggestedFixes {
 				// Assert that lazy fixes have a Category (#65578, #65087).
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
-					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
+					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command)")
 				}
 
 				// Skip any fix that edits a generated file.

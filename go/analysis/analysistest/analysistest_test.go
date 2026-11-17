@@ -260,6 +260,53 @@ type T string
 	analysistest.Run(t, dir, filever, "golang.org/fake/mod", "golang.org/xyz/fake/ver")
 }
 
+// TestCategoryCheck checks that RunWithSuggestedFixes requires a
+// Diagnostic.Category for fixes without TextEdits only when it is
+// called from within x/tools.
+func TestCategoryCheck(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
+	lazyfix := &analysis.Analyzer{
+		Name: "lazyfix",
+		Doc:  "reports a fix without TextEdits or Category",
+		Run: func(pass *analysis.Pass) (any, error) {
+			pass.Report(analysis.Diagnostic{
+				Pos:            pass.Files[0].Package,
+				Message:        "lazy",
+				SuggestedFixes: []analysis.SuggestedFix{{Message: "lazy fix"}},
+			})
+			return nil, nil
+		},
+	}
+	dir, cleanup, err := analysistest.WriteFiles(map[string]string{
+		"a/a.go": `package a // want "lazy"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	var got []string
+	t2 := errorfunc(func(s string) { got = append(got, s) }) // a fake *testing.T
+
+	// Called directly from x/tools: the check applies.
+	analysistest.RunWithSuggestedFixes(t2, dir, lazyfix, "a")
+	want := []string{"missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command)"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("direct call: got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	// Called via reflection, so the immediate caller is in package
+	// reflect, not x/tools: the check does not apply.
+	got = nil
+	reflect.ValueOf(analysistest.RunWithSuggestedFixes).Call([]reflect.Value{
+		reflect.ValueOf(t2), reflect.ValueOf(dir), reflect.ValueOf(lazyfix), reflect.ValueOf("a"),
+	})
+	if len(got) > 0 {
+		t.Errorf("call via reflection: got unexpected errors:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 type errorfunc func(string)
 
 func (f errorfunc) Errorf(format string, args ...any) {
