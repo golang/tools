@@ -1369,6 +1369,129 @@ const (
 	}
 }
 
+// TestMoveDecl tests the 'move_decl' subcommand (move_decl.go).
+func TestMoveDecl(t *testing.T) {
+	t.Parallel()
+
+	// Each case that moves a declaration starts from a fresh copy of this tree.
+	const archive = `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+func Bar() int { return 2 }
+
+-- a/b.go --
+package a
+
+func useBar() int { return Bar() }
+
+-- c/c.go --
+package c
+
+import "example.com/a"
+
+var _ = a.Foo()
+`
+	// missing argument (destination file)
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/a.Foo")
+		res.checkExit(false)
+		res.checkStderr(regexp.QuoteMeta(`move_decl expects 2 arguments (move target, destination file)`))
+	}
+	// resolve target error
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/b.Foo", "b/b.go")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/b")
+	}
+	// same-package move to an existing file, with -pkg flag
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "-pkg=example.com/a", "Bar", "a/b.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+func useBar() int { return Bar() }
+
+func Bar() int { return 2 }
+`)
+	}
+	// cross-package move to a new file (and package).
+	// helper moves along with Foo, Bar stays put, and references in c
+	// are updated.
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/a.Foo", "d/d.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Bar() int { return 2 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+func useBar() int { return Bar() }
+
+`)
+		checkContent(t, filepath.Join(tree, "d/d.go"), `package d
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+`)
+		checkContent(t, filepath.Join(tree, "c/c.go"), `package c
+
+import "example.com/d"
+
+
+
+var _ = d.Foo()
+`)
+	}
+	// Relative target and destination are resolved against the current
+	// directory, not the module root: run from a/, "../e/e.go" is e/e.go.
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, filepath.Join(tree, "a"), "move_decl", "Bar", "../e/e.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+import "example.com/e"
+
+func useBar() int { return e.Bar() }
+
+`)
+		checkContent(t, filepath.Join(tree, "e/e.go"), `package e
+
+func Bar() int { return 2 }
+`)
+	}
+}
+
 // TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (workspace_symbol.go).
 func TestWorkspaceSymbol(t *testing.T) {
 	t.Parallel()

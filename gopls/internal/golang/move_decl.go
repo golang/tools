@@ -54,29 +54,33 @@ var (
 				Kind: protocol.FormFieldKindString,
 			},
 		},
-		convert: func(dest string) (protocol.DocumentURI, error) {
-			path := dest
-			if strings.HasPrefix(dest, "file:") {
-				uri, err := protocol.ParseDocumentURI(dest)
-				if err != nil {
-					return "", err
-				}
-				path = uri.Path()
-			}
-			if !filepath.IsAbs(path) {
-				return "", fmt.Errorf("destination must be a file URI or an absolute path: %q", dest)
-			}
-			// Clean the path (e.g. remove ".." elements) explicitly.
-			destURI := protocol.URIFromPath(filepath.Clean(path))
-			if filepath.Ext(destURI.Path()) != ".go" {
-				return "", fmt.Errorf("destination file must be a go file")
-			}
-			return destURI, nil
-		},
+		convert: MoveDeclarationDest,
 	}
 
 	moveDeclarationQuestions = []question{MoveDeclarationFileQuestion}
 )
+
+// MoveDeclarationDest validates and converts the destination of a moved
+// declaration, which may be a file URI or an absolute path to a Go file.
+func MoveDeclarationDest(dest string) (protocol.DocumentURI, error) {
+	path := dest
+	if strings.HasPrefix(dest, "file:") {
+		uri, err := protocol.ParseDocumentURI(dest)
+		if err != nil {
+			return "", err
+		}
+		path = uri.Path()
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("destination must be a file URI or an absolute path: %q", dest)
+	}
+	// Clean the path (e.g. remove ".." elements) explicitly.
+	destURI := protocol.URIFromPath(filepath.Clean(path))
+	if filepath.Ext(destURI.Path()) != ".go" {
+		return "", fmt.Errorf("destination file must be a go file")
+	}
+	return destURI, nil
+}
 
 // moveDest is the destination package of a move. pkg is nil if the package
 // does not exist yet, in which case the move creates it.

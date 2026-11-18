@@ -2079,10 +2079,20 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		d := golang.NewDialog(c.s.Options().ClientOptions, params)
-		destURI := d.Ask(golang.MoveDeclarationFileQuestion)
-		if err := d.Check(); err != nil {
-			return err
+		var destURI protocol.DocumentURI
+		if args.Destination != "" {
+			// Non-interactive move (from the gopls CLI).
+			var err error
+			destURI, err = golang.MoveDeclarationDest(string(args.Destination))
+			if err != nil {
+				return err
+			}
+		} else {
+			d := golang.NewDialog(c.s.Options().ClientOptions, params)
+			destURI = d.Ask(golang.MoveDeclarationFileQuestion)
+			if err := d.Check(); err != nil {
+				return err
+			}
 		}
 
 		changes, loc, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)

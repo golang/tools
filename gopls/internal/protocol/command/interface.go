@@ -963,6 +963,11 @@ type LSPArgs struct {
 type MoveDeclarationArgs struct {
 	// The location of the declaration to move.
 	Location protocol.Location
+
+	// The destination file of the move. If set, the declaration is moved to
+	// this file; otherwise, the command asks the user for the destination
+	// through an interactive dialog.
+	Destination protocol.DocumentURI `json:",omitempty"`
 }
 
 // ResolveTargetParams are the arguments for the ResolveTarget command.

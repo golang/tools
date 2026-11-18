@@ -347,6 +347,7 @@ func (app *application) featureCommands() []command {
 		&inspect{app: app},
 		newRemote(app),
 		&links{app: app},
+		&moveDecl{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
@@ -882,6 +883,16 @@ func updateFile(filename string, old, new []byte, edits []diff.Edit, flags *Edit
 
 		if new != nil {
 			// create or edit
+			if old == nil {
+				// Create the file, first creating the file's directory if it does not exist (e.g. a
+				// new package created by move_decl).
+				// TODO(mkalil): investigate how this affects the "rename" cli
+				// command, specifically for package renames that result in
+				// renaming directories.
+				if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
+					return err
+				}
+			}
 			if err := os.WriteFile(filename, new, 0666); err != nil {
 				return err
 			}
