@@ -3727,6 +3727,59 @@ func TestMainPackagePathInModeTypes(t *testing.T) {
 	}
 }
 
+// TestExportDataModeReportsGoListFailure checks that when go list fails
+// before listing any package, Load reports its error in a mode that
+// uses export data (NeedTypes without NeedDeps), as it does in the
+// other modes. It used to return no packages and no error.
+func TestExportDataModeReportsGoListFailure(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	// The main module requires c v1.0.0 but b requires c v1.1.0,
+	// so go list stops with "updates to go.mod needed".
+	dir := writeTree(t, `
+-- go.mod --
+module example.com/a
+go 1.21
+require (
+	example.com/b v1.0.0
+	example.com/c v1.0.0
+)
+replace (
+	example.com/b v1.0.0 => ./b
+	example.com/c v1.0.0 => ./c
+	example.com/c v1.1.0 => ./c
+)
+-- a.go --
+package a
+
+import _ "example.com/b"
+-- b/go.mod --
+module example.com/b
+go 1.21
+require example.com/c v1.1.0
+-- b/b.go --
+package b
+
+import _ "example.com/c"
+-- c/go.mod --
+module example.com/c
+go 1.21
+-- c/c.go --
+package c
+`)
+	pkgs, err := packages.Load(&packages.Config{
+		Dir:  dir,
+		Mode: packages.NeedName | packages.NeedTypes,
+		Env:  append(os.Environ(), "GOFLAGS=-mod=readonly", "GOWORK=off"),
+	}, "./...")
+	if err == nil {
+		t.Fatalf("Load returned %d packages and no error, want the go list error", len(pkgs))
+	}
+	if want := "updates to go.mod needed"; !strings.Contains(err.Error(), want) {
+		t.Errorf("Load error = %v, want one containing %q", err, want)
+	}
+}
+
 func writeTree(t *testing.T, archive string) string {
 	root := t.TempDir()
 

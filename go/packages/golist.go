@@ -1060,9 +1060,13 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 		// (despite the -e flag) and the Export field is blank.
 		// Do not fail in that case.
 		// The same is true if an ad-hoc package given to go list doesn't exist.
+		// A failed build still lists the packages on stdout. If stdout
+		// is empty in export mode, go list failed before listing any
+		// package (for example, because go.mod needs updating), so
+		// its error is the only result.
 		// TODO(matloob): Remove these once we can depend on go list to exit with a zero status with -e even when
 		// packages don't exist or a build fails.
-		if !usesExportData(cfg) && !containsGoFile(args) {
+		if !containsGoFile(args) && (!usesExportData(cfg) || stdout.Len() == 0) {
 			return nil, friendlyErr
 		}
 	}
