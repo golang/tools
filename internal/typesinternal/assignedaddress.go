@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // IsAssignedOrAddressTaken reports whether the expression cur denotes a
@@ -97,11 +98,13 @@ outer:
 			// x[i] and x[i:j] refer to x's own memory only if x is an
 			// array; for slices, maps, strings, and pointers to arrays,
 			// they go through a reference and do not involve x itself.
+			// If x is a type parameter, it may be instantiated with an
+			// array if any type in its type set is an array.
 			t := info.TypeOf(cur.Node().(ast.Expr))
 			if t == nil || t == types.Typ[types.Invalid] {
 				return true // no type information (ill-typed code); be conservative
 			}
-			if !is[*types.Array](t.Underlying()) {
+			if !mayBeArray(t) {
 				return false
 			}
 			if cur.ParentEdgeKind() == edge.SliceExpr_X {
@@ -135,6 +138,28 @@ outer:
 	case edge.UnaryExpr_X:
 		if cur.Parent().Node().(*ast.UnaryExpr).Op == token.AND {
 			return true // &x
+		}
+	}
+	return false
+}
+
+// mayBeArray reports whether t is an array type, or a type parameter
+// (or other interface) whose type set includes an array type.
+//
+// It conservatively returns true if the type set has no specific
+// types, since such an operand cannot be indexed or sliced in
+// well-typed code.
+func mayBeArray(t types.Type) bool {
+	if !types.IsInterface(t) { // common case: not a type parameter
+		return is[*types.Array](t.Underlying())
+	}
+	tset := typeparams.TypeSetOf(t)
+	if tset.Unrestricted() {
+		return true // ill-typed code; be conservative
+	}
+	for u := range tset.UnderlyingTypes() {
+		if is[*types.Array](u) {
+			return true
 		}
 	}
 	return false

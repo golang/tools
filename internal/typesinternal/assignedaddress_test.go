@@ -153,6 +153,22 @@ func _() {
 	_ = v
 }
 
+// Indexing or slicing an operand whose type is a type parameter may refer
+// to the operand's own memory if its type set includes an array type.
+func _[A ~[3]int, AS [3]int | []int, SL ~[]int]() {
+	var a A
+	a/*true*/ [0] = 1
+	_ = a/*false*/ [0] // rvalue
+	_ = a/*true*/ [:] // slicing an array takes its address
+
+	var as AS // may be an array or a slice
+	as/*true*/ [0] = 1
+
+	var sl SL
+	sl/*false*/ [0] = 1
+	_ = sl/*false*/ [:]
+}
+
 `
 
 	fset := token.NewFileSet()
