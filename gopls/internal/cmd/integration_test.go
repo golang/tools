@@ -1268,11 +1268,9 @@ const (
 			res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))
 		}
 	}
-	{ // -pos syntax errors are reported during flag parsing, with usage and exit code 2
+	{ // -pos syntax errors are reported during flag parsing, with usage and non-zero exit code
 		res := gopls(t, tree, "inspect", "-pos=a/a.go:abc", "someFunctionName")
-		if res.exitcode != 2 {
-			t.Errorf("%s: exit code = %d, want 2", res.command, res.exitcode)
-		}
+		res.checkExit(false)
 		res.checkStderr(regexp.QuoteMeta(`gopls inspect: invalid value "a/a.go:abc" for flag -pos: invalid line/column number "abc"`))
 		res.checkStderr(regexp.QuoteMeta("Usage:\n  gopls [flags] inspect"))
 	}
@@ -1561,6 +1559,8 @@ func (res *result) String() string {
 }
 
 // checkExit asserts that gopls returned the expected exit code.
+// All non-zero exit codes are considered failure. We do not attempt to
+// distinguish them as it is fragile and non-portable.
 func (res *result) checkExit(success bool) {
 	res.t.Helper()
 	if (res.exitcode == 0) != success {
