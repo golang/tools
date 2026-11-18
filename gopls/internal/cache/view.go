@@ -1021,8 +1021,9 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 	}
 
 	var (
-		env = new(GoEnv)
-		err error
+		env       = new(GoEnv)
+		goenvFile string
+		err       error
 	)
 	envvars := map[string]*string{
 		"GOOS":        &env.GOOS,
@@ -1035,6 +1036,7 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 		"GO111MODULE": &env.GO111MODULE,
 		"GOTOOLCHAIN": &env.GOTOOLCHAIN,
 		"GOROOT":      &env.GOROOT,
+		"GOENV":       &goenvFile,
 	}
 	if err := loadGoEnv(ctx, dir, opts.EnvSlice(), runner, envvars); err != nil {
 		return nil, err
@@ -1077,7 +1079,60 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 	} else {
 		env.ExplicitGOWORK = os.Getenv("GOWORK")
 	}
+
+	// Similarly, when GO111MODULE=auto, 'go env' may resolve GO111MODULE to
+	// "off" based on whether a go.mod or go.work file currently exists in dir.
+	// Since the folder env is cached across file changes, and defineView
+	// implements the GO111MODULE=auto logic itself for each view root, we need
+	// the configured GO111MODULE value rather than the resolved one. Look it up
+	// following the go command's precedence: the environment, then the user's
+	// GOENV file, then $GOROOT/go.env. If it isn't configured anywhere, keep
+	// the value reported by 'go env'.
+	env.GO111MODULE, _ = configuredGO111MODULE(opts, goenvFile, env.GOROOT)
 	return env, nil
+}
+
+// configuredGO111MODULE returns the configured (unresolved) value of
+// GO111MODULE, using the same precedence as the go command: a non-empty value
+// in the environment (with opts.Env overriding the process environment), then
+// the GOENV file, then $GOROOT/go.env. It reports false if GO111MODULE is not
+// configured in any of these places.
+func configuredGO111MODULE(opts *settings.Options, goenvFile, goroot string) (string, bool) {
+	v, ok := opts.Env["GO111MODULE"]
+	if !ok {
+		v = os.Getenv("GO111MODULE")
+	}
+	if v != "" {
+		return v, true
+	}
+	if goenvFile != "" && goenvFile != "off" {
+		if v, ok := readGoEnvFile(goenvFile, "GO111MODULE"); ok {
+			return v, true
+		}
+	}
+	if goroot != "" {
+		if v, ok := readGoEnvFile(filepath.Join(goroot, "go.env"), "GO111MODULE"); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// readGoEnvFile returns the value of key in the go env file (as written by
+// 'go env -w', or $GOROOT/go.env), parsed as the go command does.
+func readGoEnvFile(file, key string) (string, bool) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", false
+	}
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSuffix(line, "\n")
+		k, v, ok := strings.Cut(line, "=")
+		if ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 // loadGoEnv loads `go env` values into the provided map, keyed by Go variable

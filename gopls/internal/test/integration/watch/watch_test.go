@@ -6,6 +6,7 @@ package watch
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -566,6 +567,30 @@ func main() {
 
 // Reproduces golang/go#40340.
 func TestSwitchFromGOPATHToModuleMode(t *testing.T) {
+	// GO111MODULE=auto may be configured either in the environment or in the
+	// user's GOENV file ('go env -w GO111MODULE=auto'). In both cases, gopls
+	// must use the configured value rather than the value resolved by
+	// 'go env', which may be "off" when no go.mod file exists yet.
+	// This is a result of the changes for the compromise solution in
+	// https://github.com/golang/go/issues/78350#issuecomment-4522040116.
+	goenvFile := filepath.Join(t.TempDir(), "goenv")
+	if err := os.WriteFile(goenvFile, []byte("GO111MODULE=auto\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		env  EnvVars
+	}{
+		{"env", EnvVars{"GO111MODULE": "auto"}},
+		{"goenv", EnvVars{"GOENV": goenvFile}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testSwitchFromGOPATHToModuleMode(t, test.env)
+		})
+	}
+}
+
+func testSwitchFromGOPATHToModuleMode(t *testing.T, envVars EnvVars) {
 	const files = `
 -- foo/blah/blah.go --
 package blah
@@ -583,7 +608,7 @@ func main() {
 	WithOptions(
 		InGOPATH(),
 		Modes(Default), // golang/go#57521: this test is temporarily failing in 'experimental' mode
-		EnvVars{"GO111MODULE": "auto"},
+		envVars,
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.AfterChange(
