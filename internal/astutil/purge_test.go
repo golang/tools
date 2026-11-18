@@ -133,6 +133,16 @@ func TestPurgeFuncBodiesCases(t *testing.T) {
 			in:   "package p\nfunc F(x ...int) { y(x) }\n",
 			want: "package p\nfunc F(x ...int) {}\n",
 		},
+		{
+			name: "empty",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "several bodies",
+			in:   "package p\nfunc F() { f() }\nvar x = 1\nfunc (T) M() { m() }\n// end\n",
+			want: "package p\nfunc F() {}\nvar x = 1\nfunc (T) M() {}\n// end\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -221,4 +231,33 @@ func TestPurgeFuncBodies(t *testing.T) {
 			}
 		}
 	})
+}
+
+// BenchmarkPurgeFuncBodies measures PurgeFuncBodies over the source
+// files of the standard library.
+func BenchmarkPurgeFuncBodies(b *testing.B) {
+	testenv.NeedsGoBuild(b) // we need the source code for std
+
+	config := packages.Config{Mode: packages.NeedCompiledGoFiles}
+	pkgs, err := packages.Load(&config, "std")
+	if err != nil {
+		b.Fatal(err)
+	}
+	var files [][]byte
+	for _, p := range pkgs {
+		for _, filename := range p.CompiledGoFiles {
+			content, err := os.ReadFile(filename)
+			if err != nil {
+				b.Fatal(err)
+			}
+			files = append(files, content)
+		}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, content := range files {
+			astutil.PurgeFuncBodies(content)
+		}
+	}
 }
