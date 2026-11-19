@@ -418,6 +418,9 @@ func iexportCommon(out io.Writer, fset *token.FileSet, shallow bool, version int
 	hdr.uint64(dataLen)
 
 	// Flush output.
+	if buf, ok := out.(*bytes.Buffer); ok {
+		buf.Grow(hdr.Len() + p.strings.Len() + files.Len() + p.data0.Len())
+	}
 	io.Copy(out, &hdr)
 	io.Copy(out, &p.strings)
 	if p.shallow {
