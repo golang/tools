@@ -3156,6 +3156,13 @@ func ungetrune(f *bufio.Reader, c rune) {
 	if f != finput {
 		panic("ungetc - not finput")
 	}
+	if c == EOF {
+		// getrune keeps EOF sticky in peekrune, so re-ungetting EOF (e.g.
+		// from gettok's IDENTIFIER/IDENTCOLON look-ahead at end of file)
+		// must not trip the single-slot check; an exhausted reader returns
+		// EOF again anyway.
+		return
+	}
 	if peekrune != 0 {
 		panic("ungetc - 2nd unget")
 	}
