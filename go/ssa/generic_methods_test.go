@@ -336,14 +336,40 @@ func TestGenericMethods(t *testing.T) {
 		}
 	}
 
-	testBuilds := []string{
-		// instantiate same signature with value / pointer receivers
-		fmt.Sprintf(g, "_ = g.M[bool]; _ = g.N[bool]"),
-		fmt.Sprintf(n, "_ = n.M[bool]; _ = n.N[bool]"),
+	const receiverCases = `package p
+type G[P any] struct { x P }
+func (g G[P]) M[Q any](q Q) (P, Q) { return g.x, q }
+func (g *G[P]) N[Q any](q Q) (P, Q) { return g.x, q }
+func bound[P, Q any](g G[P]) func(Q) (P, Q) { return g.M[Q] }
+func value[P, Q any]() func(G[P], Q) (P, Q) { return G[P].M[Q] }
+func pointer[P, Q any]() func(*G[P], Q) (P, Q) { return (*G[P]).N[Q] }
+type Outer[P any] struct { G[P] }
+func promoted[P, Q any]() func(Outer[P], Q) (P, Q) { return Outer[P].M[Q] }
+func f() {
+    %s
+}`
+
+	testBuilds := []struct {
+		prog  string
+		stmts string
+	}{
+		// Value and pointer receivers on generic and non-generic types.
+		{g, "_ = g.M[bool]; _ = g.N[bool]"},
+		{n, "_ = n.M[bool]; _ = n.N[bool]"},
+		// Value receiver.
+		{receiverCases, `value[int, string]()(G[int]{42}, "value")`},
+		// Bound method value.
+		{receiverCases, `bound[int, string](G[int]{42})("bound")`},
+		// Pointer receiver.
+		{receiverCases, `g := G[int]{42}; pointer[int, string]()(&g, "pointer")`},
+		// Promoted method.
+		{receiverCases, `promoted[int, string]()(Outer[int]{G[int]{42}}, "promoted")`},
 	}
 
-	for _, prog := range testBuilds {
-		build(t, prog)
+	for _, test := range testBuilds {
+		src := fmt.Sprintf(test.prog, test.stmts)
+		buildMode(t, src, ssa.SanityCheckFunctions)
+		buildMode(t, src, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	}
 }
 
