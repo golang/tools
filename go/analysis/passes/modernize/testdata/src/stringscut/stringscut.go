@@ -407,6 +407,25 @@ func multiAssign(s, sub string) int {
 	return ret
 }
 
+// Regression test for golang/go#83247: bytes.Cut returns []byte,
+// so the fix would change the type of l[:i] from line to []byte.
+type line []byte
+
+func (l line) upper() line { return bytes.ToUpper(l) }
+
+func named_bytes_type(l line) line {
+	i := bytes.IndexByte(l, '=') // nope: l[:i] has type line, not []byte
+	if i < 0 {
+		return nil
+	}
+	return l[:i].upper()
+}
+
+func named_bytes_type_contains(l line) bool {
+	i := bytes.IndexByte(l, '=') // want "bytes.IndexByte can be simplified using bytes.Contains"
+	return i >= 0
+}
+
 func s_modified(s string) string {
 	idx := strings.Index(s, "=") // don't modernize since s gets modified
 	s = "newstring"
