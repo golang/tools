@@ -438,48 +438,40 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 
 	// Register fact types with gob.
 	// In VetxOnly mode, analyzers are only for their facts,
-	// so we can skip any analysis that neither produces facts
-	// nor depends on any analysis that produces facts.
-	//
-	// TODO(adonovan): fix: the command (and logic!) here are backwards.
-	// It should say "...nor is required by any...". (Issue 443099)
+	// so we need only run the analyzers that produce facts
+	// and the analyzers that are required by analyzers that produce facts.
 	//
 	// Also build a map to hold working state and result.
 	type action struct {
 		once        sync.Once
 		result      any
 		err         error
-		usesFacts   bool // (transitively uses)
 		diagnostics []analysis.Diagnostic
 	}
 	actions := make(map[*analysis.Analyzer]*action)
-	var registerFacts func(a *analysis.Analyzer) bool
-	registerFacts = func(a *analysis.Analyzer) bool {
-		act, ok := actions[a]
-		if !ok {
-			act = new(action)
-			var usesFacts bool
-			for _, f := range a.FactTypes {
-				usesFacts = true
-				gob.Register(f)
-			}
-			for _, req := range a.Requires {
-				if registerFacts(req) {
-					usesFacts = true
-				}
-			}
-			act.usesFacts = usesFacts
-			actions[a] = act
+	var factAnalyzers []*analysis.Analyzer
+	var registerFacts func(a *analysis.Analyzer)
+	registerFacts = func(a *analysis.Analyzer) {
+		if _, ok := actions[a]; ok {
+			return
 		}
-		return act.usesFacts
+		actions[a] = new(action)
+		for _, f := range a.FactTypes {
+			gob.Register(f)
+		}
+		if len(a.FactTypes) > 0 {
+			factAnalyzers = append(factAnalyzers, a)
+		}
+		for _, req := range a.Requires {
+			registerFacts(req)
+		}
 	}
-	var filtered []*analysis.Analyzer
 	for _, a := range analyzers {
-		if registerFacts(a) || !cfg.VetxOnly {
-			filtered = append(filtered, a)
-		}
+		registerFacts(a)
 	}
-	analyzers = filtered
+	if cfg.VetxOnly {
+		analyzers = factAnalyzers
+	}
 
 	readFacts := func(pkgPath string) ([]byte, error) {
 		entry, ok := vetxEntries[pkgPath]
