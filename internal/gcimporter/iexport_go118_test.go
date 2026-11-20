@@ -83,7 +83,7 @@ func testExportSrc(t *testing.T, src []byte) {
 	imports := make(map[string]*types.Package)
 	conf := types.Config{
 		Importer: importerFunc(func(path string) (*types.Package, error) {
-			return gcimporter.Import(fset, imports, path, ".", nil)
+			return Import(fset, imports, path, ".", nil)
 		}),
 	}
 	pkg, err := conf.Check("", fset, []*ast.File{f}, nil)

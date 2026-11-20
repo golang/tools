@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file contains the remaining vestiges of
-// $GOROOT/src/go/internal/gcimporter/bimport.go.
+// This file defines small helpers for the encoder and decoder.
 
 package gcimporter
 

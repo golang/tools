@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file is a copy of $GOROOT/src/go/internal/gcimporter/testdata/versions.test.go.
+// This package is the source of the archives read by TestReadCompilerArchives.
 
 // To create a test case for a new export format version,
 // build this package with the latest compiler and store
 // the resulting .a file appropriately named in the versions
-// directory. The VersionHandling test will pick it up.
+// directory. TestReadCompilerArchives will pick it up.
 //
 // In the testdata/versions:
 //

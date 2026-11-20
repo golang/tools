@@ -119,7 +119,7 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 
 func testPath(t *testing.T, path, srcDir string) *types.Package {
 	t0 := time.Now()
-	pkg, err := gcimporter.Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
+	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
 	if err != nil {
 		t.Errorf("testPath(%s): %s", path, err)
 		return nil
@@ -151,7 +151,7 @@ func TestImportTestdata(t *testing.T) {
 
 	packageFiles := map[string]string{}
 	for _, pkg := range []string{"go/ast", "go/token"} {
-		export, _, err := gcimporter.FindPkg(pkg, "testdata")
+		export, _, err := FindPkg(pkg, "testdata")
 		if export == "" {
 			t.Fatalf("no export data found for %s: %s", pkg, err)
 		}
@@ -282,76 +282,6 @@ func checkFile(t *testing.T, filename string, src []byte) *types.Package {
 		t.Fatal(err)
 	}
 	return pkg
-}
-
-func TestVersionHandling(t *testing.T) {
-	// This package only handles gc export data.
-	needsCompiler(t, "gc")
-
-	const dir = "./testdata/versions"
-	list, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tmpdir := mktmpdir(t)
-	defer os.RemoveAll(tmpdir)
-	corruptdir := filepath.Join(tmpdir, "testdata", "versions")
-	if err := os.Mkdir(corruptdir, 0700); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, f := range list {
-		name := f.Name()
-		if !strings.HasSuffix(name, ".a") {
-			continue // not a package file
-		}
-		if strings.Contains(name, "corrupted") {
-			continue // don't process a leftover corrupted file
-		}
-		pkgpath := "./" + name[:len(name)-2]
-
-		if testing.Verbose() {
-			t.Logf("importing %s", name)
-		}
-
-		// test that export data can be imported
-		_, err := gcimporter.Import(token.NewFileSet(), make(map[string]*types.Package), pkgpath, dir, nil)
-		if err != nil {
-			t.Errorf("import %q failed: %v", pkgpath, err)
-			continue
-		}
-
-		// create file with corrupted export data
-		// 1) read file
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// 2) find export data
-		// Index is an incorrect but 'good enough for tests' way to find the end of the export data.
-		i := bytes.Index(data, []byte("\n$$B\n")) + 5
-		j := bytes.Index(data[i:], []byte("\n$$\n")) + i
-		if i < 0 || j < 0 || i > j {
-			t.Fatalf("export data section not found (i = %d, j = %d)", i, j)
-		}
-		// 3) corrupt the data (increment every 7th byte)
-		for k := j - 13; k >= i; k -= 7 {
-			data[k]++
-		}
-		// 4) write the file
-		pkgpath += "_corrupted"
-		filename := filepath.Join(corruptdir, pkgpath) + ".a"
-		os.WriteFile(filename, data, 0666)
-
-		// test that importing the corrupted file results in an error
-		_, err = gcimporter.Import(token.NewFileSet(), make(map[string]*types.Package), pkgpath, corruptdir, nil)
-		if err == nil {
-			t.Errorf("import corrupted %q succeeded", pkgpath)
-		} else if msg := err.Error(); !strings.Contains(msg, "internal error") {
-			t.Errorf("import %q error incorrect (%s)", pkgpath, msg)
-		}
-	}
 }
 
 func TestImportStdLib(t *testing.T) {
@@ -491,7 +421,7 @@ func importObject(t *testing.T, name string) types.Object {
 	importPath := s[0]
 	objName := s[1]
 
-	pkg, err := gcimporter.Import(token.NewFileSet(), make(map[string]*types.Package), importPath, ".", nil)
+	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), importPath, ".", nil)
 	if err != nil {
 		t.Error(err)
 		return nil
@@ -571,7 +501,7 @@ func TestCorrectMethodPackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	imports := make(map[string]*types.Package)
-	_, err := gcimporter.Import(token.NewFileSet(), imports, "net/http", ".", nil)
+	_, err := Import(token.NewFileSet(), imports, "net/http", ".", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +533,7 @@ func TestIssue13566(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jsonExport, _, err := gcimporter.FindPkg("encoding/json", "testdata")
+	jsonExport, _, err := FindPkg("encoding/json", "testdata")
 	if jsonExport == "" {
 		t.Fatalf("no export data found for encoding/json: %s", err)
 	}
@@ -629,7 +559,7 @@ func TestIssue13898(t *testing.T) {
 
 	// import go/internal/gcimporter which imports go/types partially
 	imports := make(map[string]*types.Package)
-	_, err := gcimporter.Import(token.NewFileSet(), imports, "go/internal/gcimporter", ".", nil)
+	_, err := Import(token.NewFileSet(), imports, "go/internal/gcimporter", ".", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -689,7 +619,7 @@ func TestIssue15517(t *testing.T) {
 	// The same issue occurs with vendoring.)
 	imports := make(map[string]*types.Package)
 	for range 3 {
-		if _, err := gcimporter.Import(token.NewFileSet(), imports, "./././testdata/p", tmpdir, nil); err != nil {
+		if _, err := Import(token.NewFileSet(), imports, "./././testdata/p", tmpdir, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -923,7 +853,7 @@ func TestIssue58296(t *testing.T) {
 	}
 
 	// make sure a and b are both imported by c.
-	pkg, err := gcimporter.Import(token.NewFileSet(), imports, "./c", testoutdir, nil)
+	pkg, err := Import(token.NewFileSet(), imports, "./c", testoutdir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -964,7 +894,7 @@ func TestIssueAliases(t *testing.T) {
 	)
 
 	// import c from gc export data using a and b.
-	pkg, err := gcimporter.Import(token.NewFileSet(), map[string]*types.Package{
+	pkg, err := Import(token.NewFileSet(), map[string]*types.Package{
 		apkg: types.NewPackage(apkg, "a"),
 		bpkg: types.NewPackage(bpkg, "b"),
 	}, "./c", testoutdir, nil)
@@ -1008,7 +938,7 @@ func apkg(testoutdir string) string {
 }
 
 func importPkg(t *testing.T, path, srcDir string) *types.Package {
-	pkg, err := gcimporter.Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
+	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

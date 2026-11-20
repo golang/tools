@@ -104,7 +104,7 @@ func NewReader(r io.Reader) (io.Reader, error) {
 		return buf, nil
 	}
 
-	size, err := gcimporter.FindExportData(buf)
+	size, err := findExportData(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func Read(in io.Reader, fset *token.FileSet, imports map[string]*types.Package, 
 		case 'u':
 			// unified, produced by cmd/compile since go1.20.
 			// Produced by go list -export from go1.20 to go1.27.
-			_, pkg, err := gcimporter.UImportData(fset, imports, data[1:], path)
+			_, pkg, err := uImportData(fset, imports, data[1:], path)
 			return pkg, err
 
 		default:
