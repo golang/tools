@@ -88,7 +88,27 @@ var allInlayHints = map[settings.InlayHint]inlayHintFunc{
 	settings.CompositeLiteralTypes:      compositeLiteralTypes,
 	settings.CompositeLiteralFieldNames: compositeLiteralFields,
 	settings.FunctionTypeParameters:     funcTypeParams,
+	settings.FunctionEndNames:           functionEndNames,
 	settings.IgnoredError:               ignoredError,
+}
+
+func functionEndNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
+	// A request covering only the end of a function may be rooted at its
+	// body, so look for function bodies rather than declarations.
+	for curBody := range cur.Preorder((*ast.BlockStmt)(nil)) {
+		decl, ok := curBody.Parent().Node().(*ast.FuncDecl)
+		if !ok || !decl.Body.Rbrace.IsValid() {
+			continue
+		}
+		pos, err := pgf.PosPosition(decl.Body.End())
+		if err != nil {
+			continue
+		}
+		add(protocol.InlayHint{
+			Position: pos,
+			Label:    labelPart(" // " + decl.Name.Name),
+		})
+	}
 }
 
 func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
