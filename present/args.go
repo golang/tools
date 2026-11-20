@@ -149,8 +149,9 @@ func addrNumber(data []byte, lo, hi int, dir byte, n int, charOffset bool) (int,
 		if n == 0 {
 			return lo, hi, nil
 		}
+		// Count the final line even if it has no trailing newline.
 		for ; hi < len(data); hi++ {
-			if data[hi] != '\n' {
+			if data[hi] != '\n' && hi+1 < len(data) {
 				continue
 			}
 			switch n--; n {
