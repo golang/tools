@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
@@ -101,6 +102,21 @@ func TestFilters(t *testing.T) {
 				t.Errorf("filters %q included %v, wanted excluded", tt.filters, exc)
 			}
 		}
+	}
+}
+
+func TestFolderExcludes(t *testing.T) {
+	dir := t.TempDir()
+	opts := &settings.Options{}
+	opts.DirectoryFilters = []string{"-other"}
+	folder := &Folder{Dir: protocol.URIFromPath(dir), Options: opts}
+	inside := protocol.URIFromPath(filepath.Join(dir, "other", "main.go"))
+	outside := protocol.URIFromPath(filepath.Join(dir, "main.go"))
+	if !folder.excludes(inside) {
+		t.Errorf("excludes(%q) = false, want true", inside)
+	}
+	if folder.excludes(outside) {
+		t.Errorf("excludes(%q) = true, want false", outside)
 	}
 }
 
