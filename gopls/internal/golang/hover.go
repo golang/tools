@@ -1095,8 +1095,15 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 			}
 		case constant.String:
 			// Is the selected character denoted by an escape sequence?
-			if s, e, rr, ok := escapeAt(lit, posRange.Pos()); ok {
-				start, end, r = s, e, rr
+			if s, e, rr, multibyte, ok := escapeAt(lit, posRange.Pos()); ok {
+				start, end = s, e
+
+				if multibyte || rr < utf8.RuneSelf {
+					r = rr
+				} else {
+					// A hex or octal escape >= 0x80 denotes a single byte, not a rune.
+					value = fmt.Sprintf("byte 0x%02X (%d)", rr, rr)
+				}
 			}
 		default:
 			panic("unexpected constant.Kind")
@@ -1153,7 +1160,9 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 // escapeAt returns the source extent and value of the escape sequence
 // containing pos in the string literal lit, if any.
 // A position on the opening quote is treated as the first character.
-func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, ok bool) {
+// If multibyte is false, r is a single byte value (from a hex or
+// octal escape) rather than a Unicode code point; see [strconv.UnquoteChar].
+func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, multibyte, ok bool) {
 	if len(lit.Value) < 2 || lit.Value[0] != '"' {
 		return // raw string literals have no escape sequences
 	}
@@ -1161,7 +1170,7 @@ func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, o
 	// literals, so lit.Value is exactly the source text.
 	s := lit.Value[1 : len(lit.Value)-1]
 	for i := lit.Pos() + 1; s != ""; {
-		rr, _, rest, err := strconv.UnquoteChar(s, '"')
+		rr, mb, rest, err := strconv.UnquoteChar(s, '"')
 		if err != nil {
 			break // malformed
 		}
@@ -1170,7 +1179,7 @@ func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, o
 			if s[0] != '\\' {
 				break // pos is not within an escape
 			}
-			return i, j, rr, true
+			return i, j, rr, mb, true
 		}
 		i, s = j, rest
 	}
