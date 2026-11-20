@@ -1213,10 +1213,12 @@ func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protoc
 	var cfg printer.Config
 	fset := token.NewFileSet()
 	buf.WriteString("returns (")
-	for i, field := range funcType.Results.List {
-		if i > 0 {
+	first := true
+	for _, field := range astutil.Fields(funcType.Results) {
+		if !first {
 			buf.WriteString(", ")
 		}
+		first = false
 		cfg.Fprint(&buf, fset, field.Type) // ignore error
 	}
 	buf.WriteByte(')')
