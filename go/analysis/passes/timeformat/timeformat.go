@@ -12,6 +12,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -59,9 +60,16 @@ func run(pass *analysis.Pass) (any, error) {
 			badAt := badFormatAt(pass.TypesInfo, arg)
 
 			if badAt > -1 {
-				// Check if it's a literal string, otherwise we can't suggest a fix.
-				if _, ok := arg.(*ast.BasicLit); ok {
-					pos := int(arg.Pos()) + badAt + 1 // +1 to skip the " or `
+				// Check if it's a literal string whose source text contains
+				// the bad format verbatim, otherwise we can't suggest a fix.
+				// (Because of escape sequences, offsets into the string
+				// value need not match offsets into the source text.)
+				at := -1
+				if lit, ok := arg.(*ast.BasicLit); ok {
+					at = literalIndex(lit.Value, badFormat)
+				}
+				if at >= 0 {
+					pos := int(arg.Pos()) + at
 					end := pos + len(badFormat)
 
 					pass.Report(analysis.Diagnostic{
@@ -103,4 +111,22 @@ func badFormatAt(info *types.Info, e ast.Expr) int {
 	}
 
 	return strings.Index(constant.StringVal(tv.Value), badFormat)
+}
+
+// literalIndex returns the byte offset within the source text lit of a
+// string literal of the first occurrence of substr that is not part of
+// an escape sequence, or -1 if there is none.
+func literalIndex(lit, substr string) int {
+	for i := 0; ; i++ {
+		j := strings.Index(lit[i:], substr)
+		if j < 0 {
+			return -1
+		}
+		i += j
+		// The occurrence is verbatim text only if the source up to
+		// this point, closed by a quote, is a valid string literal.
+		if _, err := strconv.Unquote(lit[:i] + lit[:1]); err == nil {
+			return i
+		}
+	}
 }
