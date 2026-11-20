@@ -89,7 +89,7 @@ func FixImports(ctx context.Context, filename string, src []byte, goroot string,
 		return nil, err
 	}
 
-	return getFixesWithSource(ctx, fileSet, file, filename, goroot, logf, source)
+	return getFixesWithSource(ctx, fileSet, file, filename, func() (string, error) { return goroot, nil }, logf, source)
 }
 
 // ApplyFixes applies all of the fixes to the file and formats it. extraMode
