@@ -90,25 +90,25 @@ func _() {
 	}()
 }
 
-// this function puts some wrong usages but waitgroupgo modernizer will still offer fixes.
+// this function puts some wrong usages, for which waitgroupgo modernizer offers no fixes.
 func _() {
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+	wg.Add(1) // noop: the body calls Done again.
+	go func() {
 		defer wg.Done()
 		defer wg.Done()
 		fmt.Println()
 	}()
 
-	wg.Add(1)
-	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+	wg.Add(1) // noop: the body calls Done again.
+	go func() {
 		defer wg.Done()
 		fmt.Println()
 		wg.Done()
 	}()
 
-	wg.Add(1)
-	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+	wg.Add(1) // noop: the body calls Done again.
+	go func() {
 		fmt.Println()
 		wg.Done()
 		wg.Done()
@@ -218,6 +218,72 @@ func _() {
 		wg.Done()
 	}()
 }
+
+// Cases where there is an early return inside the function literal.
+func _(skip bool) {
+	var wg sync.WaitGroup
+	wg.Add(1) // noop: the trailing Done is skipped by an early return.
+	go func() {
+		if skip {
+			return
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1) // noop: WaitGroup.Go would call Done a second time after the early Done.
+	go func() {
+		if skip {
+			wg.Done()
+			return
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		f := func() {
+			return
+		}
+		f()
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		defer wg.Done()
+		if skip {
+			return
+		}
+	}()
+}
+
+// Cases where the goroutine body uses the WaitGroup outside the pattern.
+func _() {
+	var wg sync.WaitGroup
+	wg.Add(1) // noop: the body passes wg to another function.
+	go func() {
+		defer wg.Done()
+		useWaitGroup(&wg)
+	}()
+
+	wg.Add(1) // noop: a nested function uses wg.
+	go func() {
+		defer wg.Done()
+		done := func() { wg.Done() }
+		done()
+	}()
+
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
+		defer wg.Done()
+		{
+			var wg sync.WaitGroup
+			wg.Wait()
+		}
+	}()
+}
+
+func useWaitGroup(*sync.WaitGroup) {}
 
 func cleanup() {}
 
