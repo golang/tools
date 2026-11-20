@@ -6,6 +6,7 @@ package cache
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,6 +47,10 @@ func TestMatchingPortsStdlib(t *testing.T) {
 	}
 
 	var g errgroup.Group
+	// Bound concurrency to avoid spawning hundreds of OS threads blocked in
+	// os.ReadFile, which exhausts 32-bit virtual address space (golang/go#82390).
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
 	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 		checkFile := func(filename string) {
 			g.Go(func() error {
