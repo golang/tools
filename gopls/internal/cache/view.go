@@ -251,6 +251,9 @@ func (d viewDefinition) adjustedGO111MODULE() string {
 	if d.folder.Env.GO111MODULE != "" {
 		return d.folder.Env.GO111MODULE
 	}
+	if d.typ == GoWorkView {
+		return "on"
+	}
 	return "auto"
 }
 
