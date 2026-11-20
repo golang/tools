@@ -160,37 +160,37 @@ TEXT ·entryS390x(SB), $0-0
 		env.OpenFile("a_darwin.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
 		)
 		env.OpenFile("a_s390x.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
-			summary("GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
 		)
 		env.OpenFile("a_windows.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
-			summary("GOARCH=s390x", "GOOS=linux"),
-			summary("GOARCH=amd64", "GOOS=windows"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_darwin.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=s390x", "GOOS=linux"),
-			summary("GOARCH=amd64", "GOOS=windows"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_linux.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=s390x", "GOOS=linux"),
-			summary("GOARCH=amd64", "GOOS=windows"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("a_windows.go")
 		checkViews(
 			summary(),
-			summary("GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
 		)
 		env.CloseBuffer("a_s390x.go")
 		checkViews(summary())
@@ -199,7 +199,7 @@ TEXT ·entryS390x(SB), $0-0
 		env.OpenFile("a_darwin.s")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
 		)
 		// Definition on ·darwin jumps to darwin in a_darwin.go
 		loc := env.RegexpSearch("a_darwin.s", "darwin")
@@ -212,8 +212,8 @@ TEXT ·entryS390x(SB), $0-0
 		env.OpenFile("a_s390x.s")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
-			summary("GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
 		)
 		// Definition on ·s390x jumps to s390x in a_s390x.go
 		loc = env.RegexpSearch("a_s390x.s", "s390x")
@@ -226,20 +226,20 @@ TEXT ·entryS390x(SB), $0-0
 		env.OpenFile("tag.s")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
-			summary("GOARCH=s390x", "GOOS=linux"),
-			summary("GOARCH=amd64", "GOOS=windows"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=windows"),
 		)
 		env.CloseBuffer("tag.s")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
-			summary("GOARCH=s390x", "GOOS=linux"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=s390x", "GOOS=linux"),
 		)
 		env.CloseBuffer("a_s390x.s")
 		checkViews(
 			summary(),
-			summary("GOARCH=amd64", "GOOS=darwin"),
+			summary("CGO_ENABLED=0", "GOARCH=amd64", "GOOS=darwin"),
 		)
 		env.CloseBuffer("a_darwin.s")
 		checkViews(summary())
