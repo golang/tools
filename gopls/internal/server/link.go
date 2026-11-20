@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/token"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -201,27 +203,20 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 
 	urlRegexp := xurls.Relaxed()
 
-	// Gather links found in string literals.
-	var str []*ast.BasicLit
+	// Gather links found in string literals, ignoring import strings.
 	for curLit := range pgf.Cursor().Preorder((*ast.BasicLit)(nil)) {
 		lit := curLit.Node().(*ast.BasicLit)
-		if lit.Kind == token.STRING {
-			if _, ok := curLit.Parent().Node().(*ast.ImportSpec); ok {
-				continue // ignore import strings
+		if lit.Kind == token.STRING && curLit.ParentEdgeKind() != edge.ImportSpec_Path {
+			strOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
+			if err != nil {
+				return nil, err
 			}
-			str = append(str, lit)
+			l, err := findLinksInString(urlRegexp, lit.Value, strOffset, pgf.Mapper)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, l...)
 		}
-	}
-	for _, s := range str {
-		strOffset, err := safetoken.Offset(pgf.Tok, s.Pos())
-		if err != nil {
-			return nil, err
-		}
-		l, err := findLinksInString(urlRegexp, s.Value, strOffset, pgf.Mapper)
-		if err != nil {
-			return nil, err
-		}
-		links = append(links, l...)
 	}
 
 	// Gather links found in comments.
@@ -255,19 +250,16 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		start, end := index[0], index[1]
 		link := src[start:end]
 		linkURL, err := url.Parse(link)
-		// Fallback: Linkify IP addresses as suggested in golang/go#18824.
-		if err != nil {
-			linkURL, err = url.Parse("//" + link)
-			// Not all potential links will be valid, so don't return this error.
-			if err != nil {
+		if err == nil && linkURL.Scheme == "" {
+			// Without a scheme, only link hosts with a common top-level domain,
+			// so that text such as "p.name" is left alone (golang/go#70033).
+			linkURL, err = url.Parse("https://" + link)
+			if err == nil && !hasCommonTLD(linkURL.Hostname()) {
 				continue
 			}
 		}
-		// If the URL has no scheme, use https.
-		if linkURL.Scheme == "" {
-			linkURL.Scheme = "https"
-		}
-		if !acceptedSchemes.Contains(linkURL.Scheme) {
+		// Not all potential links will be valid, so don't return this error.
+		if err != nil || !acceptedSchemes.Contains(linkURL.Scheme) {
 			continue
 		}
 
@@ -294,6 +286,14 @@ func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *p
 		links = append(links, l)
 	}
 	return links, nil
+}
+
+func hasCommonTLD(host string) bool {
+	switch path.Ext(host) {
+	case ".com", ".net", ".org", ".dev":
+		return true
+	}
+	return false
 }
 
 func getIssueRegexp() *regexp.Regexp {
