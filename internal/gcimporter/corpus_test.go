@@ -9,7 +9,8 @@ package gcimporter_test
 // self-contained module (with its own go.mod file) whose packages are
 // checked in three ways:
 //
-//   - deep: each package is type-checked from source, then encoded
+//   - deep: each package is type-checked from source, using packages
+//     decoded from the export data of its dependencies, then encoded
 //     and decoded in deep mode by this package's codec.
 //   - shallow: likewise, but in shallow mode.
 //   - golist: the package's export data is obtained from "go list
@@ -164,62 +165,27 @@ func TestCorpus(t *testing.T) {
 			}
 
 			// The case's packages, in dependency order.
-			var pkgs []*listPackage
-			for _, lp := range corpus.list {
-				if lp.Module != nil && lp.Module.Path == "example.com/"+c.name {
-					pkgs = append(pkgs, lp)
-				}
-			}
+			isCase := func(lp *listPackage) bool { return lp.Module != nil && lp.Module.Path == "example.com/"+c.name }
+			pkgs := slices.DeleteFunc(slices.Clone(corpus.list), func(lp *listPackage) bool { return !isCase(lp) })
 			if len(pkgs) == 0 {
 				t.Fatalf("no packages in module example.com/%s", c.name)
 			}
 			check := corpusChecks[c.name]
 
 			// deep and shallow round trips through the codec
+			caseList := dependencyClosure(corpus.list, isCase)
 			for _, shallow := range []bool{false, true} {
 				mode := "deep"
 				if shallow {
 					mode = "shallow"
 				}
 				t.Run(mode, func(t *testing.T) {
-					for _, lp := range pkgs {
-						pkg := checked[lp.ImportPath]
-						data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{Shallow: shallow})
-						if err != nil {
-							t.Fatalf("Encode(%s): %v", pkg.Path(), err)
-						}
-
-						// In shallow mode, the decoder requires
-						// complete packages for all dependencies.
-						imports := make(map[string]*types.Package)
-						if shallow {
-							var addDeps func(*types.Package)
-							addDeps = func(p *types.Package) {
-								for _, imp := range p.Imports() {
-									if imports[imp.Path()] == nil {
-										imports[imp.Path()] = imp
-										addDeps(imp)
-									}
-								}
-							}
-							addDeps(pkg)
-						}
-						fset2 := token.NewFileSet()
-						pkg2, err := gcimporter.Decode(fset2, pkg.Path(), data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
-						if err != nil {
-							t.Fatalf("Decode(%s): %v", pkg.Path(), err)
-						}
-						testPkg(t, fset, pkg, fset2, pkg2)
-					}
+					exports := roundTripPackages(t, fset, caseList, checked, shallow, isCase)
 					// The checks decode with empty or stub imports,
 					// which only self-contained (deep) data permits.
 					if check != nil && !shallow {
 						check(t, func(path string, imports map[string]*types.Package) *types.Package {
-							data, err := gcimporter.Encode(fset, checked[path], gcimporter.EncodeOptions{})
-							if err != nil {
-								t.Fatalf("Encode(%s): %v", path, err)
-							}
-							pkg, err := gcimporter.Decode(token.NewFileSet(), path, data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+							pkg, err := gcimporter.Decode(token.NewFileSet(), path, exports[path], gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 							if err != nil {
 								t.Fatalf("Decode(%s): %v", path, err)
 							}
@@ -274,6 +240,37 @@ func readExportFile(t *testing.T, fset *token.FileSet, imports map[string]*types
 		t.Fatalf("reading export data for %s: %v", path, err)
 	}
 	return pkg
+}
+
+// dependencyClosure returns the packages of list selected by keep,
+// and all their dependencies, preserving the order of list.
+func dependencyClosure(list []*listPackage, keep func(*listPackage) bool) []*listPackage {
+	byPath := make(map[string]*listPackage)
+	for _, lp := range list {
+		byPath[lp.ImportPath] = lp
+	}
+	needed := make(map[string]bool)
+	var visit func(*listPackage)
+	visit = func(lp *listPackage) {
+		if !needed[lp.ImportPath] {
+			needed[lp.ImportPath] = true
+			for _, imp := range lp.Imports {
+				visit(byPath[imp])
+			}
+		}
+	}
+	for _, lp := range list {
+		if keep(lp) {
+			visit(lp)
+		}
+	}
+	var result []*listPackage
+	for _, lp := range list {
+		if needed[lp.ImportPath] {
+			result = append(result, lp)
+		}
+	}
+	return result
 }
 
 // -- loading the corpus --

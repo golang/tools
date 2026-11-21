@@ -67,13 +67,19 @@ func TestStd(t *testing.T) {
 			mode = "shallow"
 		}
 		t.Run(mode, func(t *testing.T) {
-			testStd(t, fset, list, checked, shallow)
+			roundTripPackages(t, fset, list, checked, shallow, func(*listPackage) bool { return true })
 		})
 	}
 }
 
-// testStd is the body of TestStd for a given mode.
-func testStd(t *testing.T, fset *token.FileSet, list []*listPackage, checked map[string]*types.Package, shallow bool) {
+// roundTripPackages type-checks each package in list (which must be
+// closed under dependencies, in dependency order) from source, using
+// packages decoded from the export data of its dependencies, and then
+// encodes it in the specified mode. For each package selected by
+// compare, it decodes the result and compares it with the package
+// type-checked from source (checked). It returns the export data,
+// keyed by package path.
+func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, checked map[string]*types.Package, shallow bool, compare func(*listPackage) bool) map[string][]byte {
 	var (
 		mu      sync.Mutex
 		exports = make(map[string][]byte) // keyed by package path
@@ -184,6 +190,9 @@ func testStd(t *testing.T, fset *token.FileSet, list []*listPackage, checked map
 			mu.Unlock()
 
 			// Decode it and compare with the package type-checked from source.
+			if !compare(lp) {
+				return
+			}
 			fset2 := token.NewFileSet()
 			pkg2, err := decode(fset2, lp.ImportPath, make(map[string]*types.Package))
 			if err != nil {
@@ -195,6 +204,7 @@ func testStd(t *testing.T, fset *token.FileSet, list []*listPackage, checked map
 		})
 	}
 	wg.Wait()
+	return exports
 }
 
 // loadPackages type-checks the packages denoted by the patterns, and
