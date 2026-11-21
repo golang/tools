@@ -159,9 +159,8 @@ func TestCompilerTypeparamTests(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			compile(t, rootDir, entry.Name(), filepath.Join(tmpdir, "testdata"), pkgFiles)
-			pkgName := strings.TrimSuffix(entry.Name(), ".go")
-			imported := importPkg(t, "./testdata/"+pkgName, tmpdir)
+			outname := compile(t, rootDir, entry.Name(), filepath.Join(tmpdir, "testdata"), pkgFiles)
+			imported := readExportFile(t, token.NewFileSet(), make(map[string]*types.Package), "p", outname)
 			checked := checkFile(t, filename, src)
 
 			seen := make(map[string]bool)

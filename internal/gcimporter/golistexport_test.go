@@ -4,24 +4,20 @@
 
 package gcimporter_test
 
-// The tests in this file use the Import helper to read export data
-// for standard packages, as reported by "go list -export". With
-// go1.27 and earlier, this is the compiler's unified export data,
-// read by the legacy gcexportdata reader; since go1.28, it is
-// indexed export data produced by cmd/export, read by Decode.
+// The tests in this file read export data for standard packages, as
+// reported by "go list -export". With go1.27 and earlier, this is the
+// compiler's unified export data, read by the legacy gcexportdata
+// reader; since go1.28, it is indexed export data produced by
+// cmd/export, read by Decode.
 
 import (
-	"bytes"
 	"go/constant"
 	"go/token"
 	"go/types"
-	"os/exec"
-	"path"
-	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/tools/internal/testenv"
 )
@@ -36,18 +32,40 @@ func needsCompiler(t *testing.T, compiler string) {
 	}
 }
 
-func testPath(t *testing.T, path, srcDir string) *types.Package {
-	t0 := time.Now()
-	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
+// stdExports returns a mapping from package path to the name of the
+// export data file reported by "go list -export", for each package
+// in the standard library.
+var stdExports = sync.OnceValues(func() (map[string]string, error) {
+	pkgs, err := goList("", stdEnv, []string{"-export"}, []string{"std"})
 	if err != nil {
-		t.Errorf("testPath(%s): %s", path, err)
-		return nil
+		return nil, err
 	}
-	t.Logf("testPath(%s): %v", path, time.Since(t0))
-	return pkg
+	exports := make(map[string]string)
+	for _, lp := range pkgs {
+		exports[lp.ImportPath] = lp.Export
+	}
+	return exports, nil
+})
+
+// importStd reads the export data reported by "go list -export" for
+// the specified standard package, using the specified map of
+// imported packages, which may be nil.
+func importStd(t *testing.T, path string, imports map[string]*types.Package) *types.Package {
+	t.Helper()
+	exports, err := stdExports()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imports == nil {
+		imports = make(map[string]*types.Package)
+	}
+	return readExportFile(t, token.NewFileSet(), imports, path, exports[path])
 }
 
-func TestImportStdLib(t *testing.T) {
+// TestGoListExportStd reads the export data reported by "go list
+// -export" for each standard package, and compares it with the
+// package type-checked from source.
+func TestGoListExportStd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("the imports can be expensive, and this test is especially slow when the build cache is empty")
 	}
@@ -55,30 +73,39 @@ func TestImportStdLib(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
-	// Get list of packages in stdlib. Filter out test-only packages with {{if .GoFiles}} check.
-	var stderr bytes.Buffer
-	cmd := exec.Command("go", "list", "-f", "{{if .GoFiles}}{{.ImportPath}}{{end}}", "std")
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	// Type-check every package from source, in dependency order.
+	list, err := goList("", stdEnv, []string{"-deps"}, []string{"std"})
 	if err != nil {
-		t.Fatalf("failed to run go list to determine stdlib packages: %v\nstderr:\n%v", err, stderr.String())
+		t.Fatal(err)
 	}
-	pkgs := strings.Fields(string(out))
+	fset := token.NewFileSet()
+	checked := make(map[string]*types.Package) // keyed by package path
+	for _, lp := range list {
+		checked[lp.ImportPath] = checkListPackage(t, fset, lp, checked)
+	}
 
-	var nimports int
-	for _, pkg := range pkgs {
-		t.Run(pkg, func(t *testing.T) {
-			if testPath(t, pkg, filepath.Join(testenv.GOROOT(t), "src", path.Dir(pkg))) != nil {
-				nimports++
-			}
+	const minPkgs = 225 // 'GOOS=plan9 go1.18 list std | wc -l' reports 228; most other platforms have more.
+	if len(list) < minPkgs {
+		t.Fatalf("too few packages (%d) were loaded", len(list))
+	}
+
+	exports, err := stdExports()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lp := range list {
+		if lp.ImportPath == "unsafe" {
+			continue // no export data
+		}
+		if len(lp.GoFiles) == 0 {
+			continue // test-only package
+		}
+		t.Run(lp.ImportPath, func(t *testing.T) {
+			fset2 := token.NewFileSet()
+			pkg2 := readExportFile(t, fset2, make(map[string]*types.Package), lp.ImportPath, exports[lp.ImportPath])
+			testPkg(t, fset, checked[lp.ImportPath], fset2, pkg2)
 		})
 	}
-	const minPkgs = 225 // 'GOOS=plan9 go1.18 list std | wc -l' reports 228; most other platforms have more.
-	if len(pkgs) < minPkgs {
-		t.Fatalf("too few packages (%d) were imported", nimports)
-	}
-
-	t.Logf("tested %d imports", nimports)
 }
 
 var importedObjectTests = []struct {
@@ -184,12 +211,7 @@ func importObject(t *testing.T, name string) types.Object {
 	importPath := s[0]
 	objName := s[1]
 
-	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), importPath, ".", nil)
-	if err != nil {
-		t.Error(err)
-		return nil
-	}
-
+	pkg := importStd(t, importPath, nil)
 	obj := pkg.Scope().Lookup(objName)
 	if obj == nil {
 		t.Errorf("%s: object not found", name)
@@ -238,7 +260,7 @@ func TestIssue5815(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
-	pkg := importPkg(t, "strings", ".")
+	pkg := importStd(t, "strings", nil)
 
 	scope := pkg.Scope()
 	for _, name := range scope.Names() {
@@ -264,10 +286,7 @@ func TestCorrectMethodPackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	imports := make(map[string]*types.Package)
-	_, err := Import(token.NewFileSet(), imports, "net/http", ".", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	importStd(t, "net/http", imports)
 
 	mutex := imports["sync"].Scope().Lookup("Mutex").(*types.TypeName).Type()
 	mset := types.NewMethodSet(types.NewPointer(mutex)) // methods of *sync.Mutex
@@ -285,10 +304,7 @@ func TestIssue13898(t *testing.T) {
 
 	// import go/internal/gcimporter which imports go/types partially
 	imports := make(map[string]*types.Package)
-	_, err := Import(token.NewFileSet(), imports, "go/internal/gcimporter", ".", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	importStd(t, "go/internal/gcimporter", imports)
 
 	// look for go/types package
 	var goTypesPkg *types.Package
@@ -319,14 +335,6 @@ func TestIssue13898(t *testing.T) {
 	if m.Pkg().Path() != "go/types" {
 		t.Fatalf("found %v; want go/types", m.Pkg())
 	}
-}
-
-func importPkg(t *testing.T, path, srcDir string) *types.Package {
-	pkg, err := Import(token.NewFileSet(), make(map[string]*types.Package), path, srcDir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pkg
 }
 
 func lookupObj(t *testing.T, scope *types.Scope, name string) types.Object {
