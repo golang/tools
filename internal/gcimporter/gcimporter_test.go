@@ -72,11 +72,9 @@ type K = StillBad[string]
 
 	insts := []types.Type{
 		pkg2.Scope().Lookup("J").Type(),
-		// This test is still racy, because the incomplete interface is contained
-		// within a nested type expression.
-		//
-		// Uncomment this once golang/go#61561 is fixed.
-		// pkg2.Scope().Lookup("K").Type().Underlying().(*types.Pointer).Elem(),
+		// The incomplete interface is contained within a
+		// nested type expression (golang/go#61561).
+		pkg2.Scope().Lookup("K").Type().Underlying().(*types.Pointer).Elem(),
 	}
 
 	// Use the interface instances concurrently.
