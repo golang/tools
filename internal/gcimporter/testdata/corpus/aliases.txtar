@@ -1,0 +1,51 @@
+Generic type aliases across packages (go.dev/issue/68778).
+
+-- go.mod --
+module example.com/aliases
+
+go 1.26
+
+-- a/a.go --
+package a
+
+type A[T any] = *T
+
+type B = struct{ F int }
+
+func F() B {
+	type a[T any] = struct{ F T }
+	return a[int]{}
+}
+
+-- b/b.go --
+package b
+
+import "example.com/aliases/a"
+
+type B[S any] = struct {
+	F a.A[[]S]
+}
+
+-- c/c.go --
+package c
+
+import (
+	"example.com/aliases/a"
+	"example.com/aliases/b"
+)
+
+type c[V any] = struct {
+	G b.B[[3]V]
+}
+
+var S struct{ F int } = a.B{}
+var T struct{ F int } = a.F()
+
+var U a.A[string] = (*string)(nil)
+var V a.A[int] = (*int)(nil)
+
+var W b.B[string] = struct{ F *[]string }{}
+var X b.B[int] = struct{ F *[]int }{}
+
+var Y c[string] = struct{ G struct{ F *[][3]string } }{}
+var Z c[int] = struct{ G struct{ F *[][3]int } }{}

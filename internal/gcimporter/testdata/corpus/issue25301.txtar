@@ -1,0 +1,21 @@
+An interface embedding an alias of an interface (go.dev/issue/25301).
+
+-- go.mod --
+module example.com/issue25301
+
+go 1.26
+
+-- issue25301.go --
+package issue25301
+
+type (
+	A = interface {
+		M()
+	}
+	T interface {
+		A
+	}
+	S struct{}
+)
+
+func (S) M() { println("m") }

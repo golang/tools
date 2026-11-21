@@ -1,0 +1,20 @@
+Instantiation with an interface embedding an error type (go.dev/issue/57015).
+
+-- go.mod --
+module example.com/issue57015
+
+go 1.26
+
+-- issue57015.go --
+package issue57015
+
+type E error
+
+type X[T any] struct {}
+
+func F() X[interface {
+	E
+}] {
+	panic(0)
+}
+

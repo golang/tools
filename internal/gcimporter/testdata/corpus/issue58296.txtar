@@ -1,0 +1,32 @@
+c imports b imports a; c must be importable with stub packages
+for a and b, as when go/packages is used without NeedDeps (go.dev/issue/58296).
+
+-- go.mod --
+module example.com/issue58296
+
+go 1.26
+
+-- a/a.go --
+package a
+
+type A int
+
+func (A) f() {}
+
+-- b/b.go --
+package b
+
+import "example.com/issue58296/a"
+
+type B struct {
+	a a.A
+}
+
+-- c/c.go --
+package c
+
+import "example.com/issue58296/b"
+
+type C struct {
+	b b.B
+}

@@ -1,7 +1,11 @@
-// Copyright 2016 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+A defined type whose underlying type is error (go.dev/issue/15920).
 
+-- go.mod --
+module example.com/issue15920
+
+go 1.26
+
+-- p.go --
 package p
 
 // The underlying type of Error is the underlying type of error.

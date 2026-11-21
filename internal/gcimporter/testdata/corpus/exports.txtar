@@ -1,10 +1,14 @@
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+A variety of declarations, formerly TestImportTestdata, which dates
+from the original go/types gcimporter. The constant init1 is for
+go.dev/issue/3682 (dotted identifiers in export data).
+The empty .s file permits bodyless function declarations.
 
-// This file is used to generate an object file which
-// serves as test file for gcimporter_test.go.
+-- go.mod --
+module example.com/exports
 
+go 1.26
+
+-- exports.go --
 package exports
 
 import (
@@ -87,3 +91,5 @@ func F4() float32 { return 0 }
 func F5(a, b, c int, u, v, w struct{ x, y T1 }, more ...interface{}) (p, q, r chan<- T10)
 
 func (p *T1) M1()
+
+-- empty.s --
