@@ -1,0 +1,88 @@
+package atomic
+
+import "sync/atomic"
+
+// Struct types identical to another struct type in the package
+// must not be rewritten: conversions and assignments between them
+// would no longer compile.
+
+type convA struct{ n int32 }
+
+type convB struct{ n int32 }
+
+func (a *convA) inc() { atomic.AddInt32(&a.n, 1) }
+
+func (a *convA) toB() convB { return convB(*a) } // nope: convB(*a) would be invalid
+
+type assignA struct{ n int64 }
+
+func (a *assignA) inc() { atomic.AddInt64(&a.n, 1) }
+
+func useAnonymous(v struct{ n int64 }) {}
+
+func (a *assignA) publish() { useAnonymous(*a) } // nope: *a would no longer be assignable
+
+type convPtrA struct{ n uint32 }
+
+type convPtrB struct{ n uint32 }
+
+func (a *convPtrA) inc() { atomic.AddUint32(&a.n, 1) }
+
+func (a *convPtrA) toB() *convPtrB { return (*convPtrB)(a) } // nope: pointer conversion would be invalid
+
+// A struct with a different field name is not identical, so the fix still applies.
+type distinct struct {
+	n atomic.Uint64 // want "var n uint64 may be simplified using atomic.Uint64"
+}
+
+type other struct{ m uint64 }
+
+func (d *distinct) inc() { d.n.Add(1) }
+
+func (o *other) inc() { o.m++ }
+
+// Implicit assignments to an identical unnamed struct type.
+
+type retA struct{ n int32 }
+
+func (a *retA) inc() { atomic.AddInt32(&a.n, 1) }
+
+func (a *retA) get() struct{ n int32 } { return *a } // nope: return value would no longer be assignable
+
+type tupleA struct{ n int32 }
+
+func (a *tupleA) inc() { atomic.AddInt32(&a.n, 1) }
+
+func newTupleA() (tupleA, error) { return tupleA{}, nil }
+
+func useTuple() {
+	var v struct{ n int32 }
+	v, _ = newTupleA() // nope: v would no longer be assignable
+	_ = v
+}
+
+type declA struct{ n int64 }
+
+func (a *declA) inc() { atomic.AddInt64(&a.n, 1) }
+
+var _ struct{ n int64 } = declA{} // nope: initializer would no longer be assignable
+
+type litA struct{ n uint32 }
+
+func (a *litA) inc() { atomic.AddUint32(&a.n, 1) }
+
+var _ = []struct{ n uint32 }{litA{}} // nope: element would no longer be assignable
+
+type sendA struct{ n uint64 }
+
+func (a *sendA) inc() { atomic.AddUint64(&a.n, 1) }
+
+func send(ch chan struct{ n uint64 }, a *sendA) { ch <- *a } // nope: sent value would no longer be assignable
+
+type variadicA struct{ n uintptr }
+
+func (a *variadicA) inc() { atomic.AddUintptr(&a.n, 1) }
+
+func useVariadic(...struct{ n uintptr }) {}
+
+func (a *variadicA) publish() { useVariadic(*a) } // nope: variadic argument would no longer be assignable
