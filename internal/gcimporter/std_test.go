@@ -207,24 +207,6 @@ func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, c
 	return exports
 }
 
-// loadPackages type-checks the packages denoted by the patterns, and
-// their dependencies, from source. It returns the packages in
-// dependency order, as reported by "go list", and a mapping from
-// package path to the type-checked package.
-func loadPackages(t testing.TB, patterns ...string) (*token.FileSet, []*listPackage, map[string]*types.Package) {
-	t.Helper()
-	list, err := goList("", stdEnv, []string{"-deps"}, patterns)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	checked := make(map[string]*types.Package) // keyed by package path
-	for _, lp := range list {
-		checked[lp.ImportPath] = checkListPackage(t, fset, lp, checked)
-	}
-	return fset, list, checked
-}
-
 // checkPositionFidelity asserts that the apparent location of a few
 // objects decoded from export data, such as fmt.Println, corresponds
 // to its source location: in other words, export+import preserves
@@ -303,3 +285,5 @@ func BenchmarkEncodeShallow(b *testing.B) {
 		}
 	}
 }
+
+var isRace = false

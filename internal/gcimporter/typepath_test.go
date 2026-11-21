@@ -4,6 +4,8 @@
 
 package gcimporter_test
 
+// This file tests the type paths of shallow export data.
+
 import (
 	"go/ast"
 	"go/parser"

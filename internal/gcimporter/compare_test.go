@@ -4,12 +4,14 @@
 
 package gcimporter_test
 
+// This file defines helpers for comparing decoded packages with the originals.
+
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
+	"go/constant"
 	"go/token"
 	"go/types"
+	"math/big"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -19,8 +21,6 @@ import (
 
 	"golang.org/x/tools/internal/gcimporter"
 )
-
-var isRace = false
 
 // fileLine returns the file and line (and, optionally, column) of obj.
 func fileLine(fset *token.FileSet, obj types.Object, column bool) string {
@@ -299,85 +299,150 @@ func equalTypeParams(x, y *types.TypeParamList) error {
 	return nil
 }
 
-// TestVeryLongFile tests the position of an import object declared in
-// a very long input file. Positions are preserved exactly
-// (since iexportVersionFullPos).
-func TestVeryLongFile(t *testing.T) {
-	// parse and typecheck
-	longFile := "package foo" + strings.Repeat("\n", 123456) + "var X int"
-	fset1 := token.NewFileSet()
-	f, err := parser.ParseFile(fset1, "foo.go", longFile, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conf types.Config
-	pkg, err := conf.Check("foo", fset1, []*ast.File{f}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+// TODO(adonovan): add a compatibility test for export data.
+//
+// Today's tests encode with the current encoder and then decode, so
+// they check only that the encoder and decoder agree, not that the
+// decoder can read bytes written by a past encoder. A change to a
+// shared code path could alter old-version output without any test
+// failing.
+//
+// Instead, check in testdata/iexport/vN.i, the deep export data of a
+// reference package, written by the encoder as of the time version
+// N was current. Each file is generated once, when its version
+// becomes current (e.g. by an -update flag that refuses to overwrite
+// existing files), and is never regenerated. The test decodes each
+// file and compares the result against the reference package
+// type-checked from source (objects, types, and positions, to the
+// fidelity of each version). It should also assert that each version
+// accepted by the decoder has a file, and the file for version N
+// should be deleted when the decoder drops support for N.
+//
+// Once this exists, the encoder need no longer support old versions.
 
-	// export
-	exportdata, err := gcimporter.Encode(fset1, pkg, gcimporter.EncodeOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// import
+// testPkgData imports a package from export data and compares it with pkg.
+func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
 	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
 	if err != nil {
-		t.Fatalf("BImportData(%s): %v", pkg.Path(), err)
+		t.Errorf("Decode(%s): %v", pkg.Path(), err)
 	}
 
-	// compare
-	posn1 := fset1.Position(pkg.Scope().Lookup("X").Pos())
-	posn2 := fset2.Position(pkg2.Scope().Lookup("X").Pos())
-	if posn2 != posn1 {
-		t.Errorf("X position = %s, want %s", posn2, posn1)
+	testPkg(t, fset, pkg, fset2, pkg2, true)
+	return pkg2
+}
+
+// testPkg compares the decoded package pkg2 with pkg, type-checked
+// from source. If exact, positions must agree on the column too, as
+// they do for data written by the current encoder (but not, for
+// example, for data written by older versions of cmd/export).
+func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package, exact bool) {
+	if _, err := gcimporter.Encode(fset2, pkg2, gcimporter.EncodeOptions{}); err != nil {
+		t.Errorf("reexport %q: %v", pkg.Path(), err)
+	}
+
+	// Compare the packages' corresponding members.
+	for _, name := range pkg.Scope().Names() {
+		if !token.IsExported(name) {
+			continue
+		}
+		obj1 := pkg.Scope().Lookup(name)
+		obj2 := pkg2.Scope().Lookup(name)
+		if obj2 == nil {
+			t.Errorf("%s.%s not found, want %s", pkg.Path(), name, obj1)
+			continue
+		}
+
+		fl1 := fileLine(fset, obj1, exact)
+		fl2 := fileLine(fset2, obj2, exact)
+		if fl1 != fl2 {
+			t.Errorf("%s.%s: got posn %s, want %s",
+				pkg.Path(), name, fl2, fl1)
+		}
+
+		if err := cmpObj(obj1, obj2); err != nil {
+			t.Errorf("%s.%s: %s\ngot:  %s\nwant: %s",
+				pkg.Path(), name, err, obj2, obj1)
+		}
 	}
 }
 
-const src = `
-package p
-
-type (
-	T0 = int32
-	T1 = struct{}
-	T2 = struct{ T1 }
-	Invalid = foo // foo is undeclared
-)
-`
-
-func checkPkg(t *testing.T, pkg *types.Package, label string) {
-	T1 := types.NewStruct(nil, nil)
-	T2 := types.NewStruct([]*types.Var{types.NewField(0, pkg, "T1", T1, true)}, nil)
-
-	for _, test := range []struct {
-		name string
-		typ  types.Type
-	}{
-		{"T0", types.Typ[types.Int32]},
-		{"T1", T1},
-		{"T2", T2},
-		{"Invalid", types.Typ[types.Invalid]},
-	} {
-		obj := pkg.Scope().Lookup(test.name)
-		if obj == nil {
-			t.Errorf("%s: %s not found", label, test.name)
-			continue
-		}
-		tname, _ := obj.(*types.TypeName)
-		if tname == nil {
-			t.Errorf("%s: %v not a type name", label, obj)
-			continue
-		}
-		if !tname.IsAlias() {
-			t.Errorf("%s: %v: not marked as alias", label, tname)
-			continue
-		}
-		if got := tname.Type(); !types.Identical(got, test.typ) {
-			t.Errorf("%s: %v: got %v; want %v", label, tname, got, test.typ)
-		}
+// cmpObj reports how x and y differ. They are assumed to belong to different
+// universes so cannot be compared directly. It is an adapted version of
+// equalObj in bexport_test.go.
+func cmpObj(x, y types.Object) error {
+	if reflect.TypeOf(x) != reflect.TypeOf(y) {
+		return fmt.Errorf("%T vs %T", x, y)
 	}
+	xt := x.Type()
+	yt := y.Type()
+	switch x := x.(type) {
+	case *types.Var, *types.Func:
+		// ok
+	case *types.Const:
+		xval := x.Val()
+		yval := y.(*types.Const).Val()
+		equal := constant.Compare(xval, token.EQL, yval)
+		if !equal {
+			// try approx. comparison
+			xkind := xval.Kind()
+			ykind := yval.Kind()
+			if xkind == constant.Complex || ykind == constant.Complex {
+				equal = same(constant.Real(xval), constant.Real(yval)) &&
+					same(constant.Imag(xval), constant.Imag(yval))
+			} else if xkind == constant.Float || ykind == constant.Float {
+				equal = same(xval, yval)
+			} else if xkind == constant.Unknown && ykind == constant.Unknown {
+				equal = true
+			}
+		}
+		if !equal {
+			return fmt.Errorf("unequal constants %s vs %s", xval, yval)
+		}
+	case *types.TypeName:
+		if xalias, yalias := x.IsAlias(), y.(*types.TypeName).IsAlias(); xalias != yalias {
+			return fmt.Errorf("mismatching IsAlias(): %s vs %s", x, y)
+		}
+
+		// equalType does not recurse into the underlying types of named types, so
+		// we must pass the underlying type explicitly here. However, in doing this
+		// we may skip checking the features of the named types themselves, in
+		// situations where the type name is not referenced by the underlying or
+		// any other top-level declarations. Therefore, we must explicitly compare
+		// named types here, before passing their underlying types into equalType.
+		xn, _ := types.Unalias(xt).(*types.Named)
+		yn, _ := types.Unalias(yt).(*types.Named)
+		if (xn == nil) != (yn == nil) {
+			return fmt.Errorf("mismatching types: %T vs %T", xt, yt)
+		}
+		if xn != nil {
+			if err := cmpNamed(xn, yn); err != nil {
+				return err
+			}
+		}
+		xt = xt.Underlying()
+		yt = yt.Underlying()
+	default:
+		return fmt.Errorf("unexpected %T", x)
+	}
+	return equalType(xt, yt)
 }
+
+// Use the same floating-point precision (512) as cmd/compile
+// (see Mpprec in cmd/compile/internal/gc/mpfloat.go).
+const mpprec = 512
+
+// same compares non-complex numeric values and reports if they are approximately equal.
+func same(x, y constant.Value) bool {
+	xf := gcimporter.ConstantToFloat(x)
+	yf := gcimporter.ConstantToFloat(y)
+	d := new(big.Float).Sub(xf, yf)
+	d.Abs(d)
+	eps := big.NewFloat(1.0 / (1 << (mpprec - 1))) // allow for 1 bit of error
+	return d.Cmp(eps) < 0
+}
+
+type importerFunc func(path string) (*types.Package, error)
+
+func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }

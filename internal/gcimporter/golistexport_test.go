@@ -9,6 +9,9 @@ package gcimporter_test
 // compiler's unified export data, read by the legacy gcexportdata
 // reader; since go1.28, it is indexed export data produced by
 // cmd/export, read by Decode.
+//
+// Some of these tests originated in the standard library, in
+// $GOROOT/src/go/internal/gcimporter/gcimporter_test.go.
 
 import (
 	"go/constant"

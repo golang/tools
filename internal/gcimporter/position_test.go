@@ -4,6 +4,8 @@
 
 package gcimporter_test
 
+// This file tests the encoding of positions.
+
 import (
 	"go/ast"
 	"go/parser"
