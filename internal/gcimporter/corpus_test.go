@@ -235,7 +235,7 @@ func TestCorpus(t *testing.T) {
 					pkg := checked[lp.ImportPath]
 					fset2 := token.NewFileSet()
 					pkg2 := readExportFile(t, fset2, make(map[string]*types.Package), lp.ImportPath, exports[lp.ImportPath])
-					testPkg(t, fset, pkg, fset2, pkg2)
+					testPkg(t, fset, pkg, fset2, pkg2, false)
 				}
 				if check != nil {
 					check(t, func(path string, imports map[string]*types.Package) *types.Package {

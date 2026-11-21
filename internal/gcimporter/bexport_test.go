@@ -22,9 +22,13 @@ import (
 
 var isRace = false
 
-func fileLine(fset *token.FileSet, obj types.Object) string {
+// fileLine returns the file and line (and, optionally, column) of obj.
+func fileLine(fset *token.FileSet, obj types.Object, column bool) string {
 	posn := fset.Position(obj.Pos())
 	filename := filepath.Clean(strings.ReplaceAll(posn.Filename, "$GOROOT", runtime.GOROOT()))
+	if column {
+		return fmt.Sprintf("%s:%d:%d", filename, posn.Line, posn.Column)
+	}
 	return fmt.Sprintf("%s:%d", filename, posn.Line)
 }
 
@@ -37,34 +41,32 @@ func equalType(x, y types.Type) error {
 	switch x := x.(type) {
 	case *types.Interface:
 		y := y.(*types.Interface)
-		// TODO(gri): enable separate emission of Embedded interfaces
-		// and ExplicitMethods then use this logic.
-		// if x.NumEmbeddeds() != y.NumEmbeddeds() {
-		// 	return fmt.Errorf("unequal number of embedded interfaces: %d vs %d",
-		// 		x.NumEmbeddeds(), y.NumEmbeddeds())
-		// }
-		// for i := 0; i < x.NumEmbeddeds(); i++ {
-		// 	xi := x.Embedded(i)
-		// 	yi := y.Embedded(i)
-		// 	if xi.String() != yi.String() {
-		// 		return fmt.Errorf("mismatched %th embedded interface: %s vs %s",
-		// 			i, xi, yi)
-		// 	}
-		// }
-		// if x.NumExplicitMethods() != y.NumExplicitMethods() {
-		// 	return fmt.Errorf("unequal methods: %d vs %d",
-		// 		x.NumExplicitMethods(), y.NumExplicitMethods())
-		// }
-		// for i := 0; i < x.NumExplicitMethods(); i++ {
-		// 	xm := x.ExplicitMethod(i)
-		// 	ym := y.ExplicitMethod(i)
-		// 	if xm.Name() != ym.Name() {
-		// 		return fmt.Errorf("mismatched %th method: %s vs %s", i, xm, ym)
-		// 	}
-		// 	if err := equalType(xm.Type(), ym.Type()); err != nil {
-		// 		return fmt.Errorf("mismatched %s method: %s", xm.Name(), err)
-		// 	}
-		// }
+		if x.NumEmbeddeds() != y.NumEmbeddeds() {
+			return fmt.Errorf("unequal number of embedded interfaces: %d vs %d",
+				x.NumEmbeddeds(), y.NumEmbeddeds())
+		}
+		for i := 0; i < x.NumEmbeddeds(); i++ {
+			xi := x.EmbeddedType(i)
+			yi := y.EmbeddedType(i)
+			if xi.String() != yi.String() {
+				return fmt.Errorf("mismatched %dth embedded interface: %s vs %s",
+					i, xi, yi)
+			}
+		}
+		if x.NumExplicitMethods() != y.NumExplicitMethods() {
+			return fmt.Errorf("unequal methods: %d vs %d",
+				x.NumExplicitMethods(), y.NumExplicitMethods())
+		}
+		for i := 0; i < x.NumExplicitMethods(); i++ {
+			xm := x.ExplicitMethod(i)
+			ym := y.ExplicitMethod(i)
+			if xm.Name() != ym.Name() {
+				return fmt.Errorf("mismatched %dth method: %s vs %s", i, xm, ym)
+			}
+			if err := equalType(xm.Type(), ym.Type()); err != nil {
+				return fmt.Errorf("mismatched %s method: %s", xm.Name(), err)
+			}
+		}
 		if x.NumMethods() != y.NumMethods() {
 			return fmt.Errorf("unequal methods: %d vs %d",
 				x.NumMethods(), y.NumMethods())
@@ -138,12 +140,13 @@ func equalType(x, y types.Type) error {
 			if xk, yk := x.Recv().Kind(), y.Recv().Kind(); xk != yk {
 				return fmt.Errorf("receiver: unequal var kinds: %v vs %v", xk, yk)
 			}
-			// TODO(adonovan): fix: this assertion fires for interface methods.
-			// The type of the receiver of an interface method is a named type
-			// if the Package was loaded from export data, or an unnamed (interface)
-			// type if the Package was produced by type-checking ASTs.
-			// if err := equalType(x.Recv().Type(), y.Recv().Type()); err != nil {
-			// 	return fmt.Errorf("receiver: %s", err)
+			// TODO(adonovan): enable this check. It fails for the methods of
+			// a defined type whose underlying type is another named
+			// interface, such as Error in "type E error": the receiver is
+			// the declaring interface (error) when type-checked from source,
+			// but the defined type (E) when decoded.
+			// if xr, yr := x.Recv().Type().String(), y.Recv().Type().String(); xr != yr {
+			// 	return fmt.Errorf("unequal receiver types: %s vs %s", xr, yr)
 			// }
 		}
 		if err := equalTypeParams(x.TypeParams(), y.TypeParams()); err != nil {

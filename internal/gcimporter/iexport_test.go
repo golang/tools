@@ -50,11 +50,15 @@ func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportda
 		t.Errorf("Decode(%s): %v", pkg.Path(), err)
 	}
 
-	testPkg(t, fset, pkg, fset2, pkg2)
+	testPkg(t, fset, pkg, fset2, pkg2, true)
 	return pkg2
 }
 
-func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
+// testPkg compares the decoded package pkg2 with pkg, type-checked
+// from source. If exact, positions must agree on the column too, as
+// they do for data written by the current encoder (but not, for
+// example, for data written by older versions of cmd/export).
+func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package, exact bool) {
 	if _, err := gcimporter.Encode(fset2, pkg2, gcimporter.EncodeOptions{}); err != nil {
 		t.Errorf("reexport %q: %v", pkg.Path(), err)
 	}
@@ -71,8 +75,8 @@ func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token
 			continue
 		}
 
-		fl1 := fileLine(fset, obj1)
-		fl2 := fileLine(fset2, obj2)
+		fl1 := fileLine(fset, obj1, exact)
+		fl2 := fileLine(fset2, obj2, exact)
 		if fl1 != fl2 {
 			t.Errorf("%s.%s: got posn %s, want %s",
 				pkg.Path(), name, fl2, fl1)

@@ -199,7 +199,7 @@ func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, c
 				t.Errorf("Decode(%s): %v", lp.ImportPath, err)
 				return
 			}
-			testPkg(t, fset, checked[lp.ImportPath], fset2, pkg2)
+			testPkg(t, fset, checked[lp.ImportPath], fset2, pkg2, true)
 			checkPositionFidelity(t, fset2, pkg2)
 		})
 	}

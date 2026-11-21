@@ -95,7 +95,7 @@ func TestGoListExportStd(t *testing.T) {
 		t.Run(lp.ImportPath, func(t *testing.T) {
 			fset2 := token.NewFileSet()
 			pkg2 := readExportFile(t, fset2, make(map[string]*types.Package), lp.ImportPath, exports[lp.ImportPath])
-			testPkg(t, fset, checked[lp.ImportPath], fset2, pkg2)
+			testPkg(t, fset, checked[lp.ImportPath], fset2, pkg2, false)
 		})
 	}
 }
