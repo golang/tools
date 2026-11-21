@@ -391,16 +391,31 @@ func loadCorpus(t *testing.T) *corpus {
 // specified patterns, and returns the decoded packages.
 func (c *corpus) goList(t *testing.T, patterns []string, flags ...string) []*listPackage {
 	t.Helper()
+	pkgs, err := goList(c.dir, c.env, flags, patterns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkgs
+}
+
+// stdEnv is the environment for go list commands on the standard library.
+// Cgo is disabled so that source type-checking needs no cgo processing.
+var stdEnv = []string{"GOWORK=off", "GOTOOLCHAIN=local", "GOFLAGS=", "CGO_ENABLED=0"}
+
+// goList runs "go list -json" with the specified flags and patterns
+// in the specified directory, with the specified additions to the
+// environment, and returns the decoded packages.
+func goList(dir string, env, flags, patterns []string) ([]*listPackage, error) {
 	args := append([]string{"list", "-json"}, flags...)
 	args = append(args, "--")
 	args = append(args, patterns...)
 	cmd := exec.Command("go", args...)
-	cmd.Dir = c.dir
-	cmd.Env = append(cmd.Environ(), c.env...)
+	cmd.Dir = dir
+	cmd.Env = append(cmd.Environ(), env...)
 	cmd.Stderr = new(strings.Builder)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go %s failed: %v\n%s", strings.Join(args, " "), err, cmd.Stderr)
+		return nil, fmt.Errorf("go %s failed: %v\n%s", strings.Join(args, " "), err, cmd.Stderr)
 	}
 	var pkgs []*listPackage
 	dec := json.NewDecoder(bytes.NewReader(out))
@@ -410,14 +425,14 @@ func (c *corpus) goList(t *testing.T, patterns []string, flags ...string) []*lis
 			if err == io.EOF {
 				break
 			}
-			t.Fatalf("decoding go list output: %v", err)
+			return nil, fmt.Errorf("decoding go list output: %v", err)
 		}
 		if lp.Error != nil {
-			t.Fatalf("go list: %s: %s", lp.ImportPath, lp.Error.Err)
+			return nil, fmt.Errorf("go list: %s: %s", lp.ImportPath, lp.Error.Err)
 		}
 		pkgs = append(pkgs, lp)
 	}
-	return pkgs
+	return pkgs, nil
 }
 
 // checkListPackage parses and type-checks the specified package, whose
