@@ -6,13 +6,6 @@ package gcimporter
 
 import "testing"
 
-// Temporarily expose version-related functionality so that we can test at
-// specific export data versions.
-
-var IExportCommon = iexportCommon
-
-const IExportVersion = iexportVersion
-
 // TestFileInfosField checks that mayHaveLineInfos can find the
 // token.File.infos field. If this fails, the layout has changed, and
 // fileInfosField must be updated; until then the encoder conservatively

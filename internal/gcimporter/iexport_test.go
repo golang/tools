@@ -7,7 +7,6 @@
 package gcimporter_test
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -30,11 +29,11 @@ import (
 
 // TODO(adonovan): add a compatibility test for export data.
 //
-// Today's tests encode with the current encoder at an old version
-// number and then decode, so they check only that the encoder and
-// decoder agree, not that the decoder can read bytes written by a
-// past encoder. A change to a shared code path could alter old-version
-// output without any test failing.
+// Today's tests encode with the current encoder and then decode, so
+// they check only that the encoder and decoder agree, not that the
+// decoder can read bytes written by a past encoder. A change to a
+// shared code path could alter old-version output without any test
+// failing.
 //
 // Instead, check in testdata/iexport/vN.i, the deep export data of a
 // reference package, written by the encoder as of the time version
@@ -48,15 +47,6 @@ import (
 // should be deleted when the decoder drops support for N.
 //
 // Once this exists, the encoder need no longer support old versions.
-func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('i') // indexed format tag
-	const shallow = false
-	if err := gcimporter.IExportCommon(&buf, fset, shallow, version, pkg); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
 
 func skipIfModcacheGOROOT(t *testing.T) {
 	t.Helper()
@@ -73,7 +63,7 @@ func skipIfModcacheGOROOT(t *testing.T) {
 	}
 }
 
-func TestIExportData_stdlib(t *testing.T) {
+func TestRoundTripStd(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 	skipIfModcacheGOROOT(t)
 	if isRace {
@@ -113,8 +103,6 @@ type UnknownType undefined
 	}
 	fset := pkgs[0].Fset
 
-	version := gcimporter.IExportVersion
-
 	// Export and reimport each package, and check that they match.
 	var allPkgs []*types.Package
 	var errorsPkg *types.Package                             // reimported errors package
@@ -129,12 +117,12 @@ type UnknownType undefined
 		allPkgs = append(allPkgs, pkg)
 
 		// Export and reimport the package, and compare.
-		exportdata, err := iexport(fset, version, pkg)
+		exportdata, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		pkg2 := testPkgData(t, fset, version, pkg, exportdata)
+		pkg2 := testPkgData(t, fset, pkg, exportdata)
 		if path == "errors" {
 			errorsPkg = pkg2
 		}
@@ -162,7 +150,7 @@ type UnknownType undefined
 }
 
 // testPkgData imports a package from export data and compares it with pkg.
-func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, exportdata []byte) *types.Package {
+func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
 	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
@@ -170,12 +158,12 @@ func testPkgData(t *testing.T, fset *token.FileSet, version int, pkg *types.Pack
 		t.Errorf("Decode(%s): %v", pkg.Path(), err)
 	}
 
-	testPkg(t, fset, version, pkg, fset2, pkg2)
+	testPkg(t, fset, pkg, fset2, pkg2)
 	return pkg2
 }
 
-func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
-	if _, err := iexport(fset2, version, pkg2); err != nil {
+func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package) {
+	if _, err := gcimporter.Encode(fset2, pkg2, gcimporter.EncodeOptions{}); err != nil {
 		t.Errorf("reexport %q: %v", pkg.Path(), err)
 	}
 
@@ -223,7 +211,7 @@ func TestIExportData_long(t *testing.T) {
 	}
 
 	// export
-	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg)
+	exportdata, err := gcimporter.Encode(fset1, pkg, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +232,7 @@ func TestIExportData_long(t *testing.T) {
 	}
 }
 
-func TestIExportData_typealiases(t *testing.T) {
+func TestAliases(t *testing.T) {
 	// parse and typecheck
 	fset1 := token.NewFileSet()
 	f, err := parser.ParseFile(fset1, "p.go", src, 0)
@@ -266,7 +254,7 @@ func TestIExportData_typealiases(t *testing.T) {
 	// export
 	// Use an empty FileSet here (as gcexportdata.Write does for a nil
 	// one) to confirm that positions not in the FileSet don't panic.
-	exportdata, err := iexport(token.NewFileSet(), gcimporter.IExportVersion, pkg1)
+	exportdata, err := gcimporter.Encode(token.NewFileSet(), pkg1, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,9 +425,9 @@ type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
 
-// TestIExportDataTypeParameterizedAliases tests Encode
+// TestGenericAliases tests Encode
 // on both declarations and uses of type parameterized aliases.
-func TestIExportDataTypeParameterizedAliases(t *testing.T) {
+func TestGenericAliases(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
 	skipWindows(t)
 	if testenv.Go1Point() == 23 {
@@ -476,7 +464,7 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 
 	// Read the result of Encode through x/tools/internal/gcimporter.Decode.
 	// export
-	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
+	exportdata, err := gcimporter.Encode(fset1, pkg1, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +528,7 @@ const C3 Generic[struct{}] = 3
 		t.Fatal(err)
 	}
 
-	data, err := iexport(fset, gcimporter.IExportVersion, pkg)
+	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatalf("iexport: %v", err)
 	}
@@ -552,9 +540,9 @@ const C3 Generic[struct{}] = 3
 	}
 }
 
-// TestIExportData_exactFloats checks that, as of iexportVersionRationalFloats,
+// TestExactFloats checks that, as of iexportVersionRationalFloats,
 // floating point constants round-trip without loss (go.dev/issue/82186).
-func TestIExportData_exactFloats(t *testing.T) {
+func TestExactFloats(t *testing.T) {
 	const src = `package p
 
 const (
@@ -587,7 +575,7 @@ const (
 		t.Fatal(err)
 	}
 
-	data, err := iexport(fset, gcimporter.IExportVersion, pkg)
+	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatalf("iexport: %v", err)
 	}

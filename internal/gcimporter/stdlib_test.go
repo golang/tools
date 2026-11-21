@@ -17,9 +17,9 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// TestStdlib ensures that all packages in std and x/tools can be
+// TestDeepStd ensures that all packages in std and x/tools can be
 // type-checked using export data.
-func TestStdlib(t *testing.T) {
+func TestDeepStd(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
 	// gcexportdata.Read rapidly consumes FileSet address space,

@@ -92,13 +92,12 @@ func testExportSrc(t *testing.T, src []byte) {
 	}
 
 	// export
-	version := gcimporter.IExportVersion
-	data, err := iexport(fset, version, pkg)
+	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	testPkgData(t, fset, version, pkg, data)
+	testPkgData(t, fset, pkg, data)
 }
 
 func TestIndexedImportTypeparamTests(t *testing.T) {
@@ -244,7 +243,7 @@ func (t *testImporter) Import(path string) (*types.Package, error) {
 	}
 
 	// Export and import to get the package imported from export data.
-	exportdata, err := iexport(fset, gcimporter.IExportVersion, pkg)
+	exportdata, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
 	if err != nil {
 		return nil, err
 	}

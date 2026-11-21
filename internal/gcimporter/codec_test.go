@@ -14,9 +14,9 @@ import (
 	"golang.org/x/tools/internal/gcimporter"
 )
 
-// TestEncodeDecode checks superficial aspects of the new
-// Encode/Decode API in deep and shallow modes. (The rest is covered
-// thoroughly by other tests via the old API.)
+// TestEncodeDecode checks superficial aspects of the Encode/Decode
+// API in deep and shallow modes. (The rest is covered thoroughly by
+// other tests.)
 func TestEncodeDecode(t *testing.T) {
 	const (
 		srcA = `package a; type T struct{ X int }; func F() T { return T{} }`
