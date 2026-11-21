@@ -142,6 +142,7 @@ func Fb(a, b int) {}
 type objSpan struct {
 	pos token.Pos
 	len int
+	pkg *types.Package // package of the object
 }
 
 // objectPositions returns the positions and identifier lengths of the
@@ -150,7 +151,7 @@ type objSpan struct {
 func objectPositions(pkg *types.Package) map[string]objSpan {
 	posns := make(map[string]objSpan)
 	add := func(key string, obj types.Object) {
-		posns[key] = objSpan{obj.Pos(), len(obj.Name())}
+		posns[key] = objSpan{obj.Pos(), len(obj.Name()), obj.Pkg()}
 	}
 	var addTuple func(prefix string, tuple *types.Tuple)
 	addSig := func(prefix string, sig *types.Signature) {
@@ -170,10 +171,11 @@ func objectPositions(pkg *types.Package) map[string]objSpan {
 		case *types.Func:
 			addSig(name, obj.Signature())
 		case *types.TypeName:
-			named := obj.Type().(*types.Named)
-			for m := range named.Methods() {
-				add(name+"."+m.Name(), m)
-				addSig(name+"."+m.Name(), m.Signature())
+			if named, ok := obj.Type().(*types.Named); ok { // not an alias
+				for m := range named.Methods() {
+					add(name+"."+m.Name(), m)
+					addSig(name+"."+m.Name(), m.Signature())
+				}
 			}
 		}
 		switch u := obj.Type().Underlying().(type) {

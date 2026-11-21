@@ -299,27 +299,6 @@ func equalTypeParams(x, y *types.TypeParamList) error {
 	return nil
 }
 
-// TODO(adonovan): add a compatibility test for export data.
-//
-// Today's tests encode with the current encoder and then decode, so
-// they check only that the encoder and decoder agree, not that the
-// decoder can read bytes written by a past encoder. A change to a
-// shared code path could alter old-version output without any test
-// failing.
-//
-// Instead, check in testdata/iexport/vN.i, the deep export data of a
-// reference package, written by the encoder as of the time version
-// N was current. Each file is generated once, when its version
-// becomes current (e.g. by an -update flag that refuses to overwrite
-// existing files), and is never regenerated. The test decodes each
-// file and compares the result against the reference package
-// type-checked from source (objects, types, and positions, to the
-// fidelity of each version). It should also assert that each version
-// accepted by the decoder has a file, and the file for version N
-// should be deleted when the decoder drops support for N.
-//
-// Once this exists, the encoder need no longer support old versions.
-
 // testPkgData imports a package from export data and compares it with pkg.
 func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) *types.Package {
 	imports := make(map[string]*types.Package)
