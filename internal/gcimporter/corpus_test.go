@@ -290,6 +290,7 @@ type listPackage struct {
 	Name       string
 	Dir        string
 	GoFiles    []string
+	Imports    []string
 	ImportMap  map[string]string
 	Export     string
 	Module     *struct {
@@ -437,7 +438,7 @@ func goList(dir string, env, flags, patterns []string) ([]*listPackage, error) {
 
 // checkListPackage parses and type-checks the specified package, whose
 // dependencies (keyed by package path) have already been checked.
-func checkListPackage(t *testing.T, fset *token.FileSet, lp *listPackage, checked map[string]*types.Package) *types.Package {
+func checkListPackage(t testing.TB, fset *token.FileSet, lp *listPackage, checked map[string]*types.Package) *types.Package {
 	t.Helper()
 	if lp.ImportPath == "unsafe" {
 		return types.Unsafe

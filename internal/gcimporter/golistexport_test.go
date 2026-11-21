@@ -74,15 +74,7 @@ func TestGoListExportStd(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	// Type-check every package from source, in dependency order.
-	list, err := goList("", stdEnv, []string{"-deps"}, []string{"std"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	checked := make(map[string]*types.Package) // keyed by package path
-	for _, lp := range list {
-		checked[lp.ImportPath] = checkListPackage(t, fset, lp, checked)
-	}
+	fset, list, checked := loadPackages(t, "std")
 
 	const minPkgs = 225 // 'GOOS=plan9 go1.18 list std | wc -l' reports 228; most other platforms have more.
 	if len(list) < minPkgs {

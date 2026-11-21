@@ -14,17 +14,11 @@ import (
 	"go/token"
 	"go/types"
 	"math/big"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/gcimporter"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TODO(adonovan): add a compatibility test for export data.
@@ -47,107 +41,6 @@ import (
 // should be deleted when the decoder drops support for N.
 //
 // Once this exists, the encoder need no longer support old versions.
-
-func skipIfModcacheGOROOT(t *testing.T) {
-	t.Helper()
-	modcache := os.Getenv("GOMODCACHE")
-	if modcache == "" {
-		out, err := exec.Command("go", "env", "GOMODCACHE").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		modcache = strings.TrimSpace(string(out))
-	}
-	if modcache != "" && strings.HasPrefix(runtime.GOROOT(), modcache) {
-		t.Skip("skipping test because GOROOT is in GOMODCACHE and cannot be overlaid")
-	}
-}
-
-func TestRoundTripStd(t *testing.T) {
-	testenv.NeedsGoPackages(t)
-	skipIfModcacheGOROOT(t)
-	if isRace {
-		t.Skipf("stdlib tests take too long in race mode and flake on builders")
-	}
-	if testing.Short() {
-		t.Skip("skipping RAM hungry test in -short mode")
-	}
-
-	var errorsDir string // GOROOT/src/errors directory
-	{
-		cfg := packages.Config{
-			Mode: packages.NeedName | packages.NeedFiles,
-		}
-		pkgs, err := packages.Load(&cfg, "errors")
-		if err != nil {
-			t.Fatal(err)
-		}
-		errorsDir = filepath.Dir(pkgs[0].GoFiles[0])
-	}
-
-	// Load types from syntax for all std packages.
-	//
-	// Append a file to package errors containing type and
-	// value errors to ensure they are properly encoded/decoded.
-	const bad = `package errors
-const UnknownValue = "" + 0
-type UnknownType undefined
-`
-	cfg := packages.Config{
-		Mode:    packages.LoadAllSyntax | packages.NeedDeps,
-		Overlay: map[string][]byte{filepath.Join(errorsDir, "bad.go"): []byte(bad)},
-	}
-	pkgs, err := packages.Load(&cfg, "std") // ~800ms
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := pkgs[0].Fset
-
-	// Export and reimport each package, and check that they match.
-	var allPkgs []*types.Package
-	var errorsPkg *types.Package                             // reimported errors package
-	packages.Visit(pkgs, nil, func(ppkg *packages.Package) { // ~300ms
-		pkg := ppkg.Types
-		path := pkg.Path()
-		if path == "unsafe" ||
-			strings.HasPrefix(path, "cmd/") ||
-			strings.HasPrefix(path, "vendor/") {
-			return
-		}
-		allPkgs = append(allPkgs, pkg)
-
-		// Export and reimport the package, and compare.
-		exportdata, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		pkg2 := testPkgData(t, fset, pkg, exportdata)
-		if path == "errors" {
-			errorsPkg = pkg2
-		}
-	})
-
-	// Assert that we saw a plausible sized library.
-	const minStdlibPackages = 248
-	if n := len(allPkgs); n < minStdlibPackages {
-		t.Errorf("Loaded only %d packages, want at least %d", n, minStdlibPackages)
-	}
-
-	// Check that reimported errors package has bad decls.
-	if errorsPkg == nil {
-		t.Fatalf("'errors' package not found")
-	}
-	for _, name := range []string{"UnknownType", "UnknownValue"} {
-		obj := errorsPkg.Scope().Lookup(name)
-		if obj == nil {
-			t.Errorf("errors.%s not found", name)
-		}
-		if typ := obj.Type().Underlying(); typ.String() != "invalid type" {
-			t.Errorf("errors.%s has underlying type %s, want invalid type", name, typ)
-		}
-	}
-}
 
 // testPkgData imports a package from export data and compares it with pkg.
 func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) *types.Package {

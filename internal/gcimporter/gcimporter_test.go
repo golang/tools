@@ -103,19 +103,24 @@ func TestExportInvalid(t *testing.T) {
 		name    string
 		src     string
 		objName string
+		invalid bool // the object's underlying type must be invalid
 	}{
 		// The lack of a receiver causes Recv.Type=Invalid.
 		// (The type checker then treats Foo as a package-level
 		// function, inserting it into the package scope.)
 		// The exporter needs to apply the same treatment.
-		{"issue 57729", `package p; func () Foo() {}`, "Foo"},
+		{"issue 57729", `package p; func () Foo() {}`, "Foo", false},
 
 		// It must be possible to export a constant with unknown kind, even if its
 		// type is known.
-		{"issue 60605", `package p; const EPSILON float64 = 1e-`, "EPSILON"},
+		{"issue 60605", `package p; const EPSILON float64 = 1e-`, "EPSILON", false},
 
 		// We must not crash when exporting a struct with unknown package.
-		{"issue 60891", `package p; type I[P any] int; const C I[struct{}] = 42`, "C"},
+		{"issue 60891", `package p; type I[P any] int; const C I[struct{}] = 42`, "C", false},
+
+		// Objects whose types or values are invalid must be preserved.
+		{"invalid value", `package p; const UnknownValue = "" + 0`, "UnknownValue", true},
+		{"invalid type", `package p; type UnknownType undefined`, "UnknownType", true},
 	}
 
 	for _, test := range tests {
@@ -156,6 +161,12 @@ func TestExportInvalid(t *testing.T) {
 			hasObj2 := pkg2.Scope().Lookup(test.objName) != nil
 			if hasObj1 != hasObj2 {
 				t.Errorf("export+import changed Lookup(%q)!=nil: was %t, became %t", test.objName, hasObj1, hasObj2)
+			}
+			if test.invalid && hasObj2 {
+				obj := pkg2.Scope().Lookup(test.objName)
+				if typ := obj.Type().Underlying(); typ.String() != "invalid type" {
+					t.Errorf("%s has underlying type %s, want invalid type", test.objName, typ)
+				}
 			}
 		})
 	}
