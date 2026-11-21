@@ -871,7 +871,6 @@ func TestIssue58296(t *testing.T) {
 
 func TestIssueAliases(t *testing.T) {
 	// This package only handles gc export data.
-	testenv.NeedsGo1Point(t, 24)
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 	skipWindows(t)
@@ -1036,28 +1035,8 @@ type S struct {
 	wg.Wait()
 }
 
-func TestGenericMethods(t *testing.T) {
-	t.SkipNow() // TODO(mark): Turn on with UIR V4.
-	// This package only handles gc export data.
-	needsCompiler(t, "gc")
-	skipWindows(t)
-
-	tmpdir := mktmpdir(t)
-	defer os.RemoveAll(tmpdir)
-	testoutdir := filepath.Join(tmpdir, "testdata")
-
-	// Following the pattern of TestIssue13898, b.go needs to be compiled from
-	// the output directory. We pass the full path to compile() so that we don't
-	// have to copy the file to that directory.
-	srcdir := filepath.Join("testdata", "genmeth")
-	bpath, err := filepath.Abs(filepath.Join(srcdir, "b.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	compilePkg(t, srcdir, "a.go", testoutdir, nil, apkg(testoutdir))
-	compile(t, testoutdir, bpath, testoutdir, map[string]string{apkg(testoutdir): filepath.Join(testoutdir, "a.o")})
-}
+// TODO(mark): test generic methods using testdata/genmeth once
+// they are supported (UIR V4).
 
 func TestCrossPackageDefinedInterfaceMethods(t *testing.T) {
 	fset := token.NewFileSet()

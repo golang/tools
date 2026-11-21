@@ -4,7 +4,12 @@
 
 package gcimporter
 
+// This file defines white-box tests, and hooks for the external tests.
+
 import "testing"
+
+// ConstantToFloat exposes constantToFloat to the external tests.
+var ConstantToFloat = constantToFloat
 
 // TestFileInfosField checks that mayHaveLineInfos can find the
 // token.File.infos field. If this fails, the layout has changed, and

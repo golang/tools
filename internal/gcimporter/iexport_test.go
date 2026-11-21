@@ -193,45 +193,6 @@ func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token
 	}
 }
 
-// TestIExportData_long tests the position of an import object declared in
-// a very long input file. Positions are preserved exactly
-// (since iexportVersionFullPos).
-func TestIExportData_long(t *testing.T) {
-	// parse and typecheck
-	longFile := "package foo" + strings.Repeat("\n", 123456) + "var X int"
-	fset1 := token.NewFileSet()
-	f, err := parser.ParseFile(fset1, "foo.go", longFile, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conf types.Config
-	pkg, err := conf.Check("foo", fset1, []*ast.File{f}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// export
-	exportdata, err := gcimporter.Encode(fset1, pkg, gcimporter.EncodeOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// import
-	imports := make(map[string]*types.Package)
-	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
-	if err != nil {
-		t.Fatalf("Decode(%s): %v", pkg.Path(), err)
-	}
-
-	// compare
-	posn1 := fset1.Position(pkg.Scope().Lookup("X").Pos())
-	posn2 := fset2.Position(pkg2.Scope().Lookup("X").Pos())
-	if posn2 != posn1 {
-		t.Errorf("X position = %s, want %s", posn2, posn1)
-	}
-}
-
 func TestAliases(t *testing.T) {
 	// parse and typecheck
 	fset1 := token.NewFileSet()
@@ -336,46 +297,12 @@ const mpprec = 512
 
 // same compares non-complex numeric values and reports if they are approximately equal.
 func same(x, y constant.Value) bool {
-	xf := constantToFloat(x)
-	yf := constantToFloat(y)
+	xf := gcimporter.ConstantToFloat(x)
+	yf := gcimporter.ConstantToFloat(y)
 	d := new(big.Float).Sub(xf, yf)
 	d.Abs(d)
 	eps := big.NewFloat(1.0 / (1 << (mpprec - 1))) // allow for 1 bit of error
 	return d.Cmp(eps) < 0
-}
-
-// copy of the function with the same name in iexport.go.
-func constantToFloat(x constant.Value) *big.Float {
-	var f big.Float
-	f.SetPrec(mpprec)
-	if v, exact := constant.Float64Val(x); exact {
-		// float64
-		f.SetFloat64(v)
-	} else if num, denom := constant.Num(x), constant.Denom(x); num.Kind() == constant.Int {
-		// TODO(gri): add big.Rat accessor to constant.Value.
-		n := valueToRat(num)
-		d := valueToRat(denom)
-		f.SetRat(n.Quo(n, d))
-	} else {
-		// Value too large to represent as a fraction => inaccessible.
-		// TODO(gri): add big.Float accessor to constant.Value.
-		_, ok := f.SetString(x.ExactString())
-		if !ok {
-			panic("should not reach here")
-		}
-	}
-	return &f
-}
-
-// copy of the function with the same name in iexport.go.
-func valueToRat(x constant.Value) *big.Rat {
-	// Convert little-endian to big-endian.
-	// I can't believe this is necessary.
-	bytes := constant.Bytes(x)
-	for i := 0; i < len(bytes)/2; i++ {
-		bytes[i], bytes[len(bytes)-1-i] = bytes[len(bytes)-1-i], bytes[i]
-	}
-	return new(big.Rat).SetInt(new(big.Int).SetBytes(bytes))
 }
 
 // This is a regression test for a bug in iexport of types.Struct:
@@ -428,12 +355,6 @@ func (f importerFunc) Import(path string) (*types.Package, error) { return f(pat
 // TestGenericAliases tests Encode
 // on both declarations and uses of type parameterized aliases.
 func TestGenericAliases(t *testing.T) {
-	testenv.NeedsGo1Point(t, 23)
-	skipWindows(t)
-	if testenv.Go1Point() == 23 {
-		testenv.NeedsGoExperiment(t, "aliastypeparams") // testenv.Go1Point() >= 24 implies aliastypeparams=1
-	}
-
 	// High level steps:
 	// * parse  and typecheck
 	// * export the data for the importer (via Encode),
