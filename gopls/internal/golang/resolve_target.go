@@ -243,6 +243,9 @@ func relativeBases(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 // packages in it, as reported by [packagesInDir].
 func packagesAt(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]*metadata.Package, error) {
 	if !isDir(uri) {
+		if err := awaitWorkspaceReload(ctx, snapshot); err != nil {
+			return nil, err
+		}
 		mps, err := snapshot.MetadataForFile(ctx, uri, true)
 		if err != nil {
 			return nil, err

@@ -357,6 +357,112 @@ func _() {
 	})
 }
 
+// TestPackageVariantsDuringReload checks that queries include a package's
+// in-package tests after the load of an importer has restored only the
+// ordinary package.
+//
+// Creating the buffer for hub/gen.go invalidates the metadata of both
+// variants of package hub and of the package that imports it. The hover
+// then loads package use, and with it the ordinary package hub as a
+// dependency. The test variant of hub is still awaiting its reload when
+// the query arrives.
+func TestPackageVariantsDuringReload(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- hub/hub.go --
+package hub
+
+type I interface{ M() }
+
+func Pulse() int { return beat() }
+
+func beat() int { return 1 }
+-- hub/hub_test.go --
+package hub
+
+type impl struct{}
+
+func (impl) M() {}
+
+var _ = Pulse() + beat()
+-- use/use.go --
+package use
+
+import "mod.com/hub"
+
+var _ = hub.Pulse()
+`
+
+	run := func(name string, query func(t *testing.T, env *Env)) {
+		t.Run(name, func(t *testing.T) {
+			WithOptions(
+				// Diagnosing the change would complete the reload,
+				// so keep that from happening during the test.
+				Settings{"diagnosticsDelay": "10m"},
+			).Run(t, files, func(t *testing.T, env *Env) {
+				env.OpenFile("hub/hub.go")
+				env.OpenFile("use/use.go")
+				env.CreateBuffer("hub/gen.go", "//go:build ignore\n\npackage hub\n")
+				env.Hover(env.RegexpSearch("use/use.go", "Pulse"))
+				query(t, env)
+			})
+		})
+	}
+
+	refTests := []struct {
+		name, re string
+		want     []string
+	}{
+		{"exported", `func (Pulse)`, []string{"hub/hub.go:5", "hub/hub_test.go:7", "use/use.go:5"}},
+		{"unexported", `func (beat)`, []string{"hub/hub.go:5", "hub/hub.go:7", "hub/hub_test.go:7"}},
+		{"package", `package (hub)`, []string{"hub/hub.go:1", "hub/hub_test.go:1", "use/use.go:3"}},
+	}
+	for _, test := range refTests {
+		run("references/"+test.name, func(t *testing.T, env *Env) {
+			got := fileLocations(env, env.References(env.RegexpSearch("hub/hub.go", test.re)))
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("References(%q) returned unexpected diff (-want +got):\n%s", test.re, diff)
+			}
+		})
+	}
+
+	run("implementations", func(t *testing.T, env *Env) {
+		got := fileLocations(env, env.Implementations(env.RegexpSearch("hub/hub.go", `type (I)`)))
+		want := []string{"hub/hub_test.go:3"}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("Implementations(I) returned unexpected diff (-want +got):\n%s", diff)
+		}
+	})
+
+	renameTests := []struct {
+		name, re, newName string
+		want              map[string]string // file -> line that uses the new name
+	}{
+		{"exported", `func (Pulse)`, "Beat", map[string]string{
+			"hub/hub.go":      "func Beat() int { return beat() }",
+			"hub/hub_test.go": "var _ = Beat() + beat()",
+			"use/use.go":      "var _ = hub.Beat()",
+		}},
+		{"unexported", `func (beat)`, "thump", map[string]string{
+			"hub/hub.go":      "func Pulse() int { return thump() }",
+			"hub/hub_test.go": "var _ = Pulse() + thump()",
+		}},
+	}
+	for _, test := range renameTests {
+		run("rename/"+test.name, func(t *testing.T, env *Env) {
+			env.Rename(env.RegexpSearch("hub/hub.go", test.re), test.newName)
+			for name, want := range test.want {
+				if got := env.FileContent(name); !strings.Contains(got, want) {
+					t.Errorf("after Rename to %q, %s lacks %q:\n%s", test.newName, name, want, got)
+				}
+			}
+		})
+	}
+}
+
 // This is a regression test for Issue #56169, in which interface
 // implementations in vendored modules were not found. The actual fix
 // was the same as for #55995; see TestVendoringInvalidatesMetadata.

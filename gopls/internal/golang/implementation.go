@@ -144,6 +144,9 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 		// enumerate all types within the package that satisfy the
 		// query type, even those defined local to a function.
 		declURI = protocol.URIFromPath(declPosn.Filename)
+		if err := awaitWorkspaceReload(ctx, snapshot); err != nil {
+			return err
+		}
 		declMPs, err := snapshot.MetadataForFile(ctx, declURI, true)
 		if err != nil {
 			return err

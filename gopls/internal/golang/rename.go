@@ -570,6 +570,9 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	// only package we need. (In case you're wondering why
 	// 'references' doesn't also want the widest variant: it
 	// computes the union across all variants.)
+	if err := awaitWorkspaceReload(ctx, snapshot); err != nil {
+		return nil, err
+	}
 	mps, err := snapshot.MetadataForFile(ctx, uri, true)
 	if err != nil {
 		return nil, err
@@ -817,6 +820,9 @@ func renameReceivers(pkg *cache.Package, method *types.Func, newName string, edi
 // selectors used only in an ITV, but life is short. Also sin must be
 // punished.)
 func typeCheckReverseDependencies(ctx context.Context, snapshot *cache.Snapshot, declURI protocol.DocumentURI, transitive bool) ([]*cache.Package, error) {
+	if err := awaitWorkspaceReload(ctx, snapshot); err != nil {
+		return nil, err
+	}
 	variants, err := snapshot.MetadataForFile(ctx, declURI, false)
 	if err != nil {
 		return nil, err

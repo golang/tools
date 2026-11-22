@@ -96,6 +96,16 @@ func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri pro
 	return pkg, pgf, err
 }
 
+// awaitWorkspaceReload waits for pending workspace metadata loads.
+//
+// Call it before collecting the variants of a package with
+// [cache.Snapshot.MetadataForFile]: an inline load of an importer may
+// have restored the ordinary package without its test variants.
+func awaitWorkspaceReload(ctx context.Context, snapshot *cache.Snapshot) error {
+	_, err := snapshot.LoadMetadataGraph(ctx)
+	return err
+}
+
 type (
 	PackageID   = metadata.PackageID
 	PackagePath = metadata.PackagePath
