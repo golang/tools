@@ -30,6 +30,8 @@ package generic
 
 type Any any
 
+type Comparable comparable
+
 type T[A, B any] struct { Left A; Right B }
 
 func (T[P, Q]) m() {}
