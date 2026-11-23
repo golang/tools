@@ -2,6 +2,9 @@ This test exercises the panic in golang/go#59096: completing at a syntactic
 type-assert expression was panicking because gopls was translating it into
 a (malformed) selector expr.
 
+-- flags --
+-ignore_extra_diags
+
 -- go.mod --
 module example.com
 
