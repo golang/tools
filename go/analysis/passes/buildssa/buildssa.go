@@ -71,9 +71,16 @@ func run(pass *analysis.Pass) (any, error) {
 	ssapkg := prog.CreatePackage(pass.Pkg, pass.Files, pass.TypesInfo, false)
 	ssapkg.Build()
 
-	// Compute list of source functions, including literals,
-	// in source order.
 	var funcs []*ssa.Function
+	var addAnons func(f *ssa.Function)
+	addAnons = func(f *ssa.Function) {
+		funcs = append(funcs, f)
+		for _, anon := range f.AnonFuncs {
+			addAnons(anon)
+		}
+	}
+
+	// Collect declared functions and their literals in source order.
 	for _, fn := range allFunctions(pass) {
 		// (init functions have distinct Func
 		// objects named "init" and distinct
@@ -83,15 +90,11 @@ func run(pass *analysis.Pass) (any, error) {
 		if f == nil {
 			panic(fn)
 		}
-
-		var addAnons func(f *ssa.Function)
-		addAnons = func(f *ssa.Function) {
-			funcs = append(funcs, f)
-			for _, anon := range f.AnonFuncs {
-				addAnons(anon)
-			}
-		}
 		addAnons(f)
+	}
+	// Package-level function literals belong to the synthetic initializer.
+	for _, lit := range ssapkg.Func("init").AnonFuncs {
+		addAnons(lit)
 	}
 
 	return &SSA{Pkg: ssapkg, SrcFuncs: funcs}, nil

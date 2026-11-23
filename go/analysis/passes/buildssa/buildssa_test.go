@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 
 	ssainfo := result.(*buildssa.SSA)
 	got := fmt.Sprint(ssainfo.SrcFuncs)
-	want := `[a.Fib (a.T).fib a._ a._]`
+	want := `[a.Fib (a.T).fib a._ a._ a.init$1 a.init$1$1 a.init$2]`
 	if got != want {
 		t.Errorf("SSA.SrcFuncs = %s, want %s", got, want)
 		for _, f := range ssainfo.SrcFuncs {
