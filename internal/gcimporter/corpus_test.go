@@ -108,6 +108,28 @@ var corpusChecks = map[string]func(t *testing.T, decode func(path string, import
 		}
 	},
 
+	"genericaliases": func(t *testing.T, decode func(string, map[string]*types.Package) *types.Package) {
+		// Alias type parameters and alias chains must be preserved (go.dev/issue/68778).
+		pkg := decode("example.com/genericaliases", make(map[string]*types.Package))
+		for name, want := range map[string]string{
+			"A":       "type pkg.A[T any] = *T",
+			"B":       "type pkg.B[R any, S *R] = []S",
+			"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
+			"Named":   "type pkg.Named int",
+			"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
+		} {
+			obj := pkg.Scope().Lookup(name)
+			if obj == nil {
+				t.Errorf("failed to find %q in package %s", name, pkg)
+				continue
+			}
+			got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
+			if got != want {
+				t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
+			}
+		}
+	},
+
 	"aliases": func(t *testing.T, decode func(string, map[string]*types.Package) *types.Package) {
 		// Import c using stubs for a and b (go.dev/issue/68778).
 		pkg := decode("example.com/aliases/c", map[string]*types.Package{
@@ -137,6 +159,14 @@ var corpusChecks = map[string]func(t *testing.T, decode func(path string, import
 			t.Errorf("got imports %v for package c. wanted %v", objs, want)
 		}
 	},
+}
+
+// corpusGoListFailures lists the cases whose packages "go list -export"
+// currently fails to build, with the reason. They are excluded from
+// "go list -export", and their golist mode is skipped.
+var corpusGoListFailures = map[string]string{
+	// TODO(adonovan): delete when cmd/export uses an encoder with the fix.
+	"issue82747": "cmd/export in go1.28 predates the fix for go.dev/issue/82747",
 }
 
 func TestCorpus(t *testing.T) {
@@ -197,6 +227,9 @@ func TestCorpus(t *testing.T) {
 
 			// export data from "go list -export"
 			t.Run("golist", func(t *testing.T) {
+				if reason, ok := corpusGoListFailures[c.name]; ok {
+					t.Skip(reason)
+				}
 				exports := corpus.exports
 				for _, lp := range pkgs {
 					pkg := checked[lp.ImportPath]
@@ -332,7 +365,11 @@ func loadCorpus(t *testing.T) *corpus {
 	tags := build.Default.ReleaseTags
 	goVersion := tags[len(tags)-1] // e.g. "go1.28"
 
-	var uses, patterns []string
+	var (
+		uses           []string
+		patterns       []string // all non-skipped cases
+		exportPatterns []string // ...except corpusGoListFailures
+	)
 	for _, file := range files {
 		ar, err := txtar.ParseFile(file)
 		if err != nil {
@@ -362,7 +399,11 @@ func loadCorpus(t *testing.T) *corpus {
 		}
 		if cc.skip == "" {
 			uses = append(uses, "./"+cc.name)
-			patterns = append(patterns, "example.com/"+cc.name+"/...")
+			pattern := "example.com/" + cc.name + "/..."
+			patterns = append(patterns, pattern)
+			if _, ok := corpusGoListFailures[cc.name]; !ok {
+				exportPatterns = append(exportPatterns, pattern)
+			}
 		}
 		c.cases = append(c.cases, cc)
 	}
@@ -379,7 +420,7 @@ func loadCorpus(t *testing.T) *corpus {
 	}
 
 	c.list = c.goList(t, patterns, "-deps")
-	for _, lp := range c.goList(t, patterns, "-export") {
+	for _, lp := range c.goList(t, exportPatterns, "-export") {
 		c.exports[lp.ImportPath] = lp.Export
 	}
 	return c

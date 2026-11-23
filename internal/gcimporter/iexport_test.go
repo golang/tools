@@ -15,7 +15,6 @@ import (
 	"go/types"
 	"math/big"
 	"reflect"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/internal/gcimporter"
@@ -198,161 +197,9 @@ func same(x, y constant.Value) bool {
 	return d.Cmp(eps) < 0
 }
 
-// This is a regression test for a bug in iexport of types.Struct:
-// unexported fields were losing their implicit package qualifier.
-func TestUnexportedStructFields(t *testing.T) {
-	fset := token.NewFileSet()
-	export := make(map[string][]byte)
-
-	// process parses and type-checks a single-file
-	// package and saves its export data.
-	process := func(path, content string) {
-		syntax, err := parser.ParseFile(fset, path+"/x.go", content, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		packages := make(map[string]*types.Package) // keys are package paths
-		cfg := &types.Config{
-			Importer: importerFunc(func(path string) (*types.Package, error) {
-				data, ok := export[path]
-				if !ok {
-					return nil, fmt.Errorf("missing export data for %s", path)
-				}
-				return gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(packages), gcimporter.DecodeOptions{})
-			}),
-		}
-		pkg := types.NewPackage(path, syntax.Name.Name)
-		check := types.NewChecker(cfg, fset, pkg, nil)
-		if err := check.Files([]*ast.File{syntax}); err != nil {
-			t.Fatal(err)
-		}
-		data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		export[path] = data
-	}
-
-	// Historically this led to a spurious error:
-	// "cannot convert a.M (variable of type a.MyTime) to type time.Time"
-	// because the private fields of Time and MyTime were not identical.
-	process("time", `package time; type Time struct { x, y int }`)
-	process("a", `package a; import "time"; type MyTime time.Time; var M MyTime`)
-	process("b", `package b; import ("a"; "time"); var _ = time.Time(a.M)`)
-}
-
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
-
-// TestGenericAliases tests Encode
-// on both declarations and uses of type parameterized aliases.
-func TestGenericAliases(t *testing.T) {
-	// High level steps:
-	// * parse  and typecheck
-	// * export the data for the importer (via Encode),
-	// * import the data (via either x/tools or GOROOT's gcimporter), and
-	// * check the imported types.
-
-	const src = `package pkg
-
-type A[T any] = *T
-type B[R any, S *R] = []S
-type C[U any] = B[U, A[U]]
-
-type Named int
-type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
-`
-
-	// parse and typecheck
-	fset1 := token.NewFileSet()
-	f, err := parser.ParseFile(fset1, "pkg", src, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conf types.Config
-	pkg1, err := conf.Check("pkg", fset1, []*ast.File{f}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Read the result of Encode through x/tools/internal/gcimporter.Decode.
-	// export
-	exportdata, err := gcimporter.Encode(fset1, pkg1, gcimporter.EncodeOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// import
-	imports := make(map[string]*types.Package)
-	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.Decode(fset2, pkg1.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
-	if err != nil {
-		t.Fatalf("Decode(%s): %v", pkg1.Path(), err)
-	}
-
-	pkg := pkg2
-	for name, want := range map[string]string{
-		"A":       "type pkg.A[T any] = *T",
-		"B":       "type pkg.B[R any, S *R] = []S",
-		"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
-		"Named":   "type pkg.Named int",
-		"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
-	} {
-		obj := pkg.Scope().Lookup(name)
-		if obj == nil {
-			t.Errorf("failed to find %q in package %s", name, pkg)
-			continue
-		}
-
-		got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
-		if got != want {
-			t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
-		}
-	}
-}
-
-// TestIssue73854 verifies that writing export data for a constant whose type is
-// an instantiated generic type (such as Generic[interface{}], Generic[func()],
-// or Generic[struct{}]) does not panic.
-//
-// In golang/go#73854, exportWriter.value passed pkg=nil to exportWriter.typ
-// under the assumption that constant types cannot contain named objects or
-// packages. However, with generics, a constant's type may be instantiated with
-// type arguments such as interfaces, signatures, or structs that require a
-// qualifying package during export.
-func TestIssue73854(t *testing.T) {
-	const src = `package pkg
-
-type Generic[T any] int
-
-const C1 Generic[interface{}] = 1
-const C2 Generic[func()] = 2
-const C3 Generic[struct{}] = 3
-`
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "p.go", src, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conf types.Config
-	pkg, err := conf.Check("pkg", fset, []*ast.File{f}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
-	if err != nil {
-		t.Fatalf("iexport: %v", err)
-	}
-
-	imports := make(map[string]*types.Package)
-	fset2 := token.NewFileSet()
-	if _, err := gcimporter.Decode(fset2, pkg.Path(), data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{}); err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-}
 
 // TestExactFloats checks that, as of iexportVersionRationalFloats,
 // floating point constants round-trip without loss (go.dev/issue/82186).

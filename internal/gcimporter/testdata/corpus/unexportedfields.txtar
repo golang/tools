@@ -1,0 +1,34 @@
+Unexported struct fields must retain their implicit package qualifier.
+Historically this led to a spurious error in b: "cannot convert a.M
+(variable of type a.MyTime) to type time.Time", because the private
+fields of Time and MyTime were not identical (CL 445097). Formerly
+TestUnexportedStructFields.
+
+-- go.mod --
+module example.com/unexportedfields
+
+go 1.26
+
+-- time/time.go --
+package time
+
+type Time struct{ x, y int }
+
+-- a/a.go --
+package a
+
+import "example.com/unexportedfields/time"
+
+type MyTime time.Time
+
+var M MyTime
+
+-- b/b.go --
+package b
+
+import (
+	"example.com/unexportedfields/a"
+	"example.com/unexportedfields/time"
+)
+
+var _ = time.Time(a.M)

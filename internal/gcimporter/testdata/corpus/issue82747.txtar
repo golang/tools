@@ -1,0 +1,51 @@
+Interface methods declared in another package must be qualified by
+their declaring package, so that c type-checks against the decoded
+a and b (go.dev/issue/82747). Formerly
+TestCrossPackageDefinedInterfaceMethods.
+
+-- go.mod --
+module example.com/issue82747
+
+go 1.26
+
+-- a/a.go --
+package a
+
+type AI interface {
+	m()
+}
+
+type GI[T any] interface {
+	gm(T)
+}
+
+type Impl struct{}
+
+func (Impl) m()     {}
+func (Impl) gm(int) {}
+
+-- b/b.go --
+package b
+
+import "example.com/issue82747/a"
+
+type BI a.AI
+type BGI[T any] a.GI[T]
+type Err error
+
+func Accept(BI)             {}
+func AcceptG[T any](BGI[T]) {}
+
+-- c/c.go --
+package c
+
+import (
+	"example.com/issue82747/a"
+	"example.com/issue82747/b"
+)
+
+func F(err b.Err) string {
+	b.Accept(a.Impl{})
+	b.AcceptG[int](a.Impl{})
+	return err.Error()
+}
