@@ -176,7 +176,7 @@ func iimportCommon(fset *token.FileSet, getPackages func([]PackageRef) ([]*types
 
 		fake: fakeFileSet{
 			fset:  fset,
-			files: make(map[string]*fileInfo),
+			files: make(map[fileKey]*fileInfo),
 		},
 	}
 	defer p.fake.setLines() // set lines for files in fset
