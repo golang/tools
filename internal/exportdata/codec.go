@@ -6,7 +6,7 @@
 // The [Encode] function returns an encoding of a [types.Package] that
 // may be decoded by calling [Decode].
 //
-// Issue go.dev/issue/69491 proposes to publish this package
+// Issue https://go.dev/issue/69491 proposes to publish this package
 // in the go1.28 standard library at go/types/exportdata. Once the
 // package exists, this package will delegate to it and eventually
 // wither away.
@@ -27,7 +27,7 @@
 // This package's encoding, historically called "indexed" format, is
 // intentionally not compatible with the "unified" encoding used by
 // the Go compiler. (This avoids constraining the compiler; see
-// go.dev/issue/79427.)
+// https://go.dev/issue/79427.)
 //
 // The encoding is deterministic: if the encoder is applied twice to
 // the same types.Package data structure, both encodings are equal.
@@ -56,10 +56,10 @@
 //
 // The export data used by the Go compiler is also "deep". Because the
 // set of inputs is determined by the package's import dependencies
-// alone, and not on the contents of any file, deep export data suits
-// build systems (such as Bazel) that need to know each action's
-// inputs in advance, for example to distribute them to remote
-// workers.
+// alone, and is not based on the contents of any file, deep export
+// data suits build systems (such as Bazel) that need to know each
+// action's inputs in advance, for example to distribute them to
+// remote workers.
 //
 // By contrast, a shallow encoding describes only the objects exported
 // from the encoded package; objects from packages that it imports,

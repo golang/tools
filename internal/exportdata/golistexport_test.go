@@ -21,8 +21,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"golang.org/x/tools/internal/testenv"
 )
 
 func needsCompiler(t *testing.T, compiler string) {
@@ -74,7 +72,7 @@ func TestGoListExportStd(t *testing.T) {
 	}
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	// Type-check every package from source, in dependency order.
 	fset, list, checked := loadPackages(t, "std")
@@ -129,7 +127,7 @@ var importedObjectTests = []struct {
 func TestImportedTypes(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	for _, test := range importedObjectTests {
 		obj := importObject(t, test.name)
@@ -154,7 +152,7 @@ func TestImportedTypes(t *testing.T) {
 }
 
 func TestImportedConsts(t *testing.T) {
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	tests := []struct {
 		name string
@@ -174,7 +172,7 @@ func TestImportedConsts(t *testing.T) {
 }
 
 func TestImportedVarKinds(t *testing.T) {
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	check := func(name string, v *types.Var, want types.VarKind) {
 		if got := v.Kind(); got != want {
@@ -253,7 +251,7 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 func TestIssue5815(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	pkg := importStd(t, "strings", nil)
 
@@ -278,7 +276,7 @@ func TestIssue5815(t *testing.T) {
 func TestCorrectMethodPackage(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	imports := make(map[string]*types.Package)
 	importStd(t, "net/http", imports)
@@ -295,7 +293,7 @@ func TestCorrectMethodPackage(t *testing.T) {
 func TestIssue13898(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	needsGoBuild(t) // to find stdlib export data in the build cache
 
 	// import go/internal/gcimporter which imports go/types partially
 	imports := make(map[string]*types.Package)

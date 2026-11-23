@@ -15,42 +15,11 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/go/gcexportdata"
 )
-
-// readExportFile reads the export data file produced by "go list
-// -export" for the package of the specified path.
-//
-// It uses gcexportdata, which supports both the compiler's unified
-// export data (produced by go list -export until go1.27) and indexed
-// export data (since go1.28). It is the only part of TestCorpus that
-// is specific to x/tools.
-func readExportFile(t *testing.T, fset *token.FileSet, imports map[string]*types.Package, path, filename string) *types.Package {
-	t.Helper()
-	if filename == "" {
-		t.Fatalf("no export data for %s", path)
-	}
-	f, err := os.Open(filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	r, err := gcexportdata.NewReader(f)
-	if err != nil {
-		t.Fatalf("reading export data for %s: %v", path, err)
-	}
-	pkg, err := gcexportdata.Read(r, fset, imports, path)
-	if err != nil {
-		t.Fatalf("reading export data for %s: %v", path, err)
-	}
-	return pkg
-}
 
 // A listPackage holds the subset of "go list -json" output that we need.
 type listPackage struct {
@@ -79,7 +48,11 @@ func goList(dir string, env, flags, patterns []string) ([]*listPackage, error) {
 	args := append([]string{"list", "-json"}, flags...)
 	args = append(args, "--")
 	args = append(args, patterns...)
-	cmd := exec.Command("go", args...)
+	gocmd, err := goTool()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(gocmd, args...)
 	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), env...)
 	cmd.Stderr = new(strings.Builder)

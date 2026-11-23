@@ -14,18 +14,16 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"unsafe"
 
 	"golang.org/x/tools/internal/exportdata"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TestStd checks the codec on every package of the standard library
-// (and of x/tools, where available), in deep and shallow modes.
+// (and others; see stdTestPatterns), in deep and shallow modes.
 //
 // Each package is type-checked from source, using packages decoded
 // from the export data of its dependencies (as produced by this
@@ -38,7 +36,7 @@ func TestStd(t *testing.T) {
 	if isRace {
 		t.Skipf("stdlib tests take too long in race mode and flake on builders")
 	}
-	testenv.NeedsTool(t, "go")
+	needsGoTool(t)
 
 	// Decoding rapidly consumes FileSet address space,
 	// so disable the test on 32-bit machines.
@@ -46,16 +44,7 @@ func TestStd(t *testing.T) {
 		t.Skip("skipping test on 32-bit machine")
 	}
 
-	patterns := []string{"std"}
-	minPkgs := 225 // 'GOOS=plan9 go1.18 list std | wc -l' reports 228; most other platforms have more.
-	switch runtime.GOOS {
-	case "android", "ios":
-		// The go_.*_exec script for mobile builders only copies over the source tree
-		// for the package under test.
-	default:
-		patterns = append(patterns, "golang.org/x/tools/...")
-		minPkgs += 160 // At the time of writing, 'GOOS=plan9 go list ./... | wc -l' reports 188.
-	}
+	patterns, minPkgs := stdTestPatterns()
 	fset, list, checked := loadPackages(t, patterns...)
 	if len(list) < minPkgs {
 		t.Errorf("too few packages (%d) were loaded", len(list))
@@ -270,7 +259,7 @@ func checkPositionFidelity(t *testing.T, fset *token.FileSet, pkg *types.Package
 // each package of the standard library, as gopls does after
 // type-checking a package.
 func BenchmarkEncodeShallow(b *testing.B) {
-	testenv.NeedsTool(b, "go")
+	needsGoTool(b)
 
 	fset, list, checked := loadPackages(b, "std")
 

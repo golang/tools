@@ -23,14 +23,13 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/exportdata"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TestRoundTripTypeparamTests round-trips each file of
 // $GOROOT/test/typeparam through Encode and Decode, and compares the
 // result with the package type-checked from source.
 func TestRoundTripTypeparamTests(t *testing.T) {
-	testenv.NeedsGOROOTDir(t, "test")
+	needsGOROOTDir(t, "test")
 
 	// Check go files in test/typeparam.
 	rootDir := filepath.Join(runtime.GOROOT(), "test", "typeparam")

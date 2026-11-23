@@ -12,13 +12,11 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"go/types"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 
 	"golang.org/x/tools/internal/exportdata"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TestEncodeDecode checks superficial aspects of the Encode/Decode
@@ -253,11 +251,6 @@ const (
 				name, got, want, got.ExactString(), want.ExactString())
 		}
 	}
-}
-
-func TestMain(m *testing.M) {
-	testenv.ExitIfSmallMachine()
-	os.Exit(m.Run())
 }
 
 func TestIssue61561(t *testing.T) {

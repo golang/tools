@@ -14,7 +14,7 @@ package exportdata_test
 //     and decoded in deep mode by this package's codec.
 //   - shallow: likewise, but in shallow mode.
 //   - golist: the package's export data is obtained from "go list
-//     -export" and read by gcexportdata.Read. With go1.27 and
+//     -export" and read by readExportFile. With go1.27 and
 //     earlier, this is the compiler's unified export data, read by
 //     the legacy reader; since go1.28, it is indexed export data
 //     produced by cmd/export, read by Decode.
@@ -48,8 +48,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/exportdata"
-	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/txtar"
 )
 
 // corpusChecks holds additional assertions for some corpus cases,
@@ -164,7 +162,7 @@ var corpusGoListFailures = map[string]string{
 }
 
 func TestCorpus(t *testing.T) {
-	testenv.NeedsGoBuild(t)
+	needsGoBuild(t)
 
 	corpus := loadCorpus(t)
 
@@ -321,7 +319,7 @@ func loadCorpus(t *testing.T) *corpus {
 		exportPatterns []string // ...except corpusGoListFailures
 	)
 	for _, file := range files {
-		ar, err := txtar.ParseFile(file)
+		ar, err := parseTxtarFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}

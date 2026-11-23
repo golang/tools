@@ -68,6 +68,7 @@ func ExampleRead() {
 	posn := fset.Position(println.Pos())
 	// make example deterministic
 	posn.Line = 123
+	posn.Column = 1 // export data from older toolchains lacks columns
 	fmt.Printf("Println location:   %s\n", slashify(posn))
 
 	// Output:
@@ -104,11 +105,13 @@ const serverError rpc.ServerError = ""
 
 	// object from imported package
 	pi := packages["net/rpc"].Scope().Lookup("ServerError")
+	piPosn := fset.Position(pi.Pos())
+	piPosn.Column = 1 // export data from older toolchains lacks columns
 	fmt.Printf("type %s.%s %s // %s\n",
 		pi.Pkg().Path(),
 		pi.Name(),
 		pi.Type().Underlying(),
-		slashify(fset.Position(pi.Pos())),
+		slashify(piPosn),
 	)
 
 	// object in source package

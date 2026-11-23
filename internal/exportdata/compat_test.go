@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/exportdata"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // producers records each supported producer of export data and the
@@ -78,7 +77,7 @@ var allowedVersions = []int{0, 1, 2, 3, 5}
 // longer support old versions.
 func TestCompatibility(t *testing.T) {
 	// The reference package uses generic methods.
-	testenv.NeedsGo1Point(t, 27)
+	needsGo1Point(t, 27)
 
 	fset, dep, ref := loadGoldenReference(t)
 
