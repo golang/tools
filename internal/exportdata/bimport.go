@@ -14,6 +14,15 @@ import (
 	// This package is dependency-restricted; see x/tools/go/gcexportdata.TestDeps.
 )
 
+const (
+	// Enable debug during development: it adds some additional checks, and
+	// prevents errors from being recovered.
+	debug = false
+
+	// If trace is set, debugging output is printed to std out.
+	trace = false
+)
+
 func errorf(format string, args ...any) {
 	panic(fmt.Sprintf(format, args...))
 }

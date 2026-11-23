@@ -40,8 +40,6 @@
 //
 //     FileIndex []fileOff // since iexportVersionFullPos
 //
-//     Fingerprint [8]byte
-//
 // uvarint (or varint) means a uint64 (or int64) written out using
 // uvarint (or varint) encoding; bool means a uvarint 0 or 1.
 //
