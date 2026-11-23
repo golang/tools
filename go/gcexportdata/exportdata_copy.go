@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-// The declarations in this file are copied from internal/gcimporter.
+// The declarations in this file are copied from internal/exportdata.
 
 const (
 	// Enable debug during development: it adds some additional checks, and

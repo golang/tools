@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 )
 
 func main() {
@@ -54,7 +54,7 @@ func main() {
 	ref := pkgs[0]
 
 	for _, shallow := range []bool{false, true} {
-		data, err := gcimporter.Encode(ref.Fset, ref.Types, gcimporter.EncodeOptions{Shallow: shallow})
+		data, err := exportdata.Encode(ref.Fset, ref.Types, exportdata.EncodeOptions{Shallow: shallow})
 		if err != nil {
 			log.Fatal(err)
 		}

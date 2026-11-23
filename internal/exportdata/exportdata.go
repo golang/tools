@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package gcimporter implements the indexed export data codec.
+// Package exportdata implements the indexed export data codec.
 //
 // The encoding is deterministic: if the encoder is applied twice to
 // the same types.Package data structure, both encodings are equal.
@@ -19,7 +19,7 @@
 // This package exposes the same API as the standard
 // go/types/exportdata package proposed in https://go.dev/issue/69491.
 // TODO(adonovan): update all the commentary.
-package gcimporter
+package exportdata
 
 const (
 	// Enable debug during development: it adds some additional checks, and

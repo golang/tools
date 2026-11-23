@@ -49,7 +49,7 @@ import (
 	"io"
 	"os/exec"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 )
 
 // Find returns the name of an object (.o) or archive (.a) file
@@ -180,7 +180,7 @@ func Read(in io.Reader, fset *token.FileSet, imports map[string]*types.Package, 
 			// indexed, produced by cmd/compile till go1.19,
 			// and also by [Write]. Starting with go1.28,
 			// go list -export runs cmd/export, which emits this format.
-			return gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+			return exportdata.Decode(fset, path, data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 
 		case 'u':
 			// unified, produced by cmd/compile since go1.20.
@@ -204,7 +204,7 @@ func Write(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
 		// in which case position information is missing.
 		fset = token.NewFileSet()
 	}
-	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{})
 	if err != nil {
 		return err
 	}

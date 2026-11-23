@@ -4,7 +4,7 @@
 
 //go:build race
 
-package gcimporter_test
+package exportdata_test
 
 func init() {
 	isRace = true

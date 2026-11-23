@@ -310,7 +310,7 @@
 // which has no compatibility guarantee, used an encoding that is no
 // longer supported.)
 
-package gcimporter
+package exportdata
 
 import (
 	"bytes"
@@ -1813,7 +1813,7 @@ func (q *objQueue) popHead() types.Object {
 // internalError represents an error generated inside this package.
 type internalError string
 
-func (e internalError) Error() string { return "gcimporter: " + string(e) }
+func (e internalError) Error() string { return "exportdata: " + string(e) }
 
 // TODO(adonovan): make this call panic, so that it's symmetric with errorf.
 // Otherwise it's easy to forget to do anything with the error.

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file tests the type paths of shallow export data.
 
@@ -13,7 +13,7 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 )
 
 // TestShallowTypePaths checks that shallow export data preserves the
@@ -90,7 +90,7 @@ var W2 = a.VG.X
 	}
 	export := func(pkg *types.Package) []byte {
 		t.Helper()
-		data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{Shallow: true})
+		data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{Shallow: true})
 		if err != nil {
 			t.Fatalf("export %s: %v", pkg.Path(), err)
 		}
@@ -98,7 +98,7 @@ var W2 = a.VG.X
 	}
 	import_ := func(data []byte, path string, imports map[string]*types.Package) *types.Package {
 		t.Helper()
-		pkg, err := gcimporter.Decode(fset, path, data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+		pkg, err := exportdata.Decode(fset, path, data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 		if err != nil {
 			t.Fatalf("import %s: %v", path, err)
 		}

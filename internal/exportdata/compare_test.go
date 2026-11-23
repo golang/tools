@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines helpers for comparing decoded packages with the originals.
 
@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 )
 
 // fileLine returns the file and line (and, optionally, column) of obj.
@@ -300,10 +300,10 @@ func equalTypeParams(x, y *types.TypeParamList) error {
 }
 
 // testPkgData imports a package from export data and compares it with pkg.
-func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportdata []byte) *types.Package {
+func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, data []byte) *types.Package {
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+	pkg2, err := exportdata.Decode(fset2, pkg.Path(), data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Errorf("Decode(%s): %v", pkg.Path(), err)
 	}
@@ -317,7 +317,7 @@ func testPkgData(t *testing.T, fset *token.FileSet, pkg *types.Package, exportda
 // they do for data written by the current encoder (but not, for
 // example, for data written by older versions of cmd/export).
 func testPkg(t *testing.T, fset *token.FileSet, pkg *types.Package, fset2 *token.FileSet, pkg2 *types.Package, exact bool) {
-	if _, err := gcimporter.Encode(fset2, pkg2, gcimporter.EncodeOptions{}); err != nil {
+	if _, err := exportdata.Encode(fset2, pkg2, exportdata.EncodeOptions{}); err != nil {
 		t.Errorf("reexport %q: %v", pkg.Path(), err)
 	}
 
@@ -414,8 +414,8 @@ const mpprec = 512
 
 // same compares non-complex numeric values and reports if they are approximately equal.
 func same(x, y constant.Value) bool {
-	xf := gcimporter.ConstantToFloat(x)
-	yf := gcimporter.ConstantToFloat(y)
+	xf := exportdata.ConstantToFloat(x)
+	yf := exportdata.ConstantToFloat(y)
 	d := new(big.Float).Sub(xf, yf)
 	d.Abs(d)
 	eps := big.NewFloat(1.0 / (1 << (mpprec - 1))) // allow for 1 bit of error

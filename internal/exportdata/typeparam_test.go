@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file round-trips the files of $GOROOT/test/typeparam through the codec.
 
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -114,7 +114,7 @@ func testExportSrc(t *testing.T, fset *token.FileSet, imp types.Importer, filena
 	}
 
 	// export
-	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

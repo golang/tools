@@ -1520,7 +1520,7 @@ func objectString(obj types.Object, qual types.Qualifier, declPos token.Pos, fil
 		if recv := sig.Recv(); recv != nil {
 			buf.WriteByte('(')
 			if _, ok := recv.Type().(*types.Interface); ok {
-				// gcimporter creates abstract methods of
+				// exportdata.Decode creates abstract methods of
 				// named interfaces using the interface type
 				// (not the named type) as the receiver.
 				// Don't print it in full.

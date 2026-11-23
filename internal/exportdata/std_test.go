@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines TestStd, which checks the codec on the standard library.
 
@@ -20,7 +20,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -104,9 +104,9 @@ func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, c
 		if err != nil {
 			return nil, err
 		}
-		getPackages := gcimporter.PackagesFromMap(packages)
+		getPackages := exportdata.PackagesFromMap(packages)
 		if shallow {
-			getPackages = func(refs []gcimporter.PackageRef) ([]*types.Package, error) {
+			getPackages = func(refs []exportdata.PackageRef) ([]*types.Package, error) {
 				pkgs := make([]*types.Package, len(refs))
 				for i, ref := range refs {
 					pkg, ok := packages[ref.Path]
@@ -125,7 +125,7 @@ func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, c
 				return pkgs, nil
 			}
 		}
-		return gcimporter.Decode(fset, path, data, getPackages, gcimporter.DecodeOptions{})
+		return exportdata.Decode(fset, path, data, getPackages, exportdata.DecodeOptions{})
 	}
 
 	// Process the packages in parallel, in dependency order.
@@ -180,7 +180,7 @@ func roundTripPackages(t *testing.T, fset *token.FileSet, list []*listPackage, c
 			_ = types.NewChecker(conf, fset, pkg, nil).Files(files) // errors reported above
 
 			// Encode it.
-			data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{Shallow: shallow})
+			data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{Shallow: shallow})
 			if err != nil {
 				t.Errorf("Encode(%s): %v", lp.ImportPath, err)
 				return
@@ -279,7 +279,7 @@ func BenchmarkEncodeShallow(b *testing.B) {
 			if lp.ImportPath == "unsafe" {
 				continue
 			}
-			if _, err := gcimporter.Encode(fset, checked[lp.ImportPath], gcimporter.EncodeOptions{Shallow: true}); err != nil {
+			if _, err := exportdata.Encode(fset, checked[lp.ImportPath], exportdata.EncodeOptions{Shallow: true}); err != nil {
 				b.Fatal(err)
 			}
 		}

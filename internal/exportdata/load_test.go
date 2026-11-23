@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines helpers for loading packages using "go list".
 

@@ -4,7 +4,7 @@
 
 // This file defines small helpers for the encoder and decoder.
 
-package gcimporter
+package exportdata
 
 import (
 	"fmt"

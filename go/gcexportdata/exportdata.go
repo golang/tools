@@ -61,7 +61,7 @@ func findExportData(r *bufio.Reader) (size int64, err error) {
 	// It would be nice to have sanity check that the final bytes after
 	// the export data are indeed the end-of-section marker. The split
 	// of gcexportdata.NewReader and gcexportdata.Read make checking this
-	// ugly so gcimporter gives up enforcing this. The compiler and go/types
+	// ugly so this package gives up enforcing this. The compiler and go/types
 	// importer do enforce this, which seems good enough.
 	const endofsection = "\n$$\n"
 	size -= int64(len(endofsection))

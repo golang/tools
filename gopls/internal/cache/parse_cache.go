@@ -37,7 +37,7 @@ import (
 // spans: the parseCache tracks a monotonic base for newly parsed files.
 //
 // By offsetting the initial base of a FileSet, we can allow other operations
-// accepting the FileSet (such as the gcimporter) to add new files using the
+// accepting the FileSet (such as exportdata.Decode) to add new files using the
 // normal FileSet APIs without overlapping with cached parsed files.
 //
 // Note that 1<<60 represents an exabyte of parsed data, more than any gopls

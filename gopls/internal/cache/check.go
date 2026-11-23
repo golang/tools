@@ -40,7 +40,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/typesinternal"
@@ -436,7 +436,7 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package, enc
 	}
 
 	if p.metadata.PkgPath != "unsafe" { // unsafe cannot be exported
-		exportData, err := gcimporter.Encode(p.pkg.fset, p.pkg.types, gcimporter.EncodeOptions{Shallow: true})
+		exportData, err := exportdata.Encode(p.pkg.fset, p.pkg.types, exportdata.EncodeOptions{Shallow: true})
 		if err != nil {
 			bug.Reportf("exporting package %v: %v", p.metadata.ID, err)
 		} else {
@@ -469,7 +469,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 	importLookup := importLookup(mp, b)
 
 	thisPackage := types.NewPackage(string(mp.PkgPath), string(mp.Name))
-	getPackages := func(refs []gcimporter.PackageRef) ([]*types.Package, error) {
+	getPackages := func(refs []exportdata.PackageRef) ([]*types.Package, error) {
 		pkgs := make([]*types.Package, len(refs))
 		for i, item := range refs {
 			var id PackageID
@@ -582,7 +582,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 		return nil, ctx.Err()
 	}
 
-	imported, err := gcimporter.Decode(b.fset, string(mp.PkgPath), data, getPackages, gcimporter.DecodeOptions{})
+	imported, err := exportdata.Decode(b.fset, string(mp.PkgPath), data, getPackages, exportdata.DecodeOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("import failed for %q: %v", mp.ID, err)
 	}
@@ -650,7 +650,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 
 	// Asynchronously record export data.
 	go func() {
-		exportData, err := gcimporter.Encode(b.fset, pkg, gcimporter.EncodeOptions{Shallow: true})
+		exportData, err := exportdata.Encode(b.fset, pkg, exportdata.EncodeOptions{Shallow: true})
 		if err != nil {
 			// Internal error (issue #71067).
 			event.Error(ctx, "encoding export data failed", err, label.Package.Of(string(ph.mp.ID)))

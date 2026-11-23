@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // The tests in this file read export data for standard packages, as
 // reported by "go list -export". With go1.27 and earlier, this is the

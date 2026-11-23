@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file tests the encoding of positions.
 
@@ -13,7 +13,7 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 )
 
 // TestPositions checks that Encode/Decode faithfully preserve both
@@ -104,12 +104,12 @@ func Fb(a, b int) {}
 	}
 
 	for _, shallow := range []bool{false, true} {
-		data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{Shallow: shallow})
+		data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{Shallow: shallow})
 		if err != nil {
 			t.Fatal(err)
 		}
 		fset2 := token.NewFileSet()
-		pkg2, err := gcimporter.Decode(fset2, "p", data, gcimporter.PackagesFromMap(map[string]*types.Package{}), gcimporter.DecodeOptions{})
+		pkg2, err := exportdata.Decode(fset2, "p", data, exportdata.PackagesFromMap(map[string]*types.Package{}), exportdata.DecodeOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

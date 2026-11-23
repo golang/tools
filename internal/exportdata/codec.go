@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter
+package exportdata
 
 // This file defines the API of the indexed export data codec, in the
 // form proposed for the standard library package go/types/exportdata

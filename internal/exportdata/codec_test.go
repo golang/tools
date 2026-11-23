@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines focused tests of the codec.
 
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -51,7 +51,7 @@ func TestEncodeDecode(t *testing.T) {
 	b := check("b", srcB, map[string]*types.Package{"a": a})
 
 	for _, shallow := range []bool{false, true} {
-		data, err := gcimporter.Encode(fset, b, gcimporter.EncodeOptions{Shallow: shallow})
+		data, err := exportdata.Encode(fset, b, exportdata.EncodeOptions{Shallow: shallow})
 		if err != nil {
 			t.Fatalf("Encode(%v): %v", shallow, err)
 		}
@@ -65,7 +65,7 @@ func TestEncodeDecode(t *testing.T) {
 		if shallow {
 			imports["a"] = a // shallow mode requires complete dependencies
 		}
-		b2, err := gcimporter.Decode(fset, "b", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+		b2, err := exportdata.Decode(fset, "b", data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 		if err != nil {
 			t.Fatalf("Decode(%v): %v", shallow, err)
 		}
@@ -97,7 +97,7 @@ func TestVeryLongFile(t *testing.T) {
 	}
 
 	// export
-	exportdata, err := gcimporter.Encode(fset1, pkg, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(fset1, pkg, exportdata.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestVeryLongFile(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.Decode(fset2, pkg.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+	pkg2, err := exportdata.Decode(fset2, pkg.Path(), data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("BImportData(%s): %v", pkg.Path(), err)
 	}
@@ -184,7 +184,7 @@ func TestAliases(t *testing.T) {
 	// export
 	// Use an empty FileSet here (as gcexportdata.Write does for a nil
 	// one) to confirm that positions not in the FileSet don't panic.
-	exportdata, err := gcimporter.Encode(token.NewFileSet(), pkg1, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(token.NewFileSet(), pkg1, exportdata.EncodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestAliases(t *testing.T) {
 	// import
 	imports := make(map[string]*types.Package)
 	fset2 := token.NewFileSet()
-	pkg2, err := gcimporter.Decode(fset2, pkg1.Path(), exportdata, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+	pkg2, err := exportdata.Decode(fset2, pkg1.Path(), data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("Decode(%s): %v", pkg1.Path(), err)
 	}
@@ -234,11 +234,11 @@ const (
 		t.Fatal(err)
 	}
 
-	data, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{})
 	if err != nil {
 		t.Fatalf("iexport: %v", err)
 	}
-	pkg2, err := gcimporter.Decode(token.NewFileSet(), pkg.Path(), data, gcimporter.PackagesFromMap(make(map[string]*types.Package)), gcimporter.DecodeOptions{})
+	pkg2, err := exportdata.Decode(token.NewFileSet(), pkg.Path(), data, exportdata.PackagesFromMap(make(map[string]*types.Package)), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -289,14 +289,14 @@ type K = StillBad[string]
 	}
 
 	// Export it. (Shallowness isn't important here.)
-	data, err := gcimporter.Encode(fset, pkg1, gcimporter.EncodeOptions{Shallow: true})
+	data, err := exportdata.Encode(fset, pkg1, exportdata.EncodeOptions{Shallow: true})
 	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	pkg2, err := gcimporter.Decode(fset, "p", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+	pkg2, err := exportdata.Decode(fset, "p", data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 	}
@@ -374,14 +374,14 @@ func TestExportInvalid(t *testing.T) {
 
 			// Export it.
 			// (Shallowness isn't important here.)
-			data, err := gcimporter.Encode(fset, pkg1, gcimporter.EncodeOptions{Shallow: true})
+			data, err := exportdata.Encode(fset, pkg1, exportdata.EncodeOptions{Shallow: true})
 			if err != nil {
 				t.Fatalf("export: %v", err) // any failure to export is a bug
 			}
 
 			// Re-import it.
 			imports := make(map[string]*types.Package)
-			pkg2, err := gcimporter.Decode(fset, "p", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+			pkg2, err := exportdata.Decode(fset, "p", data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 			if err != nil {
 				t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 			}
@@ -432,14 +432,14 @@ type T int
 	}
 
 	// Export it.
-	data, err := gcimporter.Encode(fset, lib, gcimporter.EncodeOptions{})
+	data, err := exportdata.Encode(fset, lib, exportdata.EncodeOptions{})
 	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	lib2, err := gcimporter.Decode(fset, "lib", data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+	lib2, err := exportdata.Decode(fset, "lib", data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of export+import is a bug.
 	}

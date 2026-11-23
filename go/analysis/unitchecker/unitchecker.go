@@ -82,8 +82,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/internal/analysis/driverutil"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/facts"
-	"golang.org/x/tools/internal/gcimporter"
 )
 
 // A Config describes a compilation unit to be analyzed.
@@ -411,7 +411,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 		if !ok {
 			return nil, fmt.Errorf("no package vetx file for %q", path)
 		}
-		return gcimporter.Decode(fset, path, entry.types, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+		return exportdata.Decode(fset, path, entry.types, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	})
 
 	tc := &types.Config{
@@ -693,7 +693,7 @@ func readVetxFile(filename string) (*vetxEntry, error) {
 
 func writeVetxFile(fset *token.FileSet, pkg *types.Package, filename string, facts *facts.Set) error {
 	// types
-	typesData, err := gcimporter.Encode(fset, pkg, gcimporter.EncodeOptions{})
+	typesData, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{})
 	if err != nil {
 		return err
 	}

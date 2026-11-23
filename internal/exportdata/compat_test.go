@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines TestCompatibility, which decodes data written by past encoders.
 
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -160,7 +160,7 @@ func TestCompatibility(t *testing.T) {
 				imports[dep.Path()] = dep
 			}
 			fset2 := token.NewFileSet()
-			ref2, err := gcimporter.Decode(fset2, ref.Path(), data, gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+			ref2, err := exportdata.Decode(fset2, ref.Path(), data, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
@@ -297,7 +297,7 @@ func decoderVersions() []int {
 	for v := range 20 {
 		data := binary.AppendUvarint([]byte{'i'}, uint64(v))
 		data = append(data, make([]byte, 64)...) // garbage
-		_, err := gcimporter.Decode(token.NewFileSet(), "p", data, gcimporter.PackagesFromMap(make(map[string]*types.Package)), gcimporter.DecodeOptions{})
+		_, err := exportdata.Decode(token.NewFileSet(), "p", data, exportdata.PackagesFromMap(make(map[string]*types.Package)), exportdata.DecodeOptions{})
 		if err == nil || !strings.Contains(err.Error(), "version") {
 			versions = append(versions, v)
 		}

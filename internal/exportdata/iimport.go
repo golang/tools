@@ -5,7 +5,7 @@
 // Indexed package import.
 // See iexport.go for the export data format.
 
-package gcimporter
+package exportdata
 
 import (
 	"bytes"

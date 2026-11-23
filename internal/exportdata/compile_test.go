@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // The tests in this file run the compiler (go tool compile) directly
 // and read its output, so they work only with go1.27 and earlier.
@@ -98,7 +98,7 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 }
 
 func mktmpdir(t *testing.T) string {
-	tmpdir, err := os.MkdirTemp("", "gcimporter_test")
+	tmpdir, err := os.MkdirTemp("", "exportdata_test")
 	if err != nil {
 		t.Fatal("mktmpdir:", err)
 	}

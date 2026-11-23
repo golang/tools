@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gcimporter_test
+package exportdata_test
 
 // This file defines TestCorpus, which checks export data for a corpus
 // of small test cases, testdata/corpus/*.txtar. Each archive is a
@@ -47,7 +47,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/gcimporter"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
@@ -209,7 +209,7 @@ func TestCorpus(t *testing.T) {
 					// which only self-contained (deep) data permits.
 					if check != nil && !shallow {
 						check(t, func(path string, imports map[string]*types.Package) *types.Package {
-							pkg, err := gcimporter.Decode(token.NewFileSet(), path, exports[path], gcimporter.PackagesFromMap(imports), gcimporter.DecodeOptions{})
+							pkg, err := exportdata.Decode(token.NewFileSet(), path, exports[path], exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 							if err != nil {
 								t.Fatalf("Decode(%s): %v", path, err)
 							}
