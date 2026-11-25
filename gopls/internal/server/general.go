@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moremaps"
@@ -94,7 +95,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			}}
 		}
 	}
+	s.stateMu.Lock()
 	s.pendingFolders = append(s.pendingFolders, folders...)
+	s.stateMu.Unlock()
 
 	var codeActionProvider any = true
 	if ca := params.Capabilities.TextDocument.CodeAction; len(ca.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
@@ -297,16 +300,17 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 		return fmt.Errorf("%w: initialized called while server in %v state", jsonrpc2.ErrInvalidRequest, s.state)
 	}
 	s.state = serverInitialized
+	notifications := s.notifications
+	s.notifications = nil
+	pendingFolders := s.pendingFolders
+	s.pendingFolders = nil
 	s.stateMu.Unlock()
 
-	for _, not := range s.notifications {
+	for _, not := range notifications {
 		s.client.ShowMessage(ctx, not) // ignore error
 	}
-	s.notifications = nil
 
-	s.addFolders(ctx, s.pendingFolders)
-
-	s.pendingFolders = nil
+	s.addFolders(ctx, pendingFolders)
 	s.checkViewGoVersions()
 
 	var registrations []protocol.Registration
@@ -525,7 +529,7 @@ func (s *server) updateWatchedDirectories(ctx context.Context) error {
 // updateServerSideWatcher synchronizes the file watcher's lifecycle with the
 // current session settings (creating, replacing, or closing it as needed)
 // and updates the directories it monitors based on the provided patterns.
-func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
+func (s *server) updateServerSideWatcher(ctx context.Context, patterns set.Set[protocol.RelativePattern]) error {
 	wantMode := s.Options().FileWatcher
 	s.fileWatcherMu.Lock()
 	defer s.fileWatcherMu.Unlock()
@@ -547,15 +551,8 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 		// TODO(hxjiang): ensure gopls don't process events after shutdown.
 		watcherCtx := context.WithoutCancel(ctx)
 		onChange := func(events []protocol.FileEvent) {
-			modifications := make([]file.Modification, len(events))
-			for i, e := range events {
-				modifications[i] = file.Modification{
-					URI:    e.URI,
-					Action: changeTypeToFileAction(e.Type),
-					OnDisk: true,
-				}
-			}
-			if err := s.didModifyFiles(watcherCtx, FromDidChangeWatchedFiles, modifications...); err != nil {
+			modifications := file.EventsToModifications(events)
+			if err := s.didModifyFiles(watcherCtx, FromDidChangeWatchedFiles, modifications...); err != nil && !errors.Is(err, cache.ErrSessionShutdown) {
 				event.Error(watcherCtx, "failed to process file changes", err)
 			}
 		}
@@ -571,10 +568,10 @@ func (s *server) updateServerSideWatcher(ctx context.Context, patterns map[proto
 	}
 
 	// Inv: s.fileWatcher.Mode() == want
-	dirs := make(map[string]struct{})
+	dirs := make(set.Set[string])
 	for pattern := range patterns {
 		if pattern.BaseURI != "" {
-			dirs[pattern.BaseURI.Path()] = struct{}{}
+			dirs.Insert(pattern.BaseURI.Path())
 		}
 	}
 	for dir := range dirs {
@@ -593,7 +590,7 @@ func watchedFilesCapabilityID(id int) string {
 // registerWatchedDirectoriesLocked sends the workspace/didChangeWatchedFiles
 // registrations to the client and updates s.watchedDirectories.
 // The caller must not subsequently mutate patterns.
-func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns map[protocol.RelativePattern]unit) error {
+func (s *server) registerWatchedDirectoriesLocked(ctx context.Context, patterns set.Set[protocol.RelativePattern]) error {
 	if !s.Options().DynamicWatchedFilesSupported {
 		return nil
 	}
@@ -725,11 +722,13 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
 	if s.state == serverInitialized {
+		s.stateMu.Unlock()
 		_ = s.client.ShowMessage(ctx, msg) // ignore error
+		return
 	}
 	s.notifications = append(s.notifications, msg)
+	s.stateMu.Unlock()
 }
 
 func (s *server) handleOptionResult(ctx context.Context, applied []telemetry.CounterPath, optionErrors []error) {
@@ -791,10 +790,16 @@ func (s *server) Shutdown(ctx context.Context) error {
 		event.Log(ctx, "server shutdown without initialization")
 	}
 	if s.state != serverShutDown {
-		// Wait for the webserver (if any) to finish.
+		// Wait for the webserver (if any) to finish, and prevent future [server.getWeb]
+		// calls from starting a new webserver after shutdown.
+		s.webOnce.Do(func() {
+			s.webErr = errors.New("server is shut down")
+		})
 		if s.web != nil {
 			s.web.server.Shutdown(ctx) // ignore error
 		}
+
+		s.watchedFiles.drain()
 
 		s.modificationMu.Lock()
 		if s.cancelPrevDiagnostics != nil {

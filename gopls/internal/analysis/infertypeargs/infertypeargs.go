@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/astutil"
 )
 
 const Doc = `check for unnecessary type arguments in call expressions
@@ -55,7 +55,7 @@ func diagnose(fset *token.FileSet, inspect *inspector.Inspector, start, end toke
 	nodeFilter := []ast.Node{(*ast.CallExpr)(nil)}
 	inspect.Preorder(nodeFilter, func(node ast.Node) {
 		call := node.(*ast.CallExpr)
-		x, lbrack, indices, rbrack := typeparams.UnpackIndexExpr(call.Fun)
+		x, lbrack, indices, rbrack := astutil.UnpackIndexExpr(call.Fun)
 		ident := calledIdent(x)
 		if ident == nil || len(indices) == 0 {
 			return // no explicit args, nothing to do
@@ -81,7 +81,7 @@ func diagnose(fset *token.FileSet, inspect *inspector.Inspector, start, end toke
 				// No longer an index expression: just use the parameterized operand.
 				fun = x
 			} else {
-				fun = typeparams.PackIndexExpr(x, lbrack, indices[:i], indices[i-1].End())
+				fun = astutil.PackIndexExpr(x, lbrack, indices[:i], indices[i-1].End())
 			}
 			newCall := &ast.CallExpr{
 				Fun:      fun,

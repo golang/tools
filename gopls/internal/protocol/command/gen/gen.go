@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -116,7 +117,7 @@ func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}},
 `
 
 type data struct {
-	Imports  map[string]bool
+	Imports  set.Set[string]
 	Commands []*commandmeta.Command
 }
 
@@ -171,23 +172,23 @@ func Generate() ([]byte, error) {
 	}
 	d := data{
 		Commands: cmds,
-		Imports: map[string]bool{
-			"context": true,
-			"fmt":     true,
-			"golang.org/x/tools/gopls/internal/protocol": true,
-		},
+		Imports: set.Of(
+			"context",
+			"fmt",
+			"golang.org/x/tools/gopls/internal/protocol",
+		),
 	}
 	for _, c := range d.Commands {
 		for _, arg := range c.Args {
 			pth := pkgPath(arg.Type)
 			if pth != "" && pth != thispkg {
-				d.Imports[pth] = true
+				d.Imports.Insert(pth)
 			}
 		}
 		if c.Result != nil {
 			pth := pkgPath(c.Result.Type)
 			if pth != "" && pth != thispkg {
-				d.Imports[pth] = true
+				d.Imports.Insert(pth)
 			}
 		}
 	}

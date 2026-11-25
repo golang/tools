@@ -149,10 +149,9 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 
 			// At the top level, dedupe by object.
 			if len(cand.path) == 0 {
-				if c.seen[obj] {
+				if !c.seen.Insert(obj) {
 					continue
 				}
-				c.seen[obj] = true
 			}
 
 			// If obj is not accessible because it lives in another package and is

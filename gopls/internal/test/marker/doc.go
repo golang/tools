@@ -100,6 +100,13 @@ treatment by the test runner:
     file. If present, these files are written to a separate temporary
     directory and GOPROXY is set to file://<proxy directory>.
 
+  - directory "files": any file that ends with "/" is treated as a CWD for the
+    user. These files are only parsed for their comments, so that marker
+    actions can be run from them. What is special about these dir files is that
+    the DocumentURI for any contained marker actions will be a directory
+    instead of a file (ending with "/"). This is especially helpful for testing
+    behaviour when called from the gopls cli. Value markers aren't allowed here.
+
 # Marker types
 
 Markers are of two kinds: "value markers" and "action markers". Value markers
@@ -134,6 +141,10 @@ Here is the list of supported value markers:
     fields. This information is not positional, and therefore @item markers
     may occur anywhere in the source. Use in conjunction with @complete,
     @snippet, or @rank.
+
+  - target(name, pkg, symbol, location): defines a command.TargetMatch value
+    with the given package path, symbol name, and location. Use its name in a
+    @resolvetarget marker to indicate an expected target match.
 
     TODO(rfindley): rethink whether floating @item annotations are the best
     way to specify completion results.
@@ -282,6 +293,17 @@ Here is the list of supported action markers:
 
   - renameerr(location, new, wantError): specifies a renaming that
     fails with an error that matches the expectation.
+
+  - resolvetarget(target, pkgScope string, want ...command.TargetMatch, err=stringMatcher):
+    executes a gopls.resolve_target command for the current document (or
+    directory) with the given target and pkgScope, and checks that the
+    resulting matches equal want. Each element of want is the name of a @target
+    marker. If err is set, the command must fail with the expected error.
+
+    The arguments are given directly to the resolve_target command, so to see
+    the allowed formats of `target` and `pkgScope`, refer to the documentation
+    for [command.Interface.ResolveTarget].
+    TODO: Add link to target query documentation once available.
 
   - signature(location, label, active): specifies that
     signatureHelp at the given location should match the provided string, with

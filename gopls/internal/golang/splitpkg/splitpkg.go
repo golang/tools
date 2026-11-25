@@ -67,6 +67,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -162,6 +163,9 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 					if fn.Signature().Recv() != nil {
 						fn = fn.Origin()
 						_, named := typesinternal.RecvBase(fn)
+						if named == nil {
+							continue // invalid recv (#82906)
+						}
 						name = named.Obj().Name() + "." + name
 					} else if name == "init" {
 						// Disambiguate top-level init functions.
@@ -234,7 +238,7 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
 				kind = "func"
-				if fn, ok := info.Defs[decl.Name].(*types.Func); ok {
+				if fn, ok := info.Defs[decl.Name].(*types.Func); ok && symbols[fn] != nil { // nil => skipped in pass 1
 					symbol := symbols[fn]
 					rc := newCollector(symbol).collect(decl)
 					refs = append(refs, rc.refs...)
@@ -318,10 +322,10 @@ func JSON(pkg *cache.Package, web Web) ([]byte, error) {
 			// inter-component reference
 			m, ok := g[from.component]
 			if !ok {
-				m = make(map[int]bool)
+				m = make(set.Set[int])
 				g[from.component] = m
 			}
-			m[to.component] = true
+			m.Insert(to.component)
 
 			key := [2]int{from.component, to.component}
 			edgeRefs[key] = append(edgeRefs[key], ref)

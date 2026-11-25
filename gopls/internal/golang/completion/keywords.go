@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 const (
@@ -41,7 +42,7 @@ const (
 
 // addKeywordCompletions offers keyword candidates appropriate at the position.
 func (c *completer) addKeywordCompletions() {
-	seen := make(map[string]bool)
+	seen := make(set.Set[string])
 
 	if c.wantTypeName() && c.inference.objType == nil {
 		// If we want a type name but don't have an expected obj type,
@@ -186,12 +187,11 @@ func hasDefaultClause(node ast.Node) bool {
 
 // addKeywordItems dedupes and adds completion items for the specified
 // keywords with the specified score.
-func (c *completer) addKeywordItems(seen map[string]bool, score float64, kws ...string) {
+func (c *completer) addKeywordItems(seen set.Set[string], score float64, kws ...string) {
 	for _, kw := range kws {
-		if seen[kw] {
+		if !seen.Insert(kw) {
 			continue
 		}
-		seen[kw] = true
 
 		if matchScore := c.matcher.Score(kw); matchScore > 0 {
 			c.items = append(c.items, CompletionItem{

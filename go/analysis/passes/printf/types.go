@@ -79,10 +79,6 @@ func (m *argMatcher) match(typ types.Type, topLevel bool) bool {
 		}
 		m.seen[typ] = true
 		ts := typeparams.TypeSetOf(typ)
-		if ts.Empty() {
-			return true // empty type set: vacuously matches
-		}
-
 		if ts.Unrestricted() {
 			// No restrictions on the underlying of typ. Type parameters implementing
 			// error, fmt.Formatter, or fmt.Stringer were handled above, and %v and

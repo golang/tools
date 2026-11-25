@@ -1,0 +1,66 @@
+Recursive type parameter constraints across packages, formerly
+TestRecursiveExport_Issue51219 (go.dev/issue/51219).
+
+-- go.mod --
+module example.com/issue51219
+
+go 1.26
+
+-- a/a.go --
+package a
+
+type Interaction[DataT InteractionDataConstraint] struct {
+}
+
+type InteractionDataConstraint interface {
+	[]byte |
+		UserCommandInteractionData
+}
+
+type UserCommandInteractionData struct {
+	resolvedInteractionWithOptions
+}
+
+type resolvedInteractionWithOptions struct {
+	Resolved Resolved
+}
+
+type Resolved struct {
+	Users ResolvedData[User]
+}
+
+type ResolvedData[T ResolvedDataConstraint] map[uint64]T
+
+type ResolvedDataConstraint interface {
+	User | Message
+}
+
+type User struct{}
+
+type Message struct {
+	Interaction *Interaction[[]byte]
+}
+
+-- b/b.go --
+package b
+
+import (
+	"example.com/issue51219/a"
+)
+
+// InteractionRequest is an incoming request Interaction
+type InteractionRequest[T a.InteractionDataConstraint] struct {
+	a.Interaction[T]
+}
+
+-- p/p.go --
+package p
+
+import (
+	"example.com/issue51219/b"
+)
+
+// ResponseWriterMock mocks corde's ResponseWriter interface
+type ResponseWriterMock struct {
+	x b.InteractionRequest[[]byte]
+}

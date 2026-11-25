@@ -42,6 +42,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -147,7 +148,7 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 	// [Session.SnapshotOf] doesn't work on directories. Thus we check every
 	// view.
 	var result command.ModulesResult
-	seen := map[protocol.DocumentURI]bool{}
+	seen := make(set.Set[protocol.DocumentURI])
 	for _, v := range h.s.session.Views() {
 		s, release, err := v.Snapshot()
 		if err != nil {
@@ -161,10 +162,9 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 			}
 
 			// Deduplicate
-			if seen[modFile] {
+			if !seen.Insert(modFile) {
 				continue
 			}
-			seen[modFile] = true
 
 			fh, err := s.ReadFile(ctx, modFile)
 			if err != nil {
@@ -301,7 +301,7 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 func (h *commandHandler) MaybePromptForTelemetry(ctx context.Context) error {
 	// if the server's TelemetryPrompt is true, it's likely the server already
 	// handled prompting for it. Don't try to prompt again.
-	if !h.s.options.TelemetryPrompt {
+	if !h.s.Options().TelemetryPrompt {
 		go h.s.maybePromptForTelemetry(ctx, true)
 	}
 	return nil
@@ -339,7 +339,7 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 		}
 
 		if show != nil {
-			showDocumentImpl(ctx, c.s.client, protocol.URI(show.URI), &show.Range, c.s.options)
+			showDocumentImpl(ctx, c.s.client, protocol.URI(show.URI), &show.Range, c.s.Options())
 		}
 		return nil
 	})
@@ -432,7 +432,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	if cfg.progress != "" {
 		header := ""
-		if _, ok := c.s.options.SupportedWorkDoneProgressFormats[cfg.progressStyle]; ok && cfg.progressStyle != "" {
+		if c.s.Options().SupportedWorkDoneProgressFormats.Contains(cfg.progressStyle) && cfg.progressStyle != "" {
 			header = fmt.Sprintf("style: %s\n\n", cfg.progressStyle)
 		}
 		deps.work = c.s.progress.Start(ctx, cfg.progress, header+"Running...", c.params.WorkDoneToken, cancel)
@@ -698,7 +698,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		// without checking if the module is tidy.
 		if args.OnlyDiagnostic {
 			return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
-				if err := runGoGetModule(invoke, false, []string{args.ModulePath + "@none"}); err != nil {
+				if err := runGoGetModule(invoke, false, []string{"--", args.ModulePath + "@none"}); err != nil {
 					return err
 				}
 				_, err := invoke("mod", "tidy")
@@ -914,7 +914,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		defer cleanupModDir()
 
 		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NetworkOK, modURI.DirPath(), "list",
-			[]string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
+			[]string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), "--", args.Pkg},
 			"GOWORK=off",
 		)
 		if err != nil {
@@ -932,7 +932,7 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 					return err
 				}
 			}
-			_, err := invoke(append([]string{"get", "-d"}, args.Pkg)...)
+			_, err := invoke("get", "-d", "--", args.Pkg)
 			return err
 		})
 	})
@@ -1045,6 +1045,8 @@ func runGoGetModule(invoke func(...string) (*bytes.Buffer, error), addRequire bo
 			return err
 		}
 	}
+	// args may contain flags, so we cannot insert "--" here;
+	// callers that pass module paths must do so.
 	_, err := invoke(append([]string{"get", "-d"}, args...)...)
 	return err
 }
@@ -1054,13 +1056,27 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 	// `// indirect` comment we may not want. The only way to avoid it
 	// is to add the require as direct first. Then we can use go get to
 	// update go.sum and tidy up.
-	_, err := invoke(append([]string{"mod", "edit", "-require"}, args...)...)
+	//
+	// Each argument is attached to its own -require flag, so that no
+	// argument can be interpreted as a separate flag or as the go.mod
+	// file name. A "--" argument (a separator intended for go get)
+	// is ignored.
+	cmd := []string{"mod", "edit"}
+	for _, arg := range args {
+		if arg == "--" {
+			continue
+		}
+		cmd = append(cmd, "-require="+arg)
+	}
+	_, err := invoke(cmd...)
 	return err
 }
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	args := append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...)
+	// A module path may begin with a dash, so the paths must be
+	// preceded by "--" lest they be interpreted as flags.
+	args := append([]string{"-mod=readonly", "-m", "-u", "-json", "--"}, modules...)
 	inv, cleanup, err := snapshot.GoCommandInvocation(cache.NetworkOK, uri.DirPath(), "list", args)
 	if err != nil {
 		return nil, err
@@ -1297,10 +1313,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 		commandResult.Result = result
 		commandResult.Token = deps.work.Token()
 
-		affecting := make(map[string]bool, len(result.Entries))
+		affecting := make(set.Set[string], len(result.Entries))
 		for _, finding := range result.Findings {
 			if len(finding.Trace) > 1 { // at least 2 frames if callstack exists (vulnerability, entry)
-				affecting[finding.OSV] = true
+				affecting.Insert(finding.OSV)
 			}
 		}
 		if len(affecting) == 0 {
@@ -1331,6 +1347,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 // TODO(golang/vscode-go#3572)
 // TODO(hxjiang): deprecate gopls.run_govulncheck.
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
+	if args.URI == "" {
+		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
+	}
+
 	// Deduplicate the RunGovulncheck command so only one is running at a time.
 	if !c.s.runGovulncheckInProgress.CompareAndSwap(false, true) {
 		c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
@@ -1338,12 +1358,6 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			Message: "A govulncheck scan is already in progress.",
 		})
 		return command.RunVulncheckResult{}, nil
-	}
-
-	defer c.s.runGovulncheckInProgress.Store(false)
-
-	if args.URI == "" {
-		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
 	}
 
 	// Return the workdone token so that clients can identify when this
@@ -1357,6 +1371,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		requireSave: true, // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		defer c.s.runGovulncheckInProgress.Store(false)
 		tokenChan <- deps.work.Token()
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
@@ -1365,10 +1380,10 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 
-		affecting := make(map[string]bool, len(result.Entries))
+		affecting := make(set.Set[string], len(result.Entries))
 		for _, finding := range result.Findings {
 			if len(finding.Trace) > 1 { // at least 2 frames if callstack exists (vulnerability, entry)
-				affecting[finding.OSV] = true
+				affecting.Insert(finding.OSV)
 			}
 		}
 		if len(affecting) == 0 {
@@ -1385,6 +1400,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		return nil
 	})
 	if err != nil {
+		c.s.runGovulncheckInProgress.Store(false)
 		return command.RunVulncheckResult{}, err
 	}
 	select {
@@ -1496,7 +1512,7 @@ func collectViewStats(ctx context.Context, view *cache.View) (command.ViewStats,
 func collectPackageStats(mps []*metadata.Package) command.PackageStats {
 	var stats command.PackageStats
 	stats.Packages = len(mps)
-	modules := make(map[string]bool)
+	modules := make(set.Set[string])
 
 	for _, mp := range mps {
 		n := len(mp.CompiledGoFiles)
@@ -1505,7 +1521,7 @@ func collectPackageStats(mps []*metadata.Package) command.PackageStats {
 			stats.LargestPackage = n
 		}
 		if mp.Module != nil {
-			modules[mp.Module.Path] = true
+			modules.Insert(mp.Module.Path)
 		}
 	}
 	stats.Modules = len(modules)
@@ -1729,18 +1745,17 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 		ctx, done := event.Start(ctx, "commandHandler.DiagnoseFiles")
 		defer done()
 
-		snapshots := make(map[*cache.Snapshot]bool)
+		snapshots := make(set.Set[*cache.Snapshot])
 		for _, uri := range args.Files {
 			fh, snapshot, release, err := c.s.session.FileOf(ctx, uri)
 			if err != nil {
 				return err
 			}
-			if snapshots[snapshot] || snapshot.FileKind(fh) != file.Go {
+			if snapshot.FileKind(fh) != file.Go || !snapshots.Insert(snapshot) {
 				release()
 				continue
 			}
 			defer release()
-			snapshots[snapshot] = true
 		}
 
 		var wg sync.WaitGroup
@@ -1867,7 +1882,7 @@ func (c *commandHandler) ImplementInterface(ctx context.Context, args command.Im
 	}, func(ctx context.Context, deps commandDeps) error {
 		// TODO(hxjiang): consider passing ctx and snapshot to convert functions during
 		// initialization (e.g. via NewDialog), as question conversion often needs file info.
-		d := golang.NewDialog(c.s.options.ClientOptions, params)
+		d := golang.NewDialog(c.s.Options().ClientOptions, params)
 		iface := d.Ask(golang.InterfaceQuestion.WithConvert(golang.ConvertInterface(ctx, deps.snapshot)))
 		if err := d.Check(); err != nil {
 			return err
@@ -1914,7 +1929,7 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		switch args.Modification {
 		case "add":
 			if args.Add == "" && args.AddOptions == "" { // not sure what to add
-				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				d := golang.NewDialog(c.s.Options().ClientOptions, params)
 				tags := d.Ask(golang.AddTagsQuestion)
 				transform := d.Ask(golang.TransformQuestion)
 				if err := d.Check(); err != nil {
@@ -1927,7 +1942,7 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 			}
 		case "remove":
 			if args.Remove == "" && args.RemoveOptions == "" && !args.Clear { // not sure what to remove
-				d := golang.NewDialog(c.s.options.ClientOptions, params)
+				d := golang.NewDialog(c.s.Options().ClientOptions, params)
 				tags := d.Ask(golang.RemoveTagsQuestion)
 				if err := d.Check(); err != nil {
 					return err
@@ -2064,10 +2079,20 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 	err = c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		d := golang.NewDialog(c.s.options.ClientOptions, params)
-		destURI := d.Ask(golang.MoveDeclarationFileQuestion)
-		if err := d.Check(); err != nil {
-			return err
+		var destURI protocol.DocumentURI
+		if args.Destination != "" {
+			// Non-interactive move (from the gopls CLI).
+			var err error
+			destURI, err = golang.MoveDeclarationDest(string(args.Destination))
+			if err != nil {
+				return err
+			}
+		} else {
+			d := golang.NewDialog(c.s.Options().ClientOptions, params)
+			destURI = d.Ask(golang.MoveDeclarationFileQuestion)
+			if err := d.Check(); err != nil {
+				return err
+			}
 		}
 
 		changes, loc, err := golang.MoveDeclaration(ctx, deps.snapshot, deps.fh, destURI, args.Location)
@@ -2076,7 +2101,7 @@ func (c *commandHandler) MoveDeclaration(ctx context.Context, args command.MoveD
 		}
 		movingLoc = loc
 		action = applyEdits{c.s.client, changes}
-		showDocumentImpl(ctx, c.s.client, protocol.URI(movingLoc.URI), &movingLoc.Range, c.s.options)
+		showDocumentImpl(ctx, c.s.client, protocol.URI(movingLoc.URI), &movingLoc.Range, c.s.Options())
 		// Open the file where the declaration was moved to. TODO(hxjiang): This
 		// only works for moves to existing files. For a new file, the edits haven't
 		// been applied yet so the file hasn't been created. How to fix this?
@@ -2110,5 +2135,20 @@ func (c *commandHandler) ResolveTarget(ctx context.Context, args command.Resolve
 		return iv.Location.Range.Start.Line < jv.Location.Range.Start.Line
 	})
 
+	return result, err
+}
+
+func (c *commandHandler) Inspect(ctx context.Context, args command.InspectArgs) (command.InspectResult, error) {
+	var result command.InspectResult
+	err := c.run(ctx, commandConfig{
+		forURI: args.Location.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		res, err := golang.Inspect(ctx, deps.snapshot, deps.fh, args)
+		if err != nil {
+			return err
+		}
+		result = res
+		return nil
+	})
 	return result, err
 }

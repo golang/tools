@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 func TestCaseInsensitiveFilesystem(t *testing.T) {
@@ -171,5 +172,54 @@ func TestIgnoreFilter(t *testing.T) {
 		if got := f.ignored(test.path); got != test.want {
 			t.Errorf("newIgnoreFilter(%q).ignore(%q) = %t, want %t", test.dirs, test.path, got, test.want)
 		}
+	}
+}
+
+func TestConfiguredGO111MODULE(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		file := filepath.Join(dir, name)
+		if err := os.WriteFile(file, []byte(content), 0666); err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	goenvAuto := write("goenv-auto", "GOPROXY=off\nGO111MODULE=auto\n")
+	goenvNone := write("goenv-none", "GOPROXY=off\n")
+	goroot := filepath.Join(dir, "goroot")
+	if err := os.Mkdir(goroot, 0777); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join("goroot", "go.env"), "# comment\nGO111MODULE=on\n")
+
+	tests := []struct {
+		name      string
+		osEnv     string
+		optsEnv   map[string]string
+		goenvFile string
+		goroot    string
+		want      string
+		wantOK    bool
+	}{
+		{"unset", "", nil, goenvNone, "", "", false},
+		{"os env", "auto", nil, goenvNone, "", "auto", true},
+		{"opts overrides os env", "off", map[string]string{"GO111MODULE": "auto"}, goenvNone, "", "auto", true},
+		{"empty opts falls back to file", "off", map[string]string{"GO111MODULE": ""}, goenvAuto, "", "auto", true},
+		{"GOENV file", "", nil, goenvAuto, goroot, "auto", true},
+		{"GOENV=off skips file", "", nil, "off", "", "", false},
+		{"GOROOT go.env", "", nil, goenvNone, goroot, "on", true},
+		{"missing GOENV file", "", nil, filepath.Join(dir, "nonexistent"), "", "", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GO111MODULE", test.osEnv)
+			opts := &settings.Options{}
+			opts.Env = test.optsEnv
+			got, ok := configuredGO111MODULE(opts, test.goenvFile, test.goroot)
+			if got != test.want || ok != test.wantOK {
+				t.Errorf("configuredGO111MODULE() = (%q, %v), want (%q, %v)", got, ok, test.want, test.wantOK)
+			}
+		})
 	}
 }

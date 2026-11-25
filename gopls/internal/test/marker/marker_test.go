@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/gocommand"
@@ -388,7 +389,12 @@ func (m marker) server() protocol.Server { return m.run.env.Editor.Server }
 
 // uri returns the URI of the file containing the marker.
 func (mark marker) uri() protocol.DocumentURI {
-	return mark.run.env.Sandbox.Workdir.URI(mark.run.test.fset.File(mark.note.Pos).Name())
+	fileName := mark.run.test.fset.File(mark.note.Pos).Name()
+	uri := mark.run.env.Sandbox.Workdir.URI(fileName)
+	if strings.HasSuffix(fileName, "/") { // directory
+		uri += "/" // Workdir.URI drops the trailing slash
+	}
+	return uri
 }
 
 // document returns a protocol.TextDocumentIdentifier for the current file.
@@ -403,7 +409,7 @@ func (mark marker) path() string {
 
 // mapper returns a *protocol.Mapper for the current file.
 func (mark marker) mapper() *protocol.Mapper {
-	mapper, err := mark.editor().Mapper(mark.path())
+	mapper, err := mark.run.mapper(mark.path())
 	if err != nil {
 		mark.T().Fatalf("failed to get mapper for current mark: %v", err)
 	}
@@ -492,17 +498,14 @@ func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 		panic(fmt.Sprintf("action marker function %#v cannot have results", ftype))
 	}
 
-	var allowed map[string]bool
+	var allowed set.Set[string]
 	if len(allowedNames) > 0 {
-		allowed = make(map[string]bool)
-		for _, name := range allowedNames {
-			allowed[name] = true
-		}
+		allowed = set.Of(allowedNames...)
 	}
 
 	return func(mark marker) {
 		for name := range mark.note.NamedArgs {
-			if !allowed[name] {
+			if !allowed.Contains(name) {
 				mark.errorf("unexpected named argument %q", name)
 			}
 		}
@@ -658,6 +661,7 @@ type markerTest struct {
 	env          map[string]string             // editor environment
 	proxyFiles   map[string][]byte             // proxy content
 	files        map[string][]byte             // data files from the archive (excluding special files)
+	directories  map[string][]byte             // files to run markers at the directory URI. Should only contain actions.
 	notes        []*expect.Note                // extracted notes from data files
 	golden       map[expect.Identifier]*Golden // extracted golden content, by identifier name
 
@@ -831,19 +835,19 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		return nil, fmt.Errorf("ill-formed '-- filename --' header in comment")
 	}
 	test := &markerTest{
-		name:    name,
-		fset:    token.NewFileSet(),
-		content: content,
-		archive: archive,
-		files:   make(map[string][]byte),
-		golden:  make(map[expect.Identifier]*Golden),
+		name:        name,
+		fset:        token.NewFileSet(),
+		content:     content,
+		archive:     archive,
+		files:       make(map[string][]byte),
+		directories: make(map[string][]byte),
+		golden:      make(map[expect.Identifier]*Golden),
 	}
-	seen := make(map[string]bool)
+	seen := make(set.Set[string])
 	for _, file := range archive.Files {
-		if seen[file.Name] {
+		if !seen.Insert(file.Name) {
 			return nil, fmt.Errorf("duplicate archive section %q", file.Name)
 		}
-		seen[file.Name] = true
 		switch {
 		case file.Name == "skip":
 			reason := strings.ReplaceAll(string(file.Data), "\n", " ")
@@ -914,7 +918,18 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 			}
 
 			test.notes = append(test.notes, notes...)
-			test.files[file.Name] = file.Data
+			if strings.HasSuffix(file.Name, "/") {
+				for _, note := range notes {
+					if _, isValueMarker := valueMarkerFuncs[note.Name]; isValueMarker {
+						return nil, fmt.Errorf(
+							"directory file '%s' contains value marker @%s, only action markers allowed",
+							file.Name, note.Name)
+					}
+				}
+				test.directories[file.Name] = file.Data
+			} else {
+				test.files[file.Name] = file.Data
+			}
 		}
 
 		// Print a warning if we see what looks like "-- filename --"
@@ -926,12 +941,12 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 	}
 
 	// Parse flags after loading files, as they may have been set by the "flags" file.
-	set := test.flagSet()
-	if err := set.Parse(test.flags); err != nil {
+	flags := test.flagSet()
+	if err := flags.Parse(test.flags); err != nil {
 		return nil, fmt.Errorf("parsing flags: %v", err)
 	}
-	if set.NArg() > 0 {
-		return nil, fmt.Errorf("surplus arguments after flags: %q", set.Args())
+	if flags.NArg() > 0 {
+		return nil, fmt.Errorf("surplus arguments after flags: %q", flags.Args())
 	}
 
 	return test, nil
@@ -962,6 +977,8 @@ func formatTest(test *markerTest) ([]byte, error) {
 			arch.Files = append(arch.Files, file)
 		default:
 			if _, ok := test.files[file.Name]; ok { // ordinary file
+				arch.Files = append(arch.Files, file)
+			} else if _, ok := test.directories[file.Name]; ok { // directory
 				arch.Files = append(arch.Files, file)
 			} else if strings.HasPrefix(file.Name, "proxy/") { // proxy file
 				arch.Files = append(arch.Files, file)
@@ -1115,6 +1132,25 @@ func (c *marker) sprintf(format string, args ...any) string {
 	return fmt.Sprintf(format, args2...)
 }
 
+// mapper returns a [protocol.Mapper] for the given file. This will usually be
+// the editor's Mapper for the file, except for marker test specific overrides:
+//   - Directory files, which aren't tracked by the editor, return a mapper
+//     created on the fly.
+func (run *markerTestRun) mapper(fileName string) (*protocol.Mapper, error) {
+	m, err := run.env.Editor.Mapper(fileName)
+	if err != nil {
+		// For fake "directory" files, map on the fly to give a location for a marker.
+		if content, ok := run.test.directories[fileName]; ok {
+			return protocol.NewMapper(run.env.Sandbox.Workdir.URI(fileName), content), nil
+		}
+		// The "/" at the end of the directory path might have been dropped at this point.
+		if content, ok := run.test.directories[fileName+"/"]; ok {
+			return protocol.NewMapper(run.env.Sandbox.Workdir.URI(fileName), content), nil
+		}
+	}
+	return m, err
+}
+
 // fmtPos formats the given pos in the context of the test, using
 // archive-relative paths for files and including the line number in the full
 // archive file.
@@ -1124,7 +1160,7 @@ func (run *markerTestRun) fmtPos(pos token.Pos) string {
 		run.env.TB.Errorf("position %d not in test fileset", pos)
 		return "<invalid location>"
 	}
-	m, err := run.env.Editor.Mapper(file.Name())
+	m, err := run.mapper(file.Name())
 	if err != nil {
 		run.env.TB.Errorf("%s", err)
 		return "<invalid location>"
@@ -1182,13 +1218,14 @@ func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
 // mapLocation returns the relative path and utf8 span of the corresponding
 // location, which must be a valid location in an archive file.
 func (run *markerTestRun) mapLocation(loc protocol.Location) (name string, startLine, startCol, endLine, endCol int) {
-	// Note: Editor.Mapper fails if loc.URI is not open, but we always open all
-	// archive files, so this is probably OK.
+	// Note: Editor.Mapper fails if loc.URI is not open. Special cases:
+	//   - Archive files are always opened, so this is probably OK.
+	//   - Directory files are not open, but are special cased in the mapper.
 	//
 	// In the future, we may want to have the editor read contents from disk if
 	// the URI is not open.
 	name = run.env.Sandbox.Workdir.URIToPath(loc.URI)
-	m, err := run.env.Editor.Mapper(name)
+	m, err := run.mapper(name)
 	if err != nil {
 		run.env.TB.Errorf("internal error: %v", err)
 		return
@@ -1806,13 +1843,7 @@ func foldingRangeMarker(mark marker, g *Golden) {
 		insert(*rng.StartLine, *rng.StartCharacter, fmt.Sprintf("<%d kind=%q>", i, rng.Kind))
 		insert(*rng.EndLine, *rng.EndCharacter, fmt.Sprintf("</%d>", i))
 	}
-	filename := mark.path()
-	mapper, err := env.Editor.Mapper(filename)
-	if err != nil {
-		mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
-		return
-	}
-	got, _, err := protocol.ApplyEdits(mapper, edits)
+	got, _, err := protocol.ApplyEdits(mark.mapper(), edits)
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
@@ -1832,14 +1863,7 @@ func formatMarker(mark marker, golden *Golden) {
 	if err != nil {
 		got = []byte(err.Error() + "\n") // all golden content is newline terminated
 	} else {
-		env := mark.run.env
-		filename := mark.path()
-		mapper, err := env.Editor.Mapper(filename)
-		if err != nil {
-			mark.errorf("Editor.Mapper(%s) failed: %v", filename, err)
-		}
-
-		got, _, err = protocol.ApplyEdits(mapper, edits)
+		got, _, err = protocol.ApplyEdits(mark.mapper(), edits)
 		if err != nil {
 			mark.errorf("ApplyProtocolEdits failed: %v", err)
 			return
@@ -2748,7 +2772,6 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 func resolveTargetMarker(mark marker, target, pkgScope string, want ...command.TargetMatch) {
 
 	wantErr := mark.namedArgFunc("err", convertStringMatcher, stringMatcher{})
-
 	cmd := command.NewResolveTargetCommand("ResolveTarget", command.ResolveTargetParams{
 		TextDocument: mark.document(),
 		Target:       target,
@@ -2815,5 +2838,32 @@ func compareGolden(mark marker, got []byte, g *Golden) {
 	want = normalize(want)
 	if diff := compare.Bytes(want, got); diff != "" {
 		mark.errorf("%s does not match @%s:\n%s", mark.note.Name, g.id, diff)
+	}
+}
+
+// Below are tests on the marker test framework itself
+
+func TestLoadMarkerTest_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name: "dir_with_value_marker",
+			content: `
+-- a/ --
+//@loc(foo, "bar")
+`,
+			wantErr: "directory file 'a/' contains value marker @loc",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := loadMarkerTest(tt.name, []byte(tt.content))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("loadMarkerTest() error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
 	}
 }

@@ -1,0 +1,13 @@
+The method of an interface-typed variable must be imported (go.dev/issue/20046).
+
+-- go.mod --
+module example.com/issue20046
+
+go 1.26
+
+-- p.go --
+package p
+
+var V interface {
+	M()
+}

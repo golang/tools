@@ -86,7 +86,7 @@ func propStar(name string, t NameType, gotype string) (omitempty, indirect bool)
 		if indirect == oind && omitempty == oomit { // no change
 			log.Printf("goplsStar[ {%q, %q} ](%d) useless %v/%v %v/%v", name, t.Name, t.Line, oind, indirect, oomit, omitempty)
 		}
-		usedGoplsStar[prop{name, t.Name}] = true
+		usedGoplsStar.Insert(prop{name, t.Name})
 	}
 
 	return
@@ -106,7 +106,7 @@ func goName(s string) string {
 
 	// renames for temporary GOPLS compatibility
 	if news := goplsType[s]; news != "" {
-		usedGoplsType[s] = true
+		usedGoplsType.Insert(s)
 		s = news
 	}
 	// Names beginning _ are not exported

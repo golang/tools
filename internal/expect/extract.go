@@ -41,36 +41,19 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 		}
 		content = data
 	}
+	if strings.HasSuffix(filename, "/") {
+		// "directory" files (those ending with "/") run marker actions at the
+		// directory level, so also only parse comments, as Go code doesn't
+		// make sense there.
+		return parseOnlyComments(fset, filename, content)
+	}
 
 	switch filepath.Ext(filename) {
 	case ".s":
 		// The assembler uses a custom scanner,
 		// but the go/scanner package is close
 		// enough: we only want the comments.
-		file := fset.AddFile(filename, -1, len(content))
-		var scan goscanner.Scanner
-		scan.Init(file, content, nil, goscanner.ScanComments)
-
-		var notes []*Note
-		for {
-			pos, tok, lit := scan.Scan()
-			if tok == token.EOF {
-				break
-			}
-			if tok == token.COMMENT {
-				text, adjust := getAdjustedNote(lit)
-				if text == "" {
-					continue
-				}
-				parsed, err := parse(file, pos+token.Pos(adjust), text)
-				if err != nil {
-					return nil, err
-				}
-				notes = append(notes, parsed...)
-			}
-		}
-		return notes, nil
-
+		return parseOnlyComments(fset, filename, content)
 	case ".go":
 		// TODO: We should write this in terms of the scanner, like the .s case above.
 		// there are ways you can break the parser such that it will not add all the
@@ -118,6 +101,34 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 		return notes, nil
 	}
 	return nil, nil
+}
+
+// parseOnlyComments collects all notes in a file, but with only scanning for
+// comments in `content`. No actual go code will be parsed.
+func parseOnlyComments(fset *token.FileSet, filename string, content []byte) ([]*Note, error) {
+	file := fset.AddFile(filename, -1, len(content))
+	var scan goscanner.Scanner
+	scan.Init(file, content, nil, goscanner.ScanComments)
+
+	var notes []*Note
+	for {
+		pos, tok, lit := scan.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.COMMENT {
+			text, adjust := getAdjustedNote(lit)
+			if text == "" {
+				continue
+			}
+			parsed, err := parse(file, pos+token.Pos(adjust), text)
+			if err != nil {
+				return nil, err
+			}
+			notes = append(notes, parsed...)
+		}
+	}
+	return notes, nil
 }
 
 // extractModWork collects all the notes present in a go.mod file or go.work

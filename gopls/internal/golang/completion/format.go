@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -177,7 +178,7 @@ Suffixes:
 					free := inferableTypeParams(sig)
 					for i := sig.TypeParams().Len() - 1; i >= 0; i-- {
 						tparam := sig.TypeParams().At(i)
-						if !free[tparam] {
+						if !free.Contains(tparam) {
 							break
 						}
 						tparams = tparams[:i] // eliminate
@@ -429,8 +430,8 @@ func (c *completer) wantTypeParams() bool {
 
 // inferableTypeParams returns the set of type parameters
 // of sig that are constrained by (inferred from) the argument types.
-func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
-	free := make(map[*types.TypeParam]bool)
+func inferableTypeParams(sig *types.Signature) set.Set[*types.TypeParam] {
+	free := make(set.Set[*types.TypeParam])
 
 	// visit adds to free all the free type parameters of t.
 	var visit func(t types.Type)
@@ -478,7 +479,7 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 				visit(field.Type())
 			}
 		case *types.TypeParam:
-			free[t] = true
+			free.Insert(t)
 		case *types.Alias:
 			visit(types.Unalias(t))
 		case *types.Named:
@@ -498,7 +499,7 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 	// Perform induction through constraints.
 restart:
 	for tp := range sig.TypeParams().TypeParams() {
-		if free[tp] {
+		if free.Contains(tp) {
 			n := len(free)
 			visit(tp.Constraint())
 			if len(free) > n {

@@ -15,8 +15,6 @@ go 1.18
 -- c/c.go --
 package c
 
-import "fmt"
-
 type V int
 
 func (V) Method() { }
@@ -39,13 +37,11 @@ func _() {
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
-    fmt.Println(v, vptr)
+    println(v, vptr)
 }
 
 -- @inlineV0/c/c.go --
 package c
-
-import "fmt"
 
 type V int
 
@@ -69,13 +65,11 @@ func _() {
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
-    fmt.Println(v, vptr)
+    println(v, vptr)
 }
 
 -- @inlintVptr/c/c.go --
 package c
-
-import "fmt"
 
 type V int
 
@@ -99,13 +93,11 @@ func _() {
     var vptr *V = &v
     (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (vptr).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
-    fmt.Println(v, vptr)
+    println(v, vptr)
 }
 
 -- @inlintVptrpar/c/c.go --
 package c
-
-import "fmt"
 
 type V int
 
@@ -129,6 +121,6 @@ func _() {
     var vptr *V = &v
     vptr.PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptr)
     (&v).PointerMethod() //@codeaction("vptr", "refactor.inline.variable", result=inlintVptrpar)
-    fmt.Println(v, vptr)
+    println(v, vptr)
 }
 

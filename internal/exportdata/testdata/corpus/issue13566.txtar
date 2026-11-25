@@ -1,0 +1,27 @@
+All indirectly imported packages must have names (go.dev/issue/13566).
+
+-- go.mod --
+module example.com/issue13566
+
+go 1.26
+
+-- a/a.go --
+// Input for TestIssue13566
+
+package a
+
+import "encoding/json"
+
+type A struct {
+	a    *A
+	json json.RawMessage
+}
+
+-- b/b.go --
+// Input for TestIssue13566
+
+package b
+
+import "example.com/issue13566/a"
+
+type A a.A

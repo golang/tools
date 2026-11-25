@@ -10,8 +10,6 @@ go 1.18
 -- c/c.go --
 package c
 
-import "fmt"
-
 func _() {
     v := 13
     v = 78 //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
@@ -23,11 +21,11 @@ func _() {
     v++ //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     v-- //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
 
-    fmt.Println(v)
+    println(v)
 
     x := &v //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     x = (&v) //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
     x = &(v) //@codeaction("v", "refactor.inline.variable", err="0 CodeActions of kind refactor.inline.variable")
 
-    fmt.Println(x)
+    println(x)
 }

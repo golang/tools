@@ -97,10 +97,9 @@ func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 
 // check performs safety checks of the renaming of the 'from' object to r.to.
 func (r *renamer) check(from types.Object) {
-	if r.objsToUpdate[from] {
+	if !r.objsToUpdate.Insert(from) {
 		return
 	}
-	r.objsToUpdate[from] = true
 
 	// NB: order of conditions is important.
 	if from_, ok := from.(*types.PkgName); ok {

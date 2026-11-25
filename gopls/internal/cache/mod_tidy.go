@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/util/memoize"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -401,7 +402,7 @@ func missingModuleDiagnostic(pm *ParsedModule, req *modfile.Require) (*Diagnosti
 	cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 		URI:        pm.Mapper.URI,
 		AddRequire: !req.Indirect,
-		GoCmdArgs:  []string{req.Mod.Path + "@" + req.Mod.Version},
+		GoCmdArgs:  []string{"--", req.Mod.Path + "@" + req.Mod.Version},
 	})
 	return &Diagnostic{
 		URI:            pm.Mapper.URI,
@@ -481,17 +482,17 @@ func missingModuleForImport(pgf *parsego.File, imp *ast.ImportSpec, req *modfile
 // CompiledGoFiles, after cgo processing.)
 //
 // TODO(rfindley): this should key off ImportPath.
-func parseImports(ctx context.Context, s *Snapshot, files []file.Handle) (map[string]bool, error) {
+func parseImports(ctx context.Context, s *Snapshot, files []file.Handle) (set.Set[string], error) {
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Header, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err
 	}
 
-	seen := make(map[string]bool)
+	seen := make(set.Set[string])
 	for _, pgf := range pgfs {
 		for _, spec := range pgf.File.Imports {
 			path, _ := strconv.Unquote(spec.Path.Value)
-			seen[path] = true
+			seen.Insert(path)
 		}
 	}
 	return seen, nil

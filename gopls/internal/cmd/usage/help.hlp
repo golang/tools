@@ -8,3 +8,4 @@ Examples:
 $ gopls help                         # main gopls help message
 $ gopls help remote                  # help on 'remote' command
 $ gopls help remote sessions         # help on 'remote sessions' subcommand
+$ gopls help location                # syntax for file locations

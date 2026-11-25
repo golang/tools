@@ -1,0 +1,99 @@
+Tests for relative pkg path queries in a non-module (GOPATH) view.
+
+-- env --
+GOPATH=$SANDBOX_WORKDIR
+GO111MODULE=off
+
+-- flags --
+-ignore_extra_diags
+
+-- src/root.go --
+package root
+
+-- src/a/a.go --
+package a
+
+import (
+	_ "a/empty/sub"
+	_ "c"
+)
+
+var A = "a" //@target(a_A, "a", "A", "A")
+
+type StructA struct {
+	Field int //@target(a_Field, "a", "Field", "Field")
+}
+
+// Local symbol without pkg specified
+//@resolvetarget("A", "", a_A)
+//@resolvetarget("StructA.Field", "", a_Field)
+
+// Relative to package a ("a/b")
+//@resolvetarget("b.B", "", b_B)
+//@resolvetarget("B", "b", b_B)
+
+// Full GOPATH package path ("c")
+//@resolvetarget("c.C", "", c_C)
+//@resolvetarget("C", "c", c_C)
+
+-- src/a/b/b.go --
+package b
+
+var B = "b" //@target(b_B, "a/b", "B", "B")
+
+-- src/c/c.go --
+package c
+
+var C = "c" //@target(c_C, "c", "C", "C")
+
+-- src/a/ --
+// Directory with a package in GOPATH mode:
+// Local symbol without pkg specified
+//@resolvetarget("A", "", a_A)
+//@resolvetarget("StructA.Field", "", a_Field)
+
+// Relative to package at uri ("a/b", "a/empty/sub")
+//@resolvetarget("b.B", "", b_B)
+//@resolvetarget("B", "b", b_B)
+//@resolvetarget("empty/sub.S", "", sub_S)
+//@resolvetarget("S", "empty/sub", sub_S)
+
+// Same-directory package name ("a")
+//@resolvetarget("a.A", "", a_A)
+//@resolvetarget("A", "a", a_A)
+
+// Full GOPATH package path ("a/b", "c")
+//@resolvetarget("a/b.B", "", b_B)
+//@resolvetarget("c.C", "", c_C)
+
+// Local import path ("./b", "../c")
+//@resolvetarget("./b.B", "", b_B)
+//@resolvetarget("../c.C", "", c_C)
+
+-- src/a/empty/sub/sub.go --
+package sub
+
+var S = "s" //@target(sub_S, "a/empty/sub", "S", "S")
+
+-- src/a/empty/ --
+// Directory without a package in GOPATH mode:
+// Full GOPATH package paths work (Rule 2)
+//@resolvetarget("a.A", "", a_A)
+//@resolvetarget("a/b.B", "", b_B)
+//@resolvetarget("a/empty/sub.S", "", sub_S)
+//@resolvetarget("c.C", "", c_C)
+
+// Local import paths with "./" or "../" work (Rule 1)
+//@resolvetarget("./sub.S", "", sub_S)
+//@resolvetarget("S", "./sub", sub_S)
+//@resolvetarget("../b.B", "", b_B)
+//@resolvetarget("B", "../b", b_B)
+
+// Relative package paths without "./" or "../" from a package-less directory
+// in a non-module view resolve via packagesInDir fallback.
+//@resolvetarget("sub.S", "", sub_S)
+//@resolvetarget("S", "sub", sub_S)
+
+// Unqualified symbol in a directory without a package fails.
+//@resolvetarget("A", "", err="no package metadata for directory")
+

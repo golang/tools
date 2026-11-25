@@ -1,0 +1,44 @@
+A variety of generic declarations, formerly TestGenericExport
+(go.dev/issue/48392).
+
+-- go.mod --
+module example.com/generics
+
+go 1.26
+
+-- generic.go --
+package generic
+
+type Any any
+
+type T[A, B any] struct { Left A; Right B }
+
+func (T[P, Q]) m() {}
+
+var X T[int, string] = T[int, string]{1, "hi"}
+
+func ToInt[P interface{ ~int }](p P) int { return int(p) }
+
+var IntID = ToInt[int]
+
+type G[C comparable] int
+
+func ImplicitFunc[T ~int]() {}
+
+type ImplicitType[T ~int] int
+
+// Exercise constant import/export
+const C1 = 42
+const C2 int = 42
+const C3 float64 = 42
+
+type Constraint[T any] interface {
+       m(T)
+}
+
+// TODO(rfindley): revert to multiple blanks once the restriction on multiple
+// blanks is removed from the type checker.
+// type Blanks[_ any, _ Constraint[int]] int
+// func (Blanks[_, _]) m() {}
+type Blanks[_ any] int
+func (Blanks[_]) m() {}

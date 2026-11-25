@@ -8,9 +8,7 @@ module mod.test/resolvetarget
 
 go 1.25
 
--- query.go --
-package main
-
+-- a/ --
 // Resolves full package path and target name
 //@resolvetarget("mod.test/resolvetarget/a.GopherA", "", GopherA)
 //@resolvetarget("GopherA", "mod.test/resolvetarget/a", GopherA)
@@ -23,12 +21,14 @@ package main
 
 // Subscopes
 //@resolvetarget("mod.test/resolvetarget/a.InterfaceA.MethodOne", "", InterfaceA_MethodOne)
+//@resolvetarget("InterfaceA.MethodOne", "mod.test/resolvetarget/a", InterfaceA_MethodOne)
 //@resolvetarget("mod.test/resolvetarget/b.localStructB.bar", "", localStructB_bar)
 
 // Package not found errors
 //@resolvetarget("mod.test/resolvetarget/notfound", "", err="target mod.test/resolvetarget/notfound is invalid, as it is only a pkg path")
 //@resolvetarget("mod.test/resolvetarget/notfound.a", "", err="package not found: mod.test/resolvetarget/notfound")
 //@resolvetarget("a", "mod.test/resolvetarget/notfound", err="package not found: mod.test/resolvetarget/notfound")
+//@resolvetarget("github.com/unknown/pkg.v2.Symbol", "", err="package not found: github.com/unknown/pkg")
 
 // Target not found errors
 //@resolvetarget("mod.test/resolvetarget/b.NotFound", "", err="target NotFound not found in mod.test/resolvetarget/b")

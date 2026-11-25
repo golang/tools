@@ -7,7 +7,6 @@ package filewatcher_test
 import (
 	"cmp"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/robustio"
 	"golang.org/x/tools/internal/testfiles"
@@ -52,7 +52,7 @@ func TestFileWatcher(t *testing.T) {
 		name           string
 		initWorkspace  string
 		changes        func(root string) error
-		expectedEvents map[protocol.FileEvent]struct{}
+		expectedEvents set.Set[protocol.FileEvent]
 	}{
 		{
 			name: "create file",
@@ -63,7 +63,7 @@ package foo
 			changes: func(root string) error {
 				return os.WriteFile(filepath.Join(root, "bar.go"), []byte("package main"), 0644)
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "bar.go", Type: protocol.Created}: {},
 			},
 		},
@@ -76,7 +76,7 @@ package foo
 			changes: func(root string) error {
 				return os.WriteFile(filepath.Join(root, "foo.go"), []byte("package main // modified"), 0644)
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "foo.go", Type: protocol.Changed}: {},
 			},
 		},
@@ -91,7 +91,7 @@ package bar
 			changes: func(root string) error {
 				return os.Remove(filepath.Join(root, "foo.go"))
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "foo.go", Type: protocol.Deleted}: {},
 			},
 		},
@@ -104,7 +104,7 @@ package foo
 			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo.go"), filepath.Join(root, "bar.go"))
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "foo.go", Type: protocol.Deleted}: {},
 				{URI: "bar.go", Type: protocol.Created}: {},
 			},
@@ -118,7 +118,7 @@ package foo
 			changes: func(root string) error {
 				return os.Mkdir(filepath.Join(root, "bar"), 0755)
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "bar", Type: protocol.Created}: {},
 			},
 		},
@@ -131,7 +131,7 @@ package foo
 			changes: func(root string) error {
 				return os.RemoveAll(filepath.Join(root, "foo"))
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				// We only assert that the directory deletion event exists,
 				// because file system event behavior is inconsistent across
 				// platforms when deleting a non-empty directory.
@@ -152,7 +152,7 @@ package foo
 			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo"), filepath.Join(root, "baz"))
 			},
-			expectedEvents: map[protocol.FileEvent]struct{}{
+			expectedEvents: set.Set[protocol.FileEvent]{
 				{URI: "foo", Type: protocol.Deleted}:        {},
 				{URI: "baz", Type: protocol.Created}:        {},
 				{URI: "baz/bar.go", Type: protocol.Created}: {},
@@ -181,7 +181,7 @@ package foo
 					root := testfiles.CopyToTmp(t, fs)
 
 					var (
-						all      = maps.Clone(tt.expectedEvents)
+						all      = tt.expectedEvents.Clone()
 						foundAll = make(chan struct{})
 
 						gots []protocol.FileEvent
@@ -496,9 +496,9 @@ func TestStress(t *testing.T) {
 				}
 			}
 
-			wants := make(map[protocol.FileEvent]bool)
+			wants := make(set.Set[protocol.FileEvent])
 			want := func(base string, t protocol.FileChangeType) {
-				wants[protocol.FileEvent{URI: protocol.URIFromPath(filepath.Join(root, base)), Type: t}] = true
+				wants.Insert(protocol.FileEvent{URI: protocol.URIFromPath(filepath.Join(root, base)), Type: t})
 			}
 
 			for i := range parallelism {

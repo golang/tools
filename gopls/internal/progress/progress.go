@@ -32,11 +32,11 @@ func NewTracker(client protocol.Client) *Tracker {
 
 // A Tracker reports the progress of a long-running operation to an LSP client.
 type Tracker struct {
-	client                   protocol.Client
-	supportsWorkDoneProgress bool
+	client protocol.Client
 
-	mu         sync.Mutex
-	inProgress map[protocol.ProgressToken]*WorkDone
+	mu                       sync.Mutex
+	supportsWorkDoneProgress bool
+	inProgress               map[protocol.ProgressToken]*WorkDone
 }
 
 // SetSupportsWorkDoneProgress sets whether the client supports "work done"
@@ -46,12 +46,16 @@ type Tracker struct {
 // Also: do we actually need the fall-back progress behavior using ShowMessage?
 // Surely ShowMessage notifications are too noisy to be worthwhile.
 func (t *Tracker) SetSupportsWorkDoneProgress(b bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.supportsWorkDoneProgress = b
 }
 
 // SupportsWorkDoneProgress reports whether the tracker supports work done
 // progress reporting.
 func (t *Tracker) SupportsWorkDoneProgress() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return t.supportsWorkDoneProgress
 }
 
@@ -88,7 +92,7 @@ func (t *Tracker) Start(ctx context.Context, title, message string, token protoc
 		token:  token,
 		cancel: cancel,
 	}
-	if !t.supportsWorkDoneProgress {
+	if !t.SupportsWorkDoneProgress() {
 		// Previous iterations of this fallback attempted to retain cancellation
 		// support by using ShowMessageCommand with a 'Cancel' button, but this is
 		// not ideal as the 'Cancel' dialog stays open even after the command
@@ -181,6 +185,7 @@ func (wd *WorkDone) doCancel() {
 	wd.cancelMu.Lock()
 	defer wd.cancelMu.Unlock()
 	if !wd.cancelled {
+		wd.cancelled = true
 		wd.cancel()
 	}
 }

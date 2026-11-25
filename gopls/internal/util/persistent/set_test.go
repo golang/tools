@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/gopls/internal/util/persistent"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 func TestSet(t *testing.T) {
@@ -126,13 +127,10 @@ func TestSet_Clear(t *testing.T) {
 }
 
 func diff[K constraints.Ordered](got *persistent.Set[K], want []K) string {
-	wantSet := make(map[K]struct{})
-	for _, w := range want {
-		wantSet[w] = struct{}{}
-	}
+	wantSet := set.Of(want...)
 	var diff []string
 	for key := range got.All() {
-		if _, ok := wantSet[key]; !ok {
+		if !wantSet.Contains(key) {
 			diff = append(diff, fmt.Sprintf("+%v", key))
 		}
 	}

@@ -12,9 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/moreslices"
@@ -187,9 +190,24 @@ Command:
 			fmt.Fprintf(w, "  %s\t%s\n", c.Name(), c.ShortHelp())
 		}
 	}
+	if len(helpTopics) > 0 {
+		fmt.Fprint(w, "\t\nAdditional help topics\t\n")
+		for _, name := range slices.Sorted(maps.Keys(helpTopics)) {
+			fmt.Fprintf(w, "  %s\t%s\n", name, helpTopics[name].short)
+		}
+	}
 	fmt.Fprint(w, "\nflags:\n")
 	printFlagDefaults(f)
 	fmt.Fprint(w, "\nFor flags specific to running the language server (such as -listen, -logfile, or -debug), run 'gopls help serve'.\n")
+}
+
+// helpFlagValue is an optional extension to flag.Value that customizes a flag's
+// type placeholder (for example, "-pos=span") and appends type syntax
+// documentation to the flag's help message.
+type helpFlagValue interface {
+	flag.Value
+	HelpType() string
+	HelpString() string
 }
 
 // this is a slightly modified version of flag.PrintDefaults to give us control
@@ -221,6 +239,24 @@ func printFlagDefaults(s *flag.FlagSet) {
 
 		f := entry[0]
 		name, usage := flag.UnquoteUsage(f)
+		if hfv, ok := f.Value.(helpFlagValue); ok {
+			if typ := hfv.HelpType(); typ != "" {
+				name = typ
+			}
+			if extra := hfv.HelpString(); extra != "" {
+				usage = strings.TrimSpace(usage)
+				if usage != "" {
+					// If the existing comment doesn't end on a punctuation,
+					// add a period for separation between sentences.
+					if strings.IndexByte(".!?:;", usage[len(usage)-1]) < 0 {
+						usage += "."
+					}
+					usage += " " + extra
+				} else {
+					usage = extra
+				}
+			}
+		}
 		if len(name) > 0 {
 			b.WriteString("=")
 			b.WriteString(name)
@@ -311,6 +347,7 @@ func (app *application) featureCommands() []command {
 		&inspect{app: app},
 		newRemote(app),
 		&links{app: app},
+		&moveDecl{app: app},
 		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
@@ -846,6 +883,16 @@ func updateFile(filename string, old, new []byte, edits []diff.Edit, flags *Edit
 
 		if new != nil {
 			// create or edit
+			if old == nil {
+				// Create the file, first creating the file's directory if it does not exist (e.g. a
+				// new package created by move_decl).
+				// TODO(mkalil): investigate how this affects the "rename" cli
+				// command, specifically for package renames that result in
+				// renaming directories.
+				if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
+					return err
+				}
+			}
 			if err := os.WriteFile(filename, new, 0666); err != nil {
 				return err
 			}
@@ -900,7 +947,7 @@ func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDi
 	// command with support for textDocument/diagnostic,
 	// so that we don't need to do this de-duplication.
 	type key [6]any
-	seen := make(map[key]bool)
+	seen := make(set.Set[key])
 	out := file.diagnostics[:0]
 	for _, d := range file.diagnostics {
 		var codeHref string
@@ -908,8 +955,7 @@ func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDi
 			codeHref = desc.Href
 		}
 		k := key{d.Range, d.Severity, d.Code, codeHref, d.Source, d.MessageString()}
-		if !seen[k] {
-			seen[k] = true
+		if seen.Insert(k) {
 			out = append(out, d)
 		}
 	}

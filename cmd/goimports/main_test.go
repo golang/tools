@@ -5,9 +5,11 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/internal/modindex"
@@ -105,5 +107,48 @@ func TestCmd(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Errorf("goimports -w %s failed: got %s, want %s", fname, got, want)
+	}
+}
+
+// TestDiff verifies that -d needs neither temporary files nor a diff command.
+func TestDiff(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	oldList, oldWrite, oldDiff, oldOptions := *list, *write, *doDiff, *options
+	*list, *write, *doDiff = false, false, true
+	options.FormatOnly = true
+	t.Cleanup(func() {
+		*list, *write, *doDiff, *options = oldList, oldWrite, oldDiff, oldOptions
+	})
+
+	// Include a missing final newline and a line that needs a tab.
+	src := "package p\n\nfunc f() {\nprintln(1)\n}"
+	const want = "diff -u dir/input file.go.orig dir/input file.go\n" +
+		"--- dir/input file.go.orig\t\n" +
+		"+++ dir/input file.go\t\n" +
+		"@@ -1,5 +1,5 @@\n" +
+		" package p\n" +
+		" \n" +
+		" func f() {\n" +
+		"-println(1)\n" +
+		"-}\n" +
+		"\\ No newline at end of file\n" +
+		"+\tprintln(1)\n" +
+		"+}\n"
+	for _, test := range []struct {
+		filename string
+		argType  argumentType
+		wantDiff string
+	}{
+		{filepath.Join("dir", "input file.go"), singleArg, want},
+		{"<standard input>", fromStdin, strings.ReplaceAll(want, "dir/input file.go", "stdin.go")},
+	} {
+		var out bytes.Buffer
+		if err := processFile(test.filename, strings.NewReader(src), &out, test.argType); err != nil {
+			t.Fatal(err)
+		}
+		if got := out.String(); got != test.wantDiff {
+			t.Errorf("goimports -d %s:\ngot:\n%s\nwant:\n%s", test.filename, got, test.wantDiff)
+		}
 	}
 }

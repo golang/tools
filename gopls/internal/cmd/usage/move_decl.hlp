@@ -1,0 +1,21 @@
+move the target's declaration to another file
+
+Usage:
+  gopls [flags] move_decl [move_decl-flags] <target> <file>
+
+Moves the declaration of the target (a top-level func, type, method, var, or const)
+to the specified file, along with any dependent declarations that must move with
+it, and updates references and imports accordingly. The destination file and its
+package are created if they do not exist. Unlike other commands that
+edit files, move_decl does not support the -write, -diff, and -list
+flags; it always writes the edited files directly.
+
+Examples:
+	$ gopls move_decl example.com/a.Foo b/b.go
+	$ gopls move_decl -pkg example.com/a Foo b/b.go
+
+move_decl-flags:
+  -pkg=string
+    	scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains.
+  -pos=location
+    	targets a file span. Run 'gopls help location' for accepted location syntax.

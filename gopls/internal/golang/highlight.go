@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
@@ -211,16 +212,10 @@ func highlightPrintf(call *ast.CallExpr, idx int, start, end token.Pos, lit *ast
 
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		var (
-			rng       astutil.Range
-			withinRng bool
-		)
-		rng, err = astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
-		if err != nil {
-			return
-		}
+		rng := astutil.RangeInStringLiteral(lit, rang.Start, rang.End)
 		visited[rng] = argIndex
 
+		var withinRng bool
 		if start == end {
 			// End pos can't equal to range's end, otherwise the two neighborhood
 			// such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
@@ -355,7 +350,7 @@ loop:
 	// of the function, including the "return" and "func" keywords.
 	funcEnd := funcType.Func + token.Pos(len("func"))
 	highlightAll := cur.Node() == returnStmt || inSpan(funcType.Func, funcEnd)
-	var highlightIndexes map[int]bool
+	var highlightIndexes set.Set[int]
 
 	if highlightAll {
 		// Add the "func" part of the func declaration.
@@ -367,11 +362,11 @@ loop:
 		// specific result indexes to highlight. This may be more than one index if
 		// the cursor is on a multi-name result field, but not in any specific name.
 		if !highlightAll {
-			highlightIndexes = make(map[int]bool)
+			highlightIndexes = make(set.Set[int])
 			if returnStmt != nil {
 				for i, n := range returnStmt.Results {
 					if inNode(n) {
-						highlightIndexes[i] = true
+						highlightIndexes.Insert(i)
 						break
 					}
 				}
@@ -386,9 +381,9 @@ loop:
 			findField:
 				for _, field := range funcType.Results.List {
 					for j, name := range field.Names {
-						if inNode(name) || highlightIndexes[i+j] {
+						if inNode(name) || highlightIndexes.Contains(i+j) {
 							highlightNode(result, name, protocol.Text)
-							highlightIndexes[i+j] = true
+							highlightIndexes.Insert(i + j)
 							break findField // found/highlighted the specific name
 						}
 					}
@@ -401,12 +396,12 @@ loop:
 					//
 					// ...where it would make more sense to highlight only y. But we don't
 					// reach this function if not in a func, return, ident, or basiclit.
-					if inNode(field) || highlightIndexes[i] {
+					if inNode(field) || highlightIndexes.Contains(i) {
 						highlightNode(result, field, protocol.Text)
-						highlightIndexes[i] = true
+						highlightIndexes.Insert(i)
 						if inNode(field) {
 							for j := range field.Names {
-								highlightIndexes[i+j] = true
+								highlightIndexes.Insert(i + j)
 							}
 						}
 						break findField // found/highlighted the field
@@ -435,7 +430,7 @@ loop:
 				} else {
 					// Add the highlighted indexes.
 					for i, expr := range n.Results {
-						if highlightIndexes[i] {
+						if highlightIndexes.Contains(i) {
 							highlightNode(result, expr, protocol.Text)
 						}
 					}

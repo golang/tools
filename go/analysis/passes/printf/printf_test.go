@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 
 	analysistest.Run(t, testdata, printf.Analyzer,
-		"a", "b", "nofmt", "nonconst", "typeparams", "issue62595", "issue68744", "issue70572", "issue72850", "issue76616")
+		"a", "b", "nofmt", "nonconst", "typeparams", "issue62595", "issue68744", "issue70572", "issue72850", "issue76616", "issue77638")
 }
 
 // TestW is separate because the %w-of-pointer check is gated on

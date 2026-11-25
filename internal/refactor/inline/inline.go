@@ -675,14 +675,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 		// Flatten the list of syntactic types.
 		var types []ast.Expr
-		for _, field := range calleeDecl.Type.Params.List {
-			if field.Names == nil {
-				types = append(types, field.Type)
-			} else {
-				for range field.Names {
-					types = append(types, field.Type)
-				}
-			}
+		for _, field := range astutil.Fields(calleeDecl.Type.Params) {
+			types = append(types, field.Type)
 		}
 
 		for i := 0; i < sig.Params().Len(); i++ {
@@ -934,7 +928,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		len(calleeDecl.Body.List[0].(*ast.ReturnStmt).Results) > 0 { // not a bare return
 		results := calleeDecl.Body.List[0].(*ast.ReturnStmt).Results
 
-		curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
+		curParent := caller.Call.UnparenEnclosing().Parent()
 		parent := curParent.Node()
 
 		// statement context
@@ -1012,11 +1006,34 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 		// Assignment context.
 		//
-		// If there is no binding decl, or if the binding decl declares no names,
-		// an assignment a, b := f() can be reduced to a, b := x, y.
+		// Reduces:
+		// a, b := f() => a, b := x, y (no named bindings)
+		// _, _ = f() => { var (bindings); _, _ = x, y } (blank assignment)
+		canReduceAssign := func(stmt *ast.AssignStmt) bool {
+			if !needBindingDecl {
+				return true // no binding decl needed
+			}
+			if bindingDecl == nil {
+				return false // binding decl needed, but couldn't be built
+			}
+			if len(bindingDecl.names) == 0 {
+				return true // binding decl introduces no names
+			}
+			// Multiple RHS expressions risk shadowing (e.g. _, _ = f(x), len(n))
+			// or reordering evaluation (e.g. _, _ = first(), f(second())).
+			if len(stmt.Rhs) != 1 {
+				return false
+			}
+			// Blank LHS declares no variables (so keeping braces is safe)
+			// and has no LHS expressions to shadow or reorder.
+			return forall(stmt.Lhs, func(_ int, e ast.Expr) bool {
+				id, ok := e.(*ast.Ident)
+				return ok && id.Name == "_"
+			})
+		}
 		if stmt, ok := parent.(*ast.AssignStmt); ok &&
 			curParent.ParentEdgeKind() == edge.BlockStmt_List &&
-			(!needBindingDecl || (bindingDecl != nil && len(bindingDecl.names) == 0)) {
+			canReduceAssign(stmt) {
 
 			// Reduces to: { var (bindings); lhs... := rhs... }
 			if newStmts, ok := st.assignStmts(stmt, results, istate.importName); ok {
@@ -1035,7 +1052,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 				// assignStmts does not introduce new bindings, and replacing an
 				// assignment only works if the replacement occurs in the same scope.
 				// Therefore, we must ensure that braces are elided.
-				res.elideBraces = true
+				// Named bindings may keep braces; post-processing decides.
+				res.elideBraces = bindingDecl == nil || len(bindingDecl.names) == 0
 				res.old = curParent
 				res.new = block
 				return res, nil
@@ -1132,7 +1150,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	//
 	// The body may use defer, arbitrary control flow, and
 	// multiple returns.
-	curParent := cursorutil.UnparenEnclosing(caller.Call).Parent()
+	curParent := caller.Call.UnparenEnclosing().Parent()
 	if ret, ok := curParent.Node().(*ast.ReturnStmt); ok &&
 		len(ret.Results) == 1 &&
 		tailCallSafeReturn(caller, calleeSymbol, callee) &&
@@ -1614,16 +1632,8 @@ func syncParamFieldTypes(calleeDecl *ast.FuncDecl, params []*parameter) {
 	if calleeDecl.Recv != nil && len(calleeDecl.Recv.List) > 0 {
 		setFieldType(calleeDecl.Recv.List[0].Type)
 	}
-	if calleeDecl.Type.Params != nil {
-		for _, field := range calleeDecl.Type.Params.List {
-			if field.Names == nil {
-				setFieldType(field.Type)
-			} else {
-				for range field.Names {
-					setFieldType(field.Type)
-				}
-			}
-		}
+	for _, field := range astutil.Fields(calleeDecl.Type.Params) {
+		setFieldType(field.Type)
 	}
 	assert(i == len(params), "mismatched parameter count")
 }
@@ -3076,7 +3086,7 @@ func unlabel(stmt ast.Stmt) ast.Stmt {
 // appears in a restricted context (such as "if f(); cond {") where it
 // cannot be replaced by an arbitrary statement. (See "statement theory".)
 func callStmt(curCall inspector.Cursor, unrestricted bool) inspector.Cursor {
-	curStmt := cursorutil.UnparenEnclosing(curCall).Parent()
+	curStmt := curCall.UnparenEnclosing().Parent()
 	if !is[*ast.ExprStmt](curStmt.Node()) {
 		return inspector.Cursor{}
 	}
@@ -3509,7 +3519,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 	const includeComplitIdents = true
 
 	for i, expr := range callerStmt.Rhs {
-		if expr == caller.call {
+		if ast.Unparen(expr) == caller.call {
 			assert(callIdx == -1, "malformed (duplicative) AST")
 			callIdx = i
 			for j, returnOperand := range returnOperands {

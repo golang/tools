@@ -258,7 +258,9 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 		return nil, nil // empty result
 	}
 	// Run `go mod why` on all the dependencies.
-	args := []string{"why", "-m"}
+	// A module path may begin with a dash, so the paths must be
+	// preceded by "--" lest they be interpreted as flags.
+	args := []string{"why", "-m", "--"}
 	for _, req := range pm.File.Require {
 		args = append(args, req.Mod.Path)
 	}
@@ -460,7 +462,7 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 		cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 			URI:        pm.URI,
 			AddRequire: false,
-			GoCmdArgs:  []string{fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
+			GoCmdArgs:  []string{"--", fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
 		})
 		return &Diagnostic{
 			URI:            pm.URI,

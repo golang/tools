@@ -331,9 +331,6 @@ func (h hasher) hashUnion(t *types.Union) uint32 {
 }
 
 func (h hasher) hashTypeSet(ts typeparams.TypeSet) uint32 {
-	if ts.Empty() {
-		return 9151 // fall back on a non-zero hash
-	}
 	hash := 9157 + 2*uint32(ts.Len())
 	for term := range ts.Terms() {
 		// term order is not significant.

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 var (
@@ -39,43 +40,43 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			LineFoldingOnly:                            false,
 			HierarchicalDocumentSymbolSupport:          true,
 			ImportsSource:                              ImportsSourceGopls,
-			SupportedCodeActions: map[file.Kind]map[protocol.CodeActionKind]bool{
+			SupportedCodeActions: map[file.Kind]set.Set[protocol.CodeActionKind]{
 				file.Go: {
 					// This should include specific leaves in the tree,
 					// (e.g. refactor.inline.call) not generic branches
 					// (e.g. refactor.inline or refactor).
-					protocol.SourceFixAll:             true,
-					protocol.SourceOrganizeImports:    true,
-					protocol.QuickFix:                 true,
-					GoAssembly:                        true,
-					GoDoc:                             true,
-					GoFreeSymbols:                     true,
-					GoSplitPackage:                    true,
-					GoplsDocFeatures:                  true,
-					GoplsDragonSlayer:                 true,
-					RefactorRewriteChangeQuote:        true,
-					RefactorRewriteFillStruct:         true,
-					RefactorRewriteFillSwitch:         true,
-					RefactorRewriteImplementInterface: true,
-					RefactorRewriteInvertIf:           true,
-					RefactorRewriteJoinLines:          true,
-					RefactorRewriteRemoveUnusedParam:  true,
-					RefactorRewriteSplitLines:         true,
-					RefactorInlineCall:                true,
-					RefactorInlineVariable:            true,
-					RefactorExtractConstant:           true,
-					RefactorExtractConstantAll:        true,
-					RefactorExtractFunction:           true,
-					RefactorExtractMethod:             true,
-					RefactorExtractVariable:           true,
-					RefactorExtractVariableAll:        true,
-					RefactorExtractToNewFile:          true,
-					RefactorMoveDeclaration:           true, // gated by MoveDeclaration setting, which is off by default
+					protocol.SourceFixAll:             {},
+					protocol.SourceOrganizeImports:    {},
+					protocol.QuickFix:                 {},
+					GoAssembly:                        {},
+					GoDoc:                             {},
+					GoFreeSymbols:                     {},
+					GoSplitPackage:                    {},
+					GoplsDocFeatures:                  {},
+					GoplsDragonSlayer:                 {},
+					RefactorRewriteChangeQuote:        {},
+					RefactorRewriteFillStruct:         {},
+					RefactorRewriteFillSwitch:         {},
+					RefactorRewriteImplementInterface: {},
+					RefactorRewriteInvertIf:           {},
+					RefactorRewriteJoinLines:          {},
+					RefactorRewriteRemoveUnusedParam:  {},
+					RefactorRewriteSplitLines:         {},
+					RefactorInlineCall:                {},
+					RefactorInlineVariable:            {},
+					RefactorExtractConstant:           {},
+					RefactorExtractConstantAll:        {},
+					RefactorExtractFunction:           {},
+					RefactorExtractMethod:             {},
+					RefactorExtractVariable:           {},
+					RefactorExtractVariableAll:        {},
+					RefactorExtractToNewFile:          {},
+					RefactorMoveDeclaration:           {},
 					// Not GoTest: it must be explicit in CodeActionParams.Context.Only
 				},
 				file.Mod: {
-					protocol.SourceOrganizeImports: true,
-					protocol.QuickFix:              true,
+					protocol.SourceOrganizeImports: {},
+					protocol.QuickFix:              {},
 				},
 				file.Work: {},
 				file.Sum:  {},
@@ -96,6 +97,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			Vulncheck:                      ModeVulncheckPrompt,
 			DiagnosticsDelay:               1 * time.Second,
 			DiagnosticsTrigger:             DiagnosticsOnEdit,
+			WatchedFileDelay:               50 * time.Millisecond,
 			AnalysisProgressReporting:      true,
 			Hints:                          map[InlayHint]bool{},
 			HoverKind:                      FullDocumentation,

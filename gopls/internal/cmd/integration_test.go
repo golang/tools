@@ -645,32 +645,147 @@ func TestReferences(t *testing.T) {
 module example.com
 go 1.18
 
--- a.go --
+-- a/a.go --
 package a
+
 import "fmt"
+
+func Foo() {}
+
 func f() {
 	fmt.Println()
+	Foo()
 }
 
--- b.go --
-package a
-import "fmt"
+-- b/b.go --
+package b
+
+import (
+	"fmt"
+	"example.com/a"
+)
+
 func g() {
 	fmt.Println()
+	a.Foo()
 }
 `)
 	// no arguments
 	{
 		res := gopls(t, tree, "references")
 		res.checkExit(false)
-		res.checkStderr("expects 1 argument")
+		res.checkStderr(regexp.QuoteMeta(`references expects 1 argument (target)`))
 	}
 	// fmt.Println
 	{
-		res := gopls(t, tree, "references", "a.go:4:10")
+		res := gopls(t, tree, "references", "fmt.Println")
 		res.checkExit(true)
-		res.checkStdout("a.go:4:6-13")
-		res.checkStdout("b.go:4:6-13")
+		res.checkStdout("a.go:8:6-13", "b.go:9:6-13")
+	}
+	// resolve target error
+	{
+		res := gopls(t, tree, "references", "example.com/c.Foo")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/c")
+	}
+	// basic target query (without declaration)
+	{
+		res := gopls(t, tree, "references", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdout(`a.go:9:2-5`, `b.go:10:4-7`)
+	}
+	// relative target query and -pkg flag
+	{
+		res := gopls(t, tree, "references", "-pkg=example.com/a", "Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// rel target query without pkg fails, validation for the two tests below
+	{
+		res := gopls(t, tree, "references", "Foo")
+		res.checkExit(false)
+		res.checkStderr("no package metadata for directory")
+	}
+	// relative target query
+	{
+		res := gopls(t, tree, "references", "a.Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -pos target query (with just providing the definition file of the target)
+	{
+		res := gopls(t, tree, "references", "-pos=a/a.go", "Foo")
+		res.checkExit(true)
+		res.checkStdout("a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -declaration flag includes declaration at a.go:5:6-9
+	{
+		res := gopls(t, tree, "references", "-declaration", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain("a.go:5:6-9", "a.go:9:2-5", "b.go:10:4-7")
+	}
+	// -limit flag caps results ordered by location
+	{
+		res := gopls(t, tree, "references", "-declaration", "-limit=2", "example.com/a.Foo")
+		res.checkExit(true)
+		// make sure there are exactly two results in line sorted order.
+		res.checkStdoutExactLinesContain(`a.go:5:6-9`, `a.go:9:2-5`)
+	}
+	// -context=1 prints only the reference line itself
+	{
+		res := gopls(t, tree, "references", "-context=1", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain(
+			"a.go:9:2-5",
+			regexp.QuoteMeta("\t9: \tFoo()"),
+			"", // -context adds an empty line at the end of each ref
+		)
+	}
+	// -context=2 prints 1 line before and 1 line after the reference line
+	{
+		res := gopls(t, tree, "references", "-context=2", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		res.checkStdoutExactLinesContain(
+			"a.go:9:2-5",
+			regexp.QuoteMeta("\t8: \tfmt.Println()"),
+			regexp.QuoteMeta("\t9: \tFoo()"),
+			regexp.QuoteMeta("\t10: }"),
+			"", // -context adds an empty line at the end of each ref
+		)
+	}
+	// -json flag without -context omits context field
+	{
+		res := gopls(t, tree, "references", "-json", "example.com/a.Foo")
+		res.checkExit(true)
+		if strings.Contains(res.stdout, `"context"`) {
+			t.Errorf("unexpected context field in JSON output: %s", res.stdout)
+		}
+		var refs cmd.ReferencesJSON
+		if res.toJSON(&refs) {
+			if len(refs.References) != 2 {
+				t.Fatalf("got %d references, want 2", len(refs.References))
+			}
+			if loc := fmt.Sprint(refs.References[0].Location); !strings.HasSuffix(filepath.ToSlash(loc), "a/a.go:9:2-5") {
+				t.Errorf("References[0].Location = %q, expected suffix a/a.go:9:2-5", loc)
+			}
+			if loc := fmt.Sprint(refs.References[1].Location); !strings.HasSuffix(filepath.ToSlash(loc), "b/b.go:10:4-7") {
+				t.Errorf("References[1].Location = %q, expected suffix b/b.go:10:4-7", loc)
+			}
+		}
+	}
+	// -json flag with -context=2 includes surrounding lines without line numbers
+	{
+		res := gopls(t, tree, "references", "-json", "-context=2", "-limit=1", "example.com/a.Foo")
+		res.checkExit(true)
+		var refs cmd.ReferencesJSON
+		if res.toJSON(&refs) {
+			if len(refs.References) != 1 {
+				t.Fatalf("got %d references, want 1", len(refs.References))
+			}
+			if refs.References[0].Context != "\tfmt.Println()\n\tFoo()\n}" {
+				t.Errorf("unexpected References[0].Context: %q", refs.References[0].Context)
+			}
+		}
 	}
 }
 
@@ -1087,14 +1202,39 @@ go 1.18
 -- a/a.go --
 package a
 
-// Doc for someFunctionName
-func someFunctionName()
+// Doc for someFunctionName.
+//
+// Doc link to [someTypeName]
+func someFunctionName() {
+  var a int
+  if a != 0 {
+    panic(a)
+  }
+}
+
+// Doc for someTypeName.
+//
+// More details are here.
+type someTypeName struct {
+	field int
+}
+
+func (someTypeName) helper() {}
+
+// Doc comment for top level type group
+type ( A int; B string )
+
+// Doc comment for top level const group
+const (
+	// Doc for C
+	C string = ""
+)
 `)
 
 	{ // no files
 		res := gopls(t, tree, "inspect")
 		res.checkExit(false)
-		res.checkStderr(`inspect expects 1 argument \(target\)`)
+		res.checkStderr(regexp.QuoteMeta(`inspect expects 1 argument (target)`))
 	}
 	{ // gopls resolve target error
 		res := gopls(t, tree, "inspect", "example.com/b.someFunctionName")
@@ -1104,27 +1244,251 @@ func someFunctionName()
 	{ // success
 		res := gopls(t, tree, "inspect", "example.com/a.someFunctionName")
 		res.checkExit(true)
-		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdoutOmits("Doc link to [someTypeName]")           // Doesn't print full docs
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+	}
+	{ // gopls resolve relative target
+		res := gopls(t, tree, "inspect", "a.someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22")) // Prints definition location
 	}
 	{ // success with pkg flag
 		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)
-		res.checkStdout(regexp.QuoteMeta("a.go:4:6-22"))             // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
 		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
 		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
 	}
-	{ // testing json and markdown
-		res := gopls(t, tree, "inspect", "-json", "-markdown", "-pkg=example.com/a", "someFunctionName")
+	{ // -pos with valid spans scopes the query to a.go
+		for _, pos := range []string{"a/a.go", "a/a.go:6:6-22"} {
+			res := gopls(t, tree, "inspect", "-pos="+pos, "someFunctionName")
+			res.checkExit(true)
+			res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))
+		}
+	}
+	{ // -pos syntax errors are reported during flag parsing, with usage and non-zero exit code
+		res := gopls(t, tree, "inspect", "-pos=a/a.go:abc", "someFunctionName")
+		res.checkExit(false)
+		res.checkStderr(regexp.QuoteMeta(`gopls inspect: invalid value "a/a.go:abc" for flag -pos: invalid line/column number "abc"`))
+		res.checkStderr(regexp.QuoteMeta("Usage:\n  gopls [flags] inspect"))
+	}
+	{ // success with -src on function
+		res := gopls(t, tree, "inspect", "-src", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))             // Prints definition location
+		res.checkStdout("Doc for someFunctionName")                  // Prints hover documentation
+		res.checkStdout(regexp.QuoteMeta("func someFunctionName()")) // Prints signature
+		res.checkStdout(regexp.QuoteMeta("panic(a)"))                // Prints body
+	}
+	{
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "someTypeName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:16:6-18")) // Prints definition location
+		res.checkStdout("Doc for someTypeName.")
+		res.checkStdoutOmits("More details are here.")                // Doesn't include further paragraphs.
+		res.checkStdout(regexp.QuoteMeta("type someTypeName struct")) // Prints signature
+		// Signature of a type still includes its fields and methods
+		res.checkStdout(regexp.QuoteMeta("field int"))
+		res.checkStdout(regexp.QuoteMeta("func (someTypeName) helper()"))
+	}
+	{ // success with -src on struct (doesn't change output)
+		res := gopls(t, tree, "inspect", "-src", "-pkg=example.com/a", "someTypeName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:16:6-18")) // Prints definition location
+		res.checkStdout("Doc for someTypeName")
+		// Prints full code, but -src will not print methods
+		res.checkStdout(regexp.QuoteMeta("type someTypeName struct {\n\tfield int\n}"))
+		// TODO: We might want -src to print full src code of all methods as well.
+		res.checkStdoutOmits("func (someTypeName) helper()")
+	}
+	{ // testing -full without markdown
+		res := gopls(t, tree, "inspect", "-full", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22")) // Prints definition location
+		// Documentation doesn't use markdown but contains extra paragraphs.
+		res.checkStdout(regexp.QuoteMeta("Doc link to [someTypeName]\n"))
+	}
+	{ // testing -full and -markdown
+		res := gopls(t, tree, "inspect", "-full", "-markdown", "-pkg=example.com/a", "someFunctionName")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:6:6-22"))                         // Prints definition location
+		res.checkStdout(regexp.QuoteMeta("[someTypeName]("))                     // Documentation uses markdown
+		res.checkStdout(regexp.QuoteMeta("```go\nfunc someFunctionName()\n```")) // Prints signature
+	}
+	{ // testing json, markdown and full
+		res := gopls(t, tree, "inspect", "-json", "-markdown", "-full", "-pkg=example.com/a", "someFunctionName")
 		res.checkExit(true)
 		var insp cmd.InspectJSON
 		if !res.toJSON(&insp) {
 			t.Error("res.toJSON failed")
 		}
-		if !strings.Contains(insp.Hover, "```go\nfunc someFunctionName()") {
-			t.Errorf("Hover does not contain a markdown code block. Got: %s", insp.Hover)
+		if !strings.Contains(insp.Docs, "[someTypeName](") {
+			t.Errorf(`Docs is not right. Expected: "[someTypeName](" (markdown) Got: "%s"`, insp.Docs)
 		}
+		if !strings.Contains(insp.Signature, "func someFunctionName()") {
+			t.Errorf(`Signature is not right. Expected "func someFunctionName()" Got: "%s"`, insp.Signature)
+		}
+		if strings.Contains(insp.Signature, "```") {
+			t.Errorf(`Signature isn't expected in markdown form, only Docs. Got: %s`, insp.Signature)
+		}
+	}
+	// Testing grouped types
+	{
+		res := gopls(t, tree, "inspect", "-pkg=example.com/a", "B")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:23:15-16")) // Prints definition location
+		// Prints top level type group doc comment, since there is no comment for the type itself.
+		res.checkStdout("Doc comment for top level type group")
+		// Without -src, signature print a type definition (includes "type" here).
+		// This is different than w/ -src which prints the exact code, which omits "type".
+		res.checkStdout(regexp.QuoteMeta("type B string"))
+	}
+	{
+		// testing all extra flags
+		res := gopls(t, tree, "inspect", "-src", "-markdown", "-pkg=example.com/a", "B")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:23:15-16")) // Prints definition location
+		// Prints top level type group doc comment, since there is no comment for the type itself.
+		res.checkStdout("Doc comment for top level type group")
+		// Src prints just the type declaration being targeted, not whole decl.
+		res.checkStdout(regexp.QuoteMeta("```go\nB string\n```"))
+	}
+	{
+		// testing all extra flags
+		res := gopls(t, tree, "inspect", "-src", "-markdown", "-pkg=example.com/a", "C")
+		res.checkExit(true)
+		res.checkStdout(regexp.QuoteMeta("a.go:28:2-3")) // Prints definition location
+		// Prints doc comment for C.
+		res.checkStdout("Doc for C")
+		// Make sure the top level const group doc comment isn't printed, since we do have a doc comment.
+		res.checkStdoutOmits("Doc comment for top level const group")
+		// Src prints just the const declaration being targeted, not whole decl.
+		res.checkStdout(regexp.QuoteMeta("```go\nC string = \"\"\n```"))
+	}
+}
+
+// TestMoveDecl tests the 'move_decl' subcommand (move_decl.go).
+func TestMoveDecl(t *testing.T) {
+	t.Parallel()
+
+	// Each case that moves a declaration starts from a fresh copy of this tree.
+	const archive = `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+func Bar() int { return 2 }
+
+-- a/b.go --
+package a
+
+func useBar() int { return Bar() }
+
+-- c/c.go --
+package c
+
+import "example.com/a"
+
+var _ = a.Foo()
+`
+	// missing argument (destination file)
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/a.Foo")
+		res.checkExit(false)
+		res.checkStderr(regexp.QuoteMeta(`move_decl expects 2 arguments (move target, destination file)`))
+	}
+	// resolve target error
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/b.Foo", "b/b.go")
+		res.checkExit(false)
+		res.checkStderr("package not found: example.com/b")
+	}
+	// same-package move to an existing file, with -pkg flag
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "-pkg=example.com/a", "Bar", "a/b.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+func useBar() int { return Bar() }
+
+func Bar() int { return 2 }
+`)
+	}
+	// cross-package move to a new file (and package).
+	// helper moves along with Foo, Bar stays put, and references in c
+	// are updated.
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, tree, "move_decl", "example.com/a.Foo", "d/d.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Bar() int { return 2 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+func useBar() int { return Bar() }
+
+`)
+		checkContent(t, filepath.Join(tree, "d/d.go"), `package d
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+`)
+		checkContent(t, filepath.Join(tree, "c/c.go"), `package c
+
+import "example.com/d"
+
+
+
+var _ = d.Foo()
+`)
+	}
+	// Relative target and destination are resolved against the current
+	// directory, not the module root: run from a/, "../e/e.go" is e/e.go.
+	{
+		tree := writeTree(t, archive)
+		res := gopls(t, filepath.Join(tree, "a"), "move_decl", "Bar", "../e/e.go")
+		res.checkExit(true)
+		checkContent(t, filepath.Join(tree, "a/a.go"), `package a
+
+func Foo() int { return helper() }
+
+func helper() int { return 1 }
+
+`)
+		checkContent(t, filepath.Join(tree, "a/b.go"), `package a
+
+import "example.com/e"
+
+func useBar() int { return e.Bar() }
+
+`)
+		checkContent(t, filepath.Join(tree, "e/e.go"), `package e
+
+func Bar() int { return 2 }
+`)
 	}
 }
 
@@ -1318,6 +1682,8 @@ func (res *result) String() string {
 }
 
 // checkExit asserts that gopls returned the expected exit code.
+// All non-zero exit codes are considered failure. We do not attempt to
+// distinguish them as it is fragile and non-portable.
 func (res *result) checkExit(success bool) {
 	res.t.Helper()
 	if (res.exitcode == 0) != success {
@@ -1326,25 +1692,69 @@ func (res *result) checkExit(success bool) {
 	}
 }
 
-// checkStdout asserts that the gopls standard output matches the pattern.
-func (res *result) checkStdout(pattern string) {
+// checkStdoutExactLinesContain takes a list of patterns, where each pattern
+// must sequentially match each line on stdout. The stdout is expected to end
+// on a new line, so don't include that in the list of patterns passed in.
+func (res *result) checkStdoutExactLinesContain(patterns ...string) {
 	res.t.Helper()
-	res.checkOutput(pattern, "stdout", res.stdout)
+	anyCharsOnFirstLine := `^[^\r\n]*`
+	endOfCurrentLine := `[^\r\n]*\n`
+	newPats := make([]string, len(patterns)+1)
+	for i, pat := range patterns {
+		newPats[i] = anyCharsOnFirstLine + pat + endOfCurrentLine
+	}
+	newPats[len(patterns)] = "^$"
+	res.checkStdout(newPats...)
+}
+
+// checkStdout asserts that the gopls standard output matches the patterns.
+// The patterns must match in order passed in.
+func (res *result) checkStdout(patterns ...string) {
+	res.t.Helper()
+	res.checkOutput("stdout", res.stdout, patterns...)
+}
+
+// checkStdoutOmits asserts that the gopls standard output doesn't contain the string.
+func (res *result) checkStdoutOmits(s string) {
+	res.t.Helper()
+	if strings.Contains(res.stdout, s) {
+		res.t.Errorf("%s: stdout contains unwanted %q; got <<%s>>", res.command, s, res.stdout)
+	}
 }
 
 // checkStderr asserts that the gopls standard error matches the pattern.
-func (res *result) checkStderr(pattern string) {
+// The patterns must match in order passed in.
+func (res *result) checkStderr(patterns ...string) {
 	res.t.Helper()
-	res.checkOutput(pattern, "stderr", res.stderr)
+	res.checkOutput("stderr", res.stderr, patterns...)
 }
 
-func (res *result) checkOutput(pattern, name, content string) {
+func (res *result) checkOutput(name, content string, patterns ...string) {
 	res.t.Helper()
-	if match, err := regexp.MatchString(pattern, content); err != nil {
-		res.t.Errorf("invalid regexp: %v", err)
-	} else if !match {
-		res.t.Errorf("%s: %s does not match [%s]; got <<%s>>",
-			res.command, name, pattern, content)
+	offset := 0
+	for i, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			res.t.Errorf("invalid regexp %q: %v", pattern, err)
+			return
+		}
+		loc := re.FindStringIndex(content[offset:])
+		if loc == nil {
+			if i > 0 {
+				if re.MatchString(content) {
+					res.t.Errorf("%s: %s matched [%s] out of order (expected after [%s]); got <<%s>>",
+						res.command, name, pattern, patterns[i-1], content)
+				} else {
+					res.t.Errorf("%s: %s does not match [%s]; got <<%s>>; matching on substr <<%s>>",
+						res.command, name, pattern, content, content[offset:])
+				}
+			} else {
+				res.t.Errorf("%s: %s does not match [%s]; got <<%s>>",
+					res.command, name, pattern, content)
+			}
+			return
+		}
+		offset += loc[1]
 	}
 }
 

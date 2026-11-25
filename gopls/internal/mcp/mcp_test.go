@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 type emptySessions struct {
@@ -62,17 +63,17 @@ func TestClientRootChange(t *testing.T) {
 		make(chan struct{}), // after roots/list_changed
 	}
 
-	wantRoots := []map[string]struct{}{
-		{ // after initialized
-			"file:///path/to/one": struct{}{},
-			"file:///path/to/two": struct{}{},
-		},
-		{ // after roots/list_changed
-			"file:///path/to/one":   struct{}{},
-			"file:///path/to/two":   struct{}{},
-			"file:///path/to/three": struct{}{},
-			"file:///path/to/four":  struct{}{},
-		},
+	wantRoots := []set.Set[string]{
+		set.Of( // after initialized
+			"file:///path/to/one",
+			"file:///path/to/two",
+		),
+		set.Of( // after roots/list_changed
+			"file:///path/to/one",
+			"file:///path/to/two",
+			"file:///path/to/three",
+			"file:///path/to/four",
+		),
 	}
 
 	var callCount int
@@ -96,7 +97,7 @@ func TestClientRootChange(t *testing.T) {
 		}
 
 		for _, r := range res.Roots {
-			if _, ok := expected[r.URI]; !ok {
+			if !expected.Contains(r.URI) {
 				t.Errorf("Phase %d: unexpected root %s", callCount+1, r)
 			}
 		}

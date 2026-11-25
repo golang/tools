@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/typesinternal"
@@ -273,14 +274,13 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes .
 	// Compute the minimal metadata updates (for Clone)
 	// required to preserve the above invariant.
 	var files []protocol.DocumentURI // files to preload
-	seenFiles := make(map[protocol.DocumentURI]bool)
+	seenFiles := make(set.Set[protocol.DocumentURI])
 	updates := make(map[PackageID]*metadata.Package)
 	for _, mp := range newMetadata {
 		if existing := s.meta.Packages[mp.ID]; existing == nil {
 			// Record any new files we should pre-load.
 			for _, uri := range mp.CompiledGoFiles {
-				if !seenFiles[uri] {
-					seenFiles[uri] = true
+				if seenFiles.Insert(uri) {
 					files = append(files, uri)
 				}
 			}
@@ -677,10 +677,10 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 	//
 	// Workspace packages must contain at least one non-filtered file.
 	filterFunc := s.view.filterFunc()
-	uris := make(map[protocol.DocumentURI]unit) // filtered package URIs
+	uris := make(set.Set[protocol.DocumentURI]) // filtered package URIs
 	for _, uri := range slices.Concat(pkg.CompiledGoFiles, pkg.GoFiles) {
 		if !strings.Contains(string(uri), "/vendor/") && !filterFunc(uri) {
-			uris[uri] = struct{}{}
+			uris.Insert(uri)
 		}
 	}
 	if len(uris) == 0 {
@@ -728,8 +728,7 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 				return false
 			}
 		}
-		_, ok := s.view.workspaceModFiles[modURI]
-		return ok
+		return s.view.workspaceModFiles.Contains(modURI)
 	}
 
 	return true // an ad-hoc package or GOPATH package
@@ -740,12 +739,12 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 //
 // s.mu must be held while calling this function.
 func containsOpenFileLocked(s *Snapshot, mp *metadata.Package) bool {
-	uris := map[protocol.DocumentURI]struct{}{}
+	uris := make(set.Set[protocol.DocumentURI])
 	for _, uri := range mp.CompiledGoFiles {
-		uris[uri] = struct{}{}
+		uris.Insert(uri)
 	}
 	for _, uri := range mp.GoFiles {
-		uris[uri] = struct{}{}
+		uris.Insert(uri)
 	}
 
 	for uri := range uris {

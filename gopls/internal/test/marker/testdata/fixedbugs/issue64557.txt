@@ -1,0 +1,51 @@
+This test checks that neither importing a multi-file package from a build-tagged
+test file (producing an ITV "example.com/tools/tool [command-line-arguments.test]")
+nor having a multi-file package whose import path contains "command-line-arguments"
+triggers a bug report asserting unexpected files in a command-line-arguments
+package (golang/go#64557, and the single-file case in golang/go#66109).
+
+Depends on go1.22+ go list errors.
+
+-- flags --
+-min_go_command=go1.22
+
+-- go.mod --
+module example.com/tools
+
+go 1.22
+
+-- tools_test.go --
+//go:build tools
+
+package tools //@diag("tools", re"No packages found")
+
+import (
+	_ "example.com/tools/tool"
+)
+
+-- tool/tool.go --
+package main
+
+func main() {
+	Helper() //@def("Helper", Helper)
+}
+
+-- tool/other.go --
+package main
+
+func Helper() { //@loc(Helper, "Helper")
+}
+
+-- command-line-arguments/a.go --
+package cli
+
+func A() {
+	B() //@def("B", B)
+}
+
+-- command-line-arguments/b.go --
+package cli
+
+func B() { //@loc(B, "B")
+}
+

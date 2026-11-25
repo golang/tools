@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 )
 
-func TestFlatFields(t *testing.T) {
+func TestFields(t *testing.T) {
 	tests := []struct {
 		params string
 		want   string
@@ -38,7 +38,9 @@ func TestFlatFields(t *testing.T) {
 		}
 		params := f.Decls[0].(*ast.FuncDecl).Type.Params
 		var got bytes.Buffer
-		for name, field := range astutil.FlatFields(params) {
+		n := 0
+		for name, field := range astutil.Fields(params) {
+			n++
 			if got.Len() > 0 {
 				got.WriteString(", ")
 			}
@@ -49,7 +51,10 @@ func TestFlatFields(t *testing.T) {
 		}
 		if got := got.String(); got != test.want {
 			// align 'got' and 'want' for easier inspection
-			t.Errorf("FlatFields(%q):\n got: %q\nwant: %q", test.params, got, test.want)
+			t.Errorf("Fields(%q):\n got: %q\nwant: %q", test.params, got, test.want)
+		}
+		if want := params.NumFields(); n != want {
+			t.Errorf("Fields(%q) yielded %d elements, want NumFields() = %d", test.params, n, want)
 		}
 	}
 }

@@ -1,4 +1,6 @@
-This test checks that hovering over a return statement reveals the result type.
+This test checks that hovering over a return statement reveals the result
+type: one type per result, even when named results are grouped in a single
+field (e.g. "a, b int" declares two results, not one).
 
 -- a.go --
 package a
@@ -9,4 +11,24 @@ func _() int {
 
 func _() (int, int) {
     return 1, 2 //@hover("return", "return 1, 2", "returns (int, int)")
+}
+
+// Grouped named results: each name is a separate result.
+func _() (a, b int, c string) {
+    return //@hover("return", "return", "returns (int, int, string)")
+}
+
+// Two grouped fields.
+func _() (a, b int, c, d string) {
+    return //@hover("return", "return", "returns (int, int, string, string)")
+}
+
+// Three names in one group.
+func _() (a, b, c int) {
+    return //@hover("return", "return", "returns (int, int, int)")
+}
+
+// Common idiom: one name per field.
+func _() (n int, err error) {
+    return //@hover("return", "return", "returns (int, error)")
 }

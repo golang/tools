@@ -252,6 +252,133 @@ func _[Map interface{ map[I]Val1 | map[I]Val2 }](m Map) {
 	}
 }
 
+// TestIssue82686 is a regression test for a crash caused by
+// built-in calls whose arguments are supplied by a single
+// multi-valued call, such as delete(f()); see go.dev/issue/82686.
+//
+// It exercises every built-in (including those of package unsafe)
+// that accepts two or more arguments and thus may be called this way.
+func TestIssue82686(t *testing.T) {
+	const src = `package p
+
+import "unsafe"
+
+type I interface { f() }
+
+type impl struct{}
+func (impl) f() {}
+
+type Key struct{impl}
+type Elem1 struct{impl}
+type Elem2 struct{impl}
+type Val struct{impl}
+
+func mapKey() (map[I]int, Key) { panic(0) }
+func sliceElems() ([]I, Elem1, Elem2) { panic(0) }
+func slices() ([]I, []I) { panic(0) }
+func floats() (float64, float64) { panic(0) }
+func ints() (int, int, int) { panic(0) }
+func values() (Key, Val) { panic(0) }
+func ptrInt() (unsafe.Pointer, int) { panic(0) }
+func bytePtrInt() (*byte, int) { panic(0) }
+
+func _() {
+	delete(mapKey()) // I <- Key
+	_ = append(sliceElems()) // I <- Elem1, I <- Elem2
+	_ = copy(slices())
+	_ = complex(floats())
+	_ = min(ints())
+	_ = max(ints())
+	print(values())
+	println(values())
+	_ = unsafe.Add(ptrInt())
+	_ = unsafe.Slice(bytePtrInt())
+	_ = unsafe.String(bytePtrInt())
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.Elem1",
+		"p.I <- p.Elem2",
+		"p.I <- p.Key",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
+// TestSpreadCalls exercises calls to variadic functions, both
+// "spread" calls f(x, y...) whose final argument provides the entire
+// variadic slice, and calls f(g()) whose arguments are provided by a
+// single multi-valued call.
+func TestSpreadCalls(t *testing.T) {
+	const src = `package p
+
+type I interface { f() }
+
+type impl struct{}
+func (impl) f() {}
+
+type A struct{impl}
+type B struct{impl}
+type C struct{impl}
+type D struct{impl}
+type E struct{impl}
+type F struct{impl}
+type G struct{impl}
+type H struct{impl}
+
+// Is is a slice of I that itself implements I.
+// Passing is... (as opposed to is) to a ...I parameter
+// does not assign Is to I.
+type Is []I
+func (Is) f() {}
+
+func variadic(...I) {}
+func variadic2(I, ...I) {}
+func generic[T any](T, ...I) {}
+
+type R struct{}
+func (R) method(...I) {}
+
+func abc() (A, B, C) { panic(0) }
+func def() (D, E, F) { panic(0) }
+
+func _(is Is, bs []byte) {
+	// spread calls
+	variadic(is...)
+	variadic2(G{}, is...) // I <- G
+	R{}.method(is...)
+	generic(0, is...)
+	func(...I) {}(is...)
+	_ = append(is, is...)
+	_ = append(bs, "foo"...)
+	_ = append(bs, bs...)
+
+	// ordinary variadic calls
+	variadic(H{}) // I <- H
+
+	// multi-valued calls
+	variadic(abc()) // I <- A, I <- B, I <- C
+	variadic2(def()) // I <- D, I <- E, I <- F
+}
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- p.A",
+		"p.I <- p.B",
+		"p.I <- p.C",
+		"p.I <- p.D",
+		"p.I <- p.E",
+		"p.I <- p.F",
+		"p.I <- p.G",
+		"p.I <- p.H",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
 func constraints(t *testing.T, src string) []string {
 	// parse
 	fset := token.NewFileSet()

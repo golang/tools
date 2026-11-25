@@ -9,7 +9,6 @@ illegal internal imports, or symbol or import conflicts.
 
 -- settings.json --
 {
-	"moveDeclaration": true,
 	"analyses": {"unusedfunc": false}
 }
 
@@ -28,7 +27,7 @@ func Foo(a, b int) int { //@codeaction(re"fu()nc", "refactor.move.moveDeclaratio
     return 1 //@codeaction(re"return()", "refactor.move.moveDeclaration", title="Move declaration Foo")
 }
 
-var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", title="Move declaration a")
+var a, b int //@codeaction(re"var ()a", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
 
 var c, d int //@codeaction(re"va()r", "refactor.move.moveDeclaration", err=re"found 0 CodeActions")
 
@@ -36,6 +35,31 @@ type A struct {} //@codeaction(re"A", "refactor.move.moveDeclaration", title="Mo
 
 -- illegal/src/src.go --
 package src
+
+import (
+	"strconv"
+
+	"golang.org/lsptests/movedecl/illegal/dest"
+)
+
+// Dropping the dest qualifier would resolve DestFunc to the parameter.
+func ParamShadowsDest(DestFunc int) int { return dest.DestFunc() + DestFunc } //@codeaction(re"ParamShadowsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"DestFunc would be shadowed by a local declaration in package dest")
+
+// Dropping the dest qualifier would resolve DestFunc to the variable of the enclosing block.
+func LocalShadowsDest() int { //@codeaction(re"LocalShadowsDest", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"DestFunc would be shadowed by a local declaration in package dest")
+	DestFunc := 1
+	if DestFunc > 0 {
+		return dest.DestFunc()
+	}
+	return DestFunc
+}
+
+// The moving function needs an import of strconv, but package dest declares strconv
+// in a different file from the destination file.
+func NeedsImport(i int) string { return strconv.Itoa(i) } //@codeaction(re"NeedsImport", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"strconv is already declared in package dest")
+
+// The same conflict applies when the destination file does not exist yet.
+func NeedsImportNewFile(i int) string { return strconv.Itoa(i) } //@codeaction(re"NeedsImportNewFile", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/newfile.go"}`, err=re"strconv is already declared in package dest")
 
 // Package-level name conflict: illegal/dest/dest.go already declares type ExistingConflict.
 type ExistingConflict struct{} //@codeaction(re"ExistingConflict", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"already declared in package dest")
@@ -72,6 +96,96 @@ func CallsUnexported2() {
 	unexported()
 }
 
+// Tests for when the move is not allowed because the dest file is the same file,
+// in a different module, or in testdata, a vendor directory, or a directory
+// beginning with "." or "_".
+
+func SameFile() {} //@codeaction(re"SameFile", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/src/src.go"}`, err=re"source and destination are the same file")
+
+func Outside() {} //@codeaction(re"Outside", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/../x/x.go"}`, err=re"is not in module")
+
+func Vendored() {} //@codeaction(re"Vendored", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/vendor/example.com/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func NestedVendored() {} //@codeaction(re"NestedVendored", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/a/vendor/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InTestdata() {} //@codeaction(re"InTestdata", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/testdata/x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InUnderscoreDir() {} //@codeaction(re"InUnderscoreDir", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/_x/x.go"}`, err=re"ignored by the go command or vendored")
+
+func InDotDir() {} //@codeaction(re"InDotDir", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/.x/x.go"}`, err=re"ignored by the go command or vendored")
+
+// Unexported fields of a moving type are referenced by remaining code, through
+// a selector, a keyed literal, or an unkeyed literal.
+type HasField struct{ n int } //@codeaction(re"HasField", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(n\)`)
+
+func ReadField(h HasField) int { return h.n }
+
+type Keyed struct{ k int } //@codeaction(re"Keyed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(k\)`)
+
+var K = Keyed{k: 1}
+
+type Unkeyed struct{ u int } //@codeaction(re"Unkeyed", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(u\)`)
+
+var U = []*Unkeyed{{1}}
+
+// Unexported fields of anonymous struct types are referenced by remaining code.
+// Moving AnonMover also moves its dependencies, which declare anonymous struct
+// fields in a nested type (x), a var (name), and a function result (px).
+func AnonMover() { //@codeaction(re"AnonMover", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(name, px, x\)`)
+	_, _, _ = Nested{}, AnonConfig, AnonPos
+}
+
+type Nested struct{ In struct{ x int } }
+
+var AnonConfig = struct{ name string }{"x"}
+
+func AnonPos() struct{ px, py int } { return struct{ px, py int }{1, 2} }
+
+func useAnon(n Nested) int { return n.In.x + len(AnonConfig.name) + AnonPos().px }
+
+// Moving only some of the names declared by a single spec is not supported.
+// (No code action is offered on a name in a multi-name spec; see
+// availability/move.go.) Here PairP is pulled in as a dependency.
+func UsesPairP() int { return PairP } //@codeaction(re"UsesPairP", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`cannot move PairP: it is declared together with PairQ`)
+
+func PairF() (int, int) { return 1, 2 }
+
+var PairP, PairQ = PairF()
+
+// Unexported fields of an anonymous struct are reached through a slice, map,
+// channel, or pointer returned by a moving function.
+func SliceZ() []struct{ sliceF string } { return nil } //@codeaction(re"SliceZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(sliceF\)`)
+
+func MapZ() map[string]struct{ mapF string } { return nil } //@codeaction(re"MapZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(mapF\)`)
+
+func ChanZ() chan struct{ chanF string } { return nil } //@codeaction(re"ChanZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(chanF\)`)
+
+func PtrZ() *struct{ ptrF string } { return nil } //@codeaction(re"PtrZ", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(ptrF\)`)
+
+func useContainers() string {
+	return SliceZ()[0].sliceF + MapZ()["foo"].mapF + (<-ChanZ()).chanF + (*PtrZ()).ptrF
+}
+
+// An unexported method of a moving interface is called by remaining code.
+type Hidden interface{ peek() } //@codeaction(re"Hidden", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re`illegal reference: symbols moving to the destination package \(peek\)`)
+
+func usePeek(h Hidden) { h.peek() }
+
+-- illegal/src/file_import.go --
+package src
+
+import (
+	DestFunc "strconv"
+
+	"golang.org/lsptests/movedecl/illegal/dest"
+)
+
+// The moving function uses both dest.DestFunc and an import named DestFunc,
+// which would conflict with func DestFunc in package dest.
+func UsesImportNamedDestFunc() string { //@codeaction(re"UsesImportNamedDestFunc", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/illegal/dest/dest.go"}`, err=re"DestFunc is already declared in package dest")
+	return DestFunc.Itoa(dest.DestFunc())
+}
+
 -- illegal/dest/imports.go --
 package dest
 
@@ -91,6 +205,13 @@ type ExistingConflict struct{}
 func _() {
 	_ = bytes.Buffer{}
 }
+
+-- illegal/dest/names.go --
+package dest
+
+var strconv = 1
+
+func DestFunc() int { return strconv }
 
 -- illegal/dest/other.go --
 package dest

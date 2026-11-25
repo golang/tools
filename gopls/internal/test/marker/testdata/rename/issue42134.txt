@@ -22,25 +22,23 @@ func _() {
 -- 2.go --
 package issue42134
 
-import "fmt"
-
 func _() {
 	// minNumber is a min number.
 	// Second line.
 	minNumber := min(1, 2)
-	fmt.Println(minNumber) //@rename("minNumber", "res", minNumberTores)
+	println(minNumber) //@rename("minNumber", "res", minNumberTores)
 }
 
 func min(a, b int) int { return a + b }
 -- @minNumberTores/2.go --
-@@ -6 +6 @@
+@@ -4 +4 @@
 -	// minNumber is a min number.
 +	// res is a min number.
-@@ -8,2 +8,2 @@
+@@ -6,2 +6,2 @@
 -	minNumber := min(1, 2)
--	fmt.Println(minNumber) //@rename("minNumber", "res", minNumberTores)
+-	println(minNumber) //@rename("minNumber", "res", minNumberTores)
 +	res := min(1, 2)
-+	fmt.Println(res) //@rename("minNumber", "res", minNumberTores)
++	println(res) //@rename("minNumber", "res", minNumberTores)
 -- 3.go --
 package issue42134
 

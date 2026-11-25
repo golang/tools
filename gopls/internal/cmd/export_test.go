@@ -11,6 +11,8 @@ type (
 	DefinitionJSON = definitionJSON
 	StatsJSON      = statsJSON
 	InspectJSON    = inspectJSON
+	ReferencesJSON = referencesJSON
+	ReferenceJSON  = referenceJSON
 )
 
 // CommandNames returns the names of all commands, including the root command.

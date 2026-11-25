@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/packagepath"
 )
 
@@ -153,7 +154,7 @@ func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, md *metadat
 
 // writeFileSummary writes the file summary to the string builder based on
 // the input file URI.
-func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.DocumentURI, out *strings.Builder, onlyExported bool, declsToSummarize map[string]bool) error {
+func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.DocumentURI, out *strings.Builder, onlyExported bool, declsToSummarize set.Set[string]) error {
 	fh, err := snapshot.ReadFile(ctx, f)
 	if err != nil {
 		return err
@@ -213,7 +214,7 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
 			if declsToSummarize != nil {
-				if _, ok := declsToSummarize[decl.Name.Name]; !ok {
+				if !declsToSummarize.Contains(decl.Name.Name) {
 					continue
 				}
 			}
@@ -255,12 +256,12 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 				for _, spec := range decl.Specs {
 					switch spec := spec.(type) {
 					case *ast.TypeSpec:
-						if _, ok := declsToSummarize[spec.Name.Name]; ok {
+						if declsToSummarize.Contains(spec.Name.Name) {
 							found = true
 						}
 					case *ast.ValueSpec:
 						for _, name := range spec.Names {
-							if _, ok := declsToSummarize[name.Name]; ok {
+							if declsToSummarize.Contains(name.Name) {
 								found = true
 							}
 						}
@@ -322,7 +323,7 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 				switch spec := spec.(type) {
 				case *ast.TypeSpec:
 					if declsToSummarize != nil {
-						if _, ok := declsToSummarize[spec.Name.Name]; !ok {
+						if !declsToSummarize.Contains(spec.Name.Name) {
 							continue
 						}
 					}
@@ -351,7 +352,7 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 					if declsToSummarize != nil {
 						found := false
 						for _, name := range spec.Names {
-							if _, ok := declsToSummarize[name.Name]; ok {
+							if declsToSummarize.Contains(name.Name) {
 								found = true
 							}
 						}

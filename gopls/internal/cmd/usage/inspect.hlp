@@ -8,11 +8,15 @@ Example:
 	$ gopls inspect golang.org/x/tools/go/ast/inspector.Cursor
 
 inspect-flags:
+  -full
+    	returns the entire doc comment for the entity, otherwise just the synopsis is returned
   -json
     	emit output in JSON format
   -markdown
     	outputs documentation in formatted Markdown instead of plain text
   -pkg=string
     	scopes the query to a specific package, resolving ambiguities in versioned package paths (for example, gopkg.in/yaml.v3) or vanity domains.
-  -pos=string
-    	targets a physical coordinate range (line and column are optional)
+  -pos=location
+    	targets a file span. Run 'gopls help location' for accepted location syntax.
+  -src
+    	prints the source code of the definition (declaration and body)

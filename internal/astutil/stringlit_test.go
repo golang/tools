@@ -11,185 +11,120 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/testenv"
 )
 
+// TestPosInStringLiteral checks PosInStringLiteral on all offsets
+// within various literals against an oracle based on strconv.Unquote.
 func TestPosInStringLiteral(t *testing.T) {
-	// Each string is Go source for a string literal with ^ marker at expected Pos.
-	tests := []string{
-		`"^abc"`,
-		`"a^bc"`,
-		`"ab^c"`,
-		`"abc^"`,
-		`"a\n^b"`,
-		`"\n^"`,
-		`"a\000^"`,
-		`"\x61^"`,
-		`"\u0061^"`,
-		`"\U00000061^"`,
-		`"€^"`,
-		`"a€^b"`,
-		"`abc^`",
-		"`a\n^b`",
+	for _, src := range []string{
+		`""`,
+		`"abc"`,
+		`"\n"`,
+		`"a\nb"`,
+		`"a\000b"`,
+		`"\xff\377"`, // single bytes, not runes
+		`"\x61\u0061\U00000061"`,
+		`"a€b"`,
+		`"\u20ac€\U0001F600😀"`,
+		`"\"\\\a\b\f\n\r\t\v"`,
+		"\"a\rb\"", // carriage return within interpreted string is preserved
+		"``",
+		"`abc`",
+		"`a\\nb`", // backslash is not an escape in a raw string
+		"`a\nb€`",
 		// normalization of \r carriage returns:
-		"`a\r\n^b`",
-		"`a\r\nb\r\nc\r\n^d`",
-	}
-	for _, test := range tests {
+		"`a\r\nb`",
+		"`a\r\nb\r\nc\r\nd`",
+		"`\r\na\r\nb\r\n`",
+	} {
 		// The workaround for \r requires the go1.26 fix for https://go.dev/issue/76031.
-		if strings.Contains(test, "\r") && testenv.Go1Point() < 26 {
+		if strings.HasPrefix(src, "`") && strings.Contains(src, "\r") && testenv.Go1Point() < 26 {
 			continue
 		}
 
-		t.Logf("input: %#q", test)
-
-		// Parse.
-		const prefix = "package p; const _ = "
-		src := prefix + test
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, "p.go", src, 0)
-		if err != nil {
-			t.Errorf("Parse: %v", err)
+		expr, _ := parser.ParseExpr(src) // may return BasicLit + error
+		lit, _ := expr.(*ast.BasicLit)
+		if lit == nil || lit.Kind != token.STRING {
+			t.Errorf("%#q: no string literal", src)
 			continue
 		}
-
-		// Find literal.
-		var lit *ast.BasicLit
-		ast.Inspect(f, func(n ast.Node) bool {
-			if b, ok := n.(*ast.BasicLit); ok {
-				lit = b
-				return false
-			}
-			return true
-		})
-		if lit == nil {
-			t.Errorf("No literal")
-			continue
-		}
-
-		// Find index of marker within logical value.
 		value, err := strconv.Unquote(lit.Value)
 		if err != nil {
-			t.Errorf("Unquote: %v", err)
-			continue
-		}
-		index := strings.Index(value, "^")
-		if index < 0 {
-			t.Errorf("Value %q contains no marker", value)
+			t.Errorf("Unquote(%#q): %v", lit.Value, err)
 			continue
 		}
 
-		// Convert logical index to file position.
-		pos, err := astutil.PosInStringLiteral(lit, index)
-		if err != nil {
-			t.Errorf("PosInStringLiteral(%d): %v", index, err)
-			continue
+		// Compute want[a], the expected offset within body of the
+		// start of the character containing value offset a.
+		//
+		// A cut point i in body is a character boundary if it is
+		// a rune start and both halves unquote to a prefix and
+		// suffix of the value. Where several cut points yield the
+		// same value offset (e.g. before or after the \r of \r\n in
+		// a raw string), the first one wins.
+		quote, body := src[:1], src[1:len(src)-1]
+		want := make([]int, len(value)+1)
+		for i := range want {
+			want[i] = -1
+		}
+		for i := 0; i <= len(body); i++ {
+			if i < len(body) && !utf8.RuneStart(body[i]) {
+				continue // not a character boundary
+			}
+			prefix, err1 := strconv.Unquote(quote + body[:i] + quote)
+			suffix, err2 := strconv.Unquote(quote + body[i:] + quote)
+			if err1 == nil && err2 == nil && prefix+suffix == value && want[len(prefix)] < 0 {
+				want[len(prefix)] = i
+			}
+		}
+		for a := 1; a <= len(value); a++ {
+			if want[a] < 0 {
+				want[a] = want[a-1] // within a multi-byte character
+			}
 		}
 
-		// Check that cut offset in original src file is before marker.
-		offset := fset.Position(pos).Offset
-		before, after := src[:offset], src[offset:]
-		t.Logf("\t%q :: %q", before, after)
-		if !strings.HasPrefix(after, "^") {
-			t.Errorf("no marker at cut point")
-			continue
+		for a, w := range want {
+			if got := int(astutil.PosInStringLiteral(lit, a)-lit.Pos()) - 1; got != w {
+				t.Errorf("%#q: PosInStringLiteral(%d) = %d, want %d", src, a, got, w)
+			}
 		}
 	}
 }
 
-func TestOffsetInStringLiteral(t *testing.T) {
-	// Each string is Go source for a string literal with | marker at expected
-	// physical pos, and $ marker at the expected logical unquoted index.
-	tests := []string{
-		`"$|abc"`,
-		`"a$|bc"`,
-		`"ab$|c"`,
-		`"abc$|"`,
-		`"a\n$|b"`,
-		`"\n$|"`,
-		`"a\000$|"`,
-		`"\x61$|"`,
-		`"\u0061$|"`,
-		`"\U00000061$|"`,
-		`"$\U00|000061"`,
-		`"€$|"`,
-		`"a€$|b"`,
-		"`abc$|`",
-		"`a\n$|b`",
-		// normalization of \r carriage returns:
-		"`a\r\n$|b`",
-		"`a\r\nb\r\nc\r\n$|d`",
-	}
-	for _, test := range tests {
-		// The workaround for \r requires the go1.26 fix for https://go.dev/issue/76031.
-		if strings.Contains(test, "\r") && testenv.Go1Point() < 26 {
+// TestPosInStringLiteralMalformed checks that PosInStringLiteral does
+// not panic on malformed literals produced by the parser for broken
+// source, and returns monotonic positions within the literal.
+func TestPosInStringLiteralMalformed(t *testing.T) {
+	for _, test := range []string{
+		`"abc`,   // unterminated at EOF
+		`"abc\"`, // escaped quote at EOF
+		`"\`,
+		`"`,
+		"`abc",
+		"`",
+		`"a\qb"`, // bad escape
+		`"\xZZ"`,
+		`"\u12"`,
+		"\"abc\ndef\"", // unterminated at end of line
+	} {
+		expr, _ := parser.ParseExpr(test) // may return BasicLit + error
+		lit, _ := expr.(*ast.BasicLit)
+		if lit == nil || lit.Kind != token.STRING {
+			t.Errorf("%#q: no string literal", test)
 			continue
 		}
-
-		t.Logf("input: %#q", test)
-
-		const prefix = "package p; const _ = "
-		src := prefix + test
-
-		// Remove the physical marker to produce valid Go source.
-		offset := strings.Index(src, "|")
-		if offset < 0 {
-			t.Errorf("Source %q contains no marker", src)
-			continue
-		}
-		src = src[:offset] + src[offset+1:]
-
-		// Parse.
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, "p.go", src, 0)
-		if err != nil {
-			t.Errorf("Parse: %v", err)
-			continue
-		}
-
-		// Find literal.
-		var lit *ast.BasicLit
-		ast.Inspect(f, func(n ast.Node) bool {
-			if b, ok := n.(*ast.BasicLit); ok {
-				lit = b
-				return false
+		prev := lit.Pos()
+		for offset := 0; offset <= len(lit.Value)+2; offset++ {
+			pos := astutil.PosInStringLiteral(lit, offset) // must not panic
+			if pos < prev || pos > lit.End() {
+				t.Errorf("%#q: PosInStringLiteral(%d) = %d, not in [%d, %d]",
+					test, offset, pos-lit.Pos(), prev-lit.Pos(), lit.End()-lit.Pos())
 			}
-			return true
-		})
-		if lit == nil {
-			t.Errorf("No literal")
-			continue
-		}
-
-		tfile := fset.File(f.Pos())
-		pos := tfile.Pos(offset)
-
-		// Convert file position to logical index.
-		index, err := astutil.OffsetInStringLiteral(lit, pos)
-		if err != nil {
-			t.Errorf("OffsetInStringLiteral(%d): %v", pos, err)
-			continue
-		}
-
-		value, err := strconv.Unquote(lit.Value)
-		if err != nil {
-			t.Errorf("Unquote: %v", err)
-			continue
-		}
-
-		if index < 0 || index > len(value) {
-			t.Errorf("Returned index %d is out of bounds for logical string of length %d", index, len(value))
-			continue
-		}
-
-		// Check that cut offset in value is before marker.
-		before, after := value[:index], value[index:]
-		t.Logf("\t%q :: %q", before, after)
-		if !strings.HasSuffix(before, "$") {
-			t.Errorf("no marker at logical cut point, got before=%q", before)
-			continue
+			prev = pos
 		}
 	}
 }

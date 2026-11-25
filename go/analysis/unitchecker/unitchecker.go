@@ -59,7 +59,6 @@ package unitchecker
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
@@ -80,12 +79,11 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/internal/analysis/driverutil"
+	"golang.org/x/tools/internal/exportdata"
 	"golang.org/x/tools/internal/facts"
-	"golang.org/x/tools/internal/gcimporter"
 )
 
 // A Config describes a compilation unit to be analyzed.
@@ -413,7 +411,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 		if !ok {
 			return nil, fmt.Errorf("no package vetx file for %q", path)
 		}
-		return gcimporter.IImportData(fset, imports, entry.types, path)
+		return exportdata.Decode(fset, path, entry.types, exportdata.PackagesFromMap(imports), exportdata.DecodeOptions{})
 	})
 
 	tc := &types.Config{
@@ -648,25 +646,27 @@ type vetxEntry struct {
 
 func readVetxFiles(packageVetx map[string]string) (map[string]*vetxEntry, error) {
 	var (
-		entriesMu sync.Mutex
-		entries   = make(map[string]*vetxEntry, len(packageVetx))
-		g         errgroup.Group
+		mu       sync.Mutex // guards entries and firstErr
+		entries  = make(map[string]*vetxEntry, len(packageVetx))
+		firstErr error
+		wg       sync.WaitGroup // (not errgroup, since unitchecker is vendored into std)
 	)
 	for pkgPath, file := range packageVetx {
-		g.Go(func() error {
+		wg.Go(func() {
 			entry, err := readVetxFile(file)
+			mu.Lock()
+			defer mu.Unlock()
 			if err != nil {
-				return fmt.Errorf("invalid vetx file for %q: %v", pkgPath, err)
+				if firstErr == nil {
+					firstErr = fmt.Errorf("invalid vetx file for %q: %v", pkgPath, err)
+				}
+				return
 			}
-			entriesMu.Lock()
 			entries[pkgPath] = entry
-			entriesMu.Unlock()
-
-			return nil
 		})
 	}
-	err := g.Wait()
-	return entries, err
+	wg.Wait()
+	return entries, firstErr
 }
 
 func readVetxFile(filename string) (*vetxEntry, error) {
@@ -692,25 +692,21 @@ func readVetxFile(filename string) (*vetxEntry, error) {
 }
 
 func writeVetxFile(fset *token.FileSet, pkg *types.Package, filename string, facts *facts.Set) error {
-	var buf bytes.Buffer
-	buf.WriteString(vetxMagic)
-	buf.Write(make([]byte, 8)) // placeholder for (types, facts) length fields
-
 	// types
-	startTypes := buf.Len()
-	if err := gcimporter.IExportData(&buf, fset, pkg); err != nil {
+	typesData, err := exportdata.Encode(fset, pkg, exportdata.EncodeOptions{})
+	if err != nil {
 		return err
 	}
-	typesLen := buf.Len() - startTypes
 
 	// facts
 	factsData := facts.Encode()
-	buf.Write(factsData)
-	factsLen := len(factsData)
 
-	// Patch the length fields and write it out.
-	data := buf.Bytes()
-	binary.LittleEndian.PutUint32(data[4:8], uint32(typesLen))
-	binary.LittleEndian.PutUint32(data[8:12], uint32(factsLen))
+	// Assemble the file: magic, (types, facts) length fields, types, facts.
+	data := make([]byte, 0, len(vetxMagic)+8+len(typesData)+len(factsData))
+	data = append(data, vetxMagic...)
+	data = binary.LittleEndian.AppendUint32(data, uint32(len(typesData)))
+	data = binary.LittleEndian.AppendUint32(data, uint32(len(factsData)))
+	data = append(data, typesData...)
+	data = append(data, factsData...)
 	return os.WriteFile(filename, data, 0666)
 }

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/imports"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
@@ -175,7 +176,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	var newParamFields []flatField
-	for id, field := range astutil.FlatFields(info.decl.Type.Params) {
+	for id, field := range astutil.Fields(info.decl.Type.Params) {
 		typ := pkg.TypesInfo().TypeOf(field.Type)
 		if typ == nil {
 			return nil, fmt.Errorf("missing field type for field #%d", len(newParamFields))
@@ -233,11 +234,11 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		// parameter named 'blank0', which would conflict with the synthetic names
 		// we construct below.
 		// TODO(rfindley): add an integration test for this behavior.
-		nonBlankNames := make(map[string]bool) // for detecting conflicts with renamed blanks
+		nonBlankNames := make(set.Set[string]) // for detecting conflicts with renamed blanks
 		for _, fld := range params.List {
 			for _, n := range fld.Names {
 				if n.Name != "_" {
-					nonBlankNames[n.Name] = true
+					nonBlankNames.Insert(n.Name)
 				}
 			}
 			if len(fld.Names) == 0 {
@@ -256,7 +257,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		}
 		blanks := 0
 		paramIndex := 0 // global param index.
-		for id, field := range astutil.FlatFields(params) {
+		for id, field := range astutil.Fields(params) {
 			argIndex, ok := oldParams[paramIndex]
 			paramIndex++
 			if !ok {
@@ -270,7 +271,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 					// arbitrary name.
 					newName := fmt.Sprintf("blank%d", blanks)
 					blanks++
-					if !nonBlankNames[newName] {
+					if !nonBlankNames.Contains(newName) {
 						id.Name = newName
 						break
 					}
@@ -446,29 +447,24 @@ func findParam(pgf *parsego.File, rng protocol.Range) *paramInfo {
 	// This search may fail, even if one or both of id and field are non nil:
 	// field could be from a result or local declaration, and id could be part of
 	// the field type rather than names.
-	for _, f := range info.decl.Type.Params.List {
+	for n, f := range astutil.Fields(info.decl.Type.Params) {
 		if f == field {
-			info.paramIndex = pi // may be modified later
-			info.field = f
-			for _, n := range f.Names {
-				if n == id {
-					info.paramIndex = pi
-					info.name = n
-					break
-				}
-				pi++
+			if info.field == nil {
+				info.paramIndex = pi // may be modified later
+				info.field = f
 			}
-			if info.name == nil && len(info.field.Names) == 1 {
-				info.name = info.field.Names[0]
+			if n != nil && n == id {
+				info.paramIndex = pi
+				info.name = n
+				break
 			}
-			break
-		} else {
-			m := len(f.Names)
-			if m == 0 {
-				m = 1
-			}
-			pi += m
+		} else if info.field != nil {
+			break // past the field
 		}
+		pi++
+	}
+	if info.field != nil && info.name == nil && len(info.field.Names) == 1 {
+		info.name = info.field.Names[0]
 	}
 	return &info
 }
@@ -559,10 +555,10 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 				// with (e.g.) named result variables. However, since the parameter syntax
 				// may have been modified/renamed from the original function, we must
 				// reject those names too.
-				usedParams := make(map[string]bool)
+				usedParams := make(set.Set[string])
 				for _, fld := range wrapper.Type.Params.List {
 					for _, name := range fld.Names {
-						usedParams[name.Name] = true
+						usedParams.Insert(name.Name)
 					}
 				}
 				scope := rw.pkg.TypesInfo().Scopes[rw.origDecl.Type]
@@ -572,7 +568,7 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 				for i := 0; ; i++ {
 					recv = fmt.Sprintf("r%d", i)
 					_, obj := scope.LookupParent(recv, token.NoPos)
-					if obj == nil && !usedParams[recv] {
+					if obj == nil && !usedParams.Contains(recv) {
 						break
 					}
 				}

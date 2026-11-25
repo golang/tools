@@ -81,6 +81,12 @@ func _() {
 	ptr(&(a[0]/*true*/)) // targets "a[0]"
 	ptr(&(a[0])/*false*/) // targets "&(a[0])"
 
+	// Slicing an array implicitly takes its address: the resulting slice
+	// aliases the array, so writes through it modify the array.
+	_ = a/*true*/ [:]
+	_ = a/*true*/ [1:2]
+	_ = a[:]/*false*/ // targets the slice value, which is merely copied
+
 	// A slice descriptor contains a pointer to the start of its underlying array.
 	var s []int
 	s/*false*/ [0] = 1 // a load of the pointer in the slice "s", not a direct assignment of "s"
@@ -89,6 +95,7 @@ func _() {
 	ptr(&s/*false*/ [0])
 	ptr(&(s[0]/*true*/))
 	ptr(&(s[0])/*false*/)
+	_ = s/*false*/ [:] // slicing a slice copies the descriptor; s itself is not address-taken
 
 	var st S
 	st/*true*/ .f = 1
@@ -126,6 +133,8 @@ func _() {
 	var sa StructWithArray
 	sa.arr/*true*/ [0] = 1
 	_ = sa.arr/*false*/ [0] // rvalue
+	_ = sa.arr/*true*/ [:] // slicing an array field takes its address
+	_ = sa/*true*/ .arr[:]
 
 	var mp map[int]int
 	mp/*false*/ [0] = 1 // targets "mp", which is a pointer to the map header and itself is not modified
@@ -142,6 +151,22 @@ func _() {
 	}
 	_ = k
 	_ = v
+}
+
+// Indexing or slicing an operand whose type is a type parameter may refer
+// to the operand's own memory if its type set includes an array type.
+func _[A ~[3]int, AS [3]int | []int, SL ~[]int]() {
+	var a A
+	a/*true*/ [0] = 1
+	_ = a/*false*/ [0] // rvalue
+	_ = a/*true*/ [:] // slicing an array takes its address
+
+	var as AS // may be an array or a slice
+	as/*true*/ [0] = 1
+
+	var sl SL
+	sl/*false*/ [0] = 1
+	_ = sl/*false*/ [:]
 }
 
 `
@@ -199,6 +224,7 @@ func TestIsAssignedOrAddressTaken_IllTyped(t *testing.T) {
 		`package p; func _() { _ = x[0] }`, // x undefined
 		`package p; type S struct{}; func _() { var x S; _ = x.nofield[0] }`,
 		`package p; func _() { var x int; _ = x.f[1:2] }`,
+		`package p; func _() { var x int; (x) := 1 }`, // non-identifier on LHS of := (golang/go#82781)
 	} {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, "p.go", src, 0)

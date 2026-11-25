@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // IsGenerated reads and parses the header of the file denoted by uri
@@ -58,13 +59,12 @@ func formatNodeFile(file *token.File, n ast.Node) string {
 // findFileInDeps finds package metadata containing URI in the transitive
 // dependencies of m. When using the Go command, the answer is unique.
 func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.DocumentURI) *metadata.Package {
-	seen := make(map[PackageID]bool)
+	seen := make(set.Set[PackageID])
 	var search func(*metadata.Package) *metadata.Package
 	search = func(mp *metadata.Package) *metadata.Package {
-		if seen[mp.ID] {
+		if !seen.Insert(mp.ID) {
 			return nil
 		}
-		seen[mp.ID] = true
 		if slices.Contains(mp.CompiledGoFiles, uri) {
 			return mp
 		}

@@ -43,6 +43,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
@@ -123,7 +124,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	ctx, done := event.Start(ctx, "golang.Hover")
 	defer done()
 
-	rng, h, err := hover(ctx, snapshot, fh, rng)
+	rng, h, err := hover(ctx, snapshot, fh, rng, true)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +176,7 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 // hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (protocol.Range, *hoverResult, error) {
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, sizeInfo bool) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
 	// whether this is a GOROOT view, but even if it does succeed the resulting
@@ -489,7 +490,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	//
 	var sizeOffset string
 
-	if ident.Pos() == obj.Pos() {
+	if sizeInfo && ident.Pos() == obj.Pos() {
 		// This is the declaring identifier.
 
 		// format returns the decimal and hex representation of x.
@@ -580,15 +581,15 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		// For an interface type, explicit methods will have
 		// already been displayed when the node was formatted
 		// above. Don't list these again.
-		var skip map[string]bool
+		var skip set.Set[string]
 		if iface, ok := spec1.Type.(*ast.InterfaceType); ok {
 			if iface.Methods.List != nil {
 				for _, m := range iface.Methods.List {
 					if len(m.Names) == 1 {
 						if skip == nil {
-							skip = make(map[string]bool)
+							skip = make(set.Set[string])
 						}
-						skip[m.Names[0].Name] = true
+						skip.Insert(m.Names[0].Name)
 					}
 				}
 			}
@@ -603,7 +604,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 			if !accessibleTo(m.Obj(), pkg.Types()) {
 				continue // inaccessible
 			}
-			if skip[m.Obj().Name()] {
+			if skip.Contains(m.Obj().Name()) {
 				continue // redundant with format.Node above
 			}
 			if b.Len() > 0 {
@@ -1093,32 +1094,16 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 				}
 			}
 		case constant.String:
-			index, err := astutil.OffsetInStringLiteral(lit, posRange.Pos())
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-			// pos is the point in the literal where the current rune starts.
-			pos, err := astutil.PosInStringLiteral(lit, index)
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-
-			rest, err := pgf.PosText(pos, lit.End())
-			if err != nil {
-				return protocol.Range{}, nil, err
-			}
-
 			// Is the selected character denoted by an escape sequence?
-			if bytes.HasPrefix(rest, []byte(`\`)) {
-				rr, _, tail, err := strconv.UnquoteChar(string(rest), lit.Value[0])
-				if err != nil {
-					return protocol.Range{}, nil, err
+			if s, e, rr, multibyte, ok := escapeAt(lit, posRange.Pos()); ok {
+				start, end = s, e
+
+				if multibyte || rr < utf8.RuneSelf {
+					r = rr
+				} else {
+					// A hex or octal escape >= 0x80 denotes a single byte, not a rune.
+					value = fmt.Sprintf("byte 0x%02X (%d)", rr, rr)
 				}
-
-				rawSize := len(rest) - len(tail)
-
-				start, end = pos, pos+token.Pos(rawSize)
-				r = rr
 			}
 		default:
 			panic("unexpected constant.Kind")
@@ -1172,6 +1157,35 @@ func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, 
 	}, nil
 }
 
+// escapeAt returns the source extent and value of the escape sequence
+// containing pos in the string literal lit, if any.
+// A position on the opening quote is treated as the first character.
+// If multibyte is false, r is a single byte value (from a hex or
+// octal escape) rather than a Unicode code point; see [strconv.UnquoteChar].
+func escapeAt(lit *ast.BasicLit, pos token.Pos) (start, end token.Pos, r rune, multibyte, ok bool) {
+	if len(lit.Value) < 2 || lit.Value[0] != '"' {
+		return // raw string literals have no escape sequences
+	}
+	// The scanner strips carriage returns only from raw string
+	// literals, so lit.Value is exactly the source text.
+	s := lit.Value[1 : len(lit.Value)-1]
+	for i := lit.Pos() + 1; s != ""; {
+		rr, mb, rest, err := strconv.UnquoteChar(s, '"')
+		if err != nil {
+			break // malformed
+		}
+		j := i + token.Pos(len(s)-len(rest)) // i:j is Pos range of what UnquoteChar ate
+		if pos < j {
+			if s[0] != '\\' {
+				break // pos is not within an escape
+			}
+			return i, j, rr, mb, true
+		}
+		i, s = j, rest
+	}
+	return
+}
+
 func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protocol.Range, *hoverResult, error) {
 	var funcType *ast.FuncType
 	// Find innermost enclosing function.
@@ -1199,10 +1213,12 @@ func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protoc
 	var cfg printer.Config
 	fset := token.NewFileSet()
 	buf.WriteString("returns (")
-	for i, field := range funcType.Results.List {
-		if i > 0 {
+	first := true
+	for _, field := range astutil.Fields(funcType.Results) {
+		if !first {
 			buf.WriteString(", ")
 		}
+		first = false
 		cfg.Fprint(&buf, fset, field.Type) // ignore error
 	}
 	buf.WriteByte(')')
@@ -1504,7 +1520,7 @@ func objectString(obj types.Object, qual types.Qualifier, declPos token.Pos, fil
 		if recv := sig.Recv(); recv != nil {
 			buf.WriteByte('(')
 			if _, ok := recv.Type().(*types.Interface); ok {
-				// gcimporter creates abstract methods of
+				// exportdata.Decode creates abstract methods of
 				// named interfaces using the interface type
 				// (not the named type) as the receiver.
 				// Don't print it in full.

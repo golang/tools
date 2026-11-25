@@ -1221,9 +1221,6 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 }
 
 func refactorMoveDeclaration(_ context.Context, req *codeActionsRequest) error {
-	if !req.snapshot.Options().MoveDeclaration {
-		return nil
-	}
 	if !supportsDialog(req.snapshot.Options().ClientOptions, moveDeclarationQuestions) {
 		return nil
 	}

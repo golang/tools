@@ -314,7 +314,11 @@ func (b *builder) exprN(fn *Function, e ast.Expr) Value {
 		return fn.emit(lookup)
 
 	case *ast.TypeAssertExpr:
-		return emitTypeTest(fn, b.expr(fn, e.X), typ.At(0).Type(), e.Lparen)
+		x, t := b.expr(fn, e.X), typ.At(0).Type()
+		if impossibleAssert(fn, x, t) {
+			return zeroConst(typ)
+		}
+		return emitTypeTest(fn, x, t, e.Lparen)
 
 	case *ast.UnaryExpr: // must be receive <-
 		unop := &UnOp{
@@ -327,6 +331,13 @@ func (b *builder) exprN(fn *Function, e ast.Expr) Value {
 		return fn.emit(unop)
 	}
 	panic(fmt.Sprintf("exprN(%T) in %s", e, fn))
+}
+
+// impossibleAssert reports whether the type assertion x.(t) can never
+// succeed.
+func impossibleAssert(fn *Function, x Value, t types.Type) bool {
+	// These can only occur in generic instantiations.
+	return fn.subst != nil && !types.AssertableTo(x.Type().Underlying().(*types.Interface), t)
 }
 
 // builtin emits to fn SSA instructions to implement a call to the
@@ -403,10 +414,9 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		// We must still evaluate the value, though.  (If it
 		// was side-effect free, the whole call would have
 		// been constant-folded.)
-		t := typeparams.Deref(fn.typeOf(args[0]))
-		if at, ok := typeparams.CoreType(t).(*types.Array); ok {
+		if n, ok := arrayLen(fn.typeOf(args[0])); ok {
 			b.expr(fn, args[0]) // for effects only
-			return intConst(at.Len())
+			return intConst(n)
 		}
 		// Otherwise treat as normal.
 
@@ -657,7 +667,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		return fn.emit(v)
 
 	case *ast.TypeAssertExpr: // single-result form only
-		return emitTypeAssert(fn, b.expr(fn, e.X), fn.typ(tv.Type), e.Lparen)
+		x, t := b.expr(fn, e.X), fn.typ(tv.Type)
+		if impossibleAssert(fn, x, t) {
+			// Widening to any makes the assertion possible, so it
+			// fails at run time with a *runtime.TypeAssertionError.
+			x = emitConv(fn, x, tEface)
+		}
+		return emitTypeAssert(fn, x, t, e.Lparen)
 
 	case *ast.CallExpr:
 		if fn.info.Types[e.Fun].IsType() {
@@ -834,7 +850,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				if recv, ok := types.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
-					if !typeSetIsEmpty(recv) {
+					if typeparams.TypeSetOf(recv).Len() > 0 {
 						// recv has a concrete term its typeset.
 						// So it cannot be instantiated as an interface.
 						//
@@ -908,7 +924,9 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			// An array in a register, a string or a combined type that contains
 			// either an [_]array (ixArrVar) or string (ixValue).
 
-			// Note: for ixArrVar and CoreType(xt)==nil can be IndexAddr and Load.
+			// Note: for ixArrVar, if xt is a type parameter whose type set
+			// mixes arrays with other types (e.g. ~[N]T | ~[]T), this
+			// could be IndexAddr and Load.
 			index := b.expr(fn, e.Index)
 			if isUntyped(index.Type()) {
 				index = emitConv(fn, index, tInt)
@@ -1552,24 +1570,30 @@ func (b *builder) typeSwitchStmt(fn *Function, s *ast.TypeSwitchStmt, label *lbl
 			continue
 		}
 		body := fn.newBasicBlock("typeswitch.body")
-		var next *BasicBlock
-		var casetype types.Type
+		next := fn.currentBlock
 		var ti Value // ti, ok := typeassert,ok x <Ti>
 		for _, cond := range cc.List {
-			next = fn.newBasicBlock("typeswitch.next")
-			casetype = fn.typeOf(cond)
+			casetype := fn.typeOf(cond)
 			var condv Value
-			if casetype == tUntypedNil {
+			switch {
+			case casetype == tUntypedNil:
 				condv = emitCompare(fn, token.EQL, x, zeroConst(x.Type()), cond.Pos())
 				ti = x
-			} else {
+			case impossibleAssert(fn, x, casetype):
+				// If this is the single type in the case, the body is unreachable.
+				ti = zeroConst(casetype)
+				continue
+			default:
 				yok := emitTypeTest(fn, x, casetype, cc.Case)
 				ti = emitExtract(fn, yok, 0)
 				condv = emitExtract(fn, yok, 1)
 			}
+			next = fn.newBasicBlock("typeswitch.next")
 			emitIf(fn, condv, body, next)
 			fn.currentBlock = next
 		}
+		// Unless there is a single type in the case,
+		// use the original type of x in the body.
 		if len(cc.List) != 1 {
 			ti = x
 		}

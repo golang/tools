@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/writestring"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 	"honnef.co/go/tools/analysis/lint"
 )
 
@@ -128,7 +129,7 @@ func (a *Analyzer) Tags() []protocol.DiagnosticTag { return a.tags }
 func (a *Analyzer) String() string { return a.analyzer.String() }
 
 func initAnalyzers() (res []*Analyzer) {
-	seen := make(map[*analysis.Analyzer]bool)
+	seen := make(set.Set[*analysis.Analyzer])
 
 	// Start with the traditional vet and fix suites.
 	for _, suite := range []struct {
@@ -141,8 +142,7 @@ func initAnalyzers() (res []*Analyzer) {
 	} {
 		for _, a := range suite.analyzers {
 			// De-duplicate, since the suites overlap.
-			if !seen[a] {
-				seen[a] = true
+			if seen.Insert(a) {
 				res = append(res, &Analyzer{analyzer: a, severity: suite.severity})
 			}
 		}
@@ -207,10 +207,11 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
 		{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
 		// modernizers not included in modernize.Suite (nor fix.Suite)
-		{analyzer: modernize.AppendClippedAnalyzer, nonDefault: true}, // not nil-preserving
-		{analyzer: modernize.BLoopAnalyzer},                           // may skew benchmark results, see golang/go#74967
-		{analyzer: modernize.FmtAppendfAnalyzer},                      // makes code less clear, see golang/go#77581
-		{analyzer: modernize.SlicesDeleteAnalyzer, nonDefault: true},  // not nil-preserving
+		// (Be sure to explicitly demote the severity.)
+		{analyzer: modernize.AppendClippedAnalyzer, nonDefault: true, severity: protocol.SeverityHint}, // not nil-preserving
+		{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},                           // may skew benchmark results, see golang/go#74967
+		{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},                      // makes code less clear, see golang/go#77581
+		{analyzer: modernize.SlicesDeleteAnalyzer, nonDefault: true, severity: protocol.SeverityHint},  // not nil-preserving
 
 		// type-error analyzers
 		// These analyzers enrich go/types errors with suggested fixes.
@@ -221,10 +222,9 @@ func initAnalyzers() (res []*Analyzer) {
 		{analyzer: noresultvalues.Analyzer},
 		{analyzer: unusedvariable.Analyzer},
 	} {
-		if seen[a.analyzer] {
+		if !seen.Insert(a.analyzer) {
 			log.Fatalf("duplicate analyzer: %q", a.analyzer.Name)
 		}
-		seen[a.analyzer] = true
 		res = append(res, a)
 	}
 

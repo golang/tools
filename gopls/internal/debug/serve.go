@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
@@ -85,13 +86,12 @@ func (st *State) Bugs() []bug.Bug {
 // Caches returns the set of Cache objects currently being served.
 func (st *State) Caches() []*cache.Cache {
 	var caches []*cache.Cache
-	seen := make(map[string]struct{})
+	seen := make(set.Set[string])
 	for _, client := range st.Clients() {
 		cache := client.Session.Cache()
-		if _, found := seen[cache.ID()]; found {
+		if !seen.Insert(cache.ID()) {
 			continue
 		}
-		seen[cache.ID()] = struct{}{}
 		caches = append(caches, cache)
 	}
 	return caches
@@ -504,12 +504,15 @@ func (i *Instance) SetLogFile(logfile string, isDaemon bool) (func(), error) {
 }
 
 // Serve starts and runs a debug server in the background on the given addr.
-// It also logs the port the server starts on, to allow for :0 auto assigned
-// ports.
+// It also logs the port the server starts on, to allow for localhost:0 auto
+// assigned ports.
 func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 	stdlog.SetFlags(stdlog.Lshortfile)
 	if addr == "" {
 		return "", nil
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "", fmt.Errorf("debug address %s implicitly binds all network interfaces; please use an explicit host such as 0.0.0.0 (all interfaces) or localhost (safer)", addr)
 	}
 	i.serveMu.Lock()
 	defer i.serveMu.Unlock()

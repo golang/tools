@@ -12,6 +12,8 @@ type B[T any] int
 
 type tokenKind int
 
+type _Ctype_int int
+
 type namedStruct struct{ field int }
 
 type Fn func([4]byte)
@@ -42,6 +44,7 @@ var (
 	_     = reflect.TypeOf(&a)                              // nope (mentions symbol a)
 	_     = reflect.TypeOf(&b)                              // nope (mentions symbol b)
 	_     = reflect.TypeOf(tokenKind(0))                    // want "reflect.TypeOf call can be simplified using TypeFor"
+	_     = reflect.TypeOf(_Ctype_int(0))                   // nope (cgo type)
 	_     = reflect.TypeOf(namedStruct{})                   // want "reflect.TypeOf call can be simplified using TypeFor"
 	_     = reflect.TypeOf([4]byte{})                       // want "reflect.TypeOf call can be simplified using TypeFor"
 	_     = reflect.TypeOf((*[4]byte)(nil))                 // want "reflect.TypeOf call can be simplified using TypeFor"

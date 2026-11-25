@@ -179,3 +179,61 @@ edge two -> three: c -> d;
 edge zero -> one: a -> b1;`[1:])
 	})
 }
+
+// TestSplitPackageBadReceiver is a regression test for a crash
+// (go.dev/issue/82906) when the package contains a method whose
+// receiver base type is not a named type.
+func TestSplitPackageBadReceiver(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+func (int) M() {}
+
+func (*Undefined) N() {}
+
+func f() {}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "package")
+		uri, _ := codeActionWebPage(t, env, settings.GoSplitPackage, loc)
+
+		u, err := url.Parse(uri)
+		if err != nil {
+			t.Fatalf("parsing URL: %v", err)
+		}
+		u.Path = strings.ReplaceAll(u.Path, "/splitpkg", "/splitpkg-json")
+		resp, err := http.Get(u.String())
+		if err != nil {
+			t.Fatalf("HTTP request: %v", err)
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("reading output: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("HTTP status %d: %s", resp.StatusCode, data)
+		}
+		var res splitpkg.ResultJSON
+		if err := json.Unmarshal(data, &res); err != nil {
+			t.Fatalf("decoding output: %v", err)
+		}
+		var got []string
+		for _, file := range res.Files {
+			for _, decl := range file.Decls {
+				for _, spec := range decl.Specs {
+					got = append(got, spec.Name)
+				}
+			}
+		}
+		want := []string{"f"} // ill-typed methods are skipped
+		if !slices.Equal(got, want) {
+			t.Errorf("got decls %q, want %q", got, want)
+		}
+	})
+}

@@ -18,3 +18,10 @@ func _() {
 func _() {
 	print("hello")
 }
+
+var x = func() {
+	f := func() {}
+	f()
+}
+
+var y = func() {}

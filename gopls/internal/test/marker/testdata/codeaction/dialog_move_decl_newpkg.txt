@@ -1,0 +1,90 @@
+Test move declaration refactoring when the destination file is in a package
+that does not yet exist, so the move must create it.
+
+-- capabilities.json --
+{
+	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
+}
+
+-- settings.json --
+{
+	"analyses": {"unusedfunc": false}
+}
+
+-- go.mod --
+module golang.org/lsptests/movedeclnewpkg
+
+go 1.20
+
+-- refs/src/src.go --
+package src
+
+// Helper is referenced from the source package and from package other.
+func Helper() int { //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/newpkg/helper.go"}`, result=move_newpkg_refs)
+	return 1
+}
+
+func User() int {
+	return Helper()
+}
+
+-- other/other.go --
+package other
+
+import "golang.org/lsptests/movedeclnewpkg/refs/src"
+
+var X = src.Helper()
+
+-- @move_newpkg_refs/newpkg/helper.go --
+package newpkg
+
+// Helper is referenced from the source package and from package other.
+func Helper() int { //@codeaction(re"Helper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/newpkg/helper.go"}`, result=move_newpkg_refs)
+	return 1
+}
+-- @move_newpkg_refs/other/other.go --
+package other
+
+import "golang.org/lsptests/movedeclnewpkg/newpkg"
+
+
+
+var X = newpkg.Helper()
+
+-- @move_newpkg_refs/refs/src/src.go --
+package src
+
+import "golang.org/lsptests/movedeclnewpkg/newpkg"
+
+func User() int {
+	return newpkg.Helper()
+}
+
+-- nested/src/src.go --
+package src
+
+// Upper moves to a new package nested in several new directories.
+func Upper(s string) string { //@codeaction(re"Upper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/a/b/strs/strs.go"}`, result=move_newpkg_nested)
+	return s + "!"
+}
+
+func Hi() string {
+	return Upper("hi")
+}
+
+-- @move_newpkg_nested/a/b/strs/strs.go --
+package strs
+
+// Upper moves to a new package nested in several new directories.
+func Upper(s string) string { //@codeaction(re"Upper", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/a/b/strs/strs.go"}`, result=move_newpkg_nested)
+	return s + "!"
+}
+-- @move_newpkg_nested/nested/src/src.go --
+package src
+
+import "golang.org/lsptests/movedeclnewpkg/a/b/strs"
+
+func Hi() string {
+	return strs.Upper("hi")
+}
+

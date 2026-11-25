@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -717,7 +718,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	// Avoid duplicates while traversing vars and uninitialized.
 	seenVars := make(map[types.Object]ast.Expr)
-	seenUninitialized := make(map[types.Object]struct{})
+	seenUninitialized := make(set.Set[types.Object])
 
 	// Some variables on the left-hand side of our assignment statement may be free. If our
 	// selection begins in the same scope in which the free variable is defined, we can
@@ -1650,38 +1651,29 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, at token.Po
 	if enclosing.Results != nil {
 		nameIdx := make(map[string]int) // last integral suffixes of generated names
 		qual := typesinternal.FileQualifier(file, pkg)
-		for _, field := range enclosing.Results.List {
+		for id, field := range astutil.Fields(enclosing.Results) {
 			typ := info.TypeOf(field.Type)
 			if typ == nil {
 				return nil, nil, fmt.Errorf(
 					"failed type conversion, AST expression: %T", field.Type)
 			}
-			names := []string{""}
-			if len(field.Names) > 0 {
-				names = nil
-				for _, n := range field.Names {
-					names = append(names, n.Name)
-				}
+			bestName := "result"
+			if id != nil && id.Name != "_" {
+				bestName = id.Name
+			} else if n, ok := varNameForType(typ); ok {
+				bestName = n
 			}
-			for _, name := range names {
-				bestName := "result"
-				if name != "" && name != "_" {
-					bestName = name
-				} else if n, ok := varNameForType(typ); ok {
-					bestName = n
-				}
-				retName, idx := freshNameOutsideRange(info, file, at, start, end, bestName, nameIdx[bestName])
-				nameIdx[bestName] = idx
-				z, isValid := typesinternal.ZeroExpr(typ, qual)
-				if !isValid {
-					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
-				}
-				retVars = append(retVars, &returnVariable{
-					name:    ast.NewIdent(retName),
-					decl:    &ast.Field{Type: typesinternal.TypeExpr(typ, qual)},
-					zeroVal: z,
-				})
+			retName, idx := freshNameOutsideRange(info, file, at, start, end, bestName, nameIdx[bestName])
+			nameIdx[bestName] = idx
+			z, isValid := typesinternal.ZeroExpr(typ, qual)
+			if !isValid {
+				return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
 			}
+			retVars = append(retVars, &returnVariable{
+				name:    ast.NewIdent(retName),
+				decl:    &ast.Field{Type: typesinternal.TypeExpr(typ, qual)},
+				zeroVal: z,
+			})
 		}
 	}
 	var ifReturn *ast.IfStmt
@@ -1838,13 +1830,12 @@ func generateFuncCall(hasNonNestedReturn, hasReturnVals bool, params, returns []
 // var x int
 // var y string
 // x, y, z = fn()
-func initializeVars(uninitialized []types.Object, retVars []*returnVariable, seenUninitialized map[types.Object]struct{}, seenVars map[types.Object]ast.Expr) []ast.Stmt {
+func initializeVars(uninitialized []types.Object, retVars []*returnVariable, seenUninitialized set.Set[types.Object], seenVars map[types.Object]ast.Expr) []ast.Stmt {
 	var declarations []ast.Stmt
 	for _, obj := range uninitialized {
-		if _, ok := seenUninitialized[obj]; ok {
+		if !seenUninitialized.Insert(obj) {
 			continue
 		}
-		seenUninitialized[obj] = struct{}{}
 		valSpec := &ast.ValueSpec{
 			Names: []*ast.Ident{ast.NewIdent(obj.Name())},
 			Type:  seenVars[obj],

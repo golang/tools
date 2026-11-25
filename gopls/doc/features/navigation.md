@@ -148,7 +148,7 @@ Functions, `func` types, and dynamic function calls are matched using signatures
   and dynamic call expressions.
 - When invoked on the `func` token of a **signature type**,
   it returns the locations of the matching concrete function definitions.
-- When invoked on the `(` token of a **dynamic function call**,
+- When invoked on the `(` token (or called identifier) of a **dynamic function call**,
   it returns the locations of the matching concrete function
   definitions.
 

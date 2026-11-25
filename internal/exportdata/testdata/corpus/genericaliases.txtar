@@ -1,0 +1,17 @@
+Declarations and uses of generic type aliases (go.dev/issue/68778).
+Formerly TestIExportDataTypeParameterizedAliases.
+
+-- go.mod --
+module example.com/genericaliases
+
+go 1.26
+
+-- pkg.go --
+package pkg
+
+type A[T any] = *T
+type B[R any, S *R] = []S
+type C[U any] = B[U, A[U]]
+
+type Named int
+type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named

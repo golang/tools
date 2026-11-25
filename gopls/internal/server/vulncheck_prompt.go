@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -128,6 +129,7 @@ func (s *server) checkDependencyChanges(ctx context.Context, uri protocol.Docume
 	if s.Options().Vulncheck != settings.ModeVulncheckPrompt {
 		return
 	}
+	ctx = context.WithoutCancel(ctx)
 	ctx, done := event.Start(ctx, "server.checkDependencyChanges")
 	defer done()
 
@@ -214,13 +216,13 @@ func recordVulncheckupgradeAction(action vulnupgradeAction) {
 }
 
 func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) {
+	ctx = context.WithoutCancel(ctx)
 	_, snapshot, release, err := s.session.FileOf(ctx, uri)
 	if err != nil {
 		event.Error(ctx, "getting file snapshot failed", err)
 		return
 	}
 	defer release()
-	ctx = context.WithoutCancel(ctx)
 
 	work := s.progress.Start(ctx, GoVulncheckCommandTitle, "Running govulncheck...", nil, nil)
 	defer work.End(ctx, "Done.")
@@ -293,9 +295,9 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 	}
 }
 
-func computeModulesToUpgrade(findings []*govulncheck.Finding) (affecting map[string]bool, stdLibVulns map[string]bool, modulesToUpgrade map[string]string) {
-	affecting = make(map[string]bool)
-	stdLibVulns = make(map[string]bool)
+func computeModulesToUpgrade(findings []*govulncheck.Finding) (affecting set.Set[string], stdLibVulns set.Set[string], modulesToUpgrade map[string]string) {
+	affecting = make(set.Set[string])
+	stdLibVulns = make(set.Set[string])
 	modulesToUpgrade = make(map[string]string)
 
 	for _, f := range findings {
@@ -307,9 +309,9 @@ func computeModulesToUpgrade(findings []*govulncheck.Finding) (affecting map[str
 		// These vulnerabilities cannot be remediated via module upgrades and
 		// instead require updating the Go toolchain.
 		if mod == "stdlib" || mod == "" {
-			stdLibVulns[f.OSV] = true
+			stdLibVulns.Insert(f.OSV)
 		} else {
-			affecting[f.OSV] = true
+			affecting.Insert(f.OSV)
 			if f.FixedVersion != "" {
 				current, ok := modulesToUpgrade[mod]
 				if !ok || current == "latest" || semver.Compare(f.FixedVersion, current) > 0 {
@@ -357,7 +359,7 @@ func (s *server) runGoGet(ctx context.Context, snapshot *cache.Snapshot, uri pro
 	work := s.progress.Start(ctx, "Upgrading Modules", "Running go get...", nil, nil)
 	defer work.End(ctx, "Done.")
 
-	var upgrades []string
+	upgrades := []string{"--"} // module paths may begin with a dash
 	for module, version := range modulesToUpgrade {
 		upgrades = append(upgrades, module+"@"+version)
 	}

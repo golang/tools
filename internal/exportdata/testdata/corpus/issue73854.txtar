@@ -1,0 +1,16 @@
+Encoding a constant whose type is an instantiated generic type, such
+as Generic[interface{}], must not panic (go.dev/issue/73854).
+
+-- go.mod --
+module example.com/issue73854
+
+go 1.26
+
+-- pkg.go --
+package pkg
+
+type Generic[T any] int
+
+const C1 Generic[interface{}] = 1
+const C2 Generic[func()] = 2
+const C3 Generic[struct{}] = 3

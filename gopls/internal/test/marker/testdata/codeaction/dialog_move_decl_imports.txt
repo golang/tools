@@ -5,11 +5,6 @@ Test move declaration refactoring: import additions and deletions.
 	"experimental":{"interactiveResolve":{"inputTypes":["string"]}}
 }
 
--- settings.json --
-{
-	"moveDeclaration": true
-}
-
 -- go.mod --
 module golang.org/lsptests/movedeclimports
 
@@ -546,4 +541,102 @@ import "golang.org/lsptests/movedeclimports/dest"
 var (
 	OtherThing dest.Thing
 )
+
+-- src/local_after_use.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// LocalAfterUse declares Existing only after the use of dest.Existing, so the
+// unqualified reference still resolves to the function.
+func LocalAfterUse() int { //@codeaction(re"LocalAfterUse", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_local_after_use)
+	dest.Existing()
+	Existing := 1
+	return Existing
+}
+
+-- @move_local_after_use/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// LocalAfterUse declares Existing only after the use of dest.Existing, so the
+// unqualified reference still resolves to the function.
+func LocalAfterUse() int { //@codeaction(re"LocalAfterUse", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_local_after_use)
+	Existing()
+	Existing := 1
+	return Existing
+}
+-- @move_local_after_use/src/local_after_use.go --
+package src
+
+
+
+-- src/same_name.go --
+package src
+
+import "golang.org/lsptests/movedeclimports/dest"
+
+// Existing in package src does not conflict with dest.Existing once the
+// moving code is in package dest.
+func Existing() {}
+
+func CallsDestExisting() { //@codeaction(re"CallsDestExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_src_same_name)
+	dest.Existing()
+}
+
+-- @move_src_same_name/dest/dest.go --
+package dest
+
+func Existing() {}
+
+func CallsDestExisting() { //@codeaction(re"CallsDestExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_src_same_name)
+	Existing()
+}
+-- @move_src_same_name/src/same_name.go --
+package src
+
+
+
+// Existing in package src does not conflict with dest.Existing once the
+// moving code is in package dest.
+func Existing() {}
+
+-- srcimp/uses.go --
+package srcimp
+
+import (
+	Existing "strings"
+
+	"golang.org/lsptests/movedeclimports/dest"
+)
+
+// The import named Existing is not used by the moving code, so it does not
+// conflict with dest.Existing.
+func UsesDestExisting() { //@codeaction(re"UsesDestExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_file_import_same_name)
+	dest.Existing()
+}
+
+func StaysWithImport() string { return Existing.ToUpper("x") }
+
+-- @move_file_import_same_name/dest/dest.go --
+package dest
+
+func Existing() {}
+
+// The import named Existing is not used by the moving code, so it does not
+// conflict with dest.Existing.
+func UsesDestExisting() { //@codeaction(re"UsesDestExisting", "refactor.move.moveDeclaration", answers=`{"file":"file://$WORKDIR/dest/dest.go"}`, result=move_file_import_same_name)
+	Existing()
+}
+-- @move_file_import_same_name/srcimp/uses.go --
+package srcimp
+
+import (
+	Existing "strings"
+
+	
+)
+
+func StaysWithImport() string { return Existing.ToUpper("x") }
 

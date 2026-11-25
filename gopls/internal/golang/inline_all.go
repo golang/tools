@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/analysis/driverutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/moremaps"
 	"golang.org/x/tools/internal/refactor"
@@ -81,14 +82,14 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		needRecover = false
 	)
 	{
-		needPkgs := make(map[PackageID]struct{})
+		needPkgs := make(set.Set[PackageID])
 		for _, ref := range refs {
 			md, err := snapshot.NarrowestMetadataForFile(ctx, ref.URI)
 			if err != nil {
 				return nil, fmt.Errorf("finding ref metadata: %v", err)
 			}
 			pkgForRef[ref] = md.ID
-			needPkgs[md.ID] = struct{}{}
+			needPkgs.Insert(md.ID)
 		}
 		pkgIDs := moremaps.KeySlice(needPkgs)
 

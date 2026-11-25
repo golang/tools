@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -248,47 +249,38 @@ func (f *Function) startBody() {
 // Postcondition:
 // len(f.Params) == len(f.Signature.Params) + (f.Signature.Recv() ? 1 : 0)
 func (f *Function) createSyntacticParams(recv *ast.FieldList, functype *ast.FuncType) {
-	// Receiver (at most one inner iteration).
-	if recv != nil {
-		for _, field := range recv.List {
-			for _, n := range field.Names {
-				f.addSpilledParam(identVar(f, n))
-			}
+	// Receiver (at most one iteration).
+	for id := range astutil.Fields(recv) {
+		if id != nil {
+			f.addSpilledParam(identVar(f, id))
+		} else {
 			// Anonymous receiver?  No need to spill.
-			if field.Names == nil {
-				f.addParamVar(f.Signature.Recv())
-			}
+			f.addParamVar(f.Signature.Recv())
 		}
 	}
 
 	// Parameters.
-	if functype.Params != nil {
-		n := len(f.Params) // 1 if has recv, 0 otherwise
-		for _, field := range functype.Params.List {
-			for _, n := range field.Names {
-				f.addSpilledParam(identVar(f, n))
-			}
+	n := len(f.Params) // 1 if has recv, 0 otherwise
+	for id := range astutil.Fields(functype.Params) {
+		if id != nil {
+			f.addSpilledParam(identVar(f, id))
+		} else {
 			// Anonymous parameter?  No need to spill.
-			if field.Names == nil {
-				f.addParamVar(f.Signature.Params().At(len(f.Params) - n))
-			}
+			f.addParamVar(f.Signature.Params().At(len(f.Params) - n))
 		}
 	}
 
 	// Results.
-	if functype.Results != nil {
-		for _, field := range functype.Results.List {
-			// Implicit "var" decl of locals for named results.
-			for _, n := range field.Names {
-				v := identVar(f, n)
-				f.addResultVar(v)
-			}
+	for id := range astutil.Fields(functype.Results) {
+		var v *types.Var
+		if id != nil {
+			// Implicit "var" decl of local for a named result.
+			v = identVar(f, id)
+		} else {
 			// Implicit "var" decl of local for an unnamed result.
-			if field.Names == nil {
-				v := f.Signature.Results().At(len(f.results))
-				f.addResultVar(v)
-			}
+			v = f.Signature.Results().At(len(f.results))
 		}
+		f.addResultVar(v)
 	}
 }
 

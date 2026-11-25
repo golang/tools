@@ -426,6 +426,13 @@ func propagate(pass *analysis.Pass, w *wrapper, call *ast.CallExpr, kind Kind, r
 		return
 	}
 
+	// A wrapper that forwards to both Printf and Errorf is
+	// Errorf-like, regardless of the order of the calls.
+	// (Errorf-like functions additionally accept the %w verb.)
+	if kind == KindPrintf && res.funcs[w.obj] == KindErrorf {
+		kind = KindErrorf
+	}
+
 	// If the candidate's print{,f} status becomes known,
 	// propagate it back to all its so-far known callers.
 	if res.funcs[w.obj] != kind {
@@ -801,11 +808,8 @@ func checkPrintf(pass *analysis.Pass, fileVersion string, kind Kind, call *ast.C
 // opRange returns the source range for the specified printf operation,
 // such as the position of the %v substring of "...%v...".
 func opRange(formatArg ast.Expr, op *fmtstr.Operation) analysis.Range {
-	if lit, ok := formatArg.(*ast.BasicLit); ok {
-		rng, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
-		if err == nil {
-			return rng // position of "%v"
-		}
+	if lit, ok := formatArg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+		return astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End) // position of "%v"
 	}
 	return formatArg // entire format string
 }

@@ -158,7 +158,9 @@ func TestComputeGoWorkHash(t *testing.T) {
 
 type mockClient struct {
 	protocol.Client
+	showMessage        func(context.Context, *protocol.ShowMessageParams) error
 	showMessageRequest func(context.Context, *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error)
+	progress           func(context.Context, *protocol.ProgressParams) error
 }
 
 func (c *mockClient) ShowMessageRequest(ctx context.Context, params *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
@@ -169,10 +171,28 @@ func (c *mockClient) ShowMessageRequest(ctx context.Context, params *protocol.Sh
 }
 
 func (c *mockClient) ShowMessage(ctx context.Context, params *protocol.ShowMessageParams) error {
+	if c.showMessage != nil {
+		return c.showMessage(ctx, params)
+	}
 	return nil
 }
 
 func (c *mockClient) Close() error {
+	return nil
+}
+
+func (c *mockClient) Progress(ctx context.Context, params *protocol.ProgressParams) error {
+	if c.progress != nil {
+		return c.progress(ctx, params)
+	}
+	return nil
+}
+
+func (c *mockClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
+	return nil
+}
+
+func (c *mockClient) RegisterCapability(context.Context, *protocol.RegistrationParams) error {
 	return nil
 }
 

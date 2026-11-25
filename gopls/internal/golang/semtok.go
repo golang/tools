@@ -34,6 +34,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
 )
@@ -570,10 +571,7 @@ func (tv *tokenVisitor) formatString(lit *ast.BasicLit) bool {
 		if op.Verb.Verb == '%' {
 			continue
 		}
-		rng, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
-		if err != nil {
-			return false
-		}
+		rng := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
 		// Report literal substring.
 		tv.token(pos, int(rng.Start-pos), semtok.TokString)
 		// Report formatting directive.
@@ -976,7 +974,7 @@ func (tv *tokenVisitor) errorf(format string, args ...any) {
 	event.Error(tv.ctx, tv.strStack(), errors.New(msg))
 }
 
-var godirectives = map[string]struct{}{
+var godirectives = set.Set[string]{
 	// https://pkg.go.dev/cmd/compile
 	"noescape":       {},
 	"uintptrescapes": {},
@@ -999,7 +997,7 @@ func (tv *tokenVisitor) godirective(c *ast.Comment) {
 	// First check if '//go:directive args...' is a valid directive.
 	directive, args, _ := strings.Cut(c.Text, " ")
 	kind, _ := strings.CutPrefix(directive, "//go:")
-	if _, ok := godirectives[kind]; !ok {
+	if !godirectives.Contains(kind) {
 		// Unknown 'go:' directive.
 		tv.token(c.Pos(), len(c.Text), semtok.TokComment)
 		return

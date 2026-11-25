@@ -119,7 +119,7 @@ func (q formQuestion[In, Out]) bestField(options settings.ClientOptions) protoco
 		panic(fmt.Sprintf("question %q has no candidate types", q.ID))
 	}
 	for _, typ := range q.Types {
-		if options.SupportedInteractiveInputTypes[formFieldInputKind(typ)] {
+		if options.SupportedInteractiveInputTypes.Contains(formFieldInputKind(typ)) {
 			return protocol.FormField{
 				ID:          q.ID,
 				Description: q.Description,

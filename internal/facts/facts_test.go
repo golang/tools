@@ -430,7 +430,7 @@ func load(t *testing.T, dir string, path string) (*types.Package, error) {
 // function consults the transitive closure of pkg.Imports().
 //
 // This is equivalent to the importer's package map, because
-// gcimporter records all packages referenced by a package's export
+// exportdata.Decode records all packages referenced by a package's export
 // data as its imports.
 func newDecoder(pkg *types.Package) *facts.Decoder {
 	m := make(map[string]*types.Package)

@@ -40,6 +40,20 @@ type point struct {
 	v _point
 }
 
+// locationFlag is a flag.Value type for CLI flags that accept a file span. It can
+// also accept a single point, which is turned into a range with both the start
+// and end being that same point. (If a flag ever needs to restrict its input
+// to a single point, a pointFlag wrapper validating s.IsPoint() can be added.)
+//
+// When a flag is omitted on the command line, Set is never called and the flag
+// retains its zero value, for which IsValid() reports false. Callers can check
+// IsValid() to determine whether the flag was provided.
+type locationFlag struct {
+	span
+}
+
+var _ helpFlagValue = (*locationFlag)(nil)
+
 // The span_/point_ types have public fields to support JSON encoding,
 // but the span/point types hide these fields by defining methods that
 // shadow them. (This is used by a few of the command-line tool
@@ -65,10 +79,25 @@ func newSpan(uri protocol.DocumentURI, start, end point) span {
 	return s
 }
 
+// newPoint returns a cleaned point with both 1-based line/column and 0-based
+// byte offset (or -1 if unknown). Prefer newPointLineCol or newPointOffset when
+// only one coordinate representation is known.
 func newPoint(line, col, offset int) point {
 	p := point{v: _point{Line: line, Column: col, Offset: offset}}
 	p.v.clean()
 	return p
+}
+
+// newPointLineCol returns a cleaned point for a 1-based line and UTF-8 byte
+// column (col <= 0 defaults to column 1), with no byte offset.
+func newPointLineCol(line, col int) point {
+	return newPoint(line, col, -1)
+}
+
+// newPointOffset returns a cleaned point for a 0-based byte offset, with no
+// line/column position.
+func newPointOffset(offset int) point {
+	return newPoint(0, 0, offset)
 }
 
 // sortSpans sorts spans into a stable but unspecified order.
@@ -117,15 +146,29 @@ func comparePoint(a, b _point) int {
 	return 0
 }
 
-func (s span) HasPosition() bool             { return s.v.Start.hasPosition() }
-func (s span) HasOffset() bool               { return s.v.Start.hasOffset() }
-func (s span) IsValid() bool                 { return s.v.Start.isValid() }
+func (s span) HasPosition() bool             { return s.v.URI != "" && s.v.Start.hasPosition() }
+func (s span) HasOffset() bool               { return s.v.URI != "" && s.v.Start.hasOffset() }
+func (s span) IsValid() bool                 { return s.v.URI != "" && s.v.Start.isValid() && s.v.End.isValid() }
 func (s span) IsPoint() bool                 { return s.v.Start == s.v.End }
 func (s span) URI() protocol.DocumentURI     { return s.v.URI }
 func (s span) Start() point                  { return point{s.v.Start} }
 func (s span) End() point                    { return point{s.v.End} }
 func (s *span) MarshalJSON() ([]byte, error) { return json.Marshal(&s.v) }
 func (s *span) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &s.v) }
+
+func (f locationFlag) String() string   { return fmt.Sprint(f.span) }
+func (f locationFlag) HelpType() string { return "location" }
+func (f locationFlag) HelpString() string {
+	return "Run 'gopls help location' for accepted location syntax."
+}
+func (f *locationFlag) Set(value string) error {
+	s, err := parseSpanRaw(value)
+	if err != nil {
+		return err
+	}
+	f.span = s
+	return nil
+}
 
 func (p point) HasPosition() bool             { return p.v.hasPosition() }
 func (p point) HasOffset() bool               { return p.v.hasOffset() }

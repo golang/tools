@@ -31,6 +31,10 @@ func _() {
 
 	_ = '\xc6' //@hover("'\\xc6'", "'\\xc6'", latinAE)
 	_ = '\306' //@hover("'\\306'", "'\\306'", latinAE)
+	_ = "foo \xc6 bar" //@hover("\\xc6", "\\xc6", byteC6)
+	_ = "foo \306 bar" //@hover("\\306", "\\306", byteC6)
+	_ = "\xc3\x86" //@hover("\\xc3", "\\xc3", byteC3),hover("\\x86", "\\x86", byte86)
+	_ = "\x81\x82\x83" //@hover("\\x81", "\\x81", byte81),hover("\\x83", "\\x83", byte83)
 
 	_ = '\x00' //@hover("'\\x00'", "'\\x00'", nullChar)
 	_ = '\000' //@hover("'\\000'", "'\\000'", nullChar)
@@ -49,6 +53,8 @@ func _() {
 
 	// search for runes in string only if there is an escaped sequence
 	_ = "hello" //@hover(`"hello"`, _, _)
+	// Raw string literals have no escape sequences.
+	_ = `foo \u2211 bar` //@hover("\\u2211", _, _)
 
 	// incorrect escaped rune sequences
 	_ = '\0' //@hover("'\\0'", _, _),diag(re`\\0()'`, re"illegal character")
@@ -75,6 +81,16 @@ func _() {
 4722366482869645213696
 -- @binaryNumber --
 9
+-- @byte81 --
+byte 0x81 (129)
+-- @byte83 --
+byte 0x83 (131)
+-- @byte86 --
+byte 0x86 (134)
+-- @byteC3 --
+byte 0xC3 (195)
+-- @byteC6 --
+byte 0xC6 (198)
 -- @control --
 U+0007, control
 -- @hexNumber --

@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -79,7 +80,7 @@ type postfixTmplArgs struct {
 	edits          []protocol.TextEdit
 	paths          []string // import paths the edits add
 	qual           types.Qualifier
-	varNames       map[string]bool
+	varNames       set.Set[string]
 	placeholders   bool
 	currentTabStop int
 }
@@ -501,13 +502,13 @@ func (a *postfixTmplArgs) VarName(t types.Type, nonNamedDefault string) string {
 
 	uniqueName := name
 	for i := 2; ; i++ {
-		if s, _ := a.scope.LookupParent(uniqueName, token.NoPos); s == nil && !a.varNames[uniqueName] {
+		if s, _ := a.scope.LookupParent(uniqueName, token.NoPos); s == nil && !a.varNames.Contains(uniqueName) {
 			break
 		}
 		uniqueName = fmt.Sprintf("%s%d", name, i)
 	}
 
-	a.varNames[uniqueName] = true
+	a.varNames.Insert(uniqueName)
 
 	return uniqueName
 }
@@ -610,7 +611,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			qual:           c.qual,
 			importIfNeeded: c.importIfNeeded,
 			scope:          scope,
-			varNames:       make(map[string]bool),
+			varNames:       make(set.Set[string]),
 			placeholders:   c.opts.placeholders,
 		}
 

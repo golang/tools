@@ -313,17 +313,26 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		return convert
 	}
 
+	// Classify the conversion for each pair of source and destination terms.
+	// In well-typed code, neither type set is empty or unrestricted,
+	// and classify returns nonzero (or panics).
 	var classifications conversionCase
-	underIs(ut_src, func(us types.Type) bool {
-		return underIs(ut_dst, func(ud types.Type) bool {
-			if us != nil && ud != nil {
+	if !types.IsInterface(ut_src) && !types.IsInterface(ut_dst) {
+		// common case: no type parameters
+		classifications = classify(ut_src, ut_dst)
+	} else {
+		// slow path: compute cross product
+		udsts := typeparams.TypeSetOf(ut_dst).UnderlyingTypes()
+		usrcs := typeparams.TypeSetOf(ut_src).UnderlyingTypes()
+		for us := range usrcs {
+			for ud := range udsts {
 				classifications |= classify(us, ud)
 			}
-			return classifications != 0
-		})
-	})
-	if classifications == 0 {
-		panic(fmt.Sprintf("in %s: cannot convert %s (%s) to %s", f, val, val.Type(), typ))
+		}
+		if classifications == 0 {
+			// empty or unrestricted type set (ill-typed)
+			panic(fmt.Sprintf("in %s: cannot convert %s (%s) to %s", f, val, val.Type(), typ))
+		}
 	}
 
 	// Conversion of a compile-time constant value?
@@ -445,8 +454,13 @@ func emitIf(f *Function, cond Value, tblock, fblock *BasicBlock) {
 // emitExtract emits to f an instruction to extract the index'th
 // component of tuple.  It returns the extracted value.
 func emitExtract(f *Function, tuple Value, index int) Value {
+	typ := tuple.Type().(*types.Tuple).At(index).Type()
+	// Fold away a zero-valued tuple Const (see exprN).
+	if _, ok := tuple.(*Const); ok {
+		return zeroConst(typ)
+	}
 	e := &Extract{Tuple: tuple, Index: index}
-	e.setType(tuple.Type().(*types.Tuple).At(index).Type())
+	e.setType(typ)
 	return f.emit(e)
 }
 

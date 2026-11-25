@@ -17,6 +17,7 @@ import (
 	"golang.org/x/telemetry"
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -96,6 +97,7 @@ func (s *server) setTelemetryMode(mode string) error {
 // If enabled is false, this will not prompt the user in any condition,
 // but will send work progress reports to help testing.
 func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
+	ctx = context.WithoutCancel(ctx)
 	if s.Options().VerboseWorkDoneProgress {
 		work := s.progress.Start(ctx, TelemetryPromptWorkTitle, "Checking if gopls should prompt about telemetry...", nil, nil)
 		defer work.End(ctx, "Done.")
@@ -138,13 +140,13 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		pPending  = "pending" // current prompt is still pending
 		pFailed   = "failed"  // prompt was asked but failed
 	)
-	validStates := map[string]bool{
-		pNotReady: true,
-		pYes:      true,
-		pNo:       true,
-		pPending:  true,
-		pFailed:   true,
-	}
+	validStates := set.Of(
+		pNotReady,
+		pYes,
+		pNo,
+		pPending,
+		pFailed,
+	)
 
 	// Parse the current prompt file.
 	var (
@@ -156,7 +158,7 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		creationTime int64 // unix time sec
 	)
 	if content, err := os.ReadFile(promptFile); err == nil {
-		if n, _ := fmt.Sscanf(string(content), "%s %d %d %d", &state, &attempts, &creationTime, &token); (n == 2 || n == 4) && validStates[state] {
+		if n, _ := fmt.Sscanf(string(content), "%s %d %d %d", &state, &attempts, &creationTime, &token); (n == 2 || n == 4) && validStates.Contains(state) {
 			// successfully parsed!
 			//  ~ v0.16: must have only two fields, state and attempts.
 			//  v0.17 ~: must have all four fields.

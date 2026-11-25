@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -51,7 +50,12 @@ var anyType = types.Universe.Lookup("any").Type()
 //
 // It returns nil on failure.
 func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
+	// validType returns the type of a single-value hole.
 	validType := func(t types.Type) types.Type {
+		if _, ok := t.(*types.Tuple); ok {
+			// e.g. the nil tuple of a call to a void function
+			return anyType
+		}
 		if t != nil && !containsInvalid(t) {
 			return types.Default(t)
 		} else {
@@ -59,7 +63,7 @@ func FromContext(info *types.Info, cur inspector.Cursor) types.Type {
 		}
 	}
 
-	cur = cursorutil.UnparenEnclosing(cur)
+	cur = cur.UnparenEnclosing()
 	ek, idx := cur.ParentEdge()
 	switch ek {
 	case edge.AssignStmt_Lhs:

@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/work"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -102,7 +103,7 @@ type viewDiagnostics struct {
 
 // common types; for brevity
 type (
-	viewSet = map[*cache.View]unit
+	viewSet = set.Set[*cache.View]
 	diagMap = map[protocol.DocumentURI][]*cache.Diagnostic
 )
 
@@ -156,13 +157,20 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 			s.diagnoseSnapshot(ctx, snapshot, uris, snapshot.Options().DiagnosticsDelay)
 			s.modificationMu.Lock()
 
-			// Only remove v from s.viewsToDiagnose if the context is not cancelled.
-			// This ensures that the snapshot was not cloned before its state was
-			// fully evaluated, and therefore avoids missing a change that was
+			// Only remove v from s.viewsToDiagnose if neither the
+			// context nor the snapshot is cancelled. This ensures that
+			// the snapshot was not cloned before its state was fully
+			// evaluated, and therefore avoids missing a change that was
 			// irrelevant to an incomplete snapshot.
 			//
+			// It is not sufficient to check ctx alone: the session
+			// clones (and cancels) the snapshot in DidModifyFiles
+			// before the server cancels ctx in needsDiagnosis, and a
+			// diagnosis of the stale snapshot may complete in between
+			// (golang/go#82162).
+			//
 			// See the documentation for s.viewsToDiagnose for details.
-			if ctx.Err() == nil && s.viewsToDiagnose[v] <= modID {
+			if ctx.Err() == nil && snapshot.BackgroundContext().Err() == nil && s.viewsToDiagnose[v] <= modID {
 				delete(s.viewsToDiagnose, v)
 			}
 			s.modificationMu.Unlock()
@@ -553,15 +561,14 @@ func (s *server) compilerOptDetailsDiagnostics(ctx context.Context, snapshot *ca
 	// Consider that these points, in combination with the note below about
 	// races, suggest that compiler optimization details should be tracked on the Snapshot.
 	diagnostics := make(diagMap)
-	seenDirs := make(map[protocol.DocumentURI]bool)
+	seenDirs := make(set.Set[protocol.DocumentURI])
 	for _, mp := range toDiagnose {
 		if len(mp.CompiledGoFiles) == 0 {
 			continue
 		}
 		dir := mp.CompiledGoFiles[0].Dir()
 		if snapshot.WantCompilerOptDetails(dir) {
-			if !seenDirs[dir] {
-				seenDirs[dir] = true
+			if seenDirs.Insert(dir) {
 
 				perFileDiags, err := golang.CompilerOptDetails(ctx, snapshot, dir)
 				if err != nil {
@@ -660,7 +667,7 @@ func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot
 	// s.session.Views() and updateDiagnostics.
 	viewMap := make(viewSet)
 	for _, v := range s.session.Views() {
-		viewMap[v] = unit{}
+		viewMap.Insert(v)
 	}
 
 	// updateAndPublish updates diagnostics for a file, checking both the latest
@@ -695,14 +702,14 @@ func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot
 		return s.publishFileDiagnosticsLocked(ctx, viewMap, uri, current.version, f)
 	}
 
-	seen := make(map[protocol.DocumentURI]bool)
+	seen := make(set.Set[protocol.DocumentURI])
 	for uri, diags := range diagnostics {
 		f, ok := s.diagnostics[uri]
 		if !ok {
 			f = new(fileDiagnostics)
 			s.diagnostics[uri] = f
 		}
-		seen[uri] = true
+		seen.Insert(uri)
 		if err := updateAndPublish(uri, f, diags); err != nil {
 			if ctx.Err() != nil {
 				return
@@ -718,7 +725,7 @@ func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot
 	// future.
 	if final {
 		for uri, f := range s.diagnostics {
-			if !seen[uri] {
+			if !seen.Contains(uri) {
 				if err := updateAndPublish(uri, f, nil); err != nil {
 					if ctx.Err() != nil {
 						return
@@ -737,7 +744,7 @@ func (s *server) updateOrphanedFileDiagnostics(ctx context.Context, modID uint64
 	views := s.session.Views()
 	viewSet := make(viewSet)
 	for _, v := range views {
-		viewSet[v] = unit{}
+		viewSet.Insert(v)
 	}
 
 	s.diagnosticsMu.Lock()
@@ -808,7 +815,7 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 
 	var allViews []*cache.View
 	for view, viewDiags := range f.byView {
-		if _, ok := views[view]; !ok {
+		if !views.Contains(view) {
 			delete(f.byView, view) // view no longer exists
 			continue
 		}

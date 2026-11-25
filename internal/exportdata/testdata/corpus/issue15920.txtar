@@ -1,0 +1,15 @@
+A defined type whose underlying type is error (go.dev/issue/15920).
+
+-- go.mod --
+module example.com/issue15920
+
+go 1.26
+
+-- p.go --
+package p
+
+// The underlying type of Error is the underlying type of error.
+// Make sure we can import this again without problems.
+type Error error
+
+func F() Error { return nil }

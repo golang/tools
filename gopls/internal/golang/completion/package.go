@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/collection/set"
 )
 
 // bestPackage offers the best package name for a package declaration when
@@ -247,7 +248,7 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 	}
 	pkgName := convertDirNameToPkgName(dirName)
 
-	seenPkgs := make(map[golang.PackageName]struct{})
+	seenPkgs := make(set.Set[golang.PackageName])
 
 	// The `go` command by default only allows one package per directory but we
 	// support multiple package suggestions since gopls is build system agnostic.
@@ -255,7 +256,7 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		if mp.Name == "main" || mp.Name == "" {
 			continue
 		}
-		if _, ok := seenPkgs[mp.Name]; ok {
+		if seenPkgs.Contains(mp.Name) {
 			continue
 		}
 
@@ -277,19 +278,18 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		if score := float64(matcher.Score(string(mp.Name))); score > 0 {
 			packages = append(packages, toCandidate(string(mp.Name), score*highScore))
 		}
-		seenPkgs[mp.Name] = struct{}{}
+		seenPkgs.Insert(mp.Name)
 
 		testPkgName := mp.Name + "_test"
-		if _, ok := seenPkgs[testPkgName]; ok || strings.HasSuffix(string(mp.Name), "_test") {
+		if strings.HasSuffix(string(mp.Name), "_test") || !seenPkgs.Insert(testPkgName) {
 			continue
 		}
 		if score := float64(matcher.Score(string(testPkgName))); score > 0 {
 			packages = append(packages, toCandidate(string(testPkgName), score*stdScore))
 		}
-		seenPkgs[testPkgName] = struct{}{}
 	}
 
-	if _, ok := seenPkgs[pkgName]; !ok {
+	if !seenPkgs.Contains(pkgName) {
 		// Add current directory name as a low relevance suggestion.
 		dirNameScore := lowScore
 		// if current package name is empty, the dir name is the best choice.

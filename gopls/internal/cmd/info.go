@@ -36,12 +36,20 @@ Examples:
 $ gopls help                         # main gopls help message
 $ gopls help remote                  # help on 'remote' command
 $ gopls help remote sessions         # help on 'remote sessions' subcommand
+$ gopls help location                # syntax for file locations
 `)
 	printFlagDefaults(f)
 }
 
-// Run prints help information about a subcommand.
+// Run prints help information about a subcommand or help topic.
 func (h *help) Run(ctx context.Context, args ...string) error {
+	if len(args) == 1 {
+		if topic, ok := helpTopics[args[0]]; ok {
+			io.WriteString(os.Stdout, topic.detail)
+			return nil
+		}
+	}
+
 	find := func(cmds []command, name string) command {
 		for _, cmd := range cmds {
 			if cmd.Name() == name {
@@ -70,6 +78,57 @@ func (h *help) Run(ctx context.Context, args ...string) error {
 	// `gopls cmd -h` outputs (ShortHelp).
 	parseFlags(cmd, []string{"-h"})
 	return nil
+}
+
+// helpTopic describes a non-command documentation topic available via
+// 'gopls help <topic>' and listed under "Additional help topics" in 'gopls help'.
+type helpTopic struct {
+	short  string // one-line summary shown in 'gopls help'
+	detail string // full topic text shown by 'gopls help <topic>'
+}
+
+// helpTopics maps topic names to their help text. Topics are listed in
+// 'gopls help' and printed by [help.Run] without registering a runnable
+// subcommand.
+//
+// TODO(aputman): If we get line wrapping for terminals in, undo the line
+// wrapping inlined below.
+var helpTopics = map[string]helpTopic{
+	"location": {
+		short: "file location syntax for flags and arguments",
+		detail: `file location syntax for flags and positional arguments
+
+A location identifies a file, a position within a file, or a range within a
+file. A position may be specified by (line, column) or by byte offset. Here is
+the syntax that specifies each form ('[]' indicate optional parts):
+
+  * range: between two positions (of the same type: line/col or byte offset)
+    - file.go:lineStart:colStart-lineEnd:colEnd
+    - file.go:lineStart-lineEnd
+    - file.go:line:colStart-colEnd
+    - file.go:#offsetStart-#offsetEnd
+
+  * single position: treated as an empty range
+    - file.go:line[:col]
+    - file.go:#offset
+
+  * whole file: refers to byte offset 0 (the start of the file)
+    - path/to/file.go
+
+Coordinates and rules:
+  - Line and column numbers are 1-based; columns are measured in bytes of the
+    UTF-8 encoding (not runes or UTF-16 code units).
+  - Byte offsets ('#offset') are 0-based.
+  - The first ':' in the file's base name separates the file from the position.
+  - A line specified with no column (e.g. ':4-7') assumes a column of 1, so the
+    example is effectively the same as ':4:1-7:1'.
+
+Examples:
+  $ gopls inspect -pos=pkg/a.go:10:5 MyFunc
+  $ gopls definition ./pkg/a.go:42:12
+  $ gopls references ./pkg/a.go:#512
+`,
+	},
 }
 
 // version implements the version command.

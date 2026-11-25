@@ -62,7 +62,9 @@ func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	upgradeDirect := command.NewUpgradeDependencyCommand("Upgrade direct dependencies", command.DependencyArgs{
 		URI:        uri,
 		AddRequire: false,
-		GoCmdArgs:  append([]string{"-d"}, requires...),
+		// A module path may begin with a dash, so the paths must be
+		// preceded by "--" lest they be interpreted as flags.
+		GoCmdArgs: append([]string{"-d", "--"}, requires...),
 	})
 
 	// Put the upgrade code lenses above the first require block or statement.

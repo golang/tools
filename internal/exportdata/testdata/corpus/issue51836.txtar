@@ -1,0 +1,23 @@
+Generic types in two packages of the same name (go.dev/issue/51836).
+
+-- go.mod --
+module example.com/issue51836
+
+go 1.26
+
+-- aa.go --
+package a
+
+import (
+	"example.com/issue51836/a"
+)
+
+type T[K any] struct {
+	t a.T[K]
+}
+
+-- a/a.go --
+package a
+
+type T[K any] struct {
+}

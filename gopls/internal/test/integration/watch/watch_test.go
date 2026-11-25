@@ -6,12 +6,15 @@ package watch
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
@@ -564,6 +567,30 @@ func main() {
 
 // Reproduces golang/go#40340.
 func TestSwitchFromGOPATHToModuleMode(t *testing.T) {
+	// GO111MODULE=auto may be configured either in the environment or in the
+	// user's GOENV file ('go env -w GO111MODULE=auto'). In both cases, gopls
+	// must use the configured value rather than the value resolved by
+	// 'go env', which may be "off" when no go.mod file exists yet.
+	// This is a result of the changes for the compromise solution in
+	// https://github.com/golang/go/issues/78350#issuecomment-4522040116.
+	goenvFile := filepath.Join(t.TempDir(), "goenv")
+	if err := os.WriteFile(goenvFile, []byte("GO111MODULE=auto\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		env  EnvVars
+	}{
+		{"env", EnvVars{"GO111MODULE": "auto"}},
+		{"goenv", EnvVars{"GOENV": goenvFile}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testSwitchFromGOPATHToModuleMode(t, test.env)
+		})
+	}
+}
+
+func testSwitchFromGOPATHToModuleMode(t *testing.T, envVars EnvVars) {
 	const files = `
 -- foo/blah/blah.go --
 package blah
@@ -581,7 +608,7 @@ func main() {
 	WithOptions(
 		InGOPATH(),
 		Modes(Default), // golang/go#57521: this test is temporarily failing in 'experimental' mode
-		EnvVars{"GO111MODULE": "auto"},
+		envVars,
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.AfterChange(
@@ -708,5 +735,227 @@ func TestSomething(t *testing.T) {}
 			NoDiagnostics(ForFile("a/a_test.go")),
 			NoDiagnostics(ForFile("a/a2_test.go")),
 		)
+	})
+}
+
+// TestDebounceWatchedFiles checks that multiple didChangeWatchedFiles
+// notifications are debounced into a single modification, and that
+// all progress notifications are properly reported as completed.
+func TestDebounceWatchedFiles(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- a/a.go --
+package a
+
+func A() {}
+`
+	WithOptions(Settings{"watchedFileDelay": "100ms"}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+
+		// Send DidChangeWatchedFiles notifications in rapid succession.
+		// 5 is enough to ensure multiple notifications arrive
+		// and exercise progress token coalescing without being too slow.
+		for range 5 {
+			err := env.Editor.Server.DidChangeWatchedFiles(env.Ctx, &protocol.DidChangeWatchedFilesParams{
+				Changes: []protocol.FileEvent{
+					{
+						URI:  env.Sandbox.Workdir.URI("a/a.go"),
+						Type: protocol.Changed,
+					},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// The 5 notifications coalesce into a single diagnose pass, and all 5
+		// progress notifications are completed together.
+		title := server.DiagnosticWorkTitle(server.FromDidChangeWatchedFiles)
+		env.Await(
+			CompletedWork(title, 5, true),
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+	})
+}
+
+// TestDebounceFlushedByEditorAction checks that an explicit editor action
+// immediately flushes pending watched
+// file changes without waiting for the debounce timer to expire.
+func TestDebounceFlushedByEditorAction(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- a/a.go --
+package a
+
+func A() {}
+-- b/b.go --
+package b
+
+func B() {}
+`
+	// Set a very large debounce delay (10s) so the timer will never fire on its own
+	// without an editor action.
+	WithOptions(Settings{"watchedFileDelay": "10s"}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+
+		// 1. Modify a/a.go on disk with broken syntax.
+		if err := env.Sandbox.Workdir.WriteFile(env.Ctx, "a/a.go", "package a; broken syntax"); err != nil {
+			t.Fatal(err)
+		}
+
+		// Send watched file notification (enqueued in 10s debounce buffer).
+		err := env.Editor.Server.DidChangeWatchedFiles(env.Ctx, &protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{
+					URI:  env.Sandbox.Workdir.URI("a/a.go"),
+					Type: protocol.Changed,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// 2. An explicit editor action (opening b/b.go) must immediately flush
+		// the pending watched file changes, without waiting 10 seconds.
+		env.OpenFile("b/b.go")
+
+		// 3. Diagnostics for the broken a/a.go syntax should be produced promptly.
+		env.Await(
+			Diagnostics(ForFile("a/a.go")),
+		)
+	})
+}
+
+// TestDebounceOverlayOrdering checks that when a file is modified on disk
+// and subsequently modified in an editor buffer while the on-disk change is still
+// debounced, the on-disk change is processed first and the buffer overlay is applied
+// second.
+func TestDebounceOverlayOrdering(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- a/a.go --
+package a
+
+const Msg = "initial"
+`
+	// Set a large debounce delay (10s) to keep disk events in the debounce queue.
+	WithOptions(Settings{"watchedFileDelay": "10s"}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+
+		// 1. Update a/a.go on disk.
+		if err := env.Sandbox.Workdir.WriteFile(env.Ctx, "a/a.go", "package a\n\nconst Msg = \"disk\"\n"); err != nil {
+			t.Fatal(err)
+		}
+		err := env.Editor.Server.DidChangeWatchedFiles(env.Ctx, &protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{
+					URI:  env.Sandbox.Workdir.URI("a/a.go"),
+					Type: protocol.Changed,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// 2. Open the file in the editor buffer with an overlay that has a syntax error.
+		// Opening flushes the disk change first, and applies the overlay on top.
+		env.OpenFile("a/a.go")
+		env.EditBuffer("a/a.go", fake.NewEdit(0, 0, 3, 0, "package a\n\nconst Msg = \"overlay\"; syntax error\n"))
+
+		// 3. Diagnostics should reflect the overlay buffer (syntax error).
+		env.Await(
+			Diagnostics(ForFile("a/a.go")),
+		)
+
+		// 4. Fix the syntax error in the overlay buffer and verify clean diagnostics.
+		env.EditBuffer("a/a.go", fake.NewEdit(0, 0, 3, 0, "package a\n\nconst Msg = \"overlay\"\n"))
+		env.Await(
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+
+		// 5. Close the buffer. Now the overlay is removed, and gopls falls back to
+		// the flushed on-disk content ("disk").
+		env.CloseBuffer("a/a.go")
+		env.Await(
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+	})
+}
+
+// TestDebounceMaxDelayCap checks that a continuous stream of
+// didChangeWatchedFiles notifications at intervals shorter than
+// watchedFileDelay still flushes once the maximum debounce deadline is reached,
+// rather than resetting the timer indefinitely.
+func TestDebounceMaxDelayCap(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+-- a/a.go --
+package a
+
+func A() {}
+`
+	WithOptions(Settings{"watchedFileDelay": "50ms"}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			NoDiagnostics(ForFile("a/a.go")),
+		)
+
+		stop := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					_ = env.Editor.Server.DidChangeWatchedFiles(env.Ctx, &protocol.DidChangeWatchedFilesParams{
+						Changes: []protocol.FileEvent{
+							{
+								URI:  env.Sandbox.Workdir.URI("a/a.go"),
+								Type: protocol.Changed,
+							},
+						},
+					})
+				}
+			}
+		}()
+
+		// Even though notifications arrive every 10ms (< 50ms watchedFileDelay),
+		// the 500ms deadline cap forces a flush and completes work-done progress.
+		title := server.DiagnosticWorkTitle(server.FromDidChangeWatchedFiles)
+		env.Await(CompletedWork(title, 1, true))
+		close(stop)
+		<-done
+
+		// Drain any notification sent between Await and close(stop) before shutdown.
+		env.OpenFile("a/a.go")
+		env.AfterChange()
 	})
 }

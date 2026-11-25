@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/cursorutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -89,7 +90,10 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	// first occurrence of the undefined ident.
 	var curFirstRef inspector.Cursor // *ast.Ident
 
-	// Search from enclosing FuncDecl to first use, since we can not use := syntax outside function.
+	// Search from the innermost enclosing function (FuncDecl or FuncLit)
+	// to the first use, since := syntax cannot be used outside a function
+	// and uses in sibling closures are not in scope.
+	//
 	// Adds the missing colon under the following conditions:
 	// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
 	// 2) ident must not be self assignment.
@@ -97,8 +101,11 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	// For example, we should not add a colon when
 	// a = a + 1
 	// ^   ^ cursor here
-	_, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
-	for curRef := range curFuncDecl.Preorder((*ast.Ident)(nil)) {
+	curFunc, ok := moreiters.First(curId.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+	if !ok {
+		return nil, nil, fmt.Errorf("no enclosing function found: %v", curId)
+	}
+	for curRef := range curFunc.Preorder((*ast.Ident)(nil)) {
 		n := curRef.Node().(*ast.Ident)
 		if n.Name == ident.Name && info.ObjectOf(n) == nil {
 			if curRef.ParentEdgeKind() == edge.AssignStmt_Lhs {

@@ -150,10 +150,11 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 	inTools := false
 	{
 		var pcs [1]uintptr
-		n := runtime.Callers(1, pcs[:])
+		n := runtime.Callers(2, pcs[:]) // skip Callers and RunWithSuggestedFixes
 		frames := runtime.CallersFrames(pcs[:n])
 		fr, _ := frames.Next()
-		if fr.Func != nil && strings.HasPrefix(fr.Func.Name(), "golang.org/x/tools/") {
+		// Use Function, not Func, which is nil if the caller was inlined.
+		if strings.HasPrefix(fr.Function, "golang.org/x/tools/") {
 			inTools = true
 		}
 	}
@@ -199,7 +200,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 			for _, fix := range diag.SuggestedFixes {
 				// Assert that lazy fixes have a Category (#65578, #65087).
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
-					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
+					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command)")
 				}
 
 				// Skip any fix that edits a generated file.
@@ -367,6 +368,20 @@ func applyDiffsAndCompare(pkg *types.Package, filename string, original, want []
 // If the directory contains a go.mod file, Run treats it as the root of the
 // Go module in which to work. Otherwise, Run treats it as the root of a
 // GOPATH-style tree, with package contained in the src subdirectory.
+//
+// The effective Go version of each file (see [types.Info.FileVersions])
+// is determined as it is by the go command: in module mode, by the "go"
+// directive of the go.mod file; in GOPATH mode, by the version of the go
+// command itself. In either case, a "//go:build go1.N" constraint may
+// override the version of an individual file (and the go command omits
+// files whose constraints it does not satisfy).
+//
+// Consequently, in GOPATH mode, the version of each file depends on the
+// toolchain used to run the test. Tests of analyzers whose behavior
+// depends on the Go version should state the version explicitly, using
+// a go.mod file or a build constraint, so that the results do not vary
+// across toolchains. A test of behavior that requires Go 1.N or later
+// cannot be run by an older go command, and should be skipped.
 //
 // An expectation of a Diagnostic is specified by a string literal
 // containing a regular expression that must match the diagnostic

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 	isem "golang.org/x/tools/gopls/internal/vulncheck/semver"
+	"golang.org/x/tools/internal/collection/set"
 	"golang.org/x/vuln/scan"
 )
 
@@ -151,7 +152,7 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 
 			// set of packages in this module known to gopls.
 			// This will be lazily initialized when we need it.
-			var knownPkgs map[metadata.PackagePath]bool
+			var knownPkgs set.Set[metadata.PackagePath]
 
 			// Report vulnerabilities that affect packages of this module.
 			for _, entry := range vulns {
@@ -166,7 +167,7 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 						if knownPkgs == nil {
 							knownPkgs = toPackagePathSet(mps)
 						}
-						if knownPkgs[metadata.PackagePath(imp.Path)] {
+						if knownPkgs.Contains(metadata.PackagePath(imp.Path)) {
 							vulnerablePkgs = append(vulnerablePkgs, &govulncheck.Finding{
 								OSV:          entry.ID,
 								FixedVersion: fixed,
@@ -222,10 +223,10 @@ func GetEnv(snapshot *Snapshot, key string) string {
 }
 
 // toPackagePathSet transforms the metadata to a set of package paths.
-func toPackagePathSet(mds []*metadata.Package) map[metadata.PackagePath]bool {
-	pkgPaths := make(map[metadata.PackagePath]bool, len(mds))
+func toPackagePathSet(mds []*metadata.Package) set.Set[metadata.PackagePath] {
+	pkgPaths := make(set.Set[metadata.PackagePath], len(mds))
 	for _, md := range mds {
-		pkgPaths[md.PkgPath] = true
+		pkgPaths.Insert(md.PkgPath)
 	}
 	return pkgPaths
 }
