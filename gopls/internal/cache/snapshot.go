@@ -314,6 +314,10 @@ func fileKind(fh file.Handle) file.Kind {
 		}
 	}
 
+	if fh.URI().Base() == "go.vet" {
+		return file.Vet
+	}
+
 	fext := filepath.Ext(fh.URI().Path())
 	switch fext {
 	case ".go":
@@ -829,7 +833,7 @@ func (s *Snapshot) fileWatchingGlobPatterns() set.Set[protocol.RelativePattern] 
 	}
 
 	var extensions strings.Builder
-	extensions.WriteString("go,mod,sum,work")
+	extensions.WriteString("go,mod,sum,work,vet")
 	for _, ext := range s.Options().TemplateExtensions {
 		extensions.WriteString(",")
 		extensions.WriteString(ext)

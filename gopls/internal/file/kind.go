@@ -30,6 +30,8 @@ const (
 	Work
 	// Asm is a Go assembly (.s) file.
 	Asm
+	// Vet is a go.vet file.
+	Vet
 )
 
 func (k Kind) String() string {
@@ -46,6 +48,8 @@ func (k Kind) String() string {
 		return "go.work"
 	case Asm:
 		return "Go assembly"
+	case Vet:
+		return "go.vet"
 	default:
 		return fmt.Sprintf("unknown FileKind(%d)", k)
 	}
@@ -68,6 +72,8 @@ func KindForLang(langID protocol.LanguageKind) Kind {
 		return Work
 	case "go.s":
 		return Asm
+	case "go.vet":
+		return Vet
 	default:
 		return UnknownKind
 	}
