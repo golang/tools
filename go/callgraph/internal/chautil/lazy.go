@@ -50,13 +50,29 @@ func LazyCallees(fns map[*ssa.Function]bool) func(site ssa.CallInstruction) []*s
 	//
 	// methodsMemo is just a cache, so it needn't be a typeutil.Map.
 	methodsMemo := make(map[imethod][]*ssa.Function)
+	// implementsMemo caches types.Implements(C, I): an interface with k
+	// methods is otherwise checked k times against the same concrete type.
+	var implementsMemo typeutil.Map // value is map[*types.Interface]bool
+	implements := func(C types.Type, I *types.Interface) bool {
+		byI, _ := implementsMemo.At(C).(map[*types.Interface]bool)
+		if byI == nil {
+			byI = make(map[*types.Interface]bool)
+			implementsMemo.Set(C, byI)
+		}
+		ok, seen := byI[I]
+		if !seen {
+			ok = types.Implements(C, I)
+			byI[I] = ok
+		}
+		return ok
+	}
 	lookupMethods := func(I *types.Interface, m *types.Func) []*ssa.Function {
 		id := m.Id()
 		methods, ok := methodsMemo[imethod{I, id}]
 		if !ok {
 			for _, f := range methodsByID[id] {
 				C := f.Signature.Recv().Type() // named or *named
-				if types.Implements(C, I) {
+				if implements(C, I) {
 					methods = append(methods, f)
 				}
 			}
