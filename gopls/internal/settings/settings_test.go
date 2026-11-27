@@ -181,6 +181,44 @@ func TestOptions_Set(t *testing.T) {
 			},
 		},
 		{
+			name:  "buildFlags",
+			value: []any{"-tags=integration", "-race"},
+			check: func(o Options) bool {
+				return len(o.BuildFlags) == 2
+			},
+		},
+		{
+			name:  "buildFlags",
+			value: []any{"-tags", "integration"}, // flag value as a separate argument
+			check: func(o Options) bool {
+				return len(o.BuildFlags) == 2
+			},
+		},
+		{
+			name:      "buildFlags",
+			value:     []any{"integration"}, // golang/go#58023
+			wantError: true,
+			check: func(o Options) bool {
+				return len(o.BuildFlags) == 0
+			},
+		},
+		{
+			name:      "buildFlags",
+			value:     []any{"-tags=integration", "unit"},
+			wantError: true,
+			check: func(o Options) bool {
+				return len(o.BuildFlags) == 0
+			},
+		},
+		{
+			name:      "buildFlags",
+			value:     []any{""},
+			wantError: true,
+			check: func(o Options) bool {
+				return len(o.BuildFlags) == 0
+			},
+		},
+		{
 			name: "annotations",
 			value: map[string]any{
 				"Nil":      false,
