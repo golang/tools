@@ -134,6 +134,23 @@ func runAtomic(pass *analysis.Pass) (any, error) {
 		}
 	}
 
+	// Gather all fields of struct types whose values are converted or
+	// assigned to a different but identical struct type. Changing the type of
+	// such a field would make the conversion or assignment invalid, e.g.
+	//
+	//	type A struct{ x int32 }
+	//	type B struct{ x int32 }
+	//	var _ = B(A{}) // invalid if A.x becomes an atomic.Int32
+	//
+	// Such conversions don't mention the field, so they don't appear in the
+	// type index's uses of a field object.
+	convertedFields := make(map[*types.Var]bool)
+	findConversions(info, inspect.Root(), func(st *types.Struct) {
+		for field := range st.Fields() {
+			convertedFields[field.Origin()] = true
+		}
+	})
+
 	// Check that all uses of each candidate variable
 	// appear in calls of the form atomic.AddInt32(&v, ...).
 nextvar:
@@ -156,6 +173,12 @@ nextvar:
 			if unkeyedFields[v.Origin()] {
 				// Do not change the type of a field used by an unkeyed literal:
 				// its positional element may no longer be assignable.
+				continue
+			}
+			if convertedFields[v.Origin()] {
+				// Do not change the type of a field whose struct type is
+				// identical to another struct type: conversions and
+				// assignments between them would no longer be valid.
 				continue
 			}
 		case *ast.ValueSpec: // var v int
@@ -283,4 +306,173 @@ nextvar:
 	}
 
 	return nil, nil
+}
+
+// findConversions calls mark for both struct types of each explicit
+// conversion or implicit assignment (in assignments, variable declarations,
+// call arguments, return statements, composite literals and channel sends)
+// in which a value of one struct type is converted or assigned to a
+// different struct type with an identical underlying type.
+func findConversions(info *types.Info, root inspector.Cursor, mark func(*types.Struct)) {
+	// check reports a conversion from type from to type to.
+	check := func(from, to types.Type) {
+		if from == nil || to == nil || types.Identical(from, to) {
+			return
+		}
+		fromStruct, ok1 := from.Underlying().(*types.Struct)
+		toStruct, ok2 := to.Underlying().(*types.Struct)
+		if ok1 && ok2 && types.Identical(fromStruct, toStruct) {
+			mark(fromStruct)
+			mark(toStruct)
+		}
+	}
+
+	// valueTypes returns the types of the values denoted by exprs,
+	// expanding a single multi-valued expression such as f().
+	valueTypes := func(exprs []ast.Expr) []types.Type {
+		if len(exprs) == 1 {
+			if tuple, ok := info.TypeOf(exprs[0]).(*types.Tuple); ok {
+				ts := make([]types.Type, tuple.Len())
+				for i := range ts {
+					ts[i] = tuple.At(i).Type()
+				}
+				return ts
+			}
+		}
+		ts := make([]types.Type, len(exprs))
+		for i, expr := range exprs {
+			ts[i] = info.TypeOf(expr)
+		}
+		return ts
+	}
+
+	for cur := range root.Preorder(
+		(*ast.CallExpr)(nil),
+		(*ast.AssignStmt)(nil),
+		(*ast.ValueSpec)(nil),
+		(*ast.ReturnStmt)(nil),
+		(*ast.CompositeLit)(nil),
+		(*ast.SendStmt)(nil),
+	) {
+		switch n := cur.Node().(type) {
+		case *ast.CallExpr:
+			tv, ok := info.Types[n.Fun]
+			if !ok || tv.Type == nil {
+				continue
+			}
+			if tv.IsType() {
+				// Conversion T(x), including pointer conversions (*T)(p).
+				if len(n.Args) == 1 {
+					from := info.TypeOf(n.Args[0])
+					check(from, tv.Type)
+					if from != nil {
+						fromPtr, ok1 := from.Underlying().(*types.Pointer)
+						toPtr, ok2 := tv.Type.Underlying().(*types.Pointer)
+						if ok1 && ok2 {
+							check(fromPtr.Elem(), toPtr.Elem())
+						}
+					}
+				}
+			} else if sig, ok := tv.Type.Underlying().(*types.Signature); ok {
+				// Call f(x): each argument is assigned to its parameter.
+				params := sig.Params()
+				for i, arg := range valueTypes(n.Args) {
+					switch {
+					case sig.Variadic() && i >= params.Len()-1:
+						last := params.At(params.Len() - 1).Type()
+						if n.Ellipsis.IsValid() {
+							check(arg, last)
+						} else if slice, ok := last.Underlying().(*types.Slice); ok {
+							check(arg, slice.Elem())
+						}
+					case i < params.Len():
+						check(arg, params.At(i).Type())
+					}
+				}
+			}
+
+		case *ast.AssignStmt:
+			if rhs := valueTypes(n.Rhs); len(rhs) == len(n.Lhs) {
+				for i, lhs := range n.Lhs {
+					check(rhs[i], info.TypeOf(lhs))
+				}
+			}
+
+		case *ast.ValueSpec:
+			if n.Type != nil {
+				for _, value := range valueTypes(n.Values) {
+					check(value, info.TypeOf(n.Type))
+				}
+			}
+
+		case *ast.ReturnStmt:
+			var sig *types.Signature
+			for fn := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+				switch fn := fn.Node().(type) {
+				case *ast.FuncDecl:
+					if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
+						sig = obj.Signature()
+					}
+				case *ast.FuncLit:
+					sig, _ = info.TypeOf(fn).(*types.Signature)
+				}
+				break // innermost function only
+			}
+			if sig != nil {
+				if results := valueTypes(n.Results); len(results) == sig.Results().Len() {
+					for i, result := range results {
+						check(result, sig.Results().At(i).Type())
+					}
+				}
+			}
+
+		case *ast.CompositeLit:
+			// Each element is assigned to its field, element, or map key/value type.
+			typ := info.TypeOf(n)
+			if typ == nil {
+				continue
+			}
+			switch u := typesinternal.Unpointer(typ).Underlying().(type) {
+			case *types.Struct:
+				for i, elt := range n.Elts {
+					if kv, ok := elt.(*ast.KeyValueExpr); ok {
+						if key, ok := kv.Key.(*ast.Ident); ok {
+							if field, ok := info.Uses[key].(*types.Var); ok {
+								check(info.TypeOf(kv.Value), field.Type())
+							}
+						}
+					} else if i < u.NumFields() {
+						check(info.TypeOf(elt), u.Field(i).Type())
+					}
+				}
+			case *types.Slice, *types.Array, *types.Map:
+				var keyType, elemType types.Type
+				switch u := u.(type) {
+				case *types.Slice:
+					elemType = u.Elem()
+				case *types.Array:
+					elemType = u.Elem()
+				case *types.Map:
+					keyType, elemType = u.Key(), u.Elem()
+				}
+				for _, elt := range n.Elts {
+					if kv, ok := elt.(*ast.KeyValueExpr); ok {
+						if keyType != nil {
+							check(info.TypeOf(kv.Key), keyType)
+						}
+						check(info.TypeOf(kv.Value), elemType)
+					} else {
+						check(info.TypeOf(elt), elemType)
+					}
+				}
+			}
+
+		case *ast.SendStmt:
+			if t := info.TypeOf(n.Chan); t != nil {
+				if ch, ok := t.Underlying().(*types.Chan); ok {
+					check(info.TypeOf(n.Value), ch.Elem())
+				}
+			}
+		}
+	}
 }
