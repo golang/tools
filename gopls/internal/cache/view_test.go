@@ -105,6 +105,21 @@ func TestFilters(t *testing.T) {
 	}
 }
 
+func TestFolderExcludes(t *testing.T) {
+	dir := t.TempDir()
+	opts := &settings.Options{}
+	opts.DirectoryFilters = []string{"-other"}
+	folder := &Folder{Dir: protocol.URIFromPath(dir), Options: opts}
+	inside := protocol.URIFromPath(filepath.Join(dir, "other", "main.go"))
+	outside := protocol.URIFromPath(filepath.Join(dir, "main.go"))
+	if !folder.excludes(inside) {
+		t.Errorf("excludes(%q) = false, want true", inside)
+	}
+	if folder.excludes(outside) {
+		t.Errorf("excludes(%q) = true, want false", outside)
+	}
+}
+
 func TestSuffixes(t *testing.T) {
 	type file struct {
 		path string
