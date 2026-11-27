@@ -17,6 +17,14 @@ func hasError() {
 	a.Format(`2006-02-01`)                                           // want `2006-02-01 should be 2006-01-02`
 	a.Format("2006-02-01 15:04:05")                                  // want `2006-02-01 should be 2006-01-02`
 
+	// Escapes before the bad format must not shift the fix.
+	a.Format("Date:\t2006-02-01")   // want `2006-02-01 should be 2006-01-02`
+	a.Format("\u00e9 2006-02-01")   // want `2006-02-01 should be 2006-01-02`
+	a.Format("\x41\x42 2006-02-01") // want `2006-02-01 should be 2006-01-02`
+
+	// No fix is offered when the bad format is spelled with escapes.
+	a.Format("2006\x2d02-01") // want `2006-02-01 should be 2006-01-02`
+
 	const c = "2006-02-01"
 	a.Format(c) // want `2006-02-01 should be 2006-01-02`
 }
