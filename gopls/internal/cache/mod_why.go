@@ -25,7 +25,7 @@ func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 	}
 
 	s.mu.Lock()
-	entry, hit := s.modWhyHandles.Get(uri)
+	entry, hit := s.modWhyPromises.Get(uri)
 	s.mu.Unlock()
 
 	type modWhyResult struct {
@@ -35,14 +35,14 @@ func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 
 	// cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg any) any {
+		promise := memoize.NewPromise("modWhy", func(ctx context.Context, arg any) any {
 			why, err := modWhyImpl(ctx, arg.(*Snapshot), fh)
 			return modWhyResult{why, err}
 		})
 
-		entry = handle
+		entry = promise
 		s.mu.Lock()
-		s.modWhyHandles.Set(uri, entry, nil)
+		s.modWhyPromises.Set(uri, entry, nil)
 		s.mu.Unlock()
 	}
 

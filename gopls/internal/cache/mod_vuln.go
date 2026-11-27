@@ -31,7 +31,7 @@ import (
 // Concurrent requests are combined into a single command.
 func (s *Snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*vulncheck.Result, error) {
 	s.mu.Lock()
-	entry, hit := s.modVulnHandles.Get(modURI)
+	entry, hit := s.modVulnPromises.Get(modURI)
 	s.mu.Unlock()
 
 	type modVuln struct {
@@ -41,14 +41,14 @@ func (s *Snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*v
 
 	// Cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg any) any {
+		promise := memoize.NewPromise("modVuln", func(ctx context.Context, arg any) any {
 			result, err := modVulnImpl(ctx, arg.(*Snapshot))
 			return modVuln{result, err}
 		})
 
-		entry = handle
+		entry = promise
 		s.mu.Lock()
-		s.modVulnHandles.Set(modURI, entry, nil)
+		s.modVulnPromises.Set(modURI, entry, nil)
 		s.mu.Unlock()
 	}
 

@@ -50,7 +50,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 	}
 
 	s.mu.Lock()
-	entry, hit := s.modTidyHandles.Get(uri)
+	entry, hit := s.modTidyPromises.Get(uri)
 	s.mu.Unlock()
 
 	type modTidyResult struct {
@@ -77,14 +77,14 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 			return nil, err
 		}
 
-		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg any) any {
+		promise := memoize.NewPromise("modTidy", func(ctx context.Context, arg any) any {
 			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), pm)
 			return modTidyResult{tidied, err}
 		})
 
-		entry = handle
+		entry = promise
 		s.mu.Lock()
-		s.modTidyHandles.Set(uri, entry, nil)
+		s.modTidyPromises.Set(uri, entry, nil)
 		s.mu.Unlock()
 	}
 

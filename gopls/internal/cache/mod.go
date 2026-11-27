@@ -36,7 +36,7 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule,
 	uri := fh.URI()
 
 	s.mu.Lock()
-	entry, hit := s.parseModHandles.Get(uri)
+	entry, hit := s.parseModPromises.Get(uri)
 	s.mu.Unlock()
 
 	type parseModKey file.Identity
@@ -54,7 +54,7 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule,
 
 		entry = promise
 		s.mu.Lock()
-		s.parseModHandles.Set(uri, entry, func(_, _ any) { release() })
+		s.parseModPromises.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 

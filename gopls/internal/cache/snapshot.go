@@ -164,23 +164,20 @@ type Snapshot struct {
 	// when the workspace is reinitialized: both can make the file loadable.
 	unloadableFiles *persistent.Set[protocol.DocumentURI]
 
-	// TODO(rfindley): rename the handles below to "promises". A promise is
-	// different from a handle (we mutate the package handle.)
+	// parseModPromises keeps track of any parseModPromises for the snapshot.
+	// The promises need not refer to only the view's go.mod file.
+	parseModPromises *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseModResult]
 
-	// parseModHandles keeps track of any parseModHandles for the snapshot.
-	// The handles need not refer to only the view's go.mod file.
-	parseModHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseModResult]
+	// parseWorkPromises keeps track of any parseWorkPromises for the snapshot.
+	// The promises need not refer to only the view's go.work file.
+	parseWorkPromises *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseWorkResult]
 
-	// parseWorkHandles keeps track of any parseWorkHandles for the snapshot.
-	// The handles need not refer to only the view's go.work file.
-	parseWorkHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[parseWorkResult]
-
-	// Preserve go.mod-related handles to avoid garbage-collecting the results
-	// of various calls to the go command. The handles need not refer to only
+	// Preserve go.mod-related promises to avoid garbage-collecting the results
+	// of various calls to the go command. The promises need not refer to only
 	// the view's go.mod file.
-	modTidyHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modTidyResult]
-	modWhyHandles  *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modWhyResult]
-	modVulnHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modVulnResult]
+	modTidyPromises *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modTidyResult]
+	modWhyPromises  *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modWhyResult]
+	modVulnPromises *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modVulnResult]
 
 	// moduleUpgrades tracks known upgrades for module paths in each modfile.
 	// Each modfile has a map of module name to upgrade version.
@@ -238,11 +235,11 @@ func (s *Snapshot) decref() {
 	if s.refcount == 0 {
 		s.packages.Destroy()
 		s.files.destroy()
-		s.parseModHandles.Destroy()
-		s.parseWorkHandles.Destroy()
-		s.modTidyHandles.Destroy()
-		s.modVulnHandles.Destroy()
-		s.modWhyHandles.Destroy()
+		s.parseModPromises.Destroy()
+		s.parseWorkPromises.Destroy()
+		s.modTidyPromises.Destroy()
+		s.modVulnPromises.Destroy()
+		s.modWhyPromises.Destroy()
 		s.unloadableFiles.Destroy()
 		s.moduleUpgrades.Destroy()
 		s.vulns.Destroy()
@@ -1558,11 +1555,11 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		workspacePackages: s.workspacePackages,
 		shouldLoad:        s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
 		unloadableFiles:   s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable
-		parseModHandles:   cloneWithout(s.parseModHandles, changedFiles, &needsDiagnosis),
-		parseWorkHandles:  cloneWithout(s.parseWorkHandles, changedFiles, &needsDiagnosis),
-		modTidyHandles:    cloneWithout(s.modTidyHandles, changedFiles, &needsDiagnosis),
-		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles, &needsDiagnosis),
-		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles, &needsDiagnosis),
+		parseModPromises:  cloneWithout(s.parseModPromises, changedFiles, &needsDiagnosis),
+		parseWorkPromises: cloneWithout(s.parseWorkPromises, changedFiles, &needsDiagnosis),
+		modTidyPromises:   cloneWithout(s.modTidyPromises, changedFiles, &needsDiagnosis),
+		modWhyPromises:    cloneWithout(s.modWhyPromises, changedFiles, &needsDiagnosis),
+		modVulnPromises:   cloneWithout(s.modVulnPromises, changedFiles, &needsDiagnosis),
 		moduleUpgrades:    cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
 		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
@@ -1742,7 +1739,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			return oldExists != newExists || oldExists && oldFH.Identity() != newFH.Identity()
 		}
 
-		// Invalidate the previous modTidyHandle if any of the metadata has
+		// Invalidate the previous modTidyPromise if any of the metadata has
 		// been invalidated, or if the content of a go.mod or go.sum file
 		// (such as that of a replaced module, or a new nested module) has
 		// changed. Other non-Go files (such as .s files) cannot affect
@@ -1767,7 +1764,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			//
 			// We could improve accuracy by inspecting replace directives.
 			//
-			// Note that we iterate the modTidyHandles map here, rather than e.g.
+			// Note that we iterate the modTidyPromises map here, rather than e.g.
 			// using nearestModFile, because we don't have access to an accurate
 			// FileSource at this point in the snapshot clone.
 			//
@@ -1782,20 +1779,20 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			// workspace import graph would make invalidation precise.
 			const onlyInvalidateMostRelevant = true
 			if onlyInvalidateMostRelevant {
-				if deleteMostRelevantModFile(result.modTidyHandles, uri) {
+				if deleteMostRelevantModFile(result.modTidyPromises, uri) {
 					needsDiagnosis = true
 				}
 			} else {
-				result.modTidyHandles.Clear()
+				result.modTidyPromises.Clear()
 				needsDiagnosis = true
 			}
 
 			// TODO(rfindley): should we apply the above heuristic to mod vuln or mod
-			// why handles as well?
+			// why promises as well?
 			//
 			// TODO(rfindley): no tests fail if I delete the line below.
-			result.modWhyHandles.Clear()
-			result.modVulnHandles.Clear()
+			result.modWhyPromises.Clear()
+			result.modVulnPromises.Clear()
 		}
 	}
 

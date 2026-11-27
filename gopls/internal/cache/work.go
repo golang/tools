@@ -28,7 +28,7 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFi
 	uri := fh.URI()
 
 	s.mu.Lock()
-	entry, hit := s.parseWorkHandles.Get(uri)
+	entry, hit := s.parseWorkPromises.Get(uri)
 	s.mu.Unlock()
 
 	type parseWorkKey file.Identity
@@ -39,14 +39,14 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFi
 
 	// cache miss?
 	if !hit {
-		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ any) any {
+		promise, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ any) any {
 			parsed, err := parseWorkImpl(ctx, fh)
 			return parseWorkResult{parsed, err}
 		})
 
-		entry = handle
+		entry = promise
 		s.mu.Lock()
-		s.parseWorkHandles.Set(uri, entry, func(_, _ any) { release() })
+		s.parseWorkPromises.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 
