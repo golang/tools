@@ -178,7 +178,7 @@ func main() { // HLfunc
 				Ext:      ".go",
 				FileName: "main.go",
 				Raw:      helloTest,
-				Text:     "<pre contenteditable=\"true\" spellcheck=\"false\">" + helloTestHTML[6:],
+				Text:     "<pre contenteditable=\"plaintext-only\" spellcheck=\"false\">" + helloTestHTML[6:],
 			},
 		},
 	}
