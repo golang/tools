@@ -474,6 +474,36 @@ or configuration change will still trigger diagnostics.
 
 Default: `"Edit"`.
 
+<a id='diagnosticsScope'></a>
+### `diagnosticsScope enum`
+
+**This setting is experimental and may be deleted.**
+
+diagnosticsScope controls which packages gopls type-checks in
+order to report their compilation errors.
+
+By default, gopls reports compilation errors for every package in
+the workspace, so that an edit that breaks a package is reported
+even if none of that package's files is open. In a very large
+workspace, this means that gopls type-checks thousands of packages
+after it starts, and it may publish diagnostics for many files
+that the user never opened.
+
+When this setting is `"openPackages"`, gopls reports compilation
+errors and compiler optimization details only for packages that
+contain an open file. When the last open file of a package is
+closed, gopls clears the diagnostics of that package. Analysis
+diagnostics are always limited to packages that contain an open
+file, and diagnostics for go.mod, go.work, and template files do
+not depend on this setting.
+
+Must be one of:
+
+* `"openPackages"`: Report compilation errors only for packages that contain an open file.
+* `"workspace"`: Report compilation errors for all workspace packages. (default)
+
+Default: `"workspace"`.
+
 <a id='analysisProgressReporting'></a>
 ### `analysisProgressReporting bool`
 

@@ -2043,6 +2043,31 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "diagnosticsScope",
+				"Type": "enum",
+				"Doc": "diagnosticsScope controls which packages gopls type-checks in\norder to report their compilation errors.\n\nBy default, gopls reports compilation errors for every package in\nthe workspace, so that an edit that breaks a package is reported\neven if none of that package's files is open. In a very large\nworkspace, this means that gopls type-checks thousands of packages\nafter it starts, and it may publish diagnostics for many files\nthat the user never opened.\n\nWhen this setting is `\"openPackages\"`, gopls reports compilation\nerrors and compiler optimization details only for packages that\ncontain an open file. When the last open file of a package is\nclosed, gopls clears the diagnostics of that package. Analysis\ndiagnostics are always limited to packages that contain an open\nfile, and diagnostics for go.mod, go.work, and template files do\nnot depend on this setting.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": [
+					{
+						"Value": "\"openPackages\"",
+						"Doc": "`\"openPackages\"`: Report compilation errors only for packages that contain an open file.\n",
+						"Status": ""
+					},
+					{
+						"Value": "\"workspace\"",
+						"Doc": "`\"workspace\"`: Report compilation errors for all workspace packages. (default)\n",
+						"Status": ""
+					}
+				],
+				"Default": "\"workspace\"",
+				"Status": "experimental",
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "analysisProgressReporting",
 				"Type": "bool",
 				"Doc": "analysisProgressReporting controls whether gopls sends progress\nnotifications when construction of its index of analysis facts is taking a\nlong time. Cancelling these notifications will cancel the indexing task,\nthough it will restart after the next change in the workspace.\n\nWhen a package is opened for the first time and heavyweight analyses such as\nstaticcheck are enabled, it can take a while to construct the index of\nanalysis facts for all its dependencies. The index is cached in the\nfilesystem, so subsequent analysis should be faster.\n",
