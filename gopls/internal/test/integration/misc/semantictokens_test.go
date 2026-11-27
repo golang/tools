@@ -16,6 +16,37 @@ import (
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
+func TestSemanticTokensDefault(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+
+go 1.27
+-- main.go --
+package main
+
+func main() {}
+`
+	for _, test := range []struct {
+		name     string
+		settings Settings
+		enabled  bool
+	}{
+		{name: "default", enabled: true},
+		{name: "disabled", settings: Settings{"semanticTokens": false}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			WithOptions(Modes(Default), test.settings).Run(t, src, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				tokens := env.SemanticTokensFull("main.go")
+				if got := len(tokens) > 0; got != test.enabled {
+					t.Errorf("received %d semantic tokens, want tokens present: %t", len(tokens), test.enabled)
+				}
+			})
+		})
+	}
+}
+
 func TestBadURICrash_VSCodeIssue1498(t *testing.T) {
 	const src = `
 -- go.mod --

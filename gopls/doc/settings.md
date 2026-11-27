@@ -225,7 +225,7 @@ token calls to the LSP server:
 }
 ```
 
-Default: `false`.
+Default: `true`.
 
 <a id='noSemanticString'></a>
 ### `noSemanticString bool`

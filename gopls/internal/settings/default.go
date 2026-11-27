@@ -111,6 +111,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			CompletionBudget:               100 * time.Millisecond,
 			ExperimentalPostfixCompletions: true,
 			CompleteFunctionCalls:          true,
+			SemanticTokens:                 true,
 			Codelenses: map[CodeLensSource]bool{
 				CodeLensGenerate:          true,
 				CodeLensRegenerateCgo:     true,

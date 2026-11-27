@@ -2191,7 +2191,7 @@
 					"Keys": null
 				},
 				"EnumValues": null,
-				"Default": "false",
+				"Default": "true",
 				"Status": "experimental",
 				"Hierarchy": "ui",
 				"DeprecationMessage": ""
