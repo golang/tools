@@ -107,16 +107,24 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		}
 
 		// Body must start with "defer wg.Done()" or end with "wg.Done()".
+		//
+		// Compare the receivers semantically, not just syntactically:
+		// a declaration within the body may shadow a variable in the
+		// receiver of Add, in which case Done is called on a different
+		// WaitGroup.
+		sameObj := func(x, y *ast.Ident) bool {
+			return x.Name == y.Name && info.ObjectOf(x) == info.ObjectOf(y)
+		}
 		var doneStmt ast.Stmt
 		if deferStmt, ok := list[0].(*ast.DeferStmt); ok &&
 			typeutil.Callee(info, deferStmt.Call) == syncWaitGroupDone &&
-			astutil.EqualSyntax(ast.Unparen(deferStmt.Call.Fun).(*ast.SelectorExpr).X, addCallRecv) {
+			astutil.Equal(ast.Unparen(deferStmt.Call.Fun).(*ast.SelectorExpr).X, addCallRecv, sameObj) {
 			doneStmt = deferStmt // "defer wg.Done()"
 
 		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok && cannotRecover(lit.Body, info) {
 			if doneCall, ok := lastStmt.X.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, doneCall) == syncWaitGroupDone &&
-				astutil.EqualSyntax(ast.Unparen(doneCall.Fun).(*ast.SelectorExpr).X, addCallRecv) {
+				astutil.Equal(ast.Unparen(doneCall.Fun).(*ast.SelectorExpr).X, addCallRecv, sameObj) {
 				doneStmt = lastStmt // "wg.Done()"
 			}
 		}
