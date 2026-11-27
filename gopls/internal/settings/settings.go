@@ -631,6 +631,13 @@ const (
 	// ```
 	FunctionTypeParameters InlayHint = "functionTypeParameters"
 
+	// FunctionEndNames controls inlay hints for function and method names at their closing braces:
+	// ```go
+	// 	func foo() {
+	// 	}« // foo»
+	// ```
+	FunctionEndNames InlayHint = "functionEndNames"
+
 	// IgnoredError inlay hints for implicitly discarded errors:
 	// ```go
 	// 	f.Close()« // ignore error»
