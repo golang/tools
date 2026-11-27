@@ -65,6 +65,10 @@ var StringsCutAnalyzer = &analysis.Analyzer{
 //     potentially modified (i.e. in assignments, or function calls with unknown side
 //     effects).
 //
+//  3. For a Cut or CutLast fix, s must have the type that Cut
+//     returns (string or []byte), so that s[:i] and before have
+//     the same type.
+//
 // Then, the replacement involves the following substitutions:
 //
 //  1. Replace "i := strings.Index(s, substr)" with "before, after, ok := strings.Cut(s, substr)"
@@ -232,6 +236,14 @@ func stringscut(pass *analysis.Pass) (any, error) {
 
 			// If the only uses are ok and !ok, don't suggest a Cut() fix - these should be using Contains()
 			isContains := (len(negative) > 0 || len(nonnegative) > 0) && len(beforeSlice) == 0 && len(afterSlice) == 0
+
+			// Cut returns its first parameter's type (string or []byte).
+			// If s has another type, such as "type Line []byte", then
+			// replacing s[:i] by before would change the type of the
+			// expression (golang/go#83247).
+			if !isContains && !types.Identical(info.TypeOf(s), obj.Type().(*types.Signature).Params().At(0).Type()) {
+				continue
+			}
 
 			// CutLast requires Go 1.27. Keep this after isContains so
 			// presence-only LastIndex → Contains still works before 1.27.
